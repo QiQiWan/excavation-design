@@ -1,0 +1,15 @@
+{
+  "projectId": "project-58903334d264",
+  "packageType": "V2.3.0 formal CAD drawing-set interface",
+  "sheetCount": 7,
+  "tables": [
+    "drawing_register.csv",
+    "rebar_schedule.csv",
+    "material_schedule.csv",
+    "rebar_bending_schedule.csv",
+    "delivery_consistency_matrix.csv"
+  ],
+  "template": "enterprise_template_manifest.json",
+  "softwareModuleCompletion": 100,
+  "officialIssueBoundary": "Generated drawings are editable CAD deliverables. Company title blocks, signature workflow and registered engineer review are still required before sealed issue."
+}

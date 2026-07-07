@@ -1,0 +1,11 @@
+{
+  "projectId": "project-439e7d6a66c7",
+  "supportCount": 24,
+  "mainStrutCount": 12,
+  "cornerDiagonalCount": 12,
+  "supportRoles": [
+    "corner_diagonal",
+    "main_strut"
+  ],
+  "ifc": "packages/sample-data/projects/sample_wide_pit_corner_bracing.ifc"
+}

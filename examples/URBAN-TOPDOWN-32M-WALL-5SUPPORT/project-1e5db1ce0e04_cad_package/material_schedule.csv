@@ -1,0 +1,5 @@
+﻿item,quantity,unit,basis,note
+diaphragm_wall_concrete,10368.0,m3,length 270.00m depth 32.00m,preliminary quantity
+internal_support_total_length,4950.0,m,110 supports,preliminary quantity
+temporary_columns,44,each,column layout,preliminary quantity
+wale_beams,20,segments,wale beam model,preliminary quantity

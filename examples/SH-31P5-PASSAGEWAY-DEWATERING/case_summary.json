@@ -1,0 +1,38 @@
+{
+  "caseId": "SH-31P5-PASSAGEWAY-DEWATERING",
+  "projectId": "project-f7f266960c3e",
+  "name": "上海 31.5m 超深通道基坑降水耦合作用回归算例",
+  "sourceTitle": "Field tests on performance of diaphragm wall for a 31.5 m-deep passageway excavation in Shanghai downtown",
+  "sourceUrl": "https://cgejournal.com/en/article/doi/10.11779/CJGE20230760",
+  "publicDataBasis": "公开摘要给出：31.5 m 深通道工程，长深比和长宽比较小，坑角效应和超前预降水影响显著。",
+  "depthM": 31.5,
+  "calculationDepthM": 28.0,
+  "sourcePlanSizeM": [
+    72.0,
+    28.0
+  ],
+  "planSizeM": [
+    72.0,
+    28.0
+  ],
+  "geometryScale": 1.0,
+  "supportCount": 90,
+  "columnCount": 14,
+  "maxSupportAxialForce": 0.0,
+  "maxWallMoment": 61858.003,
+  "maxDisplacement": 4575.58,
+  "checkSummary": {
+    "pass": 1204,
+    "fail": 140,
+    "warning": 65,
+    "manualReview": 0
+  },
+  "issueSummary": {
+    "fail": 5,
+    "warning": 12,
+    "manual_review": 1,
+    "pass": 0
+  },
+  "traceCount": 592,
+  "officialIssueAllowed": false
+}

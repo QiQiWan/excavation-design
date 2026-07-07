@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project
+from app.schemas.domain import CalculationCase, CalculationResult
+from app.storage.repository import ProjectRepository, get_repository
+from app.services.calculation_trace import build_calculation_trace
+
+router = APIRouter(prefix="/api/projects/{project_id}/calculation", tags=["calculation"])
+
+
+@router.post("/build-cases", response_model=list[CalculationCase])
+def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> list[CalculationCase]:
+    project = repo.require(project_id)
+    try:
+        cases = build_default_construction_cases(project)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    project.calculation_cases = cases
+    repo.save(project)
+    return cases
+
+
+@router.post("/run", response_model=CalculationResult)
+def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = Depends(get_repository)) -> CalculationResult:
+    project = repo.require(project_id)
+    case = None
+    if case_id:
+        case = next((c for c in project.calculation_cases if c.id == case_id), None)
+        if case is None:
+            raise HTTPException(status_code=404, detail=f"Calculation case not found: {case_id}")
+    try:
+        result = run_calculation(project, case)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    project.calculation_results.append(result)
+    repo.save(project)
+    return result
+
+
+@router.post("/run-candidate-comparison")
+def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepository = Depends(get_repository)) -> list[dict]:
+    project = repo.require(project_id)
+    try:
+        comparison = run_candidate_comparison_for_project(project, top_n=top_n)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if project.calculation_results:
+        latest = project.calculation_results[-1]
+        if project.retaining_system and project.retaining_system.support_layout_repair:
+            latest.support_layout_repair = project.retaining_system.support_layout_repair
+        latest.report_diagram_data = dict(latest.report_diagram_data or {})
+        latest.report_diagram_data["candidateFullCalculationComparison"] = comparison
+    repo.save(project)
+    return comparison
+
+
+@router.get("/results", response_model=list[CalculationResult])
+def results(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> list[CalculationResult]:
+    return repo.require(project_id).calculation_results
+
+
+@router.get("/checks")
+def checks(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = repo.require(project_id)
+    checks_list: list[dict] = []
+    if project.calculation_results:
+        latest = project.calculation_results[-1]
+        checks_list.extend(latest.checks or [])
+    else:
+        checks_list.append({
+            "ruleId": "PITGUARD-CALC-NOT-RUN",
+            "objectId": project_id,
+            "status": "manual_review",
+            "message": "尚未运行计算，无法形成规范筛查结果。",
+        })
+    checks_list.append({
+        "ruleId": "PITGUARD-PROFESSIONAL-REVIEW",
+        "objectId": project_id,
+        "status": "manual_review",
+        "message": "自动筛查不替代注册岩土/结构工程师对规范适用性、公式条件、参数来源和施工图构造的复核。",
+    })
+    seen: set[tuple[str, str, str, str]] = set()
+    unique: list[dict] = []
+    for item in checks_list:
+        key = (
+            str(item.get("ruleId")),
+            str(item.get("objectId")),
+            str(item.get("status")),
+            str(item.get("calculatedValue")),
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    summary = {
+        "pass": sum(1 for c in unique if c.get("status") == "pass"),
+        "fail": sum(1 for c in unique if c.get("status") == "fail"),
+        "warning": sum(1 for c in unique if c.get("status") == "warning"),
+        "manualReview": sum(1 for c in unique if c.get("status") == "manual_review"),
+        "manual_review": sum(1 for c in unique if c.get("status") == "manual_review"),
+    }
+    return {"checks": unique, "summary": summary, "professionalReviewRequired": True}
+
+
+@router.get("/trace")
+def calculation_trace(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return build_calculation_trace(repo.require(project_id))

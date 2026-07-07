@@ -1,0 +1,15 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'>
+<rect x='0' y='0' width='1400' height='900' fill='white'/>
+<rect x='35' y='35' width='1330' height='830' fill='none' stroke='black' stroke-width='2'/>
+<style>text{font-family:Arial,'Microsoft YaHei',sans-serif;font-size:20px} .small{font-size:14px} .thin{stroke:#333;stroke-width:1;fill:none} .thick{stroke:#111;stroke-width:4;fill:none} .rebar{stroke:#111;stroke-width:3} .dim{stroke:#777;stroke-width:1;fill:none;stroke-dasharray:6 4}</style>
+<text x='80' y='85'>临时立柱桩详图</text>
+<line x1='500' y1='120' x2='500' y2='760' stroke='black' stroke-width='8'/><rect x='430' y='250' width='140' height='80' fill='none' stroke='black' stroke-width='3'/><text x='590' y='300'>立柱承台</text>
+<line x1='500' y1='330' x2='500' y2='780' stroke='#555' stroke-width='30'/><text x='545' y='600'>钻孔灌注桩 / 临时立柱桩</text>
+<text x='130' y='820' class='small'>注：桩径、桩长、单桩承载力和利用率由 FoundationDesign 输出；正式施工图应补桩身配筋、桩端持力层和施工偏差要求。</text>
+<rect x='880' y='750' width='470' height='105' fill='none' stroke='black' stroke-width='1'/>
+<line x1='880' y1='785' x2='1350' y2='785' stroke='black'/>
+<line x1='1040' y1='750' x2='1040' y2='855' stroke='black'/>
+<text x='895' y='775' class='small'>图名</text><text x='1055' y='775' class='small'>临时立柱桩详图</text>
+<text x='895' y='812' class='small'>比例</text><text x='1055' y='812' class='small'>1:50</text>
+<text x='895' y='842' class='small'>阶段</text><text x='1055' y='842' class='small'>方案/施工图深化接口</text>
+</svg>

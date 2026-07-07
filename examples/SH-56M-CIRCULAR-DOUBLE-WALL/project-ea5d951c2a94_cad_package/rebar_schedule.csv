@@ -1,0 +1,153 @@
+﻿host_type,host_code,group_name,bar_type,diameter_mm,spacing_mm,count,grade,status,location_description
+diaphragm_wall,DW-S1-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S1-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S1-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S1-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S2-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S2-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S2-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S2-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S3-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S3-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S3-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S3-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S4-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S4-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S4-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S4-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S5-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S5-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S5-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S5-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S6-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S6-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S6-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S6-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S7-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S7-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S7-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S7-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+diaphragm_wall,DW-S8-001,坑内侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,inner face vertical bars; As_provided=10179mm2/m; As_required=28831mm2/m; GB/T50010 flexure/min-rebar subset
+diaphragm_wall,DW-S8-001,坑外侧竖向主筋,longitudinal,36.0,100.0,,HRB400,fail,outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages
+diaphragm_wall,DW-S8-001,水平分布筋,distribution,18.0,180.0,,HRB400,manual_review,horizontal distribution bars; crack/detailing checks require professional review
+diaphragm_wall,DW-S8-001,拉结筋/架立筋,tie,12.0,450.0,,HRB400,manual_review,tie bars between reinforcement cages; constructability placeholder
+internal_support,RS-L1-1,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L1-1,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L1-2,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L1-2,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L1-3,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L1-3,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L1-4,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L1-4,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L2-1,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L2-1,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L2-2,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L2-2,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L2-3,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L2-3,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L2-4,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L2-4,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L3-1,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L3-1,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L3-2,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L3-2,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L3-3,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L3-3,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L3-4,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L3-4,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L4-1,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L4-1,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L4-2,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L4-2,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L4-3,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L4-3,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L4-4,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L4-4,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L5-1,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L5-1,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L5-2,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L5-2,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L5-3,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L5-3,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+internal_support,RS-L5-4,支撑纵筋,longitudinal,25.0,,8,HRB400,preliminary,"RC support longitudinal bars; As=3927mm2, rho=0.15%; concrete=C40; axial-flexure-slenderness requires full check"
+internal_support,RS-L5-4,支撑箍筋,stirrup,12.0,150.0,,HRB400,manual_review,RC support stirrups; shear and confinement detailing requires professional review
+support_wale_node,ND-RS-L1-1-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-1-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-1-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-1-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-2-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-2-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-2-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-2-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-3-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-3-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-3-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-3-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-4-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-4-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L1-4-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L1-4-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-1-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-1-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-1-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-1-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-2-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-2-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-2-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-2-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-3-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-3-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-3-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-3-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-4-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-4-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L2-4-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L2-4-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-1-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-1-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-1-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-1-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-2-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-2-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-2-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-2-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-3-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-3-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-3-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-3-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-4-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-4-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L3-4-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L3-4-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-1-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-1-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-1-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-1-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-2-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-2-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-2-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-2-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-3-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-3-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-3-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-3-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-4-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-4-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L4-4-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L4-4-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-1-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-1-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-1-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-1-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-2-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-2-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-2-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-2-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-3-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-3-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-3-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-3-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-4-A,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-4-A,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core
+support_wale_node,ND-RS-L5-4-B,节点附加竖向筋,additional,20.0,,4,HRB400,preliminary,support-to-wale node vertical bars
+support_wale_node,ND-RS-L5-4-B,节点加密箍筋,stirrup,12.0,100.0,,HRB400,preliminary,dense stirrups in node core

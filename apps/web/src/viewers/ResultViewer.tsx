@@ -1,0 +1,383 @@
+import { useMemo, useState } from 'react';
+import { api } from '../api/client';
+import type { Project, SupportLayoutOptimizationCandidate, CalculationResult } from '../types/domain';
+
+function conclusion(status?: string) {
+  if (status === 'fail') return '存在 fail 项，自动方案不得进入施工图或正式报审。';
+  if (status === 'warning' || status === 'manual_review') return '未形成施工图级结论，需按规范原文和项目条件复核。';
+  if (status === 'pass') return '软件子集校核未发现 fail，仍需注册工程师复核。';
+  return '尚未运行计算。';
+}
+
+
+
+function toNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function polylinePoints(rows: Record<string, unknown>[], xKey: string, yKey: string, width: number, height: number, pad = 24) {
+  const xs = rows.map((r) => toNumber(r[xKey])).filter(Number.isFinite);
+  const ys = rows.map((r) => toNumber(r[yKey])).filter(Number.isFinite);
+  if (!xs.length || !ys.length) return '';
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const xSpan = Math.max(1e-9, maxX - minX);
+  const ySpan = Math.max(1e-9, maxY - minY);
+  return rows.map((r) => {
+    const x = pad + ((toNumber(r[xKey]) - minX) / xSpan) * (width - pad * 2);
+    const y = height - pad - ((toNumber(r[yKey]) - minY) / ySpan) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+}
+
+function MiniLineChart({ title, xLabel, yLabel, rows, xKey, series }: { title: string; xLabel: string; yLabel: string; rows: Record<string, unknown>[]; xKey: string; series: { key: string; label: string; className: string }[] }) {
+  const width = 360;
+  const height = 210;
+  if (!rows.length) return <div className="envelopeEmpty">{title}：暂无曲线数据</div>;
+  return (
+    <div className="envelopeChartCard">
+      <div className="chartTitle"><strong>{title}</strong><span>{xLabel} / {yLabel}</span></div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="envelopeSvg">
+        <line x1="24" y1="186" x2="340" y2="186" className="chartAxis" />
+        <line x1="24" y1="18" x2="24" y2="186" className="chartAxis" />
+        {[0.25, 0.5, 0.75].map((v) => <line key={v} x1="24" x2="340" y1={18 + v * 168} y2={18 + v * 168} className="chartGrid" />)}
+        {series.map((item) => <polyline key={item.key} points={polylinePoints(rows, xKey, item.key, width, height)} className={`chartLine ${item.className}`} />)}
+      </svg>
+      <div className="chartLegend">{series.map((item) => <span key={item.key} className={item.className}>{item.label}</span>)}</div>
+    </div>
+  );
+}
+
+function SupportAxialBarChart({ rows, highlightLocator }: { rows: Record<string, unknown>[]; highlightLocator?: Record<string, unknown> }) {
+  const data = rows.slice(0, 18).map((r, index) => ({
+    label: String(r.supportId ?? r.stageId ?? `S${index + 1}`),
+    value: Math.abs(toNumber(r.axialForceDesign ?? r.effectiveAxialForce ?? r.axialForce))
+  })).filter((r) => r.value > 0);
+  const maxValue = Math.max(1, ...data.map((r) => r.value));
+  const targetId = String(highlightLocator?.objectId ?? highlightLocator?.objectCode ?? '');
+  if (!data.length) return <div className="envelopeEmpty">支撑轴力包络：暂无支撑轴力数据</div>;
+  return <div className="envelopeChartCard wide"><div className="chartTitle"><strong>支撑轴力包络</strong><span>按前 18 条控制支撑显示，单位 kN</span></div><div className="barEnvelope">{data.map((row) => <div key={row.label} className={`barRow ${targetId && row.label.includes(targetId) ? 'locatorBarHighlight' : ''}`}><span>{row.label}</span><div><em style={{ width: `${Math.max(3, row.value / maxValue * 100)}%` }} /></div><strong>{row.value.toFixed(0)}</strong></div>)}</div></div>;
+}
+
+function InternalForceVisualization({ latest, highlightLocator }: { latest: CalculationResult; highlightLocator?: Record<string, unknown> }) {
+  const diagram = latest.reportDiagramData ?? {};
+  const wallSamples = ((diagram.wallForceSamples as any[]) ?? latest.stageResults.map((r) => r.wallInternalForce).filter(Boolean) ?? []) as any[];
+  const wall = wallSamples.find((item) => item?.points?.length) ?? wallSamples[0];
+  const wallRows = ((wall?.points ?? []) as Record<string, unknown>[]).map((p) => ({ ...p, absMoment: Math.abs(toNumber((p as any).moment)), absShear: Math.abs(toNumber((p as any).shear)), displacementValue: Math.abs(toNumber((p as any).displacement)) }));
+  const wales = ((diagram.waleEnvelopes as any[]) ?? []) as any[];
+  const wale = wales.find((item) => item?.points?.length) ?? wales[0];
+  const waleRows = ((wale?.points ?? []) as Record<string, unknown>[]).map((p) => ({ ...p, momentPositive: toNumber((p as any).maxPositiveMoment), momentNegative: -Math.abs(toNumber((p as any).maxNegativeMoment)), shearAbs: toNumber((p as any).maxAbsShear), deflectionAbs: toNumber((p as any).maxAbsDeflection) }));
+  const supportRows = ((diagram.supportAxialSummary as any[]) ?? latest.stageResults.flatMap((r) => r.supportForces ?? []) ?? []) as Record<string, unknown>[];
+  if (!wallRows.length && !waleRows.length && !supportRows.length) return null;
+  return (
+    <section className="envelopeVisualization">
+      <div className="sectionLead"><h4>关键部件内力包络可视化</h4><p className="small">把墙体弯矩/剪力/位移、围檩弯矩/剪力/挠度和支撑轴力从表格转换为控制曲线，便于快速识别控制部位。当前为初步设计级包络图，正式图纸仍需结合完整计算书复核。</p></div>
+      <div className="envelopeChartGrid">
+        <MiniLineChart title={`围护墙包络 ${wall?.segmentId ?? ''}`} xLabel="深度 m" yLabel="内力 / 位移" rows={wallRows} xKey="depth" series={[{ key: 'absMoment', label: '|M| kN·m/m', className: 'moment' }, { key: 'absShear', label: '|V| kN/m', className: 'shear' }, { key: 'displacementValue', label: '|δ| mm', className: 'deflection' }]} />
+        <MiniLineChart title={`围檩包络 ${wale?.waleBeamCode ?? ''}`} xLabel="里程 m" yLabel="内力 / 挠度" rows={waleRows} xKey="chainage" series={[{ key: 'momentPositive', label: 'M+ kN·m', className: 'moment' }, { key: 'momentNegative', label: 'M- kN·m', className: 'momentNeg' }, { key: 'shearAbs', label: '|V| kN', className: 'shear' }, { key: 'deflectionAbs', label: '|δ|', className: 'deflection' }]} />
+        <SupportAxialBarChart rows={supportRows} highlightLocator={highlightLocator} />
+      </div>
+    </section>
+  );
+}
+
+function candidateDifferenceLabel(candidate: SupportLayoutOptimizationCandidate) {
+  const score = Number(candidate.variableSummary?.geometryDifferenceScore ?? 0);
+  const moved = Number(candidate.variableSummary?.adjustedLineCount ?? 0);
+  if (candidate.rank === 1 && score <= 0) return '基准';
+  if (score >= 0.18 || moved >= 8) return '明显差异';
+  if (score >= 0.08 || moved >= 3) return '中等差异';
+  return '高度相似';
+}
+
+function CandidateDiversityNotice({ candidates }: { candidates: SupportLayoutOptimizationCandidate[] }) {
+  if (candidates.length <= 1) return <div className="warning">当前几何约束下只形成 1 个可区分候选方案；系统已隐藏重复方案，不再要求用户在相同布置之间选择。</div>;
+  const structural = new Set(candidates.map((c) => `${c.supportCount}-${c.columnCount}-${c.maxBaySpacing}-${c.maxSpanLength}`)).size;
+  const weak = candidates.filter((c) => candidateDifferenceLabel(c) === '高度相似').length;
+  if (structural <= 1 || weak >= Math.max(2, candidates.length - 1)) {
+    return <div className="warning">当前候选方案在支撑数量、立柱数量和最大分仓上仍接近。系统会优先推荐结构路径不同的方案；若 A/B/C 完整计算结果完全相同，说明这些候选只属于线位微调，不应作为正式方案比选依据。</div>;
+  }
+  return <div className="success">当前候选已按支撑数量、立柱数量、分仓间距和线位几何进行去重，A/B/C 比选优先展示结构路径可区分的方案。</div>;
+}
+
+function RadarBar({ label, value }: { label: string; value: number }) {
+  const pct = Math.max(0, Math.min(1, value || 0)) * 100;
+  return <div className="radarBar"><span>{label}</span><div><em style={{ width: `${pct}%` }} /></div><strong>{pct.toFixed(0)}</strong></div>;
+}
+
+function CandidatePlanSvg({ candidate, selected = false, onClick }: { candidate: SupportLayoutOptimizationCandidate; selected?: boolean; onClick?: () => void }) {
+  const geom = (candidate.planGeometry ?? {}) as Record<string, any>;
+  const outline = (geom.outline ?? []) as { x: number; y: number }[];
+  const supports = (geom.supports ?? []) as Record<string, any>[];
+  const columns = (geom.columns ?? []) as Record<string, any>[];
+  const obstacles = (geom.obstacles ?? []) as Record<string, any>[];
+  const adjustments = (candidate.lineAdjustments ?? []) as Record<string, any>[];
+  const adjustmentPts = adjustments.flatMap((a) => [a.before?.start, a.before?.end, a.after?.start, a.after?.end]).filter(Boolean) as { x: number; y: number }[];
+  const xs = [...outline.map((p) => Number(p.x)), ...supports.flatMap((s) => [Number(s.start?.x), Number(s.end?.x)]), ...columns.map((c) => Number(c.location?.x)), ...adjustmentPts.map((p) => Number(p.x))].filter(Number.isFinite);
+  const ys = [...outline.map((p) => Number(p.y)), ...supports.flatMap((s) => [Number(s.start?.y), Number(s.end?.y)]), ...columns.map((c) => Number(c.location?.y)), ...adjustmentPts.map((p) => Number(p.y))].filter(Number.isFinite);
+  const minX = Math.min(...xs, 0);
+  const maxX = Math.max(...xs, 100);
+  const minY = Math.min(...ys, 0);
+  const maxY = Math.max(...ys, 100);
+  const pad = Math.max(2, Math.max(maxX - minX, maxY - minY) * 0.08);
+  const viewBox = `${minX - pad} ${minY - pad} ${Math.max(1, maxX - minX + pad * 2)} ${Math.max(1, maxY - minY + pad * 2)}`;
+  const outlinePts = outline.map((p) => `${p.x},${p.y}`).join(' ');
+  const motionKey = `${candidate.id ?? candidate.rank}-${selected ? 'motion' : 'static'}`;
+  return (
+    <button type="button" className={`candidatePlan ${selected ? 'selected' : ''}`} onClick={onClick}>
+      <div className="candidatePlanHeader"><strong>方案 {candidate.rank}</strong><span>{candidate.score} 分</span></div>
+      <svg key={motionKey} viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
+        {outlinePts && <polygon points={outlinePts} className="candidateOutline" />}
+        {obstacles.map((obs, idx) => {
+          const pts = ((obs.points ?? []) as { x: number; y: number }[]).map((p) => `${p.x},${p.y}`).join(' ');
+          return pts ? <polygon key={`obs-${idx}`} points={pts} className="candidateObstacle" /> : null;
+        })}
+        {selected && adjustments.slice(0, 24).map((a, idx) => {
+          const before = a.before ?? {};
+          const after = a.after ?? {};
+          if (!before.start || !before.end || !after.start || !after.end) return null;
+          return <g key={`motion-${idx}`}>
+            <line x1={before.start.x ?? 0} y1={before.start.y ?? 0} x2={before.end.x ?? 0} y2={before.end.y ?? 0} className="candidateSupportBefore" />
+            <line x1={before.start.x ?? 0} y1={before.start.y ?? 0} x2={before.end.x ?? 0} y2={before.end.y ?? 0} className="candidateSupportMoving">
+              <animate attributeName="x1" from={before.start.x ?? 0} to={after.start.x ?? 0} dur="1.1s" fill="freeze" />
+              <animate attributeName="y1" from={before.start.y ?? 0} to={after.start.y ?? 0} dur="1.1s" fill="freeze" />
+              <animate attributeName="x2" from={before.end.x ?? 0} to={after.end.x ?? 0} dur="1.1s" fill="freeze" />
+              <animate attributeName="y2" from={before.end.y ?? 0} to={after.end.y ?? 0} dur="1.1s" fill="freeze" />
+            </line>
+          </g>;
+        })}
+        {supports.map((s, idx) => {
+          const changed = Boolean(s.changed);
+          const lockState = (s.lockState ?? {}) as Record<string, unknown>;
+          const locked = Boolean(s.locked || lockState.line || lockState.start || lockState.end);
+          return <line key={`${s.id ?? idx}`} x1={s.start?.x ?? 0} y1={s.start?.y ?? 0} x2={s.end?.x ?? 0} y2={s.end?.y ?? 0} className={`candidateSupport ${changed ? 'changed' : ''} ${locked ? 'locked' : ''}`} />;
+        })}
+        {columns.map((c, idx) => <rect key={`col-${idx}`} x={(c.location?.x ?? 0) - 0.5} y={(c.location?.y ?? 0) - 0.5} width="1" height="1" className="candidateColumn" />)}
+      </svg>
+      <p className="small">{String(candidate.variableSummary?.positionPattern ?? '-')} · 位移线 {String((candidate.deltaGeometry?.changedSupportCount as number | string | undefined) ?? adjustments.length ?? 0)} · 交叉 {candidate.crossingCount ?? 0} · 障碍 {candidate.obstacleConflictCount ?? 0}</p>
+    </button>
+  );
+}
+
+export default function ResultViewer({ project, runStep, highlightLocator }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; highlightLocator?: Record<string, unknown> }) {
+  const latest = project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
+  const checks = latest?.checks ?? [];
+  const candidates = latest?.supportLayoutRepair?.candidates?.slice(0, 5) ?? [];
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | undefined>(latest?.supportLayoutRepair?.selectedCandidateId ?? latest?.supportLayoutRepair?.bestCandidateId ?? candidates[0]?.id);
+  const selectedCandidate = useMemo(() => candidates.find((c) => c.id === selectedCandidateId) ?? candidates[0], [candidates, selectedCandidateId]);
+  return (
+    <div className="viewer">
+      <h3>计算结果与规范复核</h3>
+      {!latest && <p>尚未运行计算。</p>}
+      {latest && (
+        <>
+          <div className="resultCards">
+            <div><strong>{latest.governingValues.maxTotalPressure}</strong><span>最大合成侧向压力 kPa</span></div>
+            <div><strong>{latest.governingValues.maxSupportAxialForce}</strong><span>最大支撑轴力 kN</span></div>
+            <div><strong>{latest.governingValues.maxWallMoment ?? '-'}</strong><span>最大设计弯矩 kN·m/m</span></div>
+            <div><strong>{latest.governingValues.maxWallShear ?? '-'}</strong><span>最大设计剪力 kN/m</span></div>
+            <div><strong>{latest.governingValues.maxDisplacement ?? '-'}</strong><span>最大位移 mm</span></div>
+          </div>
+          <InternalForceVisualization latest={latest} highlightLocator={highlightLocator} />
+          <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
+          <p>专业复核：{latest.professionalReviewRequired ? '需要' : '否'}</p>
+          <h4>校核汇总</h4>
+          <p className="small">{JSON.stringify(latest.checkSummary ?? {})}</p>
+          {latest.formalReportGate && (
+            <>
+              <h4>计算书正式化检查与出图闸门</h4>
+              <div className="metricGrid compact">
+                <div><strong>{latest.formalReportGate.status}</strong><span>闸门状态</span></div>
+                <div><strong>{latest.formalReportGate.allowedForOfficialIssue ? '允许' : '不允许'}</strong><span>正式出图</span></div>
+                <div><strong>{latest.formalReportGate.blockingItems?.length ?? 0}</strong><span>阻断项</span></div>
+                <div><strong>{latest.formalReportGate.warningItems?.length ?? 0}</strong><span>警告项</span></div>
+                <div><strong>{latest.formalReportGate.missingItems?.length ?? 0}</strong><span>缺项</span></div>
+              </div>
+              <div className={latest.formalReportGate.status === 'fail' ? 'error' : 'warning'}>{latest.formalReportGate.headline}</div>
+              {latest.formalReportGate.checklistSections?.length ? <table className="table compactTable"><thead><tr><th>首页清单项</th><th>状态</th><th>Fail</th><th>Warning</th><th>人工复核</th><th>Pass</th></tr></thead><tbody>
+                {latest.formalReportGate.checklistSections.map((section, idx) => {
+                  const counts = (section.counts ?? {}) as Record<string, number>;
+                  return <tr key={idx}><td>{String(section.title ?? '-')}</td><td>{String(section.status ?? '-')}</td><td>{counts.fail ?? 0}</td><td>{counts.warning ?? 0}</td><td>{counts.manual_review ?? 0}</td><td>{counts.pass ?? 0}</td></tr>;
+                })}
+              </tbody></table> : null}
+            </>
+          )}
+          {latest.supportLayoutQuality && (
+            <>
+              <h4>支撑布置合理性评分</h4>
+              <div className="metricGrid compact">
+                <div><strong>{latest.supportLayoutQuality.score}</strong><span>评分</span></div>
+                <div><strong>{latest.supportLayoutQuality.status}</strong><span>状态</span></div>
+                <div><strong>{String(latest.supportLayoutQuality.metrics?.mainSupportCount ?? '-')}</strong><span>主对撑数量</span></div>
+                <div><strong>{String(latest.supportLayoutQuality.metrics?.maxBaySpacing ?? '-')}</strong><span>最大分仓间距</span></div>
+                <div><strong>{String(latest.supportLayoutQuality.metrics?.maxSpanLength ?? '-')}</strong><span>最大跨长</span></div>
+              </div>
+              <p className="small">{latest.supportLayoutQuality.summary}</p>
+              {candidates.length ? (
+                <>
+                  <h4>支撑约束优化候选方案对比</h4>
+                  <CandidateDiversityNotice candidates={candidates} />
+                  <p className="small">点击任一候选方案可播放“原方案 → 候选方案”的支撑线移动过程；灰色为原线位，红色为移动线，黑色为局部锁定支撑或端点。采用候选方案后将写回围护体系并刷新项目。</p>
+                  {(latest.supportLayoutRepair?.candidateFullCalculations?.length || ((latest.reportDiagramData?.candidateFullCalculationComparison as any[]) ?? []).length) ? <><h5>方案 A/B/C 完整计算比选</h5><table className="table compactTable"><thead><tr><th>方案</th><th>支撑/立柱</th><th>最大轴力</th><th>最大位移</th><th>围檩弯矩</th><th>围檩剪力</th><th>稳定系数</th><th>IFC风险</th><th>正式闸门</th></tr></thead><tbody>{((latest.supportLayoutRepair?.candidateFullCalculations ?? (latest.reportDiagramData?.candidateFullCalculationComparison as any[]) ?? []) as any[]).slice(0, 3).map((item) => <tr key={String(item.schemeLabel ?? item.candidateId)}><td>{String(item.schemeLabel ?? '-')}</td><td>{String(item.supportCount ?? '-')} / {String(item.columnCount ?? '-')}</td><td>{String(item.maxSupportAxialForce ?? '-')}</td><td>{String(item.maxDisplacement ?? '-')}</td><td>{String(item.maxWaleMoment ?? '-')}</td><td>{String(item.maxWaleShear ?? '-')}</td><td>{String(item.minStabilitySafetyFactor ?? '-')}</td><td>{String(item.ifcRisk ?? item.ifcStatus ?? '-')}</td><td>{String(item.formalGateStatus ?? '-')} / {item.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table></> : null}
+                  <div className="candidatePlanGrid">
+                    {candidates.map((c) => <CandidatePlanSvg key={c.id ?? c.rank} candidate={c} selected={(selectedCandidate?.id ?? selectedCandidateId) === c.id} onClick={() => setSelectedCandidateId(c.id)} />)}
+                  </div>
+                  {selectedCandidate && <div className="candidateSelectionPanel"><div><strong>当前选中：方案 {selectedCandidate.rank}</strong><p className="small">{selectedCandidate.constructabilityNote}</p></div>{runStep && selectedCandidate.id && <button onClick={() => runStep('正在采用支撑优化候选方案', () => api.adoptSupportCandidate(project.id, selectedCandidate.id!))}>采用此方案</button>}</div>}
+                  <table className="table compactTable"><thead><tr><th>排名</th><th>评分</th><th>变量策略</th><th>可区分性</th><th>分仓</th><th>立柱服务跨</th><th>支撑数</th><th>立柱数</th><th>最大跨长</th><th>交叉</th><th>障碍冲突</th><th>硬约束</th><th>导出</th></tr></thead><tbody>
+                    {candidates.map((c) => <tr key={c.id ?? c.rank} className={(selectedCandidate?.id ?? selectedCandidateId) === c.id ? 'selectedRow' : ''} onClick={() => setSelectedCandidateId(c.id)}><td>{c.rank}</td><td>{c.score}</td><td>{String(c.variableSummary?.positionPattern ?? '-')}</td><td>{candidateDifferenceLabel(c)}</td><td>{c.targetSpacing}m</td><td>{c.columnMaxSpan}m</td><td>{c.supportCount}</td><td>{c.columnCount}</td><td>{c.maxSpanLength ?? '-'}</td><td>{c.crossingCount ?? 0}</td><td>{c.obstacleConflictCount ?? 0}</td><td>{Boolean(c.hardConstraints?.passed) ? '满足' : '未满足'}</td><td>{Boolean(c.exportReadiness?.ifcReady) ? 'IFC/计算书可用' : '需修复'}</td></tr>)}
+                  </tbody></table>
+                  <div className="candidateCompareGrid">{candidates.map((c) => <div className={`candidateCard ${(selectedCandidate?.id ?? selectedCandidateId) === c.id ? 'selected' : ''}`} key={`card-${c.id ?? c.rank}`} onClick={() => setSelectedCandidateId(c.id)}><h5>方案 {c.rank} · {c.score} 分 · {candidateDifferenceLabel(c)}</h5><div className="radarBars"><RadarBar label="间距" value={Number(c.softObjectives?.spacingCloseTo3To6m ?? 0)} /><RadarBar label="短跨" value={Number(c.softObjectives?.shortSpanLength ?? 0)} /><RadarBar label="立柱" value={Number(c.softObjectives?.reasonableColumnCount ?? 0)} /><RadarBar label="轴力" value={Number(c.softObjectives?.lowAxialPeakProxy ?? 0)} /><RadarBar label="出土" value={Number(c.softObjectives?.continuousMuckPath ?? 0)} /><RadarBar label="对称" value={Number(c.softObjectives?.planSymmetry ?? 0)} /></div><p className="small">{c.constructabilityNote}</p></div>)}</div>
+                </>
+              ) : null}
+            </>
+          )}
+          {latest.ifcCompatibility && (
+            <>
+              <h4>IFC 兼容性自检</h4>
+              <div className="metricGrid compact">
+                <div><strong>{latest.ifcCompatibility.score}</strong><span>评分</span></div>
+                <div><strong>{latest.ifcCompatibility.status}</strong><span>状态</span></div>
+                <div><strong>{String(latest.ifcCompatibility.rawUnicodeFound)}</strong><span>raw unicode</span></div>
+                <div><strong>{latest.ifcCompatibility.zeroDimensionCount ?? 0}</strong><span>零尺寸</span></div>
+                <div><strong>{latest.ifcCompatibility.missingMaterialAssociationCount ?? 0}</strong><span>材料缺失</span></div>
+              </div>
+              <p className="small">{latest.ifcCompatibility.summary}</p>
+              {latest.ifcCompatibility.viewerProfiles?.length ? <table className="table compactTable"><thead><tr><th>Viewer</th><th>状态</th><th>风险</th><th>评分</th><th>风险项</th><th>建议</th></tr></thead><tbody>
+                {latest.ifcCompatibility.viewerProfiles.map((profile) => <tr key={profile.viewer}><td>{profile.viewer}</td><td>{profile.status}</td><td>{profile.riskLevel}</td><td>{profile.score}</td><td>{profile.riskItems?.join('；') || '-'}</td><td>{profile.recommendation ?? '-'}</td></tr>)}
+              </tbody></table> : null}
+            </>
+          )}
+          {latest.designReviewSummary && (
+            <>
+              <h4>强度 / 刚度 / 稳定性复核汇总</h4>
+              <div className="metricGrid compact">
+                <div><strong>{latest.designReviewSummary.strengthStatus}</strong><span>强度状态</span></div>
+                <div><strong>{latest.designReviewSummary.stiffnessStatus}</strong><span>刚度状态</span></div>
+                <div><strong>{latest.designReviewSummary.stabilityStatus}</strong><span>稳定性状态</span></div>
+                <div><strong>{latest.designReviewSummary.maxStrengthUtilization ?? '-'}</strong><span>最大强度利用率</span></div>
+                <div><strong>{latest.designReviewSummary.maxStiffnessUtilization ?? '-'}</strong><span>最大刚度利用率</span></div>
+                <div><strong>{latest.designReviewSummary.minStabilitySafetyFactor ?? '-'}</strong><span>最小稳定安全系数</span></div>
+              </div>
+            </>
+          )}
+
+          {latest.designIterationSummary && (
+            <>
+              <h4>V2.0 空间杆系耦合、稳定专项与成果表达摘要</h4>
+              <div className="metricGrid compact">
+                <div><strong>{String(latest.designIterationSummary.p6GlobalCoupledMatrix ?? '-')}</strong><span>全局联立刚度</span></div>
+                <div><strong>{String(latest.designIterationSummary.p7ReportCharts ?? '-')}</strong><span>计算书图表化</span></div>
+                <div><strong>{String(latest.designIterationSummary.p8CadGeometryKernel ?? '-')}</strong><span>CAD 几何内核</span></div>
+                <div><strong>{String(latest.designIterationSummary.p9GroundwaterStabilitySpecials ?? '-')}</strong><span>地下水稳定专项</span></div>
+                <div><strong>{String(latest.designIterationSummary.p10DesignReviewSummary ?? '-')}</strong><span>强度/刚度/稳定性复核</span></div>
+                <div><strong>{String(latest.designIterationSummary.p11SpatialFrameKernel ?? '-')}</strong><span>空间杆系内核</span></div>
+                <div><strong>{String(latest.designIterationSummary.p12ReviewableStabilityPackage ?? '-')}</strong><span>可审查稳定专项</span></div>
+                <div><strong>{String(latest.designIterationSummary.p13ConstructionDrawingOutput ?? '-')}</strong><span>施工图输出</span></div>
+                <div><strong>{String(latest.governingValues.governingCheckStatus ?? '-')}</strong><span>综合状态</span></div>
+              </div>
+              <p className="small">{String(latest.designIterationSummary.remainingBoundary ?? '')}</p>
+            </>
+          )}
+
+          {latest.optimizationActions?.length ? (
+            <>
+              <h4>自动优化动作</h4>
+              <table className="table"><thead><tr><th>对象</th><th>动作</th><th>数量</th></tr></thead><tbody>
+                {latest.optimizationActions.map((item, index) => <tr key={index}><td>{String(item.target ?? '-')}</td><td>{String(item.action ?? '-')}</td><td>{String(item.count ?? '-')}</td></tr>)}
+              </tbody></table>
+            </>
+          ) : null}
+
+          {latest.stageResults.some((r) => r.coupledSystemResult && Object.keys(r.coupledSystemResult).length) && (
+            <>
+              <h4>墙—围檩—支撑全局联立刚度矩阵</h4>
+              <table className="table">
+                <thead><tr><th>阶段</th><th>边段</th><th>空间矩阵</th><th>墙平动/转角</th><th>围檩平动/转角</th><th>立柱竖向</th><th>楼板换撑刚度</th><th>全局轴力</th><th>说明</th></tr></thead>
+                <tbody>{latest.stageResults.filter((r) => r.coupledSystemResult).slice(0, 24).map((r) => <tr key={`${r.stageId}-${r.segmentId}`}>
+                  <td>{r.stageId}</td><td>{r.segmentId}</td><td>{String(r.coupledSystemResult?.globalSpatialMatrixSize ?? r.globalCoupledResult?.spatialMatrixSize ?? r.globalCoupledResult?.matrixSize ?? '-')}</td>
+                  <td>{String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.wallHorizontal ?? '-')} / {String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.wallRotation ?? '-')}</td>
+                  <td>{String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.waleHorizontal ?? '-')} / {String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.waleRotation ?? '-')}</td>
+                  <td>{String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.columnVertical ?? r.globalCoupledResult?.columnVerticalDofs?.length ?? '-')}</td>
+                  <td>{String(r.coupledSystemResult?.slabReplacementStiffness ?? r.globalCoupledResult?.slabReplacementStiffness ?? '-')}</td>
+                  <td>{String(r.coupledSystemResult?.globalMaxSupportAxialForce ?? r.globalCoupledResult?.maxSupportAxialForce ?? '-')}</td><td className="small">{String(r.coupledSystemResult?.note ?? '')}</td>
+                </tr>)}</tbody>
+              </table>
+            </>
+          )}
+
+          {latest.stageResults.some((r) => r.supportForces.some((f) => (f.distributionMethod?.includes('continuous_wale_beam') || f.distributionMethod?.includes('global')))) && (
+            <>
+              <h4>围檩连续梁—支撑节点反力</h4>
+              <table className="table">
+                <thead><tr><th>支撑ID</th><th>墙面</th><th>端点</th><th>围檩里程</th><th>节点反力</th><th>轴力设计值</th><th>弹簧刚度</th><th>有效标准轴力</th><th>模型</th></tr></thead>
+                <tbody>
+                  {latest.stageResults.flatMap((r) => r.supportForces).filter((f) => (f.distributionMethod?.includes('continuous_wale_beam') || f.distributionMethod?.includes('global'))).slice(0, 24).map((force, idx) => (
+                    <tr key={`${force.supportId}-${idx}`}>
+                      <td>{force.supportId ?? '-'}</td><td>{force.faceCode ?? '-'}</td><td>{force.supportEndpoint ?? '-'}</td><td>{force.waleChainage ?? '-'}</td>
+                      <td>{force.continuousBeamReaction ?? '-'} kN</td><td>{force.axialForceDesign ?? force.axialForce} kN</td><td>{force.elasticSupportStiffness ?? '-'} kN/m</td><td>{force.effectiveAxialForce ?? '-'}</td><td>{force.distributionMethod}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <h4>围檩本体内力包络</h4>
+              <table className="table">
+                <thead><tr><th>围檩</th><th>墙面</th><th>层号</th><th>线荷载</th><th>最大弯矩</th><th>最大剪力</th><th>最大挠度</th><th>节点数</th></tr></thead>
+                <tbody>
+                  {latest.stageResults.flatMap((r) => r.waleBeamResults ?? []).slice(0, 32).map((wale, idx) => (
+                    <tr key={`${wale.waleBeamCode}-${idx}`}>
+                      <td>{wale.waleBeamCode}</td><td>{wale.faceCode}</td><td>{wale.levelIndex}</td><td>{wale.pressureLineLoad} kN/m</td><td>{wale.maxMoment} kN·m</td><td>{wale.maxShear} kN</td><td>{wale.maxDeflection}</td><td>{wale.supportNodeCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <h4>围檩多工况弯矩/剪力/挠度包络</h4>
+              <table className="table">
+                <thead><tr><th>围檩</th><th>墙面</th><th>控制阶段数</th><th>M+</th><th>M-</th><th>|V|max</th><th>|δ|max</th><th>点数</th></tr></thead>
+                <tbody>{(latest.reportDiagramData?.waleEnvelopes as any[] | undefined)?.slice(0, 24).map((env, idx) => (
+                  <tr key={`${env.waleBeamCode}-${idx}`}><td>{env.waleBeamCode}</td><td>{env.faceCode ?? '-'}</td><td>{env.governingStageIds?.length ?? 0}</td><td>{env.maxPositiveMoment}</td><td>{env.maxNegativeMoment}</td><td>{env.maxAbsShear}</td><td>{env.maxAbsDeflection}</td><td>{env.points?.length ?? 0}</td></tr>
+                )) ?? <tr><td colSpan={8}>暂无包络数据</td></tr>}</tbody>
+              </table>
+            </>
+          )}
+          {latest.stabilityDetailedResult && (
+            <>
+              <h4>可审查地下水与稳定专项包</h4>
+              <div className="metricGrid compact">
+                <div><strong>{latest.stabilityDetailedResult.controllingSectionName ?? latest.stabilityDetailedResult.controllingSectionId ?? '-'}</strong><span>控制剖面</span></div>
+                <div><strong>{latest.stabilityDetailedResult.controllingMode ?? '-'}</strong><span>控制模式</span></div>
+                <div><strong>{latest.stabilityDetailedResult.minSafetyFactor ?? '-'}</strong><span>最小安全指标</span></div>
+                <div><strong>{latest.stabilityDetailedResult.circularSlipSurfaces?.length ?? 0}</strong><span>圆弧候选</span></div>
+                <div><strong>{latest.stabilityDetailedResult.seepagePaths?.length ?? 0}</strong><span>渗流路径</span></div>
+                <div><strong>{latest.stabilityDetailedResult.dewateringWells?.length ?? 0}</strong><span>降水井建议</span></div>
+              </div>
+              <table className="table"><thead><tr><th>圆弧</th><th>中心X</th><th>中心标高</th><th>半径</th><th>安全系数</th><th>控制</th></tr></thead><tbody>
+                {(latest.stabilityDetailedResult.circularSlipSurfaces ?? []).slice(0, 8).map((item: any) => <tr key={String(item.id)}><td>{String(item.id)}</td><td>{String(item.centerX)}</td><td>{String(item.centerElevation)}</td><td>{String(item.radius)}</td><td>{String(item.safetyFactor)}</td><td>{String(item.governing)}</td></tr>)}
+              </tbody></table>
+            </>
+          )}
+
+          {latest.drawingSheets?.length ? (
+            <>
+              <h4>施工图级成果表达接口</h4>
+              <table className="table"><thead><tr><th>图号</th><th>图名</th><th>比例</th><th>类型</th><th>文件</th></tr></thead><tbody>
+                {latest.drawingSheets.map((sheet) => <tr key={sheet.sheetId}><td>{sheet.sheetId}</td><td>{sheet.title}</td><td>{sheet.scale}</td><td>{sheet.sheetType}</td><td className="small">{sheet.filePath}</td></tr>)}
+              </tbody></table>
+            </>
+          ) : null}
+
+          <table className="table">
+            <thead><tr><th>规则</th><th>对象</th><th>状态</th><th>计算值</th><th>限值</th><th>说明</th></tr></thead>
+            <tbody>
+              {checks.slice(0, 40).map((check, index) => <tr key={`${check.ruleId}-${index}`}><td>{check.ruleId}</td><td>{check.objectType}</td><td>{check.status}</td><td>{check.calculatedValue ?? '-'}</td><td>{check.limitValue ?? '-'}</td><td>{check.message}</td></tr>)}
+              {checks.length === 0 && <tr><td colSpan={6}>暂无校核结果</td></tr>}
+            </tbody>
+          </table>
+          {latest.warnings.map((item) => <div key={item} className="warning">{item}</div>)}
+        </>
+      )}
+    </div>
+  );
+}
