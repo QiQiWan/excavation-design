@@ -22,5 +22,5 @@ exports/*
 .vscode/
 .idea/
 
-exports/*
-sample-output/*
+exports/
+sample-output/
