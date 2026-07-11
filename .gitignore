@@ -21,3 +21,6 @@ exports/*
 .DS_Store
 .vscode/
 .idea/
+
+exports/
+sample-output/
