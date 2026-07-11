@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.schemas.domain import Project
+from app.schemas.domain import Project, ProjectSummary
 from app.storage.database import SQLiteProjectStore
 
 
@@ -28,6 +28,9 @@ class ProjectRepository:
 
     def list(self) -> list[Project]:
         return [Project.model_validate(item) for item in self.store.list()]
+
+    def list_summaries(self) -> list[ProjectSummary]:
+        return [ProjectSummary.model_validate(item) for item in self.store.list_summaries()]
 
     def get(self, project_id: str) -> Project | None:
         data = self.store.get(project_id)

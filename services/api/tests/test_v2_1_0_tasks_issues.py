@@ -15,7 +15,7 @@ def test_v2_2_0_issue_center_and_export_json_task() -> None:
     issue_response = client.get(f'/api/projects/{project_id}/issues')
     assert issue_response.status_code == 200
     issues = issue_response.json()
-    assert issues['maturity']['softwareVersion'] in {'2.2.0', '2.3.0', '2.5.0'}
+    assert issues['maturity']['softwareVersion'] in {'3.2.0'}
     assert issues['summary']['fail'] >= 1
     assert issues['maturity']['overallCompletion'] == 100
     assert len(issues.get('moduleLedger') or issues['maturity'].get('moduleLedger') or []) >= 10

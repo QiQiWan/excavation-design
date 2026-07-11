@@ -1,6 +1,0 @@
-﻿data_item,source,IFC,CAD,DOCX,JSON,status,note
-excavation_outline,project.excavation.outline,yes,yes,yes,yes,pass,same model object
-retaining_members,project.retaining_system,yes,yes,yes,yes,pass,walls/wales/supports/columns share ids
-calculation_results,latest.calculation_results,property sets,tables/charts,yes,yes,pass,run calculation before formal issue
-rebar_groups,retaining_system.*.reinforcement,yes,yes,yes,yes,pass,parameterized groups; full bar bending remains review item
-issue_center,/api/projects/{id}/issues,sidecar,README,checklist,yes,pass,project-specific readiness may still contain warnings

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas.domain import Project
-from app.services.benchmark_cases import run_benchmark_case
+from app.services.benchmark_cases import run_benchmark_case_isolated as run_benchmark_case
 from app.services.rebar_detailing import build_rebar_detailing
 from app.drawings.cad_export import export_construction_cad_package
 

@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import ProjectsPage from '../pages/ProjectsPage';
-import ProjectWorkspace from '../pages/ProjectWorkspace';
+const ProjectWorkspace = lazy(() => import('../pages/ProjectWorkspace'));
+const DocsPage = lazy(() => import('../pages/DocsPage'));
 import type { Project } from '../types/domain';
 
 type Diagnostics = {
   version: string;
-  pythonExecutable: string;
+  softwareVersion?: string;
+  algorithmVersion?: string;
+  ruleSetVersion?: string;
+  exportSchemaVersion?: string;
   pythonVersion: string;
-  databasePath?: string;
+  databaseConfigured?: boolean;
   missingModules: string[];
   modules: { importName: string; packageName: string; available: boolean; version?: string }[];
 };
@@ -36,6 +40,9 @@ export default function App() {
 
   const offline = !health.startsWith('ok');
   const missingModules = diagnostics?.missingModules ?? [];
+  const isDocs = window.location.pathname === '/docs';
+
+  if (isDocs) return <Suspense fallback={<main className="page">正在加载文档…</main>}><DocsPage /></Suspense>;
 
   return (
     <div className="appShell">
@@ -45,6 +52,7 @@ export default function App() {
           <p>基坑围护结构设计 MVP · 结果需注册岩土/结构工程师复核</p>
         </div>
         <div className="apiStatusGroup">
+          <a className="topLink" href="/docs">操作文档</a>
           <span className={health.startsWith('ok') ? 'badge ok' : 'badge warn'}>API {health}</span>
           <button className="secondary compactButton" onClick={checkApi}>重检后端</button>
         </div>
@@ -67,13 +75,14 @@ export default function App() {
       {diagnostics && (
         <section className="runtimeRibbon">
           <span>API v{diagnostics.version}</span>
+          <span>算法 {diagnostics.algorithmVersion ?? diagnostics.version}</span>
+          <span>规则集 {diagnostics.ruleSetVersion ?? '-'}</span>
           <span>Python {diagnostics.pythonVersion}</span>
-          <span title={diagnostics.pythonExecutable}>当前解释器：{diagnostics.pythonExecutable}</span>
-          <span title={diagnostics.databasePath}>数据库：{diagnostics.databasePath ?? '-'}</span>
+          <span>数据库：{diagnostics.databaseConfigured ? '已配置' : '默认本地库'}</span>
         </section>
       )}
 
-      {selected ? <ProjectWorkspace project={selected} onBack={() => setSelected(undefined)} onProjectChange={setSelected} /> : <ProjectsPage onOpen={setSelected} />}
+      {selected ? <Suspense fallback={<main className="page"><section className="card">正在加载工程工作台…</section></main>}><ProjectWorkspace project={selected} onBack={() => setSelected(undefined)} onProjectChange={setSelected} /></Suspense> : <ProjectsPage onOpen={setSelected} />}
     </div>
   );
 }

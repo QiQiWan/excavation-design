@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../api/client';
 import BoreholeImport from '../components/BoreholeImport';
 import ExcavationEditor from '../components/ExcavationEditor';
@@ -7,7 +7,10 @@ import RetainingSystemViewer from '../viewers/RetainingSystemViewer';
 import ResultViewer from '../viewers/ResultViewer';
 import Engineering3DViewer from '../viewers/Engineering3DViewer';
 import RebarIfcViewer from '../viewers/RebarIfcViewer';
+import RebarDesignPanel from '../components/RebarDesignPanel';
 import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult } from '../types/domain';
+
+const AdvancedEngineeringPanel = lazy(() => import('../components/AdvancedEngineeringPanel'));
 
 type WorkflowStepKey = 'settings' | 'boreholes' | 'geology' | 'excavation' | 'retaining' | 'calculation' | 'assurance' | 'export';
 type StepStatus = 'done' | 'ready' | 'blocked' | 'warning' | 'error';
@@ -19,7 +22,7 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_benchmark_cases' | 'full_delivery';
+type BackendTaskOperation = 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
 
 interface WorkflowStep {
   key: WorkflowStepKey;
@@ -39,10 +42,24 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   const [operation, setOperation] = useState<ActiveOperation | undefined>();
   const [vtuMessage, setVtuMessage] = useState<string | undefined>();
   const [selectedLocator, setSelectedLocator] = useState<Record<string, unknown> | undefined>();
+  const [viewMode, setViewMode] = useState<'compact' | 'professional'>(() => window.localStorage.getItem('pitguard-workspace-mode') === 'professional' ? 'professional' : 'compact');
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
 
   useEffect(() => {
     setCurrent(project);
   }, [project]);
+
+  useEffect(() => { window.localStorage.setItem('pitguard-workspace-mode', viewMode); }, [viewMode]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen((value) => !value); }
+      if (event.key === 'Escape') setCommandOpen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const steps = useMemo(() => buildWorkflowSteps(current), [current]);
   const activeStep = steps.find((step) => step.key === active) ?? steps[0];
@@ -174,7 +191,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   }
 
   return (
-    <main className="page workflowPage">
+    <main className="page workflowPage" id="main-workspace"><a className="skipLink" href="#workflow-main-panel">跳到当前设计步骤</a>
       <div className="workspaceHeader card">
         <div className="workspaceTitle">
           <button className="secondary" onClick={onBack}>返回项目列表</button>
@@ -184,6 +201,8 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
           </div>
         </div>
         <div className="workspaceBadges">
+          <button className="secondary" onClick={() => setCommandOpen(true)} title="命令面板快捷键 Ctrl/Command + K">命令 Ctrl+K</button>
+          <button className="secondary workspaceModeToggle" onClick={() => setViewMode((value) => value === 'compact' ? 'professional' : 'compact')} title="精简模式保留当前步骤、下一步和交付状态；专业模式显示全部工程指标与决策面板。">{viewMode === 'compact' ? '切换专业模式' : '切换精简模式'}</button>
           <StatusPill label="流程" value={overallFlowLabel(steps)} tone={steps.every((s) => s.status === 'done' || s.status === 'warning') ? 'pass' : 'warn'} />
           <StatusPill label="Fail" value={String(failCount)} tone={failCount > 0 ? 'fail' : 'pass'} />
           <StatusPill label="Warning" value={String(warningCount)} tone={warningCount > 0 ? 'warn' : 'pass'} />
@@ -202,7 +221,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
       <div className="workflowLayout">
         <aside className="workflowAside card">
           <h3>工程流程</h3>
-          <p className="small">按设计流程推进。步骤状态来自当前项目数据，不再依赖用户记忆操作顺序。</p>
+          <p className="small">按设计流程推进。精简模式仅保留当前操作和必要状态。</p>
           <ol className="workflowStepper">
             {steps.map((step) => (
               <li key={step.key} className={`workflowStep ${active === step.key ? 'active' : ''} ${step.status}`}>
@@ -216,13 +235,14 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
               </li>
             ))}
           </ol>
-          <ProjectTreeSummary project={current} />
+          {viewMode === 'professional' ? <ProjectTreeSummary project={current} /> : null}
         </aside>
 
-        <section className="workflowMain card">
-          <OperatorDashboard project={current} steps={steps} />
+        <section className="workflowMain card" id="workflow-main-panel" tabIndex={-1}>
+          {viewMode === 'professional' ? <OperatorDashboard project={current} steps={steps} /> : null}
+          <ProjectDeliveryDashboard project={current} onJump={setActive} />
           <NextActionPanel activeStep={activeStep} nextStep={nextStep} project={current} />
-          <EngineeringDecisionBoard project={current} steps={steps} onJump={setActive} />
+          {viewMode === 'professional' ? <EngineeringDecisionBoard project={current} steps={steps} onJump={setActive} /> : null}
           <StepHeader step={activeStep} project={current} />
           {selectedLocator && <LocatorBanner locator={selectedLocator} onClear={() => setSelectedLocator(undefined)} />}
           <StepBody
@@ -243,11 +263,32 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
           </div>
         </section>
       </div>
+      {commandOpen ? <CommandPalette steps={steps} query={commandQuery} onQuery={setCommandQuery} onClose={() => setCommandOpen(false)} onSelect={(key) => { setActive(key); setCommandOpen(false); setCommandQuery(''); }} onToggleMode={() => { setViewMode((value) => value === 'compact' ? 'professional' : 'compact'); setCommandOpen(false); }} /> : null}
     </main>
   );
 }
 
 
+
+function CommandPalette({ steps, query, onQuery, onClose, onSelect, onToggleMode }: { steps: WorkflowStep[]; query: string; onQuery: (value: string) => void; onClose: () => void; onSelect: (key: WorkflowStepKey) => void; onToggleMode: () => void }) {
+  const q = query.trim().toLowerCase();
+  const filtered = steps.filter((step) => !q || `${step.title} ${step.subtitle} ${step.message}`.toLowerCase().includes(q));
+  return <div className="commandOverlay" role="dialog" aria-modal="true" aria-label="PitGuard 命令面板" onMouseDown={(event) => { if (event.target === event.currentTarget) { onClose(); } }}>
+    <div className="commandPalette">
+      <div className="commandHeader"><strong>快速跳转与显示</strong><button className="secondary tiny" onClick={onClose}>关闭 Esc</button></div>
+      <input autoFocus value={query} onChange={(event) => onQuery(event.target.value)} placeholder="搜索流程、操作或状态…" aria-label="搜索命令" />
+      <div className="commandList">{filtered.map((step) => <button key={step.key} onClick={() => onSelect(step.key)}><strong>{step.index}. {step.title}</strong><span>{step.message}</span></button>)}<button onClick={onToggleMode}><strong>切换精简/专业模式</strong><span>控制工作台信息密度</span></button></div>
+    </div>
+  </div>;
+}
+
+
+function formatLocatorCenter(value: unknown) {
+  const v = value as { x?: number; y?: number; z?: number } | undefined;
+  if (!v || typeof v !== 'object') return '无坐标';
+  const xy = [v.x, v.y].map((n) => typeof n === 'number' ? n.toFixed(2) : '-').join(', ');
+  return `坐标 (${xy}${typeof v.z === 'number' ? `, ${v.z.toFixed(2)}` : ''})`;
+}
 
 function LocatorBanner({ locator, onClear }: { locator: Record<string, unknown>; onClear: () => void }) {
   return (
@@ -255,11 +296,65 @@ function LocatorBanner({ locator, onClear }: { locator: Record<string, unknown>;
       <div>
         <strong>对象级定位</strong>
         <span>{String(locator.objectType ?? '-')} · {String(locator.objectId ?? locator.objectCode ?? '-')} · {String(locator.targetPanel ?? locator.workflowStep ?? '-')}</span>
-        <em>{locator.center ? `坐标 ${JSON.stringify(locator.center)}` : '无坐标'}{locator.drawingSheet ? ` · CAD ${String(locator.drawingSheet)}` : ''}</em>
+        <em>{formatLocatorCenter(locator.center)}{locator.drawingSheet ? ` · CAD ${String(locator.drawingSheet)}` : ''}</em>
         {locator.message ? <p>{String(locator.message)}</p> : null}
       </div>
       <button className="secondary tiny" onClick={onClear}>清除定位</button>
     </div>
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function statusToneFromText(value?: unknown): 'pass' | 'warn' | 'fail' | 'review' {
+  const text = String(value ?? '').toLowerCase();
+  if (['ready', 'pass', 'closed'].includes(text)) return 'pass';
+  if (['blocked', 'fail'].includes(text)) return 'fail';
+  if (text.includes('review')) return 'review';
+  return 'warn';
+}
+
+function ProjectDeliveryDashboard({ project, onJump }: { project: Project; onJump: (key: WorkflowStepKey) => void }) {
+  const [data, setData] = useState<Record<string, unknown> | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  useEffect(() => {
+    let alive = true;
+    api.getProjectDashboard(project.id).then((result) => { if (alive) setData(result); }).catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); });
+    return () => { alive = false; };
+  }, [project.id, project.updatedAt, project.calculationResults.length]);
+  if (error) return <div className="warning">项目驾驶舱读取失败：{error}</div>;
+  if (!data) return <div className="deliveryDashboard skeletonPanel">正在读取项目交付状态...</div>;
+  const kpis = asRecord(data.currentKpis);
+  const gate = asRecord(data.deliveryGate);
+  const activeScheme = asRecord(data.activeScheme);
+  const closed = asRecord(data.wallLengthClosedLoop);
+  const closedStatus = asRecord(closed.closedLoopStatus);
+  const nextActions = (data.nextActions as Record<string, unknown>[] | undefined) ?? [];
+  const check = asRecord(kpis.latestCheckSummary);
+  const delta = asRecord(activeScheme.delta);
+  return (
+    <section className="deliveryDashboard">
+      <div className="deliveryHeader">
+        <div><strong>项目交付驾驶舱</strong><span>{String(data.headline ?? '正在评估交付状态')}</span></div>
+        <button className="secondary" onClick={() => onJump(gate.recomputeRequired ? 'calculation' : gate.status === 'blocked' ? 'assurance' : 'export')}>{gate.recomputeRequired ? '去复算' : gate.status === 'blocked' ? '查看问题' : '去导出'}</button>
+      </div>
+      <div className="maturityGrid compactDashboardGrid">
+        <StatusCard title="交付闸门" value={String(gate.status ?? '-')} detail={String(gate.headline ?? '-')} tone={statusToneFromText(gate.status)} />
+        <StatusCard title="规范状态" value={`${String(check.fail ?? 0)}/${String(check.warning ?? 0)}`} detail="Fail / Warning" tone={Number(check.fail ?? 0) > 0 ? 'fail' : Number(check.warning ?? 0) > 0 ? 'warn' : 'pass'} />
+        <StatusCard title="墙长闭环" value={String(closedStatus.status ?? '-')} detail={String(closed.historySummary ? `历史 ${String(asRecord(closed.historySummary).count ?? 0)} 次` : '暂无历史')} tone={statusToneFromText(closedStatus.severity ?? closedStatus.status)} />
+        <StatusCard title="方案快照" value={String(activeScheme.schemeId ?? '-')} detail={activeScheme.status ? String(activeScheme.status) : '尚未采纳优化'} tone={statusToneFromText(activeScheme.status)} />
+      </div>
+      <div className="deliveryKpiRow">
+        <span>统一墙厚 <strong>{String(kpis.uniformWallThickness ?? '-')}m</strong></span>
+        <span>设计/物理长度 <strong>{String(kpis.designToPhysicalLengthRatio ?? '-')}</strong></span>
+        <span>最大位移 <strong>{String(kpis.maxWallDisplacement ?? '-')}</strong></span>
+        <span>支撑轴力峰值 <strong>{String(kpis.maxSupportAxialForce ?? '-')}</strong></span>
+        <span>墙长变化 <strong>{String(delta.changedDesignLengthDelta ?? 0)}m</strong></span>
+      </div>
+      {nextActions.length ? <ol className="nextActionList dashboardActions">{nextActions.slice(0, 4).map((item, index) => <li key={`${String(item.title)}-${index}`}><strong>{String(item.workflowStep)}</strong><span>{String(item.title)}</span><em>{String(item.recommendation)}</em></li>)}</ol> : null}
+    </section>
   );
 }
 
@@ -432,42 +527,81 @@ function StepBody({
   selectedLocator?: Record<string, unknown>;
   onLocateIssue: (issue: IssueCenterItem) => void;
 }) {
-  if (active === 'settings') return <SettingsStep project={project} />;
+  if (active === 'settings') return <SettingsStep project={project} onChanged={onRefresh} />;
   if (active === 'boreholes') return <BoreholeImport project={project} onImported={onRefresh} />;
   if (active === 'geology') return <GeologyStep project={project} runStep={runStep} importVtu={importVtu} vtuMessage={vtuMessage} />;
   if (active === 'excavation') return <ExcavationEditor project={project} onSaved={onRefresh} />;
   if (active === 'retaining') return <RetainingStep project={project} runStep={runStep} selectedLocator={selectedLocator} />;
   if (active === 'calculation') return <CalculationStep project={project} runStep={runStep} runWorkflow={runWorkflow} runTask={runTask} selectedLocator={selectedLocator} />;
-  if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} />;
-  return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} />;
+  if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} onChanged={onRefresh} />;
+  return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} onRefresh={onRefresh} />;
 }
 
-function SettingsStep({ project }: { project: Project }) {
+function SettingsStep({ project, onChanged }: { project: Project; onChanged: () => void | Promise<void> }) {
+  const [draft, setDraft] = useState(() => ({ ...project.designSettings }));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  useEffect(() => setDraft({ ...project.designSettings }), [project.id, project.updatedAt]);
+
+  function numberValue(key: keyof typeof draft, value: string) {
+    const parsed = Number(value);
+    setDraft((current) => ({ ...current, [key]: Number.isFinite(parsed) ? parsed : 0 }));
+  }
+
+  async function save() {
+    setSaving(true); setError(undefined); setMessage(undefined);
+    try {
+      await api.updateProject(project.id, { designSettings: draft } as Partial<Project>);
+      await onChanged();
+      setMessage('设计控制参数已保存。涉及计算模型的参数变更后，请重新计算并重新完成审签。');
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setSaving(false); }
+  }
+
   return (
-    <div className="stepGrid">
-      <div className="summaryPanel">
-        <h3>项目基础参数</h3>
-        <dl className="definitionGrid">
-          <dt>项目名称</dt><dd>{project.name}</dd>
-          <dt>地点</dt><dd>{project.location ?? '-'}</dd>
-          <dt>长度单位</dt><dd>{project.unitSystem.length}</dd>
-          <dt>力单位</dt><dd>{project.unitSystem.force}</dd>
-          <dt>应力单位</dt><dd>{project.unitSystem.stress}</dd>
-          <dt>规则集</dt><dd>{project.designSettings.ruleSet}</dd>
-        </dl>
+    <div className="settingsPage">
+      {message ? <div className="rebarGateMessage pass" role="status">{message}</div> : null}
+      {error ? <div className="error" role="alert">{error}</div> : null}
+      <div className="stepGrid">
+        <div className="summaryPanel">
+          <h3>项目基础参数</h3>
+          <dl className="definitionGrid">
+            <dt>项目名称</dt><dd>{project.name}</dd>
+            <dt>地点</dt><dd>{project.location ?? '-'}</dd>
+            <dt>长度单位</dt><dd>{project.unitSystem.length}</dd>
+            <dt>力单位</dt><dd>{project.unitSystem.force}</dd>
+            <dt>应力单位</dt><dd>{project.unitSystem.stress}</dd>
+            <dt>规则集</dt><dd>{draft.ruleSet}</dd>
+          </dl>
+        </div>
+        <div className="summaryPanel">
+          <h3>基本设计控制</h3>
+          <div className="settingsFormGrid">
+            <label>安全等级<input value={draft.safetyGrade} onChange={(e) => setDraft((v) => ({ ...v, safetyGrade: e.target.value }))} /></label>
+            <label>环境等级<select value={draft.environmentGrade} onChange={(e) => setDraft((v) => ({ ...v, environmentGrade: e.target.value }))}><option>一般</option><option>严寒</option><option>腐蚀</option><option>地下水侵蚀</option></select></label>
+            <label>地下水位（m）<input type="number" step="0.1" value={draft.groundwaterLevel} onChange={(e) => numberValue('groundwaterLevel', e.target.value)} /></label>
+            <label>坑内水位（m）<input type="number" step="0.1" value={draft.groundwaterLevelInside ?? ''} onChange={(e) => setDraft((v) => ({ ...v, groundwaterLevelInside: e.target.value === '' ? undefined : Number(e.target.value) }))} /></label>
+            <label>地面超载（kPa）<input type="number" step="1" min="0" value={draft.surcharge} onChange={(e) => numberValue('surcharge', e.target.value)} /></label>
+            <label>位移限值比 1/n<input type="number" min="100" step="10" value={draft.displacementLimitRatio ?? 500} onChange={(e) => numberValue('displacementLimitRatio', e.target.value)} /></label>
+          </div>
+        </div>
       </div>
-      <div className="summaryPanel">
-        <h3>设计控制参数</h3>
-        <dl className="definitionGrid">
-          <dt>安全等级</dt><dd>{project.designSettings.safetyGrade}</dd>
-          <dt>环境等级</dt><dd>{project.designSettings.environmentGrade}</dd>
-          <dt>地下水位</dt><dd>{project.designSettings.groundwaterLevel} m</dd>
-          <dt>坑内水位</dt><dd>{project.designSettings.groundwaterLevelInside ?? '-'} m</dd>
-          <dt>地面超载</dt><dd>{project.designSettings.surcharge} kPa</dd>
-          <dt>最小边段</dt><dd>{project.designSettings.minimumSegmentLength} m</dd>
-        </dl>
-      </div>
-      <div className="warning fullWidth">当前前端流程已按工程设计顺序重构。参数编辑仍采用后端默认值，下一阶段应增加项目设置表单和规范版本选择器。</div>
+      <section className="summaryPanel">
+        <div className="panelTitleRow"><div><h3>长期效应、抗裂与监测控制</h3><p className="small">这些参数参与准永久组合、长期位移、裂缝筛查和正式图纸发行闸门。</p></div><button onClick={() => void save()} disabled={saving}>{saving ? '保存中…' : '保存设计参数'}</button></div>
+        <div className="settingsFormGrid advancedSettingsGrid">
+          <label>设计使用年限（年）<input type="number" min="1" max="200" value={draft.serviceLifeYears ?? 50} onChange={(e) => numberValue('serviceLifeYears', e.target.value)} /></label>
+          <label>相对湿度<input type="number" min="0.2" max="1" step="0.05" value={draft.relativeHumidity ?? 0.75} onChange={(e) => numberValue('relativeHumidity', e.target.value)} /><span>0–1</span></label>
+          <label>持续荷载比例<input type="number" min="0.1" max="1" step="0.05" value={draft.sustainedLoadRatio ?? 0.65} onChange={(e) => numberValue('sustainedLoadRatio', e.target.value)} /><span>0–1</span></label>
+          <label>徐变系数 φ<input type="number" min="0" max="5" step="0.1" value={draft.creepCoefficient ?? 1.6} onChange={(e) => numberValue('creepCoefficient', e.target.value)} /></label>
+          <label>收缩应变<input type="number" min="0" max="0.002" step="0.00001" value={draft.shrinkageStrain ?? 0.00025} onChange={(e) => numberValue('shrinkageStrain', e.target.value)} /></label>
+          <label>温度变化范围（°C）<input type="number" min="0" max="80" step="1" value={draft.temperatureRangeC ?? 20} onChange={(e) => numberValue('temperatureRangeC', e.target.value)} /></label>
+          <label>抗震/临时结构等级<select value={draft.seismicGrade ?? 'non_seismic_temporary'} onChange={(e) => setDraft((v) => ({ ...v, seismicGrade: e.target.value }))}><option value="non_seismic_temporary">临时结构常规工况</option><option value="seismic_grade_3">三级抗震构造</option><option value="seismic_grade_2">二级抗震构造</option><option value="special_review">专项抗震复核</option></select></label>
+          <label className="settingCheck"><input type="checkbox" checked={draft.monitoringCalibrationEnabled ?? true} onChange={(e) => setDraft((v) => ({ ...v, monitoringCalibrationEnabled: e.target.checked }))} /><span>启用监测反演与参数校准</span></label>
+          <label className="settingCheck"><input type="checkbox" checked={draft.requireFormalApprovalForConstruction ?? false} onChange={(e) => setDraft((v) => ({ ...v, requireFormalApprovalForConstruction: e.target.checked }))} /><span>施工图包必须完成四级批准</span></label>
+        </div>
+        <p className="small boundaryNote">裂缝与长期效应当前属于透明工程筛查；正式施工图仍应结合项目实际龄期、暴露环境、温度场、施工缝和监测方案完成专业复核。</p>
+      </section>
     </div>
   );
 }
@@ -602,14 +736,96 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, selectedLocat
       <div className="actionStrip simplifiedActions">
         <button onClick={runAll} disabled={!project.retainingSystem}>一键计算校核</button>
         <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
-        <span className="small">常用路径：生成施工工况并运行强度、刚度、稳定性复核。</span>
+        
       </div>
-      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runStep('正在运行计算和规范子集校核', () => api.runCalculation(project.id))} disabled={!project.retainingSystem}>仅运行计算</button><button onClick={() => runTask('正在并行计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button><p className="small">用于调试施工阶段、复算内力或单独刷新候选 A/B/C 完整计算比选。常规设计建议使用一键计算校核。</p></aside></div>}
-      <ResultViewer project={project} runStep={runStep} highlightLocator={selectedLocator} />
+      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runStep('正在运行计算和规范子集校核', () => api.runCalculation(project.id))} disabled={!project.retainingSystem}>仅运行计算</button><button onClick={() => runTask('正在并行计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
+      <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} />
       <CalculationTracePanel project={project} />
     </div>
   );
 }
+
+
+function formulaToMathText(value?: string) {
+  const raw = String(value ?? '-').trim();
+  if (!raw || raw === '-') return '-';
+  const subs: Record<string, string> = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', a: 'ₐ', b: 'ᵦ', c: '꜀', d: 'ᵈ', e: 'ₑ', f: 'ᶠ', h: 'ₕ', i: 'ᵢ', j: 'ⱼ', k: 'ₖ', l: 'ₗ', m: 'ₘ', n: 'ₙ', p: 'ₚ', q: 'ᵩ', r: 'ᵣ', s: 'ₛ', t: 'ₜ', u: 'ᵤ', v: 'ᵥ', w: 'ᵥ', x: 'ₓ', y: 'ᵧ' };
+  const toSub = (text: string) => text.split('').map((ch) => subs[ch] ?? ch).join('');
+  let out = raw;
+  const phraseMap: [RegExp, string][] = [
+    [/gamma_eff/gi, 'γ′'], [/gamma_0/gi, 'γ₀'], [/gamma_F/g, 'γF'], [/gamma_w/gi, 'γw'], [/gamma/g, 'γ'],
+    [/embedment[_ ]?depth/gi, 'h' + toSub('emb')], [/head[_ ]?difference/gi, 'Δh'], [/cover[_ ]?thickness/gi, 't' + toSub('cover')], [/confined[_ ]?head[_ ]?above[_ ]?pit[_ ]?bottom/gi, 'h' + toSub('conf')],
+    [/tributary[_ ]?width/gi, 'b' + toSub('trib')], [/stage[_ ]?load/gi, 'q' + toSub('stage')], [/elastic[_ ]?supports/gi, 'k' + toSub('s')], [/continuous[_ ]?beam[_ ]?reaction/gi, 'R' + toSub('wale')],
+    [/construction[_ ]?effects/gi, 'N' + toSub('c')], [/preload/gi, 'N' + toSub('pre')], [/temperature/gi, 'N' + toSub('T')], [/gap/gi, 'N' + toSub('gap')],
+    [/project[_ ]?limit/gi, 'u' + toSub('lim')], [/environment[_ ]?grade/gi, 'env'], [/ratio/gi, 'η'], [/demand/gi, 'S'], [/limit/gi, 'R'], [/resistance/gi, 'R'], [/action/gi, 'S'],
+    [/delta_max/gi, 'δ' + toSub('max')], [/u_max/gi, 'u' + toSub('max')], [/M_stage/gi, 'M' + toSub('stage')], [/M_d/g, 'M' + toSub('d')], [/N_d/g, 'N' + toSub('d')], [/N_eff/g, 'N' + toSub('eff')], [/M_e/g, 'M' + toSub('e')], [/K_heave/gi, 'K' + toSub('heave')], [/phi/g, 'φ'],
+    [/alpha1/gi, 'α₁'], [/fc/g, 'f' + toSub('c')], [/ft/g, 'f' + toSub('t')], [/fy/g, 'f' + toSub('y')], [/As/g, 'A' + toSub('s')], [/Ac/g, 'A' + toSub('c')], [/Ap/g, 'A' + toSub('p')], [/qs/g, 'q' + toSub('s')], [/qp/g, 'q' + toSub('p')], [/h0/g, 'h₀'], [/sigma_bearing/gi, 'σ' + toSub('b')], [/A_plate/gi, 'A' + toSub('plate')], [/f_c/gi, 'f' + toSub('c')],
+  ];
+  phraseMap.forEach(([pattern, replacement]) => { out = out.replace(pattern, replacement); });
+  out = out
+    .replace(/<=/g, '≤')
+    .replace(/>=/g, '≥')
+    .replace(/\*/g, ' · ')
+    .replace(/\bplus\b/gi, '+')
+    .replace(/\bintegral\(([^)]+)\)/gi, '∫($1)')
+    .replace(/envelope\(([^)]+)\)/gi, 'env($1)')
+    .replace(/max\(([^)]+)\)/gi, 'max($1)')
+    .replace(/min\(([^)]+)\)/gi, 'min($1)')
+    .replace(/\|u_i\|/g, '|uᵢ|')
+    .replace(/_/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return out;
+}
+
+function FormulaDisplay({ value }: { value?: string }) {
+  return <span className="formulaDisplay" aria-label={String(value ?? '-')}>{formulaToMathText(value)}</span>;
+}
+
+function statusLabel(status?: string) {
+  const key = String(status ?? '').toLowerCase();
+  if (key === 'pass') return '合规';
+  if (key === 'fail') return '不合规';
+  if (key === 'warning') return '预警';
+  if (key === 'manual_review') return '需复核';
+  return status || '-';
+}
+
+function statusTone(status?: string): 'pass' | 'warn' | 'fail' | 'review' {
+  const key = String(status ?? '').toLowerCase();
+  if (key === 'pass') return 'pass';
+  if (key === 'fail') return 'fail';
+  if (key === 'manual_review') return 'review';
+  return 'warn';
+}
+
+function formatNumber(value?: number, digits = 3) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  const rounded = Math.abs(value) >= 100 ? value.toFixed(1) : value.toFixed(digits);
+  return rounded.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+
+function utilizationPercent(item: import('../types/domain').CalculationTraceEntry) {
+  if (typeof item.utilization === 'number' && Number.isFinite(item.utilization)) return Math.max(0, item.utilization * 100);
+  if (typeof item.demandValue === 'number' && typeof item.capacityValue === 'number' && Number.isFinite(item.capacityValue) && Math.abs(item.capacityValue) > 1e-9) {
+    return Math.max(0, (Math.abs(item.demandValue) / Math.abs(item.capacityValue)) * 100);
+  }
+  return undefined;
+}
+
+function ComplianceCompare({ item }: { item: import('../types/domain').CalculationTraceEntry }) {
+  const pct = utilizationPercent(item);
+  const capped = typeof pct === 'number' ? Math.min(140, pct) : undefined;
+  return <div className="complianceCompare">
+    <div className="compareValues"><span>需求 {formatNumber(item.demandValue)}</span><span>限值 {formatNumber(item.capacityValue)}</span><span>{typeof pct === 'number' ? `${formatNumber(pct, 1)}%` : '-'}</span></div>
+    <div className="compareBar"><i className={`compareFill ${statusTone(item.status)}`} style={{ width: `${capped ?? 0}%` }} /><b style={{ left: '100%' }} /></div>
+  </div>;
+}
+
+function statusCounts(entries: import('../types/domain').CalculationTraceEntry[]) {
+  return entries.reduce<Record<string, number>>((acc, item) => { const k = String(item.status || 'unknown'); acc[k] = (acc[k] ?? 0) + 1; return acc; }, {});
+}
+
 
 function CalculationTracePanel({ project }: { project: Project }) {
   const [trace, setTrace] = useState<import('../types/domain').CalculationTraceResult | undefined>();
@@ -622,25 +838,33 @@ function CalculationTracePanel({ project }: { project: Project }) {
   }, [project.id, project.calculationResults.length]);
   if (!project.calculationResults.length) return null;
   if (error) return <div className="error">计算追溯链读取失败：{error}</div>;
-  if (!trace) return <div className="summaryPanel"><h3>计算追溯链</h3><p className="small">正在读取工况—构件—截面—公式—规范条文追溯链...</p></div>;
+  if (!trace) return <div className="summaryPanel"><h3>计算追溯链</h3><p className="small">正在读取校验条文和控制值...</p></div>;
+  const counts = { ...(trace.summary.statusCounts ?? {}), ...statusCounts(trace.entries) };
+  const governingEntries = [...trace.entries].sort((a, b) => (utilizationPercent(b) ?? -1) - (utilizationPercent(a) ?? -1)).slice(0, 48);
   return (
     <section className="tracePanel">
-      <div className="issueCenterHeader"><div><h3>计算追溯链 · V2.3.0</h3><p>每个控制值都绑定到工况、构件、公式、规范条文和结果路径，便于复核和定位。</p></div><strong>{trace.summary.controlPathCompleteness}%</strong></div>
-      <div className="maturityGrid">
-        <StatusCard title="追溯条目" value={String(trace.summary.traceCount)} detail="控制值、规范筛查与稳定性条目" tone={trace.summary.traceCount ? 'pass' : 'warn'} />
-        <StatusCard title="控制对象" value={String(trace.summary.governingObjectCount)} detail="可定位构件/截面数量" tone={trace.summary.governingObjectCount ? 'pass' : 'warn'} />
-        <StatusCard title="规范引用" value={String(trace.summary.codeReferenceCount)} detail="公式和条文来源" tone={trace.summary.codeReferenceCount ? 'pass' : 'warn'} />
-        <StatusCard title="状态" value={trace.summary.status} detail={trace.summary.message} tone={trace.summary.status === 'pass' ? 'pass' : trace.summary.status === 'fail' ? 'fail' : 'warn'} />
+      <div className="issueCenterHeader"><div><h3>计算追溯链</h3><p>按“需求值—限值—利用率—条文”对比校验。</p></div><strong>{trace.summary.controlPathCompleteness}%</strong></div>
+      <div className="traceStatusStrip">
+        <span className="pass">合规 {counts.pass ?? 0}</span>
+        <span className="fail">不合规 {counts.fail ?? 0}</span>
+        <span className="warn">预警 {counts.warning ?? 0}</span>
+        <span className="review">复核 {counts.manual_review ?? 0}</span>
       </div>
-      <table className="table compactTable"><thead><tr><th>状态</th><th>工况</th><th>对象</th><th>控制项</th><th>需求/限值</th><th>公式</th><th>规范</th></tr></thead><tbody>
-        {trace.entries.slice(0, 36).map((item) => <tr key={item.id} className={`issue-${item.status}`}><td>{item.status}</td><td>{item.stageName}</td><td>{item.objectId ?? '-'}</td><td>{item.title}</td><td>{item.demandValue ?? '-'} / {item.capacityValue ?? '-'} {item.unit ?? ''}</td><td>{item.formula ?? '-'}</td><td>{item.codeReference ?? '-'}</td></tr>)}
-      </tbody></table>
-      <ul className="small traceNotes">{trace.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+      <div className="maturityGrid compactMaturity">
+        <StatusCard title="追溯条目" value={String(trace.summary.traceCount)} detail="控制值与规范筛查" tone={trace.summary.traceCount ? 'pass' : 'warn'} />
+        <StatusCard title="控制对象" value={String(trace.summary.governingObjectCount)} detail="构件/截面数量" tone={trace.summary.governingObjectCount ? 'pass' : 'warn'} />
+        <StatusCard title="规范引用" value={String(trace.summary.codeReferenceCount)} detail="条文和公式来源" tone={trace.summary.codeReferenceCount ? 'pass' : 'warn'} />
+        <StatusCard title="总状态" value={statusLabel(trace.summary.status)} detail={trace.summary.message} tone={statusTone(trace.summary.status)} />
+      </div>
+      <div className="traceCompareTableWrap"><table className="table traceCompareTable"><thead><tr><th>判定</th><th>对象 / 工况</th><th>校验项</th><th>需求—限值</th><th>公式</th><th>规范条文</th></tr></thead><tbody>
+        {governingEntries.map((item) => <tr key={item.id} className={`issue-${item.status}`}><td><span className={`statusBadge ${statusTone(item.status)}`}>{statusLabel(item.status)}</span></td><td><strong>{item.objectId ?? '-'}</strong><em>{item.stageName}</em></td><td><strong>{item.title}</strong><em>{item.demandName || item.category}</em></td><td><ComplianceCompare item={item} /><em>{item.unit ?? ''}</em></td><td className="complianceFormulaCell"><FormulaDisplay value={item.formula} /></td><td>{item.codeReference ?? '-'}</td></tr>)}
+      </tbody></table></div>
+      {trace.notes.length ? <ul className="small traceNotes">{trace.notes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}</ul> : null}
     </section>
   );
 }
 
-function AssurancePanel({ project, onLocateIssue }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void }) {
+function AssurancePanel({ project, onLocateIssue, onChanged }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void; onChanged: () => void | Promise<void> }) {
   const [assurance, setAssurance] = useState<AssuranceResult | undefined>();
   const [error, setError] = useState<string | undefined>();
   useEffect(() => {
@@ -659,6 +883,7 @@ function AssurancePanel({ project, onLocateIssue }: { project: Project; onLocate
         <StatusCard title="工程校核" value={assurance.engineeringCheckStatus ?? 'manual_review'} detail={`fail=${assurance.failureCount}，人工复核=${assurance.manualReviewCount}`} tone={assurance.engineeringCheckStatus === 'fail' ? 'fail' : assurance.engineeringCheckStatus === 'pass' ? 'pass' : 'review'} />
         <StatusCard title="正式出图闸门" value={assurance.officialIssueGateAllowed ? '可正式出图' : '暂不建议正式出图'} detail={assurance.officialIssueGateHeadline ?? assurance.officialIssueGateDetail ?? '查看阻断/警告/缺项'} tone={assurance.officialIssueGateStatus === 'fail' ? 'fail' : assurance.officialIssueGateStatus === 'pass' ? 'pass' : 'warn'} />
       </div>
+      <Suspense fallback={<div className="summaryPanel"><h3>工程深化与发行闭环</h3><p className="small">正在按需加载深化分析模块…</p></div>}><AdvancedEngineeringPanel project={project} onChanged={onChanged} /></Suspense>
       <IssueCenterPanel project={project} onLocateIssue={onLocateIssue} />
       {assurance.supportLayoutQuality && <div className="summaryPanel"><h3>支撑布置评分</h3><p>{assurance.supportLayoutQuality.summary}</p><p className="small">状态：{assurance.supportLayoutQuality.status}；评分：{assurance.supportLayoutQuality.score}</p></div>}
       {assurance.ifcCompatibility && <div className="summaryPanel"><h3>IFC 兼容性自检</h3><p>{assurance.ifcCompatibility.summary}</p><p className="small">raw unicode：{String(assurance.ifcCompatibility.rawUnicodeFound)}；零尺寸：{assurance.ifcCompatibility.zeroDimensionCount ?? 0}；材料缺失：{assurance.ifcCompatibility.missingMaterialAssociationCount ?? 0}</p></div>}
@@ -710,7 +935,7 @@ function IssueCenterPanel({ project, onLocateIssue }: { project: Project; onLoca
         <span className="review">人工复核 {data.summary.manual_review ?? 0}</span>
         <span>合计 {data.issueCount}</span>
       </div>
-      {(maturity.moduleLedger ?? data.moduleLedger ?? []).length ? <div className="moduleLedger"><h4>V2.3.0 软件模块验收清单</h4><div className="moduleLedgerGrid">{(maturity.moduleLedger ?? data.moduleLedger ?? []).map((item) => <div key={item.id} className="moduleLedgerItem"><strong>{item.id} · {item.name}</strong><span>{item.completion}% · {item.status}</span><em>{item.evidence}</em></div>)}</div></div> : null}
+      {(maturity.moduleLedger ?? data.moduleLedger ?? []).length ? <div className="moduleLedger"><h4>软件模块清单</h4><div className="moduleLedgerGrid">{(maturity.moduleLedger ?? data.moduleLedger ?? []).map((item) => <div key={item.id} className="moduleLedgerItem"><strong>{item.id} · {item.name}</strong><span>{item.completion}% · {item.status} </span><em>{item.evidence}</em></div>)}</div></div> : null}
       <div className="stepGrid">
         <div className="summaryPanel"><h4>优先处理动作</h4><ol className="nextActionList">{data.nextActions.slice(0, 6).map((item, index) => <li key={`${item.title}-${index}`}><strong>{item.workflowStep}</strong><span>{item.title}</span><em>{item.recommendation}</em></li>)}</ol></div>
         <div className="summaryPanel"><h4>当前边界</h4><ul>{maturity.limitations.map((item) => <li key={item}>{item}</li>)}</ul></div>
@@ -731,35 +956,41 @@ function IssueTable({ title, items, empty }: { title: string; items: { category:
   );
 }
 
-function ExportPanel({ project, runTask, selectedLocator }: { project: Project; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; selectedLocator?: Record<string, unknown> }) {
+function ExportPanel({ project, runTask, selectedLocator, onRefresh }: { project: Project; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; selectedLocator?: Record<string, unknown>; onRefresh: () => void }) {
   const latest = getLatestResult(project);
+  const [advanced, setAdvanced] = useState(false);
   const blocked = !latest || !project.retainingSystem || latest.governingValues.governingCheckStatus === 'fail' || (latest.checkSummary?.fail ?? 0) > 0;
   return (
     <div>
-      {blocked && <div className="warning">当前导出入口处于审查提示状态：没有完整设计/计算结果，或存在 fail。仍可下载调试文件，但正式成果应先修复问题。</div>}
-      <div className="actionStrip simplifiedActions"><button onClick={() => runTask('全流程计算与成果生成', 'full_delivery', { topN: 3 })} disabled={!project.retainingSystem}>一键生成完整交付包</button><span className="small">后台依次计算、生成 IFC、CAD、SVG 和 DOCX，并保留任务日志。</span></div>
-      <div className="exportGrid">
-        <ExportCard projectId={project.id} taskOperation="export_ifc_light" title="IFC 轻量协调版" description="coordination_light.ifc：减少钢筋、承压板和预埋件实体，优先用于 Revit/Navisworks 协调浏览。" href={api.exportUrl(project.id, 'ifc-light')} button="下载轻量 IFC" />
-        <ExportCard projectId={project.id} taskOperation="export_ifc_analysis" title="IFC 分析模型版" description="analysis_model.ifc：保留构件轴线、节点、弹簧、荷载和工况信息，不导出实体钢筋，便于计算模型交换。" href={api.exportUrl(project.id, 'ifc-analysis')} button="下载分析 IFC" />
-        <ExportCard projectId={project.id} taskOperation="export_ifc_construction_visual" title="IFC 施工图可视化版" description="construction_visual.ifc：钢筋以可视化代理构件表达，优先保证 Web Viewer / Revit / Navisworks 可见；钢筋参数保存在属性集。" href={api.exportUrl(project.id, 'ifc-construction-visual')} button="下载可视化 IFC" />
-        <ExportCard projectId={project.id} taskOperation="export_ifc_detailed" title="IFC 施工图语义详细版" description="design_detailed.ifc：保留 IfcReinforcingBar、承压板、预埋件、节点构造和完整属性集，用于 BIM 语义审查。" href={api.exportUrl(project.id, 'ifc-detailed')} button="下载语义详细 IFC" />
-        <ExportCard title="IFC 兼容性自检" description="支持 mode=coordination_light/analysis_model/construction_visual/design_detailed，按 BlenderBIM、BIMVision、Solibri、Revit、Navisworks 分级。" href={api.ifcCheckUrl(project.id, 'construction_visual')} button="查看可视化 IFC 自检" />
-        <ExportCard projectId={project.id} taskOperation="export_drawings_cad" title="施工 CAD 图纸包" description="DXF R12 + CSV/JSON：包含 6 张正式图纸接口、图纸目录、材料表、钢筋表和交付一致性矩阵，可在 AutoCAD、中望 CAD、浩辰 CAD 中继续深化。" href={api.exportUrl(project.id, 'drawings-cad')} button="下载 CAD 图纸包" />
-        <ExportCard projectId={project.id} taskOperation="export_drawings_svg" title="施工图 SVG 图纸包" description="用于汇报、校审和文档插图的 SVG 图纸包；与计算书中的图纸数据同源。" href={api.exportUrl(project.id, 'drawings-svg')} button="下载 SVG 图纸包" />
-        <ExportCard projectId={project.id} taskOperation="export_report" title="DOCX 计算书" description="首页包含审图清单和支撑评分平面图，集中展示阻断项、警告项、缺项和人工复核项。" href={api.exportUrl(project.id, 'report')} button="下载 DOCX" />
-        <ExportCard projectId={project.id} taskOperation="export_trace" title="计算追溯链 JSON" description="导出工况—构件—控制值—公式—规范条文—结果路径追溯链，用于计算复核和审查。" href={api.exportUrl(project.id, 'json')} button="下载追溯链" />
-        <ExportCard projectId={project.id} taskOperation="export_issue_report" title="问题清单与完成度 JSON" description="导出 V2.3.0 模块验收清单、项目风险、出图准备度和下一步动作。" href={api.exportUrl(project.id, 'json')} button="下载问题清单" />
-        <ExportCard projectId={project.id} taskOperation="export_benchmark_cases" title="公开论文典型基坑算例包" description="按规范算法完整跑通多个公开论文派生基坑算例，含 JSON、CAD、SVG、DOCX、IFC 和追溯链。" href={api.benchmarkPackageUrl()} button="下载回归算例包" />
-        <ExportCard projectId={project.id} taskOperation="export_json" title="完整 JSON" description="用于调试、归档和后续数据迁移。" href={api.exportUrl(project.id, 'json')} button="下载 JSON" />
+      {blocked && <div className="warning">当前成果需复核。建议先处理 fail 或阻断项。</div>}
+      <div className="actionStrip simplifiedActions"><button onClick={() => runTask('全流程计算与成果生成', 'full_delivery', { topN: 3 })} disabled={!project.retainingSystem}>一键生成完整交付包</button><button className="secondary" onClick={() => setAdvanced((v) => !v)}>{advanced ? '收起更多导出' : '更多导出'}</button></div>
+      <div className="exportGrid preferredExports">
+        <ExportCard projectId={project.id} taskOperation="export_ifc_construction_visual" title="IFC 可视化模型" description="用于外部 BIM 查看。" href={api.exportUrl(project.id, 'ifc-construction-visual')} button="下载 IFC" />
+        <ExportCard projectId={project.id} taskOperation="export_formal_drawings" title="正式图纸发行包" description="CAD 总图/大样、批量 PDF 索引、八项工程检查、修订台账和 DWG 转换说明。" href={api.formalDrawingPackageUrl(project.id, 'review')} button="生成正式图纸包" />
+        <ExportCard projectId={project.id} taskOperation="export_report" title="计算书 DOCX" description="计算结果、问题清单和方案比选。" href={api.exportUrl(project.id, 'report')} button="下载计算书" />
+        <ExportCard projectId={project.id} taskOperation="export_rebar_detailing" title="钢筋详图数据" description="逐根钢筋几何和下料数据。" href={api.exportUrl(project.id, 'json')} button="下载钢筋数据" />
       </div>
+      {advanced && <div className="exportGrid advancedExports">
+        <ExportCard projectId={project.id} taskOperation="export_ifc_light" title="IFC 轻量协调版" description="用于快速协调浏览。" href={api.exportUrl(project.id, 'ifc-light')} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_ifc_analysis" title="IFC 分析模型版" description="用于计算模型交换。" href={api.exportUrl(project.id, 'ifc-analysis')} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_ifc_detailed" title="IFC 语义详细版" description="用于 BIM 语义审查。" href={api.exportUrl(project.id, 'ifc-detailed')} button="下载" />
+        <ExportCard title="IFC 自检" description="检查目标 Viewer 兼容性。" href={api.ifcCheckUrl(project.id, 'construction_visual')} button="查看" />
+        <ExportCard projectId={project.id} taskOperation="export_drawings_svg" title="SVG 图纸包" description="用于汇报和插图。" href={api.exportUrl(project.id, 'drawings-svg')} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_trace" title="计算追溯链" description="JSON 追溯数据。" href={api.exportUrl(project.id, 'json')} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_issue_report" title="问题清单" description="JSON 审查清单。" href={api.exportUrl(project.id, 'json')} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_json" title="完整 JSON" description="项目归档和迁移。" href={api.exportUrl(project.id, 'json')} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_wall_length_redundancy" title="围护墙冗余优化报告" description="设计长度、分幅和局部加强记录。" href={api.wallLengthRedundancyReportUrl(project.id)} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_design_scheme_ledger" title="方案快照与交付台账" description="采纳历史、复算状态、交付闸门和当前方案 KPI。" href={api.designSchemeLedgerReportUrl(project.id)} button="下载" />
+        <ExportCard projectId={project.id} taskOperation="export_benchmark_cases" title="回归算例包" description="公开派生算例。" href={api.benchmarkPackageUrl()} button="下载" />
+      </div>}
       <CadTemplatePanel project={project} />
       <CadLocatorPreview project={project} locator={selectedLocator} />
+      <RebarDesignPanel project={project} onApplied={onRefresh} />
       <RebarDetailingPanel project={project} />
       <RebarIfcViewer project={project} highlightLocator={selectedLocator} />
-      <BenchmarkPanel />
+      {advanced && <BenchmarkPanel />}
       <div className="summaryPanel exportModelPreview">
-        <h3>模型可视化预览</h3>
-        <p className="small">下载成果前可在此快速检查支撑间距、交叉高亮、地连墙位置、节点和立柱。若 IFC 在外部 Viewer 打开异常，先查看上方 IFC 兼容性自检 JSON。</p>
+        <h3>模型预览</h3>
         <Engineering3DViewer project={project} focus="retaining" highlightLocator={selectedLocator} />
       </div>
     </div>
@@ -814,7 +1045,7 @@ function CadTemplatePanel({ project }: { project: Project }) {
   if (error) return <div className="error">CAD 模板读取失败：{error}</div>;
   if (!template) return <div className="summaryPanel"><h3>企业 CAD 模板</h3><p className="small">正在读取图框、图号、签审栏和图层标准。</p></div>;
   const layers = draft.layerStandard ?? {};
-  return <section className="summaryPanel cadTemplatePanel"><div className="sectionLead"><h3>企业 CAD 模板配置 · V2.5.0</h3><p className="small">配置图号前缀、阶段、签审栏、关键图层和定位图层；导出的 DXF、图纸目录、签审清单和 manifest 会同步记录该标准。</p></div><div className="cadTemplateGrid"><label>企业名称<input value={draft.enterpriseName ?? ''} onChange={(e) => setDraft((v) => ({ ...v, enterpriseName: e.target.value }))} /></label><label>项目代号<input value={draft.projectCode ?? ''} onChange={(e) => setDraft((v) => ({ ...v, projectCode: e.target.value }))} /></label><label>图号前缀<input value={draft.sheetPrefix ?? 'S'} onChange={(e) => setDraft((v) => ({ ...v, sheetPrefix: e.target.value }))} /></label><label>阶段<input value={draft.stage ?? ''} onChange={(e) => setDraft((v) => ({ ...v, stage: e.target.value }))} /></label><label>设计<input value={draft.designer ?? ''} onChange={(e) => setDraft((v) => ({ ...v, designer: e.target.value }))} /></label><label>校核<input value={draft.checker ?? ''} onChange={(e) => setDraft((v) => ({ ...v, checker: e.target.value }))} /></label><label>审定<input value={draft.approver ?? ''} onChange={(e) => setDraft((v) => ({ ...v, approver: e.target.value }))} /></label><label>支撑图层<input value={layers.support ?? 'PIT_SUPPORT'} onChange={(e) => setDraft((v) => ({ ...v, layerStandard: { ...(v.layerStandard ?? {}), support: e.target.value } }))} /></label><label>钢筋图层<input value={layers.rebarMain ?? 'PIT_REBAR_MAIN'} onChange={(e) => setDraft((v) => ({ ...v, layerStandard: { ...(v.layerStandard ?? {}), rebarMain: e.target.value } }))} /></label><label>定位高亮图层<input value={layers.highlight ?? 'PIT_HIGHLIGHT'} onChange={(e) => setDraft((v) => ({ ...v, layerStandard: { ...(v.layerStandard ?? {}), highlight: e.target.value } }))} /></label></div><div className="actionStrip simplifiedActions"><button onClick={save}>保存 CAD 模板</button><span className="small">{status || '当前模板会进入 enterprise_template_manifest.json、drawing_package_manifest.json 和签审清单。'}</span></div></section>;
+  return <section className="summaryPanel cadTemplatePanel"><div className="sectionLead"><h3>企业 CAD 模板</h3><p className="small">配置图号、签审栏和图层。</p></div><div className="cadTemplateGrid"><label>企业名称<input value={draft.enterpriseName ?? ''} onChange={(e) => setDraft((v) => ({ ...v, enterpriseName: e.target.value }))} /></label><label>项目代号<input value={draft.projectCode ?? ''} onChange={(e) => setDraft((v) => ({ ...v, projectCode: e.target.value }))} /></label><label>图号前缀<input value={draft.sheetPrefix ?? 'S'} onChange={(e) => setDraft((v) => ({ ...v, sheetPrefix: e.target.value }))} /></label><label>阶段<input value={draft.stage ?? ''} onChange={(e) => setDraft((v) => ({ ...v, stage: e.target.value }))} /></label><label>设计<input value={draft.designer ?? ''} onChange={(e) => setDraft((v) => ({ ...v, designer: e.target.value }))} /></label><label>校核<input value={draft.checker ?? ''} onChange={(e) => setDraft((v) => ({ ...v, checker: e.target.value }))} /></label><label>审定<input value={draft.approver ?? ''} onChange={(e) => setDraft((v) => ({ ...v, approver: e.target.value }))} /></label><label>支撑图层<input value={layers.support ?? 'PIT_SUPPORT'} onChange={(e) => setDraft((v) => ({ ...v, layerStandard: { ...(v.layerStandard ?? {}), support: e.target.value } }))} /></label><label>钢筋图层<input value={layers.rebarMain ?? 'PIT_REBAR_MAIN'} onChange={(e) => setDraft((v) => ({ ...v, layerStandard: { ...(v.layerStandard ?? {}), rebarMain: e.target.value } }))} /></label><label>定位高亮图层<input value={layers.highlight ?? 'PIT_HIGHLIGHT'} onChange={(e) => setDraft((v) => ({ ...v, layerStandard: { ...(v.layerStandard ?? {}), highlight: e.target.value } }))} /></label></div><div className="actionStrip simplifiedActions"><button onClick={save}>保存 CAD 模板</button><span className="small">{status || '当前模板会进入 enterprise_template_manifest.json、drawing_package_manifest.json 和签审清单。'}</span></div></section>;
 }
 
 function CadLocatorPreview({ project, locator }: { project: Project; locator?: Record<string, unknown> }) {
@@ -837,7 +1068,7 @@ function RebarDetailingPanel({ project }: { project: Project }) {
   if (error) return <div className="error">钢筋大样读取失败：{error}</div>;
   if (!data) return <div className="summaryPanel"><h3>钢筋大样与料表</h3><p className="small">正在读取钢筋编号、逐根几何、分节、吊装、搭接、保护层和签审清单。</p></div>;
   const bars = data.individualBars ?? [];
-  return <section className="summaryPanel"><h3>钢筋施工详图深化 · V2.5.0</h3><p className="small">{data.detailLevel}</p><div className="maturityGrid"><StatusCard title="钢筋编号" value={String(data.summary.barMarkCount ?? data.entries.length)} detail="bar mark" tone="pass" /><StatusCard title="逐根几何" value={String(data.summary.individualBarCount ?? bars.length)} detail={`omitted ${String(data.summary.omittedBarCount ?? 0)}`} tone="pass" /><StatusCard title="下料总长" value={`${data.summary.totalCutLengthM ?? '-'} m`} detail="中心线+锚固/搭接/弯钩" tone="review" /><StatusCard title="总重量" value={`${data.summary.totalWeightKg ?? '-'} kg`} detail="按 7850kg/m³ 估算" tone="review" /><StatusCard title="笼段" value={String(data.summary.cageSegmentCount ?? data.cageSegments?.length ?? 0)} detail="施工缝/分节" tone="pass" /><StatusCard title="签审清单" value={String(data.signoffChecklist?.length ?? 0)} detail={String(data.shopDrawingReadiness?.status ?? 'ready')} tone="pass" /></div><table className="table compactTable"><thead><tr><th>编号</th><th>宿主</th><th>类型</th><th>直径</th><th>形状</th><th>数量</th><th>单长</th><th>重量</th></tr></thead><tbody>{data.entries.slice(0, 12).map((item) => <tr key={item.barMark}><td>{item.barMark}</td><td>{item.hostCode}</td><td>{item.barType}</td><td>D{item.diameterMm}</td><td>{item.shapeCode}</td><td>{item.quantity}</td><td>{item.singleLengthM}m</td><td>{item.totalWeightKg}kg</td></tr>)}</tbody></table><h4>施工详图深化状态</h4><table className="table compactTable"><thead><tr><th>项目</th><th>状态</th><th>证据数</th></tr></thead><tbody>{(data.signoffChecklist ?? []).map((item) => <tr key={String(item.id)}><td>{String(item.label ?? item.item)}</td><td>{String(item.status)}</td><td>{String(item.evidenceCount ?? '-')}</td></tr>)}</tbody></table><h4>逐根钢筋几何样本</h4><table className="table compactTable"><thead><tr><th>Bar ID</th><th>宿主</th><th>类型</th><th>点数</th><th>中心线</th><th>锚固</th><th>搭接</th><th>弯钩</th><th>下料</th></tr></thead><tbody>{bars.slice(0, 12).map((bar) => <tr key={bar.barId}><td>{bar.barId}</td><td>{bar.hostCode}</td><td>{bar.barType}</td><td>{bar.points.length}</td><td>{bar.centerlineLengthM}m</td><td>{bar.anchorageLengthM}m</td><td>{bar.lapLengthM}m</td><td>{bar.hookLengthM}m</td><td>{bar.cutLengthM}m</td></tr>)}</tbody></table></section>;
+  return <section className="summaryPanel"><h3>钢筋施工详图</h3><p className="small">{data.detailLevel}</p><div className="maturityGrid"><StatusCard title="钢筋编号" value={String(data.summary.barMarkCount ?? data.entries.length)} detail="bar mark" tone="pass" /><StatusCard title="逐根几何" value={String(data.summary.individualBarCount ?? bars.length)} detail={`omitted ${String(data.summary.omittedBarCount ?? 0)}`} tone="pass" /><StatusCard title="下料总长" value={`${data.summary.totalCutLengthM ?? '-'} m`} detail="中心线+锚固/搭接/弯钩" tone="review" /><StatusCard title="总重量" value={`${data.summary.totalWeightKg ?? '-'} kg`} detail="按 7850kg/m³ 估算" tone="review" /><StatusCard title="笼段" value={String(data.summary.cageSegmentCount ?? data.cageSegments?.length ?? 0)} detail="施工缝/分节" tone="pass" /><StatusCard title="签审清单" value={String(data.signoffChecklist?.length ?? 0)} detail={String(data.shopDrawingReadiness?.status ?? 'ready')} tone="pass" /></div><table className="table compactTable"><thead><tr><th>编号</th><th>宿主</th><th>类型</th><th>直径</th><th>形状</th><th>数量</th><th>单长</th><th>重量</th></tr></thead><tbody>{data.entries.slice(0, 12).map((item) => <tr key={item.barMark}><td>{item.barMark}</td><td>{item.hostCode}</td><td>{item.barType}</td><td>D{item.diameterMm}</td><td>{item.shapeCode}</td><td>{item.quantity}</td><td>{item.singleLengthM}m</td><td>{item.totalWeightKg}kg</td></tr>)}</tbody></table><h4>施工详图深化状态</h4><table className="table compactTable"><thead><tr><th>项目</th><th>状态</th><th>证据数</th></tr></thead><tbody>{(data.signoffChecklist ?? []).map((item) => <tr key={String(item.id)}><td>{String(item.label ?? item.item)}</td><td>{String(item.status)}</td><td>{String(item.evidenceCount ?? '-')}</td></tr>)}</tbody></table><h4>逐根钢筋几何样本</h4><table className="table compactTable"><thead><tr><th>Bar ID</th><th>宿主</th><th>类型</th><th>点数</th><th>中心线</th><th>锚固</th><th>搭接</th><th>弯钩</th><th>下料</th></tr></thead><tbody>{bars.slice(0, 12).map((bar) => <tr key={bar.barId}><td>{bar.barId}</td><td>{bar.hostCode}</td><td>{bar.barType}</td><td>{bar.points.length}</td><td>{bar.centerlineLengthM}m</td><td>{bar.anchorageLengthM}m</td><td>{bar.lapLengthM}m</td><td>{bar.hookLengthM}m</td><td>{bar.cutLengthM}m</td></tr>)}</tbody></table></section>;
 }
 
 function BenchmarkPanel() {

@@ -1,6 +1,11 @@
 import type { Project } from '../types/domain';
 import Engineering3DViewer from './Engineering3DViewer';
 
+function formatMapping(mapping: Record<string, unknown> | undefined) {
+  if (!mapping || !Object.keys(mapping).length) return '-';
+  return Object.entries(mapping).map(([key, value]) => `${key} → ${String(value)}`).join('；');
+}
+
 export default function GeologyViewer({ project }: { project: Project }) {
   const surfaces = project.geologicalModel?.surfaces ?? [];
   const mesh = project.geologicalModel?.vtuMesh;
@@ -21,7 +26,7 @@ export default function GeologyViewer({ project }: { project: Project }) {
           <div>
             <p className="small">点：{mesh.summary?.pointCount ?? mesh.points?.length ?? 0}；单元：{mesh.summary?.cellCount ?? mesh.cellBlocks?.length ?? 0}；类型：{mesh.summary?.cellTypes?.join(', ') || '-'}</p>
             <p className="small">识别字段：{mesh.detectedFields?.join(', ') || '-'}</p>
-            <p className="small">建议映射：{JSON.stringify(mesh.suggestedMapping ?? {})}</p>
+            <p className="small">建议映射：{formatMapping(mesh.suggestedMapping)}</p>
             {mesh.warnings?.map((item) => <div key={item} className="warning">{item}</div>)}
           </div>
         ) : <p className="small">未导入 VTU。</p>}

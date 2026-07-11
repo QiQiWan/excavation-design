@@ -13,6 +13,7 @@ fi
 BACKEND_PORT="${PITGUARD_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${PITGUARD_FRONTEND_PORT:-5173}"
 INSTALL_DEPS="${PITGUARD_INSTALL_DEPS:-1}"
+NUMERIC_THREADS="${PITGUARD_NUMERIC_THREADS:-1}"
 BACKEND_LOG="$RUNTIME_DIR/backend.log"
 FRONTEND_LOG="$RUNTIME_DIR/frontend.log"
 CHECK_SCRIPT="$RUNTIME_DIR/check_backend_modules.py"
@@ -74,9 +75,8 @@ if [ -n "$MISSING_MODULES" ]; then
     echo "[PitGuard] Run manually: $PYTHON_BIN -m pip install fastapi 'uvicorn[standard]' pydantic python-multipart numpy shapely python-docx openpyxl matplotlib meshio" >&2
     exit 1
   fi
-  echo "[PitGuard] Installing backend dependencies into the CURRENT Python environment. No virtual environment will be created."
-  read -r -a MISSING_PACKAGES <<< "$MISSING_MODULES"
-  "$PYTHON_BIN" -m pip install "${MISSING_PACKAGES[@]}" 2>&1 | tee -a "$BACKEND_LOG"
+  echo "[PitGuard] Installing the locked backend project dependencies into the CURRENT Python environment. No virtual environment will be created."
+  "$PYTHON_BIN" -m pip install -e "$API_DIR" 2>&1 | tee -a "$BACKEND_LOG"
 else
   echo "[PitGuard] Backend Python modules look available in the current environment."
 fi
@@ -88,11 +88,26 @@ if [ -n "$POST_MISSING_MODULES" ]; then
   exit 1
 fi
 
-if [ ! -d "$WEB_DIR/node_modules" ]; then
-  echo "[PitGuard] Installing frontend dependencies with npm ci..."
+check_frontend_deps() {
+  local missing=()
+  local required=(vite typescript react react-dom three zustand @vitejs/plugin-react)
+  for name in "${required[@]}"; do
+    if [ ! -d "$WEB_DIR/node_modules/$name" ]; then
+      missing+=("$name")
+    fi
+  done
+  printf '%s\n' "${missing[@]}"
+}
+
+mapfile -t MISSING_FRONTEND < <(check_frontend_deps)
+if [ ! -d "$WEB_DIR/node_modules" ] || [ "${#MISSING_FRONTEND[@]}" -gt 0 ]; then
+  if [ "${#MISSING_FRONTEND[@]}" -gt 0 ]; then
+    echo "[PitGuard] Missing frontend modules: ${MISSING_FRONTEND[*]}"
+  fi
+  echo "[PitGuard] Installing frontend dependencies from package-lock.json with npm ci..."
   (cd "$WEB_DIR" && npm ci 2>&1 | tee -a "$FRONTEND_LOG")
 else
-  echo "[PitGuard] Frontend node_modules found."
+  echo "[PitGuard] Frontend node_modules look complete."
 fi
 
 cleanup() {
@@ -104,6 +119,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 export PITGUARD_DB_PATH="$DB_PATH"
+export PITGUARD_NUMERIC_THREADS="$NUMERIC_THREADS"
 export PYTHONPATH="$API_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "[PitGuard] Starting API at http://127.0.0.1:$BACKEND_PORT"
@@ -152,6 +168,7 @@ Backend API : http://127.0.0.1:$BACKEND_PORT/health
 Diagnostics : http://127.0.0.1:$BACKEND_PORT/api/system/diagnostics
 Frontend UI : http://127.0.0.1:$FRONTEND_PORT
 Database    : $DB_PATH
+Numeric thr.: $NUMERIC_THREADS
 Backend log : $BACKEND_LOG
 Frontend log: $FRONTEND_LOG
 

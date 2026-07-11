@@ -25,8 +25,18 @@ export interface DesignSettings {
   ruleSet: string;
   pressureMethod?: 'active' | 'at_rest';
   waterSoilMethod?: 'separate' | 'combined';
+  displacementLimitRatio?: number;
   autoCenterExcavationOnGeology?: boolean;
   defaultSupportSpacing?: number;
+  serviceLifeYears?: number;
+  relativeHumidity?: number;
+  sustainedLoadRatio?: number;
+  creepCoefficient?: number;
+  shrinkageStrain?: number;
+  temperatureRangeC?: number;
+  seismicGrade?: string;
+  monitoringCalibrationEnabled?: boolean;
+  requireFormalApprovalForConstruction?: boolean;
 }
 
 export interface Point2D { x: number; y: number }
@@ -175,7 +185,7 @@ export interface SupportElement {
   elevation: number;
   start: Point2D;
   end: Point2D;
-  supportRole?: 'main_strut' | 'corner_diagonal' | 'ring_strut' | 'manual';
+  supportRole?: 'main_strut' | 'secondary_strut' | 'corner_diagonal' | 'ring_strut' | 'manual';
   layoutNote?: string;
   spanLength?: number;
   baySpacing?: number;
@@ -282,6 +292,7 @@ export interface RetainingSystem {
   optimizationLocks?: Record<string, unknown>[];
   replacementPath?: Record<string, unknown>[];
   supportLayoutRepair?: SupportLayoutRepairSummary;
+  rebarDesignScheme?: RebarDesignScheme | Record<string, unknown>;
   warnings: string[];
 }
 
@@ -301,7 +312,7 @@ export interface DrawingSheetResult { sheetId: string; title: string; scale: str
 
 
 export interface RebarVisualizationPoint { x: number; y: number; z: number }
-export interface RebarVisualizationBar { id: string; ifcClass: string; hostType: string; hostCode: string; hostId: string; groupId: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; count?: number; grade: string; locationDescription?: string; checkStatus?: string; start: RebarVisualizationPoint; end: RebarVisualizationPoint; lengthM: number; representation: string; estimatedFullCount?: number; sampledFromCount?: number }
+export interface RebarVisualizationBar { id: string; ifcClass: string; hostType: string; hostCode: string; hostId: string; groupId: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; count?: number; grade: string; locationDescription?: string; checkStatus?: string; start: RebarVisualizationPoint; end: RebarVisualizationPoint; points?: RebarVisualizationPoint[]; lengthM: number; representation: string; shapeKind?: string; estimatedFullCount?: number; sampledFromCount?: number; zoneId?: string; zoneType?: string; face?: string; drawingRefs?: string[]; envelopeSource?: string; zoneTopElevation?: number; zoneBottomElevation?: number }
 export interface RebarVisualizationHost { hostType: string; hostCode: string; groupCount: number; sampledBarCount: number; estimatedFullBarCount: number; tokens: string[] }
 export interface RebarIfcVisualization { projectId: string; exportProfileMapping: Record<string, string>; summary: { sampledBarCount: number; estimatedFullBarCount: number; hostCount: number; omittedHostCount?: number; steelMassProxyKg?: number; byBarType: Record<string, number>; byHostType: Record<string, number>; byCheckStatus: Record<string, number>; detailLevel: string; officialDetailingLimit?: string }; bars: RebarVisualizationBar[]; hosts: RebarVisualizationHost[]; notes: string[] }
 
@@ -334,10 +345,26 @@ export interface CalculationResult {
   drawingSheets?: DrawingSheetResult[];
   supportLayoutQuality?: SupportLayoutQualitySummary;
   supportLayoutRepair?: SupportLayoutRepairSummary;
+  rebarDesignScheme?: RebarDesignScheme | Record<string, unknown>;
   ifcCompatibility?: IfcCompatibilityCheckResult;
   formalReportGate?: FormalReportGate;
   standards?: string[];
   professionalReviewRequired: boolean;
+}
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  location?: string;
+  createdAt?: string;
+  updatedAt: string;
+  hasExcavation: boolean;
+  hasRetainingSystem: boolean;
+  calculationCaseCount: number;
+  calculationResultCount: number;
+  latestCalculationId?: string;
+  governingStatus?: string;
+  geometryConsistent?: boolean;
 }
 
 export interface Project {
@@ -357,6 +384,11 @@ export interface Project {
   calculationCases: unknown[];
   calculationResults: CalculationResult[];
   cadTemplate?: CadTemplateConfig;
+  monitoringRecords?: MonitoringRecord[];
+  calibrationRuns?: Record<string, unknown>[];
+  reviewWorkflow?: ReviewWorkflow;
+  drawingRevisions?: DrawingRevision[];
+  advancedEngineering?: Record<string, unknown>;
   messages: string[];
 }
 
@@ -394,6 +426,7 @@ export interface AssuranceResult {
   officialIssueMissingItems?: QualityGateIssue[];
   supportLayoutQuality?: SupportLayoutQualitySummary;
   supportLayoutRepair?: SupportLayoutRepairSummary;
+  rebarDesignScheme?: RebarDesignScheme | Record<string, unknown>;
   ifcCompatibility?: IfcCompatibilityCheckResult;
   professionalReviewRequired: boolean;
   checkSummary?: Record<string, number>;
@@ -468,10 +501,49 @@ export interface IssueCenterResult {
   objectLocatorMap?: Record<string, Record<string, unknown>>;
 }
 
+
+export interface RebarDiagnosticAction { id: string; priority: number; label: string; description: string }
+export interface RebarDesignDiagnostics {
+  calculation: { status: string; valid: boolean; messages: string[]; topologySynchronization?: Record<string, unknown> };
+  supportTopology: { status: string; message: string; secondaryGridSupportCount: number; maxCornerTributaryWidthM: number };
+  categoryStatusCounts: Record<string, Record<string, number>>;
+  failureReasons: Record<string, { count: number; objects: string[]; recommendedAction?: string }>;
+  actions: RebarDiagnosticAction[];
+  canApply: boolean;
+  canIssueConstructionDrawings: boolean;
+  exportMode: 'review' | 'construction' | string;
+  reviewWatermarkRequired: boolean;
+  sectionChangeCount: number;
+  headline: string;
+}
+export interface RebarDesignScheme {
+  projectId: string; mode: string; status: string; method: string;
+  wallZones: Record<string, unknown>[]; supportSchemes: Record<string, unknown>[];
+  beamNodeSchemes: Record<string, unknown>[]; checks: Record<string, unknown>[];
+  summary: Record<string, unknown>; drawingIndex: Record<string, string>;
+  limitations: string[]; diagnostics?: RebarDesignDiagnostics; requiresRecalculation?: boolean;
+}
+export interface DrawingSetManifest { projectId: string; softwareVersion: string; sheetCount: number; supportLevels: number[]; categories: Record<string, number>; sheets: { sheetNo: string; title: string; category: string; scale: string; file: string; modelBinding?: string[]; legacy?: boolean }[]; packageFolders: string[]; issueBoundary: string }
+
 export interface RebarDetailingEntry { barMark: string; hostType: string; hostCode: string; hostId?: string; groupId?: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; quantity: number; grade: string; shapeCode: string; shapeDescription: string; singleLengthM: number; totalLengthM: number; totalWeightKg: number; anchorageStatus: string; lapStatus: string; hookStatus: string; checkStatus?: string; note?: string }
 export interface IndividualRebarPoint { x: number; y: number; z: number }
 export interface IndividualRebarBar { barId: string; barMark: string; subIndex: number; hostType: string; hostCode: string; hostId: string; groupId: string; groupName: string; barType: string; diameterMm: number; grade: string; shapeCode: string; points: IndividualRebarPoint[]; segments: Record<string, unknown>[]; centerlineLengthM: number; anchorageLengthM: number; lapLengthM: number; hookLengthM: number; cutLengthM: number; unitWeightKgPerM: number; weightKg: number; anchorageStatus: string; lapStatus: string; hookStatus: string; source?: string }
-export interface RebarDetailingResult { projectId: string; detailLevel: string; entries: RebarDetailingEntry[]; individualBars?: IndividualRebarBar[]; geometrySummary?: Record<string, unknown>; constructionJointPlan?: Record<string, unknown>[]; cageSegments?: Record<string, unknown>[]; liftingPlan?: Record<string, unknown>[]; spliceSchedule?: Record<string, unknown>[]; bendRadiusChecks?: Record<string, unknown>[]; coverConflictChecks?: Record<string, unknown>[]; signoffChecklist?: Record<string, unknown>[]; shopDrawingReadiness?: Record<string, unknown>; summary: Record<string, unknown>; notes: string[] }
+export interface RebarDetailingResult { projectId: string; detailLevel: string; designScheme?: RebarDesignScheme; entries: RebarDetailingEntry[]; individualBars?: IndividualRebarBar[]; geometrySummary?: Record<string, unknown>; constructionJointPlan?: Record<string, unknown>[]; cageSegments?: Record<string, unknown>[]; liftingPlan?: Record<string, unknown>[]; spliceSchedule?: Record<string, unknown>[]; bendRadiusChecks?: Record<string, unknown>[]; coverConflictChecks?: Record<string, unknown>[]; signoffChecklist?: Record<string, unknown>[]; shopDrawingReadiness?: Record<string, unknown>; summary: Record<string, unknown>; notes: string[] }
 export interface CadTemplateConfig { templateVersion?: string; enterpriseName?: string; projectCode?: string; stage?: string; designer?: string; checker?: string; approver?: string; sheetPrefix?: string; drawingUnit?: string; titleBlock?: Record<string, unknown>; layerStandard?: Record<string, string>; sheetRules?: Record<string, unknown>; dimensionRules?: Record<string, unknown>; issueBinding?: Record<string, unknown> }
 export interface BenchmarkCaseSpec { caseId: string; name: string; sourceTitle: string; sourceUrl: string; publicDataBasis: string; lengthM: number; widthM: number; depthM: number; wallDepthM?: number; supportLevels?: number; soilProfile: string; groundwaterM: number; surchargeKpa: number; geometry?: string; notes?: string }
 export interface BenchmarkRunResult { benchmarkVersion?: string; caseCount?: number; cases?: Record<string, unknown>[]; caseId?: string; projectId?: string; name?: string; sourceUrl?: string; depthM?: number; planSizeM?: number[]; supportCount?: number; columnCount?: number; checkSummary?: Record<string, number>; issueSummary?: Record<string, number>; traceCount?: number; officialIssueAllowed?: boolean }
+
+
+export interface MonitoringRecord { id?: string; recordType: 'wall_displacement' | 'support_axial_force' | 'groundwater' | 'settlement'; objectId?: string; objectCode?: string; stageId?: string; timestamp?: string; measuredValue: number; unit: string; elevation?: number; x?: number; y?: number; quality?: 'verified' | 'provisional' | 'rejected'; source?: string; note?: string }
+export interface ReviewWorkflow { status: string; currentRole: string; approvedSnapshotHash?: string; actions: Record<string, unknown>[]; requiredRoles: string[]; updatedAt?: string }
+export interface DrawingRevision { id: string; revision: string; description: string; sheetNumbers: string[]; author: string; snapshotHash: string; issueStatus: string; createdAt: string }
+export interface AdvancedEngineeringSuite {
+  status: string; summary: Record<string, unknown>;
+  serviceability: { status: string; summary: Record<string, any>; wallZoneChecks: Record<string, any>[]; boundary?: string };
+  topology: { status: string; summary: Record<string, any>; levels: Record<string, any>[]; recommendations: Record<string, any>[]; safeAdditions?: Record<string, any>[] };
+  collisions: { status: string; summary: Record<string, any>; collisions: Record<string, any>[]; intendedConnections?: Record<string, any>[] };
+  nodeLocal: { status: string; summary: Record<string, any>; nodes: Record<string, any>[]; boundary?: string };
+  monitoring: { recordCount: number; counts: Record<string, number>; latestCalibration?: Record<string, any>; requiresRecalculation?: boolean };
+  review: { status: string; currentRole: string; actionCount: number; currentSnapshotHash: string; approvedSnapshotHash?: string; approvalValid: boolean; requiredRoles: string[]; actions: Record<string, any>[]; roleActors?: Record<string, string>; separationOfDutiesValid?: boolean };
+  formalDrawings: Record<string, unknown>; ux: Record<string, unknown>;
+}

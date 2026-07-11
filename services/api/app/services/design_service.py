@@ -19,7 +19,7 @@ from app.schemas.domain import (
 )
 from app.services.reinforcement_service import diaphragm_wall_reinforcement, support_reinforcement
 from app.services.excavation_service import _unique_polygon_points
-from app.services.support_layout import make_column_elements, make_ring_beams, make_support_elements, make_support_wale_nodes, support_layout_summary
+from app.services.support_layout import SupportLayoutConfig, make_column_elements, make_ring_beams, make_support_elements, make_support_wale_nodes, support_layout_summary
 
 ANGLE_TOL_RAD = math.radians(2.0)
 COLLINEAR_TOL = 0.10
@@ -229,12 +229,13 @@ def _pit_centroid(points: list[Point2D]) -> Point2D:
     return Point2D(x=mean([p.x for p in points]), y=mean([p.y for p in points]))
 
 
-def auto_supports(project_excavation, existing_system: RetainingSystem | None = None) -> RetainingSystem:
+def auto_supports(project_excavation, existing_system: RetainingSystem | None = None, layout_config: SupportLayoutConfig | None = None) -> RetainingSystem:
     excavation = project_excavation
+    layout_config = (layout_config or SupportLayoutConfig()).normalized()
     elevations, warnings = support_elevations(excavation.top_elevation, excavation.bottom_elevation)
     system = existing_system or RetainingSystem()
 
-    supports, layout_warnings = make_support_elements(excavation, elevations)
+    supports, layout_warnings = make_support_elements(excavation, elevations, config=layout_config)
     for support in supports:
         support.reinforcement = support_reinforcement(
             support.section.width or 1.6,
@@ -246,7 +247,7 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
     system.supports = supports
     system.wale_beams = _make_wale_beams(excavation, elevations)
     system.ring_beams = make_ring_beams(excavation, elevations)
-    system.columns = make_column_elements(excavation, supports)
+    system.columns = make_column_elements(excavation, supports, max_unbraced_span_m=layout_config.column_max_unbraced_span_m)
     system.support_nodes = make_support_wale_nodes(system.supports, system.wale_beams)
 
     warnings_out = [
@@ -264,7 +265,7 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
         warnings_out.append(f"已自动生成 {len(system.columns)} 个临时立柱候选点，位置来自主对撑/环撑跨中或分跨点。")
     merged_warnings = list(dict.fromkeys(system.warnings + warnings + layout_warnings + warnings_out))
     system.warnings = merged_warnings
-    system.layout_summary = support_layout_summary(system.supports, system.columns, system.ring_beams, merged_warnings)
+    system.layout_summary = support_layout_summary(system.supports, system.columns, system.ring_beams, merged_warnings, config=layout_config)
     system.replacement_path = [
         {"step": 1, "name": "底板形成后保留全部内支撑", "action": "bottom_slab_cast", "activeSupportLevels": sorted({s.level_index for s in system.supports})},
         {"step": 2, "name": "地下室结构达到强度后自下而上换撑", "action": "replace_from_lowest_level", "removeOrder": sorted({s.level_index for s in system.supports}, reverse=True)},

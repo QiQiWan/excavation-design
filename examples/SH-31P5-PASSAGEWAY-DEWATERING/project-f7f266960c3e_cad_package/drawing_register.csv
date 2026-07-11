@@ -1,8 +1,0 @@
-﻿sheet_no,title,scale,file,status,model_binding
-S-01,基坑围护与支撑平面布置图,1:200,S-01_support_plan.dxf,generated,"excavation, walls, wales, supports, columns"
-S-02,地下连续墙钢筋笼示意图,1:50,S-02_wall_rebar_cage.dxf,generated,diaphragm walls and wall rebar groups
-S-03,支撑-围檩节点详图,1:50,S-03_support_wale_node_detail.dxf,generated,support-wale nodes and node reinforcement
-S-04,典型开挖剖面与支撑标高图,1:100,S-04_excavation_section.dxf,generated,construction stages and support elevations
-S-05,临时立柱与立柱桩详图,1:50,S-05_column_pile_detail.dxf,generated,columns and foundation design
-S-06,监测点布置图,1:200,S-06_monitoring_plan.dxf,generated,monitoring points from pit geometry
-S-07,钢筋大样与钢筋表,NTS,S-07_rebar_bending_schedule.dxf,generated,rebar detailing and bar bending schedule

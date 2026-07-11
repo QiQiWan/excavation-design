@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.schemas.domain import Project
+from app.version import SOFTWARE_VERSION
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ def evaluate_project_assurance(project: Project) -> dict[str, Any]:
     gate_detail = "正式出图质量闸门已通过" if closed_loop_complete else "查看阻断项、警告项和缺项；不可闭环不等同于存在 fail。"
     return {
         "projectId": project.id,
-        "softwareVersion": "2.0.7",
+        "softwareVersion": SOFTWARE_VERSION,
         "capabilityCompleteness": capability,
         "completionPercent": capability,
         "softwareFlowComplete": software_flow_complete,

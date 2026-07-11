@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from app.schemas.domain import ReinforcementGroup, SupportElement, SupportWaleNode
 
 CONCRETE_BEARING_CAPACITY_KPA = {
@@ -42,24 +44,36 @@ def update_support_node_design(nodes: list[SupportWaleNode], supports: list[Supp
             continue
         axial = float(support.design_axial_force or 0.0)
         capacity = CONCRETE_BEARING_CAPACITY_KPA.get(support.material.grade, CONCRETE_BEARING_CAPACITY_KPA["C35"])
-        # Automatically enlarge the local bearing plate within the support section envelope.
+        # Automatically enlarge the local bearing plate within the support
+        # section envelope. Size to 90% target utilization and round upward to
+        # a 5 mm fabrication increment; downward decimal rounding previously
+        # created artificial marginal failures.
         max_plate_w = max(node.bearing_plate.plate_width, float(support.section.width or node.bearing_plate.plate_width))
         max_plate_h = max(node.bearing_plate.plate_height, float(support.section.height or node.bearing_plate.plate_height))
-        required_area = axial / max(capacity, 1e-9) if axial > 0 else node.bearing_plate.bearing_area
-        side = max(node.bearing_plate.plate_width, node.bearing_plate.plate_height, required_area ** 0.5)
-        side = min(max(side, 0.6), max(max_plate_w, max_plate_h))
+        target_utilization = 0.90
+        required_area = axial / max(capacity * target_utilization, 1e-9) if axial > 0 else node.bearing_plate.bearing_area
+        required_side = max(node.bearing_plate.plate_width, node.bearing_plate.plate_height, required_area ** 0.5)
+        rounded_side = math.ceil(required_side / 0.005 - 1e-9) * 0.005
+        side = min(max(rounded_side, 0.6), min(max_plate_w, max_plate_h))
         node.bearing_plate.plate_width = round(side, 3)
         node.bearing_plate.plate_height = round(side, 3)
-        node.bearing_plate.bearing_area = round(side * side, 3)
-        area = max(float(node.bearing_plate.bearing_area), 0.01)
+        area = max(float(node.bearing_plate.plate_width) * float(node.bearing_plate.plate_height), 0.01)
+        node.bearing_plate.bearing_area = round(area, 6)
         stress = axial / area
-        status = "pass" if stress <= capacity else "fail"
+        utilization = stress / max(capacity, 1e-9)
+        plate_ratio = max(node.bearing_plate.plate_width / max(max_plate_w, 1e-9), node.bearing_plate.plate_height / max(max_plate_h, 1e-9))
+        if utilization > 1.0:
+            status = "fail"
+        elif utilization > 0.90 or plate_ratio > 0.92:
+            status = "warning"
+        else:
+            status = "pass"
         node.bearing_plate.bearing_stress = round(stress, 3)
         node.bearing_plate.bearing_capacity = round(capacity, 3)
         node.bearing_plate.check_status = status
         node.reinforcement = _node_reinforcement_groups(axial)
         node.check_status = status
-        node.design_note = "按支撑轴力包络进行端部局部承压和节点附加配筋子集筛查；正式节点详图需复核锚固、抗裂、局压扩散和施工连接。"
+        node.design_note = "按支撑轴力包络、90%目标利用率和5mm向上取整自动确定承压板；接近支撑截面边界时标记复核，正式节点详图需复核锚固、抗裂、局压扩散和施工连接。"
         checks.append({
             "ruleId": "GB50010-NODE-BEARING-SUBSET",
             "objectId": node.id,
@@ -74,6 +88,9 @@ def update_support_node_design(nodes: list[SupportWaleNode], supports: list[Supp
             "supportCode": support.code,
             "nodeCode": node.code,
             "bearingArea": area,
+            "bearingUtilization": round(utilization, 3),
+            "plateToSectionRatio": round(plate_ratio, 3),
+            "targetUtilization": target_utilization,
             "bearingPlateWidth": node.bearing_plate.plate_width,
             "bearingPlateHeight": node.bearing_plate.plate_height,
             "reinforcementSummary": "; ".join(f"{r.name} D{r.diameter}" + (f"x{r.count}" if r.count else f"@{r.spacing}" if r.spacing else "") for r in node.reinforcement),

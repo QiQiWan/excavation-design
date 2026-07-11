@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any
 
 from app.schemas.domain import Project, ReinforcementGroup
+from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 
 STEEL_DENSITY_KG_PER_M3 = 7850.0
 
@@ -99,7 +100,7 @@ def _entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGro
         "lapStatus": "manual_review",
         "hookStatus": "manual_review" if shape_code != "00" else "not_applicable",
         "checkStatus": group.check_status,
-        "source": "PitGuard V2.5.0 normative shop-detailing approximation",
+        "source": "PitGuard V2.6.0 normative shop-detailing approximation",
         "note": group.location_description,
     }
 
@@ -162,6 +163,7 @@ def _make_individual_bar(bar_mark: str, sub_index: int, host_type: str, host_cod
         "anchorageStatus": "rule_generated_review",
         "lapStatus": "rule_generated_review" if lap > 0 else "not_required_in_current_segment",
         "hookStatus": "rule_generated_review" if hook > 0 else "not_applicable",
+        "shapeKind": ("closed_stirrup" if points and len(points) > 3 and points[0] == points[-1] else "lap_or_hook_polyline" if len(points) > 2 else "straight"),
         "source": source,
     }
 
@@ -197,22 +199,46 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
             t = (i / max(qty - 1, 1)) if group.bar_type != "stirrup" else ((i + 0.5) / max(qty, 1))
             if host_type == "diaphragm_wall" and group.bar_type == "longitudinal":
                 x, y = _point_at(a, b, t, 0.0)
-                pts = [{"x": x, "y": y, "z": bottom + cover}, {"x": x, "y": y, "z": top - cover}]
+                x_lap, y_lap = _point_at(a, b, t, cover * 0.65 if i % 2 == 0 else -cover * 0.65)
+                z1 = bottom + cover
+                z2 = bottom + (top - bottom) * 0.48
+                z3 = bottom + (top - bottom) * 0.52
+                z4 = top - cover
+                pts = [{"x": x, "y": y, "z": z1}, {"x": x, "y": y, "z": z2}, {"x": x_lap, "y": y_lap, "z": z3}, {"x": x_lap, "y": y_lap, "z": z4}]
             elif host_type == "diaphragm_wall":
                 z = bottom + cover + (top - bottom - 2 * cover) * t
                 x1, y1 = _point_at(a, b, 0.02, 0.0); x2, y2 = _point_at(a, b, 0.98, 0.0)
-                pts = [{"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}]
+                hx1, hy1 = _point_at(a, b, 0.05, 0.0); hx2, hy2 = _point_at(a, b, 0.95, 0.0)
+                pts = [{"x": hx1, "y": hy1, "z": z - 0.18}, {"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}, {"x": hx2, "y": hy2, "z": z - 0.18}]
             elif group.bar_type == "stirrup":
                 x, y = _point_at(a, b, t, 0.0)
                 # Closed stirrup projected as rectangular cage at a station; keep it visible in 3D/CAD and schedule.
                 half_w = max(width / 2.0 - cover, 0.08); half_h = max(height / 2.0 - cover, 0.08)
-                pts = [{"x": x - half_w, "y": y, "z": top - half_h}, {"x": x + half_w, "y": y, "z": top - half_h}, {"x": x + half_w, "y": y, "z": top + half_h}, {"x": x - half_w, "y": y, "z": top + half_h}, {"x": x - half_w, "y": y, "z": top - half_h}]
+                # Use host local normal rather than global X so the hoop wraps the concrete/beam section.
+                nx = -(float(b.y) - float(a.y)) / max(math.hypot(float(b.x) - float(a.x), float(b.y) - float(a.y)), 1e-9)
+                ny = (float(b.x) - float(a.x)) / max(math.hypot(float(b.x) - float(a.x), float(b.y) - float(a.y)), 1e-9)
+                pts = [
+                    {"x": x - nx * half_w, "y": y - ny * half_w, "z": top - half_h},
+                    {"x": x + nx * half_w, "y": y + ny * half_w, "z": top - half_h},
+                    {"x": x + nx * half_w, "y": y + ny * half_w, "z": top + half_h},
+                    {"x": x - nx * half_w, "y": y - ny * half_w, "z": top + half_h},
+                    {"x": x - nx * half_w, "y": y - ny * half_w, "z": top - half_h},
+                ]
+            elif host_type == "internal_support" and group.bar_type == "longitudinal":
+                # Show staggered mid-span lap so support longitudinal bars are not rendered as featureless straight lines.
+                normal_offset = (-0.5 + (i % 4) / 3.0) * max(width * 0.58, 0.2)
+                z = top + (-0.5 + ((i // 4) % 3) / 2.0) * max(height * 0.52, 0.2)
+                x1, y1 = _point_at(a, b, 0.02, normal_offset)
+                x2, y2 = _point_at(a, b, 0.46, normal_offset)
+                x3, y3 = _point_at(a, b, 0.54, normal_offset + (0.18 if i % 2 else -0.18))
+                x4, y4 = _point_at(a, b, 0.98, normal_offset)
+                pts = [{"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}, {"x": x3, "y": y3, "z": z + (0.08 if i % 2 else -0.08)}, {"x": x4, "y": y4, "z": z}]
             else:
                 normal_offset = 0.0 if group.bar_type in {"longitudinal", "additional"} else (0.25 if i % 2 == 0 else -0.25)
                 z = top + (0.12 if i % 2 == 0 else -0.12)
                 x1, y1 = _point_at(a, b, 0.02, normal_offset); x2, y2 = _point_at(a, b, 0.98, normal_offset)
                 pts = [{"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}]
-            bars.append(_make_individual_bar(str(entry["barMark"]), i + 1, host_type, host_code, host_id, group, shape, pts, anchorage, lap, hook, "PitGuard V2.5.0 individual-bar shop-detailing rule geometry"))
+            bars.append(_make_individual_bar(str(entry["barMark"]), i + 1, host_type, host_code, host_id, group, shape, pts, anchorage, lap, hook, "PitGuard V2.6.0 individual-bar shop-detailing rule geometry"))
             if len(bars) >= max_bars:
                 omitted += max(0, qty - i - 1)
                 return
@@ -255,7 +281,7 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
             "omittedBarCount": omitted,
             "totalCutLengthM": round(total_len, 3),
             "totalWeightKg": round(total_w, 2),
-            "geometryLevel": "V2.5.0 individual centerline geometry with construction-joint, cage-segment, lifting, splice, cover and bend-radius rule checks",
+            "geometryLevel": "V2.6.0 individual centerline geometry with construction-joint, cage-segment, lifting, splice, cover and bend-radius rule checks",
         },
     }
 
@@ -443,7 +469,7 @@ def _build_shop_detailing(project: Project, entries: list[dict[str, Any]], bars:
         },
     }
 
-def build_rebar_detailing(project: Project) -> dict[str, Any]:
+def build_rebar_detailing(project: Project, mode: str = "balanced") -> dict[str, Any]:
     ret = project.retaining_system
     entries: list[dict[str, Any]] = []
     if not ret:
@@ -483,9 +509,11 @@ def build_rebar_detailing(project: Project) -> dict[str, Any]:
         total_weight += float(e["totalWeightKg"])
     individual = build_individual_rebar_geometry(project)
     shop_detailing = _build_shop_detailing(project, entries, individual["bars"])
+    design_scheme = build_rebar_design_scheme(project, mode=mode)
     return {
         "projectId": project.id,
-        "detailLevel": "V2.5.0 bar-mark schedule plus individual-bar centerline geometry, cage segmentation, splice layout, bend radius, cover conflict and signoff checklist",
+        "detailLevel": "V3.2 diagnosis-driven zone-based reinforcement design plus bar-mark schedule, individual centerlines, cage segmentation, splice layout, congestion, bend-radius and drawing linkage",
+        "designScheme": design_scheme,
         "entries": entries,
         "individualBars": individual["bars"],
         "geometrySummary": individual["summary"],
@@ -514,9 +542,16 @@ def build_rebar_detailing(project: Project) -> dict[str, Any]:
             "spliceScheduleCount": len(shop_detailing["spliceSchedule"]),
             "coverConflictCheckCount": len(shop_detailing["coverConflictChecks"]),
             "bendRadiusCheckCount": len(shop_detailing["bendRadiusChecks"]),
+            "zoneBasedDesignStatus": design_scheme.get("status"),
+            "wallZoneCount": design_scheme.get("summary", {}).get("wallZoneCount", 0),
+            "supportSchemeCount": design_scheme.get("summary", {}).get("supportSchemeCount", 0),
+            "reinforcementCheckCount": design_scheme.get("summary", {}).get("checkCount", 0),
+            "reinforcementFailCount": design_scheme.get("summary", {}).get("failCount", 0),
+            "reinforcementWarningCount": design_scheme.get("summary", {}).get("warningCount", 0),
         },
         "notes": [
-            "V2.5.0 generates individual rebar centerlines, construction-joint/cage-segment/lifting/splice/cover/bend-radius rule checks without finite-element modeling.",
-            "Software detailing chain is complete; final sealed shop drawings still require professional signoff by the project design organization.",
+            "V3.2 links the latest wall-force envelope to elevation zones and generates coordinated wall, support, wale and node reinforcement schemes.",
+            "Individual rebar centerlines, cage segmentation, lifting, splice, cover, bend-radius and drawing references are generated for editable delivery.",
+            "Final sealed shop drawings still require crack-width, seismic, coupler, lifting and professional signoff checks by the project design organization.",
         ],
     }

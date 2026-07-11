@@ -7,6 +7,7 @@ import numpy as np
 
 from app.calculation.earth_pressure import calculate_lateral_pressure_profile
 from app.rules.gb50010.materials import concrete_elastic_modulus_mpa
+from app.calculation.wale_beam import support_spring_stiffness
 from app.schemas.domain import GeologicalLayer, PressureProfile, SupportElement
 
 
@@ -85,7 +86,13 @@ def analyze_wall_on_elastic_foundation(
     wall_thickness: float,
     concrete_grade: str,
     step: float = 0.25,
-    support_spring_kn_per_m: float = 500000.0,
+    support_spring_kn_per_m: float | None = None,
+    segment: Any | None = None,
+    transferred_supports: list[SupportElement] | None = None,
+    transfer_stiffness_factor: float = 1.15,
+    wall_stiffness_factor: float = 1.0,
+    soil_modulus_factor: float = 1.0,
+    support_stiffness_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Finite-difference beam-on-elastic-foundation wall analysis.
 
@@ -109,7 +116,9 @@ def analyze_wall_on_elastic_foundation(
         mode="active",
         water_soil_method="separate",
     )
-    supports_depth = [top_elevation - s.elevation for s in supports if 0.0 < top_elevation - s.elevation < wall_depth]
+    transferred_supports = list(transferred_supports or [])
+    wall_restraints = [*supports, *transferred_supports]
+    supports_depth = [top_elevation - s.elevation for s in wall_restraints if 0.0 < top_elevation - s.elevation < wall_depth]
     n = max(31, min(121, int(math.ceil(wall_depth / step)) + 1))
     z = np.linspace(0.0, wall_depth, n)
     dz = float(z[1] - z[0])
@@ -117,7 +126,10 @@ def analyze_wall_on_elastic_foundation(
     e_mpa = concrete_elastic_modulus_mpa(concrete_grade)
     e_kn_m2 = e_mpa * 1000.0  # MPa -> kN/m2
     inertia = max(wall_thickness, 0.1) ** 3 / 12.0  # per metre wall width
-    ei = e_kn_m2 * inertia
+    wall_stiffness_factor = max(0.25, min(float(wall_stiffness_factor), 4.0))
+    soil_modulus_factor = max(0.25, min(float(soil_modulus_factor), 4.0))
+    support_stiffness_factor = max(0.25, min(float(support_stiffness_factor), 4.0))
+    ei = e_kn_m2 * inertia * wall_stiffness_factor
     if ei <= 0:
         return _simplified_span_envelope(profile, wall_depth, supports_depth)
 
@@ -132,12 +144,15 @@ def analyze_wall_on_elastic_foundation(
     a[1, 2] = -3.0
     a[1, 3] = 1.0
     # Interior finite-difference equations.
-    support_indices: dict[int, list[SupportElement]] = {}
-    for support in supports:
+    support_indices: dict[int, list[tuple[SupportElement, float, str]]] = {}
+    transferred_ids = {support.id for support in transferred_supports}
+    for support in wall_restraints:
         d = top_elevation - support.elevation
         if 0.0 <= d <= wall_depth:
             idx = int(np.argmin(np.abs(z - d)))
-            support_indices.setdefault(idx, []).append(support)
+            is_transfer = support.id in transferred_ids
+            factor = float(transfer_stiffness_factor) if is_transfer else 1.0
+            support_indices.setdefault(idx, []).append((support, factor, "permanent_transfer" if is_transfer else "temporary_support"))
     for i in range(2, n - 2):
         a[i, i - 2] = ei / dz**4
         a[i, i - 1] = -4.0 * ei / dz**4
@@ -147,9 +162,28 @@ def analyze_wall_on_elastic_foundation(
         layer = _layer_at_depth(soil_profile, top_elevation, float(z[i]))
         ks = 0.0
         if z[i] > excavation_depth:
-            ks = _m_value(layer) * (z[i] - excavation_depth)
+            ks = _m_value(layer) * soil_modulus_factor * (z[i] - excavation_depth)
         if i in support_indices:
-            ks += support_spring_kn_per_m / dz
+            level_stiffness = 0.0
+            for support, stiffness_factor, _source in support_indices[i]:
+                if support_spring_kn_per_m is not None:
+                    support_k = float(support_spring_kn_per_m)
+                elif segment is not None:
+                    support_k, _projection = support_spring_stiffness(support, segment)
+                else:
+                    length = max(float(support.span_length or 1.0), 1.0)
+                    width = float(support.section.width or support.section.diameter or 1.0)
+                    height = float(support.section.height or support.section.diameter or 1.0)
+                    area = max(width * height, 0.05)
+                    elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
+                    support_k = elastic_modulus * area / length
+                level_stiffness += max(1.0e4, min(2.0e7, support_k * support_stiffness_factor)) * stiffness_factor
+            # The vertical wall model is for a one-metre strip. Discrete struts
+            # distributed along a wall face must be converted to an equivalent
+            # spring per metre of wall length; summing the full EA/L of every
+            # strut directly over-stiffens the wall by roughly the support count.
+            distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
+            ks += level_stiffness / distribution_length / dz
         a[i, i] += ks
         b[i] = q[i]
     # Free-toe conditions; embedded soil springs provide restraint above the toe.
@@ -170,16 +204,31 @@ def analyze_wall_on_elastic_foundation(
     moment = -ei * y2
     shear = -ei * y3
     support_reactions = []
+    distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
     for idx, support_list in support_indices.items():
-        for support in support_list:
-            reaction = support_spring_kn_per_m * float(y[idx])
+        for support, stiffness_factor, source in support_list:
+            if support_spring_kn_per_m is not None:
+                support_k = float(support_spring_kn_per_m)
+            elif segment is not None:
+                support_k, _projection = support_spring_stiffness(support, segment)
+            else:
+                length = max(float(support.span_length or 1.0), 1.0)
+                width = float(support.section.width or support.section.diameter or 1.0)
+                height = float(support.section.height or support.section.diameter or 1.0)
+                area = max(width * height, 0.05)
+                elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
+                support_k = elastic_modulus * area / length
+            distributed_k = support_k * support_stiffness_factor * stiffness_factor / distribution_length
+            reaction = distributed_k * float(y[idx])
             support_reactions.append(
                 {
                     "supportId": support.id,
                     "levelIndex": support.level_index,
                     "elevation": support.elevation,
                     "reactionPerMeter": round(reaction, 3),
+                    "springStiffness": round(distributed_k, 3),
                     "unit": "kN/m",
+                    "restraintSource": source,
                 }
             )
     max_m = float(np.max(np.abs(moment)))
@@ -198,7 +247,8 @@ def analyze_wall_on_elastic_foundation(
             }
         )
     warnings = profile.warnings + [
-        "墙体内力为一维弹性地基梁有限差分包络；支撑刚度、土体 m 值、施工步卸载与三维效应需复核。",
+        "墙体内力为一维弹性地基梁有限差分包络；离散支撑按构件 EA/L、平面投影及角色系数计算后，按墙面长度折算为单位墙宽等效弹簧。",
+        "换撑阶段按已拆临时支撑所在标高设置永久楼板/围檩传力代理约束；楼板刚度、后浇带和施工时序需按专项施工方案复核。",
         "输出单位：弯矩 kN*m/m，剪力 kN/m，位移 mm。",
     ]
     return {
@@ -207,6 +257,7 @@ def analyze_wall_on_elastic_foundation(
         "concreteGrade": concrete_grade,
         "wallThickness": wall_thickness,
         "EI": round(float(ei), 3),
+        "calibrationFactors": {"wallStiffnessFactor": wall_stiffness_factor, "soilModulusFactor": soil_modulus_factor, "supportStiffnessFactor": support_stiffness_factor},
         "points": points,
         "supportReactions": support_reactions,
         "maxMoment": round(max_m, 3),

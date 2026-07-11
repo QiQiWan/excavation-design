@@ -27,7 +27,8 @@ SAMPLE_VTU = ROOT / "packages/sample-data/vtu/sample.vtu"
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("PITGUARD_DB_PATH", str(tmp_path / "pitguard-test.sqlite3"))
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def create_project(client: TestClient) -> str:
@@ -410,7 +411,7 @@ def test_run_sample_workflow_equivalent_v1_2_has_no_bearing_fail(client):
     assurance = client.get(f"/api/projects/{project_id}/assurance/gap-analysis")
     assert assurance.status_code == 200, assurance.text
     assurance_data = assurance.json()
-    assert assurance_data["softwareVersion"] in {"1.3.0", "1.4.0", "1.5.0", "1.6.0", "2.0.3", "2.0.5"}
+    assert assurance_data["softwareVersion"] in {"3.2.0"}
     assert assurance_data["capabilityCompleteness"] == 100.0
     assert assurance_data["completionPercent"] == 100.0
     assert assurance_data["softwareFlowComplete"] is True
@@ -797,7 +798,7 @@ def test_v2_0_3_assurance_explains_gate_items(client):
     assurance = client.get(f"/api/projects/{project_id}/assurance/gap-analysis")
     assert assurance.status_code == 200, assurance.text
     data = assurance.json()
-    assert data["softwareVersion"] == "2.0.7"
+    assert data["softwareVersion"] == "3.2.0"
     assert "softwareFlowMissingItems" in data
     assert "officialIssueGateStatus" in data
     assert "officialIssueBlockingItems" in data

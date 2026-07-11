@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
+import { AmbientLight, AxesHelper, Box3, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, GridHelper, Group, Intersection, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Points, PointsMaterial, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { ExcavationSegment, Point2D, Project, VtuMesh } from '../types/domain';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'supports' | 'results';
@@ -26,16 +26,16 @@ function hashColor(code: string | number | undefined): string {
   return STRATUM_COLORS[sum % STRATUM_COLORS.length];
 }
 
-function toScenePoint(x: number, y: number, elevation: number): THREE.Vector3 {
-  return new THREE.Vector3(x, elevation, y);
+function toScenePoint(x: number, y: number, elevation: number): Vector3 {
+  return new Vector3(x, elevation, y);
 }
 
 function segmentAngle(segment: Pick<ExcavationSegment, 'start' | 'end'>): number {
   return Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x);
 }
 
-function projectBounds(project: Project): { center: THREE.Vector3; radius: number } {
-  const points: THREE.Vector3[] = [];
+function projectBounds(project: Project): { center: Vector3; radius: number } {
+  const points: Vector3[] = [];
   project.boreholes.forEach((bh) => {
     points.push(toScenePoint(bh.x, bh.y, bh.collarElevation));
     points.push(toScenePoint(bh.x, bh.y, bh.collarElevation - bh.depth));
@@ -50,20 +50,20 @@ function projectBounds(project: Project): { center: THREE.Vector3; radius: numbe
     points.push(toScenePoint(p.x, p.y, project.excavation?.bottomElevation ?? -10));
   });
   project.geologicalModel?.vtuMesh?.points?.forEach((p) => points.push(toScenePoint(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0)));
-  if (!points.length) return { center: new THREE.Vector3(35, -8, 20), radius: 70 };
-  const box = new THREE.Box3().setFromPoints(points);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
+  if (!points.length) return { center: new Vector3(35, -8, 20), radius: 70 };
+  const box = new Box3().setFromPoints(points);
+  const center = box.getCenter(new Vector3());
+  const size = box.getSize(new Vector3());
   const radius = Math.max(size.x, size.y, size.z, 20) * 1.3;
   return { center, radius };
 }
 
-function addPolyline(scene: THREE.Scene, points: THREE.Vector3[], color: string, name: string, type: string, close = false) {
+function addPolyline(scene: Scene, points: Vector3[], color: string, name: string, type: string, close = false) {
   if (points.length < 2) return;
   const linePoints = close ? [...points, points[0]] : points;
-  const geometry = new THREE.BufferGeometry().setFromPoints(linePoints);
-  const material = new THREE.LineBasicMaterial({ color });
-  const line = new THREE.Line(geometry, material);
+  const geometry = new BufferGeometry().setFromPoints(linePoints);
+  const material = new LineBasicMaterial({ color });
+  const line = new Line(geometry, material);
   line.userData = { name, type };
   scene.add(line);
 }
@@ -71,37 +71,37 @@ function addPolyline(scene: THREE.Scene, points: THREE.Vector3[], color: string,
 function createPanelMesh(segment: Pick<ExcavationSegment, 'start' | 'end'>, topElevation: number, bottomElevation: number, thickness: number, color: string, name: string, type: string) {
   const length = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
   const height = Math.abs(topElevation - bottomElevation);
-  const geometry = new THREE.BoxGeometry(length, height, thickness);
-  const material = new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.62, roughness: 0.7 });
-  const mesh = new THREE.Mesh(geometry, material);
+  const geometry = new BoxGeometry(length, height, thickness);
+  const material = new MeshStandardMaterial({ color, transparent: true, opacity: 0.62, roughness: 0.7 });
+  const mesh = new Mesh(geometry, material);
   mesh.position.copy(toScenePoint((segment.start.x + segment.end.x) / 2, (segment.start.y + segment.end.y) / 2, (topElevation + bottomElevation) / 2));
   mesh.rotation.y = -segmentAngle(segment);
   mesh.userData = { name, type, topElevation, bottomElevation, thickness };
   return mesh;
 }
 
-function createCylinderBetween(start: THREE.Vector3, end: THREE.Vector3, radius: number, color: string, name: string, type: string, extraData: Record<string, unknown> = {}) {
-  const direction = new THREE.Vector3().subVectors(end, start);
+function createCylinderBetween(start: Vector3, end: Vector3, radius: number, color: string, name: string, type: string, extraData: Record<string, unknown> = {}) {
+  const direction = new Vector3().subVectors(end, start);
   const length = direction.length();
-  const geometry = new THREE.CylinderGeometry(radius, radius, length, 12);
-  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
-  const mesh = new THREE.Mesh(geometry, material);
+  const geometry = new CylinderGeometry(radius, radius, length, 12);
+  const material = new MeshStandardMaterial({ color, roughness: 0.55 });
+  const mesh = new Mesh(geometry, material);
   mesh.position.copy(start).add(end).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+  mesh.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction.clone().normalize());
   mesh.userData = { name, type, length: Number(length.toFixed(3)), ...extraData };
   return mesh;
 }
 
-function addBoreholes(scene: THREE.Scene, project: Project) {
+function addBoreholes(scene: Scene, project: Project) {
   project.boreholes.forEach((bh) => {
     const top = bh.collarElevation;
     const points = [toScenePoint(bh.x, bh.y, top), toScenePoint(bh.x, bh.y, top - bh.depth)];
     addPolyline(scene, points, '#111827', bh.code, 'borehole');
     bh.layers.forEach((layer) => {
       const height = Math.max(0.05, layer.topElevation - layer.bottomElevation);
-      const geometry = new THREE.CylinderGeometry(0.45, 0.45, height, 10);
-      const material = new THREE.MeshStandardMaterial({ color: hashColor(layer.stratumCode), transparent: true, opacity: 0.72 });
-      const mesh = new THREE.Mesh(geometry, material);
+      const geometry = new CylinderGeometry(0.45, 0.45, height, 10);
+      const material = new MeshStandardMaterial({ color: hashColor(layer.stratumCode), transparent: true, opacity: 0.72 });
+      const mesh = new Mesh(geometry, material);
       mesh.position.copy(toScenePoint(bh.x, bh.y, (layer.topElevation + layer.bottomElevation) / 2));
       mesh.userData = { name: `${bh.code} ${layer.stratumCode}`, type: 'borehole-layer', layer };
       scene.add(mesh);
@@ -109,7 +109,7 @@ function addBoreholes(scene: THREE.Scene, project: Project) {
   });
 }
 
-function addGeologicalSurfaces(scene: THREE.Scene, project: Project) {
+function addGeologicalSurfaces(scene: Scene, project: Project) {
   project.geologicalModel?.surfaces.forEach((surface) => {
     const nx = surface.grid.xValues.length;
     const ny = surface.grid.yValues.length;
@@ -131,31 +131,31 @@ function addGeologicalSurfaces(scene: THREE.Scene, project: Project) {
         indices.push(a, b, c, b, d, c);
       }
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
-    const material = new THREE.MeshStandardMaterial({
+    const material = new MeshStandardMaterial({
       color: hashColor(surface.stratumCode),
-      side: THREE.DoubleSide,
+      side: DoubleSide,
       transparent: true,
       opacity: surface.surfaceType === 'top' ? 0.24 : 0.38,
       metalness: 0,
       roughness: 0.8,
     });
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new Mesh(geometry, material);
     mesh.userData = { name: `${surface.stratumCode}-${surface.surfaceType}`, type: 'geological-surface', confidence: surface.confidence };
     scene.add(mesh);
   });
 }
 
-function addVtuMesh(scene: THREE.Scene, vtuMesh?: VtuMesh) {
+function addVtuMesh(scene: Scene, vtuMesh?: VtuMesh) {
   if (!vtuMesh?.points?.length) return;
-  const group = new THREE.Group();
+  const group = new Group();
   group.userData = { name: 'VTU mesh', type: 'vtu-group' };
   const vertices = vtuMesh.points.map((p) => toScenePoint(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0));
-  const material = new THREE.LineBasicMaterial({ color: '#7c3aed', transparent: true, opacity: 0.75 });
-  const edges: THREE.Vector3[] = [];
+  const material = new LineBasicMaterial({ color: '#7c3aed', transparent: true, opacity: 0.75 });
+  const edges: Vector3[] = [];
   (vtuMesh.cellBlocks ?? []).forEach((cell) => {
     const nodeLimit = VTK_CELL_NODE_LIMIT[cell.vtkType ?? 0] ?? cell.nodes.length;
     const nodes = cell.nodes.slice(0, nodeLimit).filter((idx) => idx >= 0 && idx < vertices.length);
@@ -166,20 +166,20 @@ function addVtuMesh(scene: THREE.Scene, vtuMesh?: VtuMesh) {
     }
   });
   if (edges.length) {
-    const geometry = new THREE.BufferGeometry().setFromPoints(edges);
-    const lineSegments = new THREE.LineSegments(geometry, material);
+    const geometry = new BufferGeometry().setFromPoints(edges);
+    const lineSegments = new LineSegments(geometry, material);
     lineSegments.userData = { name: 'VTU cell edges', type: 'vtu', summary: vtuMesh.summary };
     group.add(lineSegments);
   }
-  const pointGeometry = new THREE.BufferGeometry().setFromPoints(vertices);
-  const pointMaterial = new THREE.PointsMaterial({ color: '#4f46e5', size: 0.45 });
-  const points = new THREE.Points(pointGeometry, pointMaterial);
+  const pointGeometry = new BufferGeometry().setFromPoints(vertices);
+  const pointMaterial = new PointsMaterial({ color: '#4f46e5', size: 0.45 });
+  const points = new Points(pointGeometry, pointMaterial);
   points.userData = { name: 'VTU points', type: 'vtu-points' };
   group.add(points);
   scene.add(group);
 }
 
-function addExcavation(scene: THREE.Scene, project: Project) {
+function addExcavation(scene: Scene, project: Project) {
   const excavation = project.excavation;
   if (!excavation) return;
   const topPoints = excavation.outline.points.map((p) => toScenePoint(p.x, p.y, excavation.topElevation));
@@ -189,7 +189,7 @@ function addExcavation(scene: THREE.Scene, project: Project) {
   excavation.outline.points.forEach((p) => addPolyline(scene, [toScenePoint(p.x, p.y, excavation.topElevation), toScenePoint(p.x, p.y, excavation.bottomElevation)], '#93c5fd', 'excavation vertical edge', 'excavation'));
 }
 
-function addRetaining(scene: THREE.Scene, project: Project) {
+function addRetaining(scene: Scene, project: Project) {
   const retaining = project.retainingSystem;
   if (!retaining) return;
   const segmentsById = new Map(project.excavation?.segments.map((segment) => [segment.id, segment]) ?? []);
@@ -212,7 +212,7 @@ function addRetaining(scene: THREE.Scene, project: Project) {
     const radius = Math.max(0.14, (support.section.width ?? support.section.diameter ?? 0.7) / 2);
     const start = toScenePoint(support.start.x, support.start.y, support.elevation);
     const end = toScenePoint(support.end.x, support.end.y, support.elevation);
-    const color = support.supportRole === 'corner_diagonal' ? '#f97316' : '#dc2626';
+    const color = support.supportRole === 'corner_diagonal' ? '#f97316' : support.supportRole === 'secondary_strut' ? '#0891b2' : support.supportRole === 'ring_strut' ? '#9333ea' : '#dc2626';
     scene.add(createCylinderBetween(start, end, radius, color, support.code, 'support', {
       supportRole: support.supportRole ?? 'main_strut',
       layoutNote: support.layoutNote,
@@ -229,7 +229,7 @@ function addRetaining(scene: THREE.Scene, project: Project) {
   });
 }
 
-function addResultGlyphs(scene: THREE.Scene, project: Project) {
+function addResultGlyphs(scene: Scene, project: Project) {
   const latest = project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
   const excavation = project.excavation;
   if (!latest || !excavation) return;
@@ -242,7 +242,7 @@ function addResultGlyphs(scene: THREE.Scene, project: Project) {
     const depth = excavation.depth;
     const length = Math.min(6, 1 + maxPressure / 80);
     const base = toScenePoint(mid.x, mid.y, (excavation.topElevation + excavation.bottomElevation) / 2);
-    const normal = new THREE.Vector3(segment.outwardNormal.x * length, -depth * 0.02, segment.outwardNormal.y * length);
+    const normal = new Vector3(segment.outwardNormal.x * length, -depth * 0.02, segment.outwardNormal.y * length);
     const end = base.clone().add(normal);
     addPolyline(scene, [base, end], '#f97316', `pressure ${segment.name}`, 'result-pressure');
   });
@@ -264,9 +264,13 @@ function SvgFallback({ project }: { project: Project }) {
   );
 }
 
+function ObjectPropertyTable({ data }: { data: Record<string, unknown> }) {
+  return <table className="table compactTable"><tbody>{Object.entries(data).map(([key, value]) => <tr key={key}><td>{key}</td><td>{typeof value === 'object' && value !== null ? Object.entries(value as Record<string, unknown>).map(([k, v]) => `${k}: ${String(v)}`).join('；') : String(value ?? '-')}</td></tr>)}</tbody></table>;
+}
+
 export default function ProjectSceneViewer({ project, mode = 'all' }: { project: Project; mode?: 'all' | 'geology' | 'retaining' | 'results' }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const rendererRef = useRef<WebGLRenderer | null>(null);
   const [layers, setLayers] = useState<LayerState>(() => ({ ...DEFAULT_LAYERS }));
   const [opacity, setOpacity] = useState(0.68);
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
@@ -279,9 +283,9 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
     const mount = mountRef.current;
     if (!mount) return undefined;
     mount.innerHTML = '';
-    let renderer: THREE.WebGLRenderer;
+    let renderer: WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer = new WebGLRenderer({ antialias: true });
     } catch (err) {
       setRenderError(err instanceof Error ? err.message : '当前环境不支持 WebGL，已切换为 SVG 降级视图。');
       return undefined;
@@ -293,9 +297,9 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
     renderer.domElement.className = 'sceneCanvas';
     mount.appendChild(renderer.domElement);
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#f8fafc');
-    const camera = new THREE.PerspectiveCamera(48, (mount.clientWidth || 900) / 460, 0.1, 10000);
+    const scene = new Scene();
+    scene.background = new Color('#f8fafc');
+    const camera = new PerspectiveCamera(48, (mount.clientWidth || 900) / 460, 0.1, 10000);
     const { center, radius } = bounds;
     let theta = -Math.PI / 4;
     let phi = Math.PI / 3;
@@ -310,14 +314,14 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
     };
     updateCamera();
 
-    scene.add(new THREE.AmbientLight('#ffffff', 0.65));
-    const light = new THREE.DirectionalLight('#ffffff', 0.9);
+    scene.add(new AmbientLight('#ffffff', 0.65));
+    const light = new DirectionalLight('#ffffff', 0.9);
     light.position.set(center.x + radius, center.y + radius, center.z + radius);
     scene.add(light);
-    const grid = new THREE.GridHelper(Math.max(30, radius * 2), 20, '#94a3b8', '#e2e8f0');
+    const grid = new GridHelper(Math.max(30, radius * 2), 20, '#94a3b8', '#e2e8f0');
     grid.position.set(center.x, Math.min(0, center.y - radius * 0.2), center.z);
     scene.add(grid);
-    const axes = new THREE.AxesHelper(Math.min(20, radius * 0.4));
+    const axes = new AxesHelper(Math.min(20, radius * 0.4));
     axes.position.set(center.x - radius * 0.7, center.y - radius * 0.3, center.z - radius * 0.7);
     scene.add(axes);
 
@@ -328,29 +332,29 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
     if (layers.walls || layers.supports || mode === 'retaining') addRetaining(scene, project);
     if (layers.results && mode !== 'geology') addResultGlyphs(scene, project);
 
-    const clipPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), bounds.center.x + clipOffset);
-    scene.traverse((object: THREE.Object3D) => {
-      if (object instanceof THREE.Mesh) {
+    const clipPlane = new Plane(new Vector3(-1, 0, 0), bounds.center.x + clipOffset);
+    scene.traverse((object: Object3D) => {
+      if (object instanceof Mesh) {
         const material = object.material;
-        if (material instanceof THREE.MeshStandardMaterial && object.userData.type !== 'support' && object.userData.type !== 'column') {
+        if (material instanceof MeshStandardMaterial && object.userData.type !== 'support' && object.userData.type !== 'column') {
           material.opacity = opacity;
           material.transparent = opacity < 1;
         }
-        if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshLambertMaterial || material instanceof THREE.MeshBasicMaterial) {
+        if (material instanceof MeshStandardMaterial || material instanceof MeshLambertMaterial || material instanceof MeshBasicMaterial) {
           material.clippingPlanes = clipEnabled ? [clipPlane] : [];
           material.needsUpdate = true;
         }
       }
     });
 
-    const raycaster = new THREE.Raycaster();
-    const pointer = new THREE.Vector2();
+    const raycaster = new Raycaster();
+    const pointer = new Vector2();
     const onClick = (event: MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(scene.children, true).find((item: THREE.Intersection) => Object.keys(item.object.userData).length > 0);
+      const hit = raycaster.intersectObjects(scene.children, true).find((item: Intersection) => Object.keys(item.object.userData).length > 0);
       setSelected(hit?.object.userData as Record<string, unknown> | undefined);
     };
 
@@ -437,7 +441,7 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
       {renderError && <SvgFallback project={project} />}
       <div className="propertyPanel">
         <strong>对象属性</strong>
-        {selected ? <pre>{JSON.stringify(selected, null, 2)}</pre> : <span className="small">点击三维对象查看构件、地层或 VTU 属性。</span>}
+        {selected ? <ObjectPropertyTable data={selected} /> : <span className="small">点击三维对象查看构件、地层或 VTU 属性。</span>}
       </div>
     </div>
   );

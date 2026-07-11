@@ -122,6 +122,39 @@ def _issue(category: str, severity: str, message: str, object_id: str | None = N
     return QualityGateIssue(category=category, severity=severity, object_id=object_id, object_type=object_type, message=message, recommendation=recommendation, highlight_geometry=geometry or {}, related_object_ids=related or [], display_hint=hint)
 
 
+def _effective_unbraced_span(project: Project, support: SupportElement) -> float:
+    length = float(support.span_length or _span(support))
+    ret = project.retaining_system
+    if not ret or not ret.columns or length <= 1e-9:
+        return length
+    dx = support.end.x - support.start.x
+    dy = support.end.y - support.start.y
+    stations = [0.0, length]
+    for column in ret.columns:
+        if support.code not in getattr(column, "support_codes", []):
+            continue
+        px = column.location.x - support.start.x
+        py = column.location.y - support.start.y
+        station = (px * dx + py * dy) / length
+        if -0.25 <= station <= length + 0.25:
+            stations.append(max(0.0, min(length, station)))
+    stations = sorted(set(round(value, 3) for value in stations))
+    return max((b - a for a, b in zip(stations[:-1], stations[1:])), default=length)
+
+
+def _supported_grid_crossing(project: Project, a: SupportElement, b: SupportElement, point: Point2D | None) -> bool:
+    if {a.support_role, b.support_role} != {"main_strut", "secondary_strut"} or point is None:
+        return False
+    ret = project.retaining_system
+    if not ret:
+        return False
+    for column in ret.columns:
+        codes = set(getattr(column, "support_codes", []) or [])
+        if a.code in codes and b.code in codes and math.hypot(column.location.x - point.x, column.location.y - point.y) <= 0.75:
+            return True
+    return False
+
+
 def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySummary:
     ret = project.retaining_system
     if not ret or not ret.supports:
@@ -129,6 +162,7 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
 
     supports = ret.supports
     main = [s for s in supports if s.support_role == "main_strut"]
+    secondary = [s for s in supports if s.support_role == "secondary_strut"]
     corners = [s for s in supports if s.support_role == "corner_diagonal"]
     axis = _orientation_axis(project)
     by_level: dict[int, list[SupportElement]] = defaultdict(list)
@@ -141,6 +175,8 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
     bay_spacings: list[float] = []
     main_counts: dict[str, int] = {}
     max_span = 0.0
+    max_unbraced_span = 0.0
+    supported_grid_nodes = 0
 
     for level, items in sorted(by_level.items()):
         items_sorted = sorted(items, key=lambda ss: _mid(ss)[0 if axis == "x" else 1])
@@ -157,17 +193,22 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
 
     for s in supports:
         sp = float(s.span_length or _span(s))
+        unbraced = _effective_unbraced_span(project, s)
         max_span = max(max_span, sp)
-        if sp > FAIL_MAX_SPAN_M:
-            issues.append(_issue("support_span", "fail", f"支撑 {s.code} 跨长 {sp:.2f}m 超过 {FAIL_MAX_SPAN_M:.1f}m，需增设立柱、分段或改用环撑。", s.id, "SupportElement", "增设临时立柱或改变支撑体系。", geometry=_support_geometry(s), hint="span_fail"))
-        elif sp > WARNING_MAX_SPAN_M:
-            issues.append(_issue("support_span", "warning", f"支撑 {s.code} 跨长 {sp:.2f}m，已超过常规舒适范围。", s.id, "SupportElement", "复核长细比、挠度、立柱和施工安装。", geometry=_support_geometry(s), hint="span_warning"))
+        max_unbraced_span = max(max_unbraced_span, unbraced)
+        if unbraced > FAIL_MAX_SPAN_M:
+            issues.append(_issue("support_span", "fail", f"支撑 {s.code} 有效无侧向支承长度 {unbraced:.2f}m 超过 {FAIL_MAX_SPAN_M:.1f}m。", s.id, "SupportElement", "增设临时立柱/网格节点或改变支撑体系。", geometry=_support_geometry(s), hint="span_fail"))
+        elif unbraced > WARNING_MAX_SPAN_M:
+            issues.append(_issue("support_span", "warning", f"支撑 {s.code} 有效无侧向支承长度 {unbraced:.2f}m 偏大。", s.id, "SupportElement", "复核长细比、挠度、立柱和施工安装。", geometry=_support_geometry(s), hint="span_warning"))
 
     # Crossings: any same-level crossing without shared endpoints is a layout hard issue.
     for i, a in enumerate(supports):
         for b in supports[i + 1:]:
             crossed, pt = _supports_cross(a, b)
             if not crossed:
+                continue
+            if _supported_grid_crossing(project, a, b, pt):
+                supported_grid_nodes += 1
                 continue
             pair = {"supportA": a.code, "supportB": b.code, "supportAId": a.id, "supportBId": b.id, "levelIndex": a.level_index, "point": pt.model_dump(mode="json", by_alias=True) if pt else None}
             crossing_pairs.append(pair)
@@ -223,6 +264,7 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
     metrics = {
         "mainSupportCountByLevel": main_counts,
         "mainSupportCount": len(main),
+        "secondaryGridSupportCount": len(secondary),
         "cornerDiagonalCount": len(corners),
         "supportCount": len(supports),
         "columnCount": len(columns),
@@ -231,9 +273,11 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         "minBaySpacing": round(min(bay_spacings), 3) if bay_spacings else None,
         "maxBaySpacing": round(max(bay_spacings), 3) if bay_spacings else None,
         "maxSpanLength": round(max_span, 3),
+        "maxEffectiveUnbracedSpan": round(max_unbraced_span, 3),
+        "supportedGridNodeCount": supported_grid_nodes,
         "supportCrossingCount": len(crossing_pairs),
         "highlightCount": len(highlights),
         "preferredSpacingRange": [PRACTICAL_MIN_SPACING_M, PRACTICAL_MAX_SPACING_M],
     }
-    summary = f"支撑布置评分 {score:.1f}；主对撑 {len(main)} 根，角撑 {len(corners)} 根，立柱 {len(columns)} 根，交叉 {len(crossing_pairs)} 处，最大跨长 {max_span:.2f}m。"
+    summary = f"支撑布置评分 {score:.1f}；主对撑 {len(main)} 根，次对撑 {len(secondary)} 根，角撑 {len(corners)} 根，立柱 {len(columns)} 根，未设节点交叉 {len(crossing_pairs)} 处，最大无支承长度 {max_unbraced_span:.2f}m。"
     return SupportLayoutQualitySummary(score=score, status=status, summary=summary, metrics=metrics, issues=issues, highlights=highlights, crossing_pairs=crossing_pairs)

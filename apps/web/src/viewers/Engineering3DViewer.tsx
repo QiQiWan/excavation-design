@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
+import { AmbientLight, AxesHelper, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, GridHelper, Line, LineBasicMaterial, LineSegments, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Raycaster, Scene, SphereGeometry, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { GeologicalSurface, Point2D, Project, VtuCellBlock } from '../types/domain';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'beams' | 'supports' | 'columns' | 'results';
@@ -22,11 +22,11 @@ const PALETTE = [
   0x94a3b8, 0xd97706, 0x22c55e, 0x38bdf8, 0xa78bfa, 0xf472b6, 0xfacc15, 0x2dd4bf,
 ];
 
-function stratumColor(project: Project, code: string | undefined, fallbackIndex = 0): THREE.Color {
+function stratumColor(project: Project, code: string | undefined, fallbackIndex = 0): Color {
   const stratum = project.strata.find((item) => item.code === code);
-  if (stratum?.color) return new THREE.Color(stratum.color);
+  if (stratum?.color) return new Color(stratum.color);
   const index = Math.max(0, project.strata.findIndex((item) => item.code === code));
-  return new THREE.Color(PALETTE[(index >= 0 ? index : fallbackIndex) % PALETTE.length]);
+  return new Color(PALETTE[(index >= 0 ? index : fallbackIndex) % PALETTE.length]);
 }
 
 function planLength(a: Point2D, b: Point2D): number {
@@ -37,11 +37,11 @@ function planAngle(a: Point2D, b: Point2D): number {
   return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
-function toVector3(x: number, y: number, elevation = 0): THREE.Vector3 {
-  return new THREE.Vector3(x, elevation, y);
+function toVector3(x: number, y: number, elevation = 0): Vector3 {
+  return new Vector3(x, elevation, y);
 }
 
-function addObjectInfo(object: THREE.Object3D, info: Record<string, unknown>, pickables: THREE.Object3D[]) {
+function addObjectInfo(object: Object3D, info: Record<string, unknown>, pickables: Object3D[]) {
   object.userData.info = info;
   pickables.push(object);
 }
@@ -81,7 +81,7 @@ function issueSeverityMap(project: Project): Map<string, string> {
 function supportCloudColor(force: number | undefined, maxForce: number): number {
   if (!force || !Number.isFinite(force) || maxForce <= 0) return 0xdc2626;
   const ratio = Math.max(0, Math.min(1, force / maxForce));
-  const color = new THREE.Color();
+  const color = new Color();
   color.setHSL((1 - ratio) * 0.33, 0.82, 0.48);
   return color.getHex();
 }
@@ -97,7 +97,7 @@ function edgesForCell(block: VtuCellBlock): [number, number][] {
   return pairs;
 }
 
-function makeSurfaceMesh(project: Project, surface: GeologicalSurface, opacity: number, clippingPlanes: THREE.Plane[]): THREE.Mesh | undefined {
+function makeSurfaceMesh(project: Project, surface: GeologicalSurface, opacity: number, clippingPlanes: Plane[]): Mesh | undefined {
   const xs = surface.grid.xValues;
   const ys = surface.grid.yValues;
   const zs = surface.grid.zValues;
@@ -119,18 +119,18 @@ function makeSurfaceMesh(project: Project, surface: GeologicalSurface, opacity: 
       indices.push(a, c, b, b, c, d);
     }
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  const material = new THREE.MeshStandardMaterial({
+  const material = new MeshStandardMaterial({
     color: stratumColor(project, surface.stratumCode),
     transparent: true,
     opacity,
-    side: THREE.DoubleSide,
+    side: DoubleSide,
     clippingPlanes,
   });
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new Mesh(geometry, material);
   mesh.name = `地层面 ${surface.stratumCode} ${surface.surfaceType}`;
   mesh.userData.info = {
     type: 'GeologicalSurface',
@@ -152,7 +152,30 @@ function boundsFromProject(project: Project) {
   if (!xs.length) { xs.push(0, 60); ys.push(0, 40); }
   const minX = Math.min(...xs); const maxX = Math.max(...xs);
   const minY = Math.min(...ys); const maxY = Math.max(...ys);
-  return { minX, maxX, minY, maxY, minZ: Math.min(...zs), maxZ: Math.max(...zs), size: Math.max(maxX - minX, maxY - minY, 20), center: new THREE.Vector3((minX + maxX) / 2, (Math.min(...zs) + Math.max(...zs)) / 2, (minY + maxY) / 2) };
+  return { minX, maxX, minY, maxY, minZ: Math.min(...zs), maxZ: Math.max(...zs), size: Math.max(maxX - minX, maxY - minY, 20), center: new Vector3((minX + maxX) / 2, (Math.min(...zs) + Math.max(...zs)) / 2, (minY + maxY) / 2) };
+}
+
+
+function BoreholeDetailPanel({ project, info }: { project: Project; info: Record<string, unknown> }) {
+  const code = String(info.borehole ?? '');
+  const borehole = project.boreholes.find((item) => item.code === code || item.id === info.boreholeId);
+  if (!borehole) return null;
+  return (
+    <div className="boreholeDetailPanel">
+      <h4>{borehole.code} 地层分布</h4>
+      <div className="boreholeMeta"><span>孔口标高 {borehole.collarElevation} m</span><span>孔深 {borehole.depth} m</span></div>
+      <div className="boreholeLayerList">
+        {borehole.layers.map((layer) => {
+          const color = stratumColor(project, layer.stratumCode).getStyle();
+          return <div key={layer.id} className="boreholeLayerRow"><em style={{ background: color }} /><strong>{layer.stratumCode}</strong><span>{layer.stratumName}</span><small>{layer.topElevation.toFixed(2)} ~ {layer.bottomElevation.toFixed(2)} m</small></div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function isBoreholeInfo(info?: Record<string, unknown>) {
+  return String(info?.type ?? '') === 'BoreholeLayer';
 }
 
 export default function Engineering3DViewer({ project, focus = 'all', highlightLocator }: { project: Project; focus?: 'all' | 'geology' | 'retaining'; highlightLocator?: Record<string, unknown> }) {
@@ -163,9 +186,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
   const [clipAxis, setClipAxis] = useState<'x' | 'y' | 'z'>('x');
   const [clipOffset, setClipOffset] = useState(0);
   const [measureMode, setMeasureMode] = useState(false);
-  const [measureStart, setMeasureStart] = useState<THREE.Vector3 | undefined>();
+  const [measureStart, setMeasureStart] = useState<Vector3 | undefined>();
   const [measureText, setMeasureText] = useState<string | undefined>();
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
+  const [hoverInfo, setHoverInfo] = useState<Record<string, unknown> | undefined>();
 
   const stats = useMemo(() => ({
     boreholes: project.boreholes.length,
@@ -197,26 +221,26 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     const width = Math.max(clientWidth, 640);
     const height = Math.max(clientHeight, 420);
     const bbox = boundsFromProject(project);
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf8fafc);
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 5000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const scene = new Scene();
+    scene.background = new Color(0xf8fafc);
+    const camera = new PerspectiveCamera(45, width / height, 0.1, 5000);
+    const renderer = new WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.localClippingEnabled = clip;
     mount.appendChild(renderer.domElement);
 
-    const pickables: THREE.Object3D[] = [];
-    const clipNormal = clipAxis === 'x' ? new THREE.Vector3(-1, 0, 0) : clipAxis === 'y' ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(0, 0, -1);
-    const clippingPlanes = clip ? [new THREE.Plane(clipNormal, clipOffset || (clipAxis === 'x' ? bbox.center.x : clipAxis === 'y' ? bbox.center.y : bbox.center.z))] : [];
-    scene.add(new THREE.AmbientLight(0xffffff, 0.72));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    const pickables: Object3D[] = [];
+    const clipNormal = clipAxis === 'x' ? new Vector3(-1, 0, 0) : clipAxis === 'y' ? new Vector3(0, -1, 0) : new Vector3(0, 0, -1);
+    const clippingPlanes = clip ? [new Plane(clipNormal, clipOffset || (clipAxis === 'x' ? bbox.center.x : clipAxis === 'y' ? bbox.center.y : bbox.center.z))] : [];
+    scene.add(new AmbientLight(0xffffff, 0.72));
+    const sun = new DirectionalLight(0xffffff, 0.8);
     sun.position.set(bbox.center.x - bbox.size, bbox.center.y + bbox.size * 1.5, bbox.center.z + bbox.size);
     scene.add(sun);
-    const grid = new THREE.GridHelper(Math.max(bbox.size * 1.4, 20), 20, 0x94a3b8, 0xcbd5e1);
+    const grid = new GridHelper(Math.max(bbox.size * 1.4, 20), 20, 0x94a3b8, 0xcbd5e1);
     grid.position.set(bbox.center.x, 0, bbox.center.z);
     scene.add(grid);
-    const axes = new THREE.AxesHelper(Math.max(8, bbox.size * 0.18));
+    const axes = new AxesHelper(Math.max(8, bbox.size * 0.18));
     axes.position.copy(bbox.center).setY(0);
     scene.add(axes);
 
@@ -231,12 +255,12 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       project.boreholes.forEach((bh) => {
         bh.layers.forEach((layer, index) => {
           const h = Math.max(0.05, layer.topElevation - layer.bottomElevation);
-          const geometry = new THREE.CylinderGeometry(0.45, 0.45, h, 12);
-          const material = new THREE.MeshStandardMaterial({ color: stratumColor(project, layer.stratumCode, index), transparent: true, opacity: 0.82, clippingPlanes });
-          const cyl = new THREE.Mesh(geometry, material);
+          const geometry = new CylinderGeometry(0.45, 0.45, h, 12);
+          const material = new MeshStandardMaterial({ color: stratumColor(project, layer.stratumCode, index), transparent: true, opacity: 0.82, clippingPlanes });
+          const cyl = new Mesh(geometry, material);
           cyl.position.set(bh.x, (layer.topElevation + layer.bottomElevation) / 2, bh.y);
           scene.add(cyl);
-          addObjectInfo(cyl, { type: 'BoreholeLayer', borehole: bh.code, stratumCode: layer.stratumCode, stratumName: layer.stratumName, top: layer.topElevation, bottom: layer.bottomElevation }, pickables);
+          addObjectInfo(cyl, { type: 'BoreholeLayer', boreholeId: bh.id, borehole: bh.code, stratumCode: layer.stratumCode, stratumName: layer.stratumName, top: layer.topElevation, bottom: layer.bottomElevation }, pickables);
         });
       });
     }
@@ -252,10 +276,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
         });
       });
       if (linePositions.length) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
-        const material = new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.7, clippingPlanes });
-        const lines = new THREE.LineSegments(geometry, material);
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new Float32BufferAttribute(linePositions, 3));
+        const material = new LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.7, clippingPlanes });
+        const lines = new LineSegments(geometry, material);
         lines.userData.info = { type: 'VTU mesh', cells: stats.vtuCells, fields: project.geologicalModel.vtuMesh.detectedFields?.join(', ') || '-' };
         scene.add(lines);
         pickables.push(lines);
@@ -270,18 +294,18 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       topPts.push(topPts[0].clone());
       const bottomPts = pts.map((p) => toVector3(p.x, p.y, bottom));
       bottomPts.push(bottomPts[0].clone());
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x2563eb, linewidth: 2, clippingPlanes });
-      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(topPts), lineMat));
-      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(bottomPts), lineMat));
-      pts.forEach((p) => scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([toVector3(p.x, p.y, top), toVector3(p.x, p.y, bottom)]), lineMat)));
+      const lineMat = new LineBasicMaterial({ color: 0x2563eb, linewidth: 2, clippingPlanes });
+      scene.add(new Line(new BufferGeometry().setFromPoints(topPts), lineMat));
+      scene.add(new Line(new BufferGeometry().setFromPoints(bottomPts), lineMat));
+      pts.forEach((p) => scene.add(new Line(new BufferGeometry().setFromPoints([toVector3(p.x, p.y, top), toVector3(p.x, p.y, bottom)]), lineMat)));
     }
 
     const isHighlighted = (id?: string, code?: string) => Boolean(highlightId && (highlightId === id || highlightId === code));
-    const applyHighlight = (mesh: THREE.Mesh, selected: boolean) => {
+    const applyHighlight = (mesh: Mesh, selected: boolean) => {
       if (!selected) return;
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      mat.color = new THREE.Color(0xeab308);
-      mat.emissive = new THREE.Color(0x854d0e);
+      const mat = mesh.material as MeshStandardMaterial;
+      mat.color = new Color(0xeab308);
+      mat.emissive = new Color(0x854d0e);
       mat.emissiveIntensity = 0.18;
       mat.opacity = 1.0;
       mesh.scale.multiplyScalar(1.08);
@@ -293,10 +317,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
         if (!a || !b) return;
         const length = planLength(a, b);
         const heightWall = wall.topElevation - wall.bottomElevation;
-        const geometry = new THREE.BoxGeometry(length, heightWall, wall.thickness);
+        const geometry = new BoxGeometry(length, heightWall, wall.thickness);
         const selected = isHighlighted(wall.id, wall.panelCode);
-        const material = new THREE.MeshStandardMaterial({ color: selected ? 0xeab308 : 0x64748b, transparent: true, opacity: selected ? 1.0 : 0.82, clippingPlanes });
-        const mesh = new THREE.Mesh(geometry, material);
+        const material = new MeshStandardMaterial({ color: selected ? 0xeab308 : 0x64748b, transparent: true, opacity: selected ? 1.0 : 0.82, clippingPlanes });
+        const mesh = new Mesh(geometry, material);
         mesh.position.set((a.x + b.x) / 2, wall.bottomElevation + heightWall / 2, (a.y + b.y) / 2);
         mesh.rotation.y = -planAngle(a, b);
         applyHighlight(mesh, selected);
@@ -305,10 +329,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       });
       const addBeam = (code: string, a: Point2D, b: Point2D, elevation: number, width = 0.8, heightBeam = 0.8, materialColor = 0x0f766e, info: Record<string, unknown> = {}) => {
         const length = planLength(a, b);
-        const geometry = new THREE.BoxGeometry(length, heightBeam, width);
+        const geometry = new BoxGeometry(length, heightBeam, width);
         const selected = isHighlighted(String(info.id ?? ''), code);
-        const material = new THREE.MeshStandardMaterial({ color: selected ? 0xeab308 : materialColor, transparent: true, opacity: selected ? 1.0 : 0.86, clippingPlanes });
-        const mesh = new THREE.Mesh(geometry, material);
+        const material = new MeshStandardMaterial({ color: selected ? 0xeab308 : materialColor, transparent: true, opacity: selected ? 1.0 : 0.86, clippingPlanes });
+        const mesh = new Mesh(geometry, material);
         mesh.position.set((a.x + b.x) / 2, elevation, (a.y + b.y) / 2);
         mesh.rotation.y = -planAngle(a, b);
         applyHighlight(mesh, selected);
@@ -323,14 +347,14 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       });
       if (layers.supports) project.retainingSystem.supports.forEach((support) => {
         const issue = supportIssueMap.get(support.id);
-        const color = issueColor(issue) ?? (layers.results ? supportCloudColor(support.designAxialForce, stats.maxSupportAxialForce) : (support.supportRole === 'ring_strut' ? 0x9333ea : support.supportRole === 'corner_diagonal' ? 0xf97316 : 0xdc2626));
+        const color = issueColor(issue) ?? (layers.results ? supportCloudColor(support.designAxialForce, stats.maxSupportAxialForce) : (support.supportRole === 'ring_strut' ? 0x9333ea : support.supportRole === 'corner_diagonal' ? 0xf97316 : support.supportRole === 'secondary_strut' ? 0x0891b2 : 0xdc2626));
         addBeam(support.code, support.start, support.end, support.elevation, support.section.width ?? 0.8, support.section.height ?? 0.8, color, { type: 'InternalSupport', id: support.id, code: support.code, role: support.supportRole, level: support.levelIndex, axialForce: support.designAxialForce, preload: support.preload, thermalAxialForce: support.thermalAxialForce, gapClosureForce: support.gapClosureForce, spanLength: support.spanLength, baySpacing: support.baySpacing, startFace: support.startFaceCode, endFace: support.endFaceCode, startTributaryWidth: support.startTributaryWidth, endTributaryWidth: support.endTributaryWidth, section: support.section.name, material: support.material.grade, qualityIssue: issue ?? 'none' });
       });
       if (layers.supports) project.retainingSystem.supportNodes?.forEach((node) => {
-        const geometry = new THREE.SphereGeometry(0.75, 16, 12);
+        const geometry = new SphereGeometry(0.75, 16, 12);
         const selected = isHighlighted(node.id, node.code);
-        const material = new THREE.MeshStandardMaterial({ color: selected ? 0xeab308 : node.checkStatus === 'fail' ? 0xef4444 : 0x0f766e, transparent: true, opacity: selected ? 1.0 : 0.88, clippingPlanes });
-        const mesh = new THREE.Mesh(geometry, material);
+        const material = new MeshStandardMaterial({ color: selected ? 0xeab308 : node.checkStatus === 'fail' ? 0xef4444 : 0x0f766e, transparent: true, opacity: selected ? 1.0 : 0.88, clippingPlanes });
+        const mesh = new Mesh(geometry, material);
         mesh.position.set(node.location.x, node.elevation, node.location.y);
         applyHighlight(mesh, selected);
         scene.add(mesh);
@@ -338,10 +362,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       });
       if (layers.columns) project.retainingSystem.columns.forEach((column) => {
         const h = column.topElevation - column.bottomElevation;
-        const geometry = new THREE.BoxGeometry(column.section.width ?? 0.6, h, column.section.height ?? column.section.width ?? 0.6);
+        const geometry = new BoxGeometry(column.section.width ?? 0.6, h, column.section.height ?? column.section.width ?? 0.6);
         const selected = isHighlighted(column.id, column.code);
-        const material = new THREE.MeshStandardMaterial({ color: selected ? 0xeab308 : 0x78350f, transparent: true, opacity: selected ? 1.0 : 0.86, clippingPlanes });
-        const mesh = new THREE.Mesh(geometry, material);
+        const material = new MeshStandardMaterial({ color: selected ? 0xeab308 : 0x78350f, transparent: true, opacity: selected ? 1.0 : 0.86, clippingPlanes });
+        const mesh = new Mesh(geometry, material);
         mesh.position.set(column.location.x, column.bottomElevation + h / 2, column.location.y);
         applyHighlight(mesh, selected);
         scene.add(mesh);
@@ -365,15 +389,57 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     let lastX = 0;
     let lastY = 0;
     const onPointerDown = (event: PointerEvent) => { dragging = true; moved = false; lastX = event.clientX; lastY = event.clientY; renderer.domElement.setPointerCapture(event.pointerId); };
+    const raycaster = new Raycaster();
+    let hovered: Object3D | undefined;
+    const getHoverMaterial = (object?: Object3D) => {
+      const material = (object as Mesh).material as MeshStandardMaterial | Material[] | undefined;
+      return Array.isArray(material) ? undefined : material as MeshStandardMaterial | undefined;
+    };
+    const setHoverMesh = (next?: Object3D) => {
+      if (hovered === next) return;
+      if (hovered) {
+        const mat = getHoverMaterial(hovered);
+        const original = hovered.userData.__hoverOriginal as { color?: number; emissive?: number; emissiveIntensity?: number; scale: number } | undefined;
+        if (mat && original) {
+          if (original.color !== undefined && mat.color) mat.color.setHex(original.color);
+          if (original.emissive !== undefined && mat.emissive) mat.emissive.setHex(original.emissive);
+          if (original.emissiveIntensity !== undefined) mat.emissiveIntensity = original.emissiveIntensity;
+          hovered.scale.setScalar(original.scale);
+        }
+      }
+      hovered = next;
+      if (hovered) {
+        const mat = getHoverMaterial(hovered);
+        if (mat?.color) {
+          hovered.userData.__hoverOriginal = { color: mat.color.getHex(), emissive: mat.emissive?.getHex?.(), emissiveIntensity: mat.emissiveIntensity, scale: hovered.scale.x || 1 };
+          mat.color.setHex(0x38bdf8);
+          if (mat.emissive) { mat.emissive.setHex(0x075985); mat.emissiveIntensity = 0.28; }
+          hovered.scale.setScalar((hovered.scale.x || 1) * 1.04);
+        }
+      }
+      renderer.domElement.style.cursor = hovered ? 'pointer' : 'default';
+    };
+    const pickObject = (event: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(mouse, camera);
+      return raycaster.intersectObjects(pickables, true)[0];
+    };
     const onPointerMove = (event: PointerEvent) => {
-      if (!dragging) return;
+      if (!dragging) {
+        let obj: Object3D | undefined = pickObject(event)?.object;
+        while (obj && !obj.userData.info) obj = obj.parent ?? undefined;
+        setHoverMesh(obj);
+        setHoverInfo(obj?.userData.info);
+        return;
+      }
       const dx = event.clientX - lastX;
       const dy = event.clientY - lastY;
       moved = moved || Math.abs(dx) + Math.abs(dy) > 3;
       lastX = event.clientX; lastY = event.clientY;
       if (event.shiftKey || event.buttons === 4) {
         const panScale = radius / 750;
-        const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize();
+        const right = new Vector3().subVectors(camera.position, target).cross(camera.up).normalize();
         const up = camera.up.clone().normalize();
         target.addScaledVector(right, -dx * panScale).addScaledVector(up, dy * panScale);
       } else {
@@ -386,16 +452,12 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       dragging = false;
       renderer.domElement.releasePointerCapture(event.pointerId);
       if (moved) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      const mouse = new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(mouse, camera);
-      const hit = raycaster.intersectObjects(pickables, true)[0];
+      const hit = pickObject(event);
       if (measureMode && hit?.point) {
         if (!measureStart) { setMeasureStart(hit.point.clone()); setMeasureText('已选取测量起点，请点击终点。'); }
         else { const d = measureStart.distanceTo(hit.point); setMeasureText(`测距 ${d.toFixed(3)} m`); setMeasureStart(undefined); }
       }
-      let obj: THREE.Object3D | undefined = hit?.object;
+      let obj: Object3D | undefined = hit?.object;
       while (obj && !obj.userData.info) obj = obj.parent ?? undefined;
       setSelected(obj?.userData.info);
     };
@@ -417,6 +479,8 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     const animate = () => { raf = requestAnimationFrame(animate); renderer.render(scene, camera); };
     animate();
     return () => {
+      setHoverMesh(undefined);
+      setHoverInfo(undefined);
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
@@ -424,10 +488,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.dispose();
-      scene.traverse((object: THREE.Object3D) => {
-        const mesh = object as THREE.Mesh;
+      scene.traverse((object: Object3D) => {
+        const mesh = object as Mesh;
         mesh.geometry?.dispose?.();
-        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        const material = mesh.material as Material | Material[] | undefined;
         if (Array.isArray(material)) material.forEach((item) => item.dispose()); else material?.dispose?.();
       });
       mount.innerHTML = '';
@@ -467,9 +531,10 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       {measureText && <div className="warning">{measureText}</div>}
       {layers.results && <div className="viewerLegend"><span>支撑轴力云图：</span><span className="legendLow">低</span><span className="legendMid">中</span><span className="legendHigh">高</span><span>；质量高亮：红=支撑交叉/严重超限，橙=间距/避让/立柱服务警告。</span></div>}
       <div className="threeViewport" ref={mountRef} />
-      <div className="propertyPanel">
+      {hoverInfo && <div className="hoverObjectBadge"><strong>悬浮</strong><span>{String(hoverInfo.code ?? hoverInfo.borehole ?? hoverInfo.type ?? '-')}</span><em>{String(hoverInfo.type ?? '-')}</em></div>}
+      <div className="propertyPanel threePropertyPanel">
         <strong>属性</strong>
-        {selected ? <table className="table compactTable"><tbody>{humanInfo(selected).map(([key, value]) => <tr key={key}><td>{key}</td><td>{String(value ?? '-')}</td></tr>)}</tbody></table> : <span className="small">未选择对象</span>}
+        {selected ? (isBoreholeInfo(selected) ? <BoreholeDetailPanel project={project} info={selected} /> : <table className="table compactTable"><tbody>{humanInfo(selected).map(([key, value]) => <tr key={key}><td>{key}</td><td>{String(value ?? '-')}</td></tr>)}</tbody></table>) : <span className="small">未选择对象</span>}
       </div>
     </div>
   );

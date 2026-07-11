@@ -1,0 +1,23 @@
+{
+  "caseId": "URBAN-TOPDOWN-32M-WALL-5SUPPORT",
+  "softwareVersion": "3.1.0",
+  "schemeStatus": "fail",
+  "wallZoneCount": 40,
+  "supportSchemeCount": 110,
+  "beamNodeSchemeCount": 244,
+  "checkCount": 434,
+  "passCount": 386,
+  "warningCount": 24,
+  "failCount": 24,
+  "envelopeAnomalyCount": 0,
+  "sectionUpgradeRequiredCount": 24,
+  "plannedSheetCount": 29,
+  "generatedDxfCount": 34,
+  "generatedCsvCount": 17,
+  "singleWallElevationCount": 4,
+  "detailDrawingCount": 6,
+  "packageEntries": 56,
+  "packageBytes": 566021,
+  "elapsedSeconds": 12.42,
+  "package": "/mnt/data/pitguard_v3_1_sample_outputs/project-ecc55934dc64_construction_cad_full_v3_1_0.zip"
+}

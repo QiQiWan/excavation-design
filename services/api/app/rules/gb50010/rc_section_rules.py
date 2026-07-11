@@ -72,6 +72,10 @@ class RectangularFlexureDesign:
     utilization: float | None
     status: str
     message: str
+    design_regime: str = "single_reinforced"
+    compression_rebar_required: float = 0.0
+    limiting_moment_knm_per_m: float | None = None
+    section_capacity_exceeded: bool = False
 
 
 def _grade_key(grade: str) -> str:
@@ -115,12 +119,13 @@ def design_rectangular_flexure(
     cover_mm: float = 70.0,
     provided_as_mm2_per_m: float | None = None,
 ) -> RectangularFlexureDesign:
-    """GB/T 50010-oriented single-reinforced rectangular-section flexural screening.
+    """Rectangular wall-strip flexural design with an explicit high-moment branch.
 
-    Units: M in kN*m/m, wall thickness in m, As in mm2/m.  The method uses the standard
-    normal-section equilibrium pair M <= alpha1*fc*b*x*(h0-x/2) and alpha1*fc*b*x = fy*As.
-    It is intentionally a screening subset: compression reinforcement, crack width, anchorage,
-    lap splices, seismic detailing and reinforcement cage constructability remain manual review.
+    The former implementation capped the compression block when the quadratic
+    discriminant became negative, which made required steel plateau and obscured
+    the true reason for failure.  The revised method reports the limiting
+    singly-reinforced moment and estimates the additional tension/compression
+    steel couple required beyond that limit.
     """
     b = 1000.0
     h = max(thickness_m, 0.1) * 1000.0
@@ -129,19 +134,30 @@ def design_rectangular_flexure(
     fy = rebar_fy(rebar_grade)
     m_nmm = abs(moment_design_knm_per_m) * 1e6
     alpha1 = 1.0
-    disc = h0**2 - 2.0 * m_nmm / max(alpha1 * fc * b, 1e-9)
-    if disc <= 0:
-        x = 0.55 * h0
-        required = alpha1 * fc * b * x / fy
-        status = "fail"
-        message = "弯矩超过单筋矩形截面快速公式适用范围，应加厚截面或采用双筋/专项设计。"
-    else:
+    xi_b = 0.55
+    xb = xi_b * h0
+    m_lim_nmm = alpha1 * fc * b * xb * (h0 - xb / 2.0)
+    compression_required = 0.0
+    capacity_exceeded = False
+    if m_nmm <= m_lim_nmm + 1e-6:
+        disc = max(h0**2 - 2.0 * m_nmm / max(alpha1 * fc * b, 1e-9), 0.0)
         x = h0 - math.sqrt(disc)
         required = alpha1 * fc * b * x / fy
-        xi = x / max(h0, 1e-9)
-        status = "pass" if xi <= 0.55 else "fail"
-        message = "受弯配筋快速计算完成。" if status == "pass" else "受压区高度偏大，应采用双筋或调整截面。"
-    # Use a conservative wall-strip minimum-reinforcement diagnostic; final value depends on member type and code clauses.
+        regime = "single_reinforced"
+        status = "pass"
+        message = "受弯配筋快速计算完成。"
+    else:
+        x = xb
+        base_tension = alpha1 * fc * b * xb / fy
+        compression_bar_depth = min(max(cover_mm + 20.0, 50.0), 0.25 * h0)
+        lever = max(h0 - compression_bar_depth, 0.55 * h0)
+        extra = (m_nmm - m_lim_nmm) / max(fy * lever, 1e-9)
+        required = base_tension + extra
+        compression_required = extra
+        regime = "double_reinforced_required"
+        status = "manual_review"
+        capacity_exceeded = True
+        message = "弯矩超过单筋截面界限，已估算双筋附加钢筋；需复核截面、受压钢筋和钢筋笼施工性。"
     minimum = max(0.0020 * b * h, 0.45 * concrete_ft("C30") / max(fy, 1e-9) * b * h)
     governing = max(required, minimum)
     utilization: float | None = None
@@ -149,7 +165,9 @@ def design_rectangular_flexure(
         utilization = governing / provided_as_mm2_per_m
         if utilization > 1.0:
             status = "fail"
-            message = "实配钢筋面积小于快速计算控制面积。"
+            message = "实配钢筋面积小于计算控制面积。"
+        elif capacity_exceeded:
+            status = "manual_review"
     xi = x / max(h0, 1e-9)
     return RectangularFlexureDesign(
         required_as=round(required, 2),
@@ -161,6 +179,10 @@ def design_rectangular_flexure(
         utilization=round(utilization, 3) if utilization is not None else None,
         status=status,
         message=message,
+        design_regime=regime,
+        compression_rebar_required=round(compression_required, 2),
+        limiting_moment_knm_per_m=round(m_lim_nmm / 1e6, 3),
+        section_capacity_exceeded=capacity_exceeded,
     )
 
 
@@ -190,6 +212,10 @@ def design_rectangular_flexure_single_rebar(
         utilization=design.utilization,
         status=design.status,
         message=design.message,
+        design_regime=design.design_regime,
+        compression_rebar_required=round(design.compression_rebar_required * scale, 2),
+        limiting_moment_knm_per_m=round((design.limiting_moment_knm_per_m or 0.0) * scale, 3),
+        section_capacity_exceeded=design.section_capacity_exceeded,
     )
 
 

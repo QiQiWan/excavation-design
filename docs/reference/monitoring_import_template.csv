@@ -1,0 +1,4 @@
+record_type,object_code,stage_id,timestamp,measured_value,unit,elevation,x,y,quality,note
+wall_displacement,DW-S1-001,,2026-07-11T08:00:00+08:00,12.5,mm,-8.0,,,verified,example
+support_axial_force,GS-L3-2,,2026-07-11T08:00:00+08:00,8500,kN,,,,verified,example
+groundwater,,,2026-07-11T08:00:00+08:00,-1.8,m,,,,verified,example

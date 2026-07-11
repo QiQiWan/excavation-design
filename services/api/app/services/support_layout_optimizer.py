@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import math
-from contextlib import contextmanager
 from statistics import mean, pstdev
-from typing import Any, Iterator
+from typing import Any
 
 from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.schemas.domain import Project, RetainingSystem, SupportElement, SupportLayoutOptimizationCandidate, Point2D
@@ -84,19 +83,6 @@ POSITION_PATTERNS: list[tuple[str, float]] = [
     ("alternating_escape_1p5", 1.5),
     ("center_gap_1p5", 1.5),
 ]
-
-
-@contextmanager
-def _temporary_layout_parameters(target_spacing: float, column_max_span: float) -> Iterator[None]:
-    old_spacing = layout_mod.TARGET_MAIN_SUPPORT_SPACING_M
-    old_column_span = layout_mod.COLUMN_MAX_UNBRACED_SPAN_M
-    try:
-        layout_mod.TARGET_MAIN_SUPPORT_SPACING_M = target_spacing
-        layout_mod.COLUMN_MAX_UNBRACED_SPAN_M = column_max_span
-        yield
-    finally:
-        layout_mod.TARGET_MAIN_SUPPORT_SPACING_M = old_spacing
-        layout_mod.COLUMN_MAX_UNBRACED_SPAN_M = old_column_span
 
 
 def _status_rank(status: str) -> int:
@@ -190,7 +176,7 @@ def _nearest_original_support(project: Project, support: SupportElement) -> Supp
     return best
 
 
-def _apply_endpoint_locks(project: Project, system: RetainingSystem) -> list[dict[str, Any]]:
+def _apply_endpoint_locks(project: Project, system: RetainingSystem, column_max_span: float = layout_mod.COLUMN_MAX_UNBRACED_SPAN_M) -> list[dict[str, Any]]:
     adjustments: list[dict[str, Any]] = []
     for support in system.supports:
         if _support_is_fully_locked(project, support):
@@ -234,7 +220,7 @@ def _apply_endpoint_locks(project: Project, system: RetainingSystem) -> list[dic
             if not getattr(support, "optimization_locked_end", False):
                 support.end_face_code = line.end_face_code
         layout_mod._assign_tributary_widths(system.supports, project.excavation)
-        system.columns = layout_mod.make_column_elements(project.excavation, system.supports)
+        system.columns = layout_mod.make_column_elements(project.excavation, system.supports, max_unbraced_span_m=column_max_span)
         system.support_nodes = layout_mod.make_support_wale_nodes(system.supports, system.wale_beams)
     return adjustments
 
@@ -424,7 +410,7 @@ def _pattern_offset(pattern: str, amplitude: float, index: int, count: int) -> f
     return 0.0
 
 
-def _shift_main_support_positions(project: Project, system: RetainingSystem, pattern: str, amplitude: float) -> list[dict[str, Any]]:
+def _shift_main_support_positions(project: Project, system: RetainingSystem, pattern: str, amplitude: float, column_max_span: float = layout_mod.COLUMN_MAX_UNBRACED_SPAN_M) -> list[dict[str, Any]]:
     if not project.excavation or amplitude == 0.0:
         return []
     points = layout_mod._dedup_points(list(project.excavation.outline.points))
@@ -477,7 +463,7 @@ def _shift_main_support_positions(project: Project, system: RetainingSystem, pat
         support.start_face_code = line.start_face_code
         support.end_face_code = line.end_face_code
     layout_mod._assign_tributary_widths(system.supports, project.excavation)
-    system.columns = layout_mod.make_column_elements(project.excavation, system.supports)
+    system.columns = layout_mod.make_column_elements(project.excavation, system.supports, max_unbraced_span_m=column_max_span)
     system.support_nodes = layout_mod.make_support_wale_nodes(system.supports, system.wale_beams)
     return adjustments
 
@@ -505,7 +491,7 @@ def _locked_supports(project: Project) -> list[SupportElement]:
     return locked
 
 
-def _apply_locked_supports(project: Project, system: RetainingSystem) -> int:
+def _apply_locked_supports(project: Project, system: RetainingSystem, column_max_span: float = layout_mod.COLUMN_MAX_UNBRACED_SPAN_M) -> int:
     locked = _locked_supports(project)
     if not locked:
         return 0
@@ -534,7 +520,7 @@ def _apply_locked_supports(project: Project, system: RetainingSystem) -> int:
             support.start_face_code = line.start_face_code
             support.end_face_code = line.end_face_code
         layout_mod._assign_tributary_widths(system.supports, project.excavation)
-        system.columns = layout_mod.make_column_elements(project.excavation, system.supports)
+        system.columns = layout_mod.make_column_elements(project.excavation, system.supports, max_unbraced_span_m=column_max_span)
         system.support_nodes = layout_mod.make_support_wale_nodes(system.supports, system.wale_beams)
     return len(retained)
 
@@ -586,8 +572,8 @@ def build_support_system_from_candidate(project: Project, target_spacing: float,
     if getattr(project, "retaining_system", None):
         trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
     _apply_locked_supports(project, trial_project.retaining_system)
-    adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude)
-    adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system))
+    adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude, column_max_span=column_span)
+    adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system, column_max_span=column_span))
     return trial_project.retaining_system, adjustments
 
 
@@ -654,14 +640,27 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     for target_spacing in TARGET_SPACING_VALUES:
         for column_span in COLUMN_MAX_SPAN_VALUES:
             for pattern, amplitude in POSITION_PATTERNS:
-                trial_project = project.model_copy(deep=True)
-                with _temporary_layout_parameters(target_spacing, column_span):
-                    trial_project.retaining_system = design_service.auto_supports(trial_project.excavation, trial_project.retaining_system)
+                # V2.6.0: avoid deep-copying historical calculation results and large
+                # report payloads for every candidate.  Candidate generation only needs
+                # geometry, settings and the current retaining system.
+                trial_project = project.model_copy(deep=False)
+                trial_project.calculation_results = []
+                trial_project.calculation_cases = []
+                trial_project.retaining_system = project.retaining_system.model_copy(deep=True) if project.retaining_system else None
+                layout_config = layout_mod.SupportLayoutConfig(
+                    target_main_support_spacing_m=target_spacing,
+                    column_max_unbraced_span_m=column_span,
+                )
+                trial_project.retaining_system = design_service.auto_supports(
+                    trial_project.excavation,
+                    trial_project.retaining_system,
+                    layout_config=layout_config,
+                )
                 if getattr(project, "retaining_system", None):
                     trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
-                locked_count = _apply_locked_supports(project, trial_project.retaining_system)
-                adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude)
-                adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system))
+                locked_count = _apply_locked_supports(project, trial_project.retaining_system, column_max_span=column_span)
+                adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude, column_max_span=column_span)
+                adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system, column_max_span=column_span))
                 quality = evaluate_support_layout_quality(trial_project)
                 metrics = dict(quality.metrics or {})
                 fail_count = sum(1 for i in quality.issues if i.severity == "fail")

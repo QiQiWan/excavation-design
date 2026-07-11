@@ -6,6 +6,7 @@ from app.calculation.engine import build_default_construction_cases, run_calcula
 from app.schemas.domain import CalculationCase, CalculationResult
 from app.storage.repository import ProjectRepository, get_repository
 from app.services.calculation_trace import build_calculation_trace
+from app.services.wall_length_optimizer import mark_wall_length_recalculated
 
 router = APIRouter(prefix="/api/projects/{project_id}/calculation", tags=["calculation"])
 
@@ -35,6 +36,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     project.calculation_results.append(result)
+    mark_wall_length_recalculated(project, result.id)
     repo.save(project)
     return result
 
@@ -57,8 +59,16 @@ def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepos
 
 
 @router.get("/results", response_model=list[CalculationResult])
-def results(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> list[CalculationResult]:
-    return repo.require(project_id).calculation_results
+def results(
+    project_id: str,
+    limit: int = 5,
+    repo: ProjectRepository = Depends(get_repository),
+) -> list[CalculationResult]:
+    result_limit = max(0, min(int(limit), 20))
+    history = repo.require(project_id).calculation_results
+    if result_limit == 0:
+        return []
+    return history[-result_limit:]
 
 
 @router.get("/checks")

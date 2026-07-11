@@ -61,6 +61,47 @@ class SQLiteProjectStore:
             rows = conn.execute("SELECT data FROM projects ORDER BY updated_at DESC").fetchall()
         return [json.loads(row["data"]) for row in rows]
 
+    def list_summaries(self) -> list[dict[str, Any]]:
+        """Return compact project metadata without hydrating multi-megabyte results."""
+        query = """
+            SELECT
+                id, name, updated_at,
+                json_extract(data, '$.location') AS location,
+                json_extract(data, '$.createdAt') AS created_at,
+                CASE WHEN json_type(data, '$.excavation') IS NOT NULL AND json_type(data, '$.excavation') != 'null' THEN 1 ELSE 0 END AS has_excavation,
+                CASE WHEN json_type(data, '$.retainingSystem') IS NOT NULL AND json_type(data, '$.retainingSystem') != 'null' THEN 1 ELSE 0 END AS has_retaining_system,
+                COALESCE(json_array_length(json_extract(data, '$.calculationCases')), 0) AS calculation_case_count,
+                COALESCE(json_array_length(json_extract(data, '$.calculationResults')), 0) AS calculation_result_count,
+                json_extract(data, '$.calculationResults[#-1].id') AS latest_calculation_id,
+                json_extract(data, '$.calculationResults[#-1].governingValues.governingCheckStatus') AS governing_status,
+                json_extract(data, '$.calculationResults[#-1].reportDiagramData.geometryConsistency.consistent') AS geometry_consistent
+            FROM projects
+            ORDER BY updated_at DESC
+        """
+        with self._connect() as conn:
+            try:
+                rows = conn.execute(query).fetchall()
+                return [dict(row) for row in rows]
+            except sqlite3.OperationalError:
+                rows = conn.execute("SELECT id, name, updated_at, data FROM projects ORDER BY updated_at DESC").fetchall()
+        summaries: list[dict[str, Any]] = []
+        for row in rows:
+            data = json.loads(row["data"])
+            results = data.get("calculationResults") or []
+            latest = results[-1] if results else {}
+            summaries.append({
+                "id": row["id"], "name": row["name"], "updated_at": row["updated_at"],
+                "location": data.get("location"), "created_at": data.get("createdAt"),
+                "has_excavation": bool(data.get("excavation")),
+                "has_retaining_system": bool(data.get("retainingSystem")),
+                "calculation_case_count": len(data.get("calculationCases") or []),
+                "calculation_result_count": len(results),
+                "latest_calculation_id": latest.get("id"),
+                "governing_status": (latest.get("governingValues") or {}).get("governingCheckStatus"),
+                "geometry_consistent": ((latest.get("reportDiagramData") or {}).get("geometryConsistency") or {}).get("consistent"),
+            })
+        return summaries
+
     def get(self, project_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute("SELECT data FROM projects WHERE id = ?", (project_id,)).fetchone()

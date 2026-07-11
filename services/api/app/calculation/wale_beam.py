@@ -94,7 +94,7 @@ def support_axial_area(support: SupportElement) -> float:
 
 
 def _role_stiffness_factor(support: SupportElement) -> float:
-    return {"main_strut": 1.0, "ring_strut": 0.8, "corner_diagonal": 0.55, "manual": 1.0}.get(getattr(support, "support_role", "main_strut"), 1.0)
+    return {"main_strut": 1.0, "secondary_strut": 1.0, "ring_strut": 0.8, "corner_diagonal": 0.55, "manual": 1.0}.get(getattr(support, "support_role", "main_strut"), 1.0)
 
 
 def _normal_projection_factor(support: SupportElement, segment) -> float:

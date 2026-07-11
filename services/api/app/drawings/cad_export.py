@@ -1,27 +1,50 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
+import shutil
 import zipfile
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from app.drawings.detail_sheets import generate_construction_detail_sheets
 from app.schemas.domain import Point2D, Project, ReinforcementGroup
 from app.services.rebar_detailing import build_rebar_detailing
+from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
+from app.services.advanced_suite import build_advanced_engineering_suite
+from app.services.review_workflow import review_status
 from app.services.cad_template import normalize_cad_template
+from app.version import SOFTWARE_VERSION
 
 
 class DxfWriter:
     def __init__(self) -> None:
         self.entities: list[str] = []
         self.layers: set[str] = set()
+        self.min_x = math.inf
+        self.max_x = -math.inf
+        self.min_y = math.inf
+        self.max_y = -math.inf
+
+    def _update_bounds(self, *points: tuple[float, float]) -> None:
+        for x, y in points:
+            self.min_x = min(self.min_x, float(x))
+            self.max_x = max(self.max_x, float(x))
+            self.min_y = min(self.min_y, float(y))
+            self.max_y = max(self.max_y, float(y))
+
+    def drawing_bounds(self) -> tuple[float, float, float, float]:
+        if not math.isfinite(self.min_x):
+            return 0.0, 120.0, 0.0, 20.0
+        return self.min_x, self.max_x, self.min_y, self.max_y
 
     def _add_layer(self, layer: str) -> None:
         self.layers.add(layer)
 
     def line(self, layer: str, x1: float, y1: float, x2: float, y2: float) -> None:
         self._add_layer(layer)
+        self._update_bounds((x1, y1), (x2, y2))
         self.entities.extend([
             "0", "LINE", "8", layer,
             "10", f"{x1:.4f}", "20", f"{y1:.4f}", "30", "0.0",
@@ -30,10 +53,12 @@ class DxfWriter:
 
     def circle(self, layer: str, x: float, y: float, r: float) -> None:
         self._add_layer(layer)
+        self._update_bounds((x - r, y - r), (x + r, y + r))
         self.entities.extend(["0", "CIRCLE", "8", layer, "10", f"{x:.4f}", "20", f"{y:.4f}", "30", "0.0", "40", f"{max(r, 0.01):.4f}"])
 
     def text(self, layer: str, x: float, y: float, value: str, height: float = 0.35, rotation: float = 0.0) -> None:
         self._add_layer(layer)
+        self._update_bounds((x, y), (x + max(len(str(value)), 1) * height * 0.62, y + height))
         safe = str(value).replace("\n", " ")[:240]
         self.entities.extend(["0", "TEXT", "8", layer, "10", f"{x:.4f}", "20", f"{y:.4f}", "30", "0.0", "40", f"{height:.4f}", "1", safe, "50", f"{rotation:.4f}"])
 
@@ -42,9 +67,24 @@ class DxfWriter:
         if not pts:
             return
         self._add_layer(layer)
+        self._update_bounds(*[(p.x, p.y) for p in pts])
         self.entities.extend(["0", "LWPOLYLINE", "8", layer, "90", str(len(pts)), "70", "1" if closed else "0"])
         for p in pts:
             self.entities.extend(["10", f"{p.x:.4f}", "20", f"{p.y:.4f}"])
+
+
+    def arc(self, layer: str, x: float, y: float, r: float, start_angle: float, end_angle: float) -> None:
+        self._add_layer(layer)
+        self._update_bounds((x - r, y - r), (x + r, y + r))
+        self.entities.extend(["0", "ARC", "8", layer, "10", f"{x:.4f}", "20", f"{y:.4f}", "30", "0.0", "40", f"{max(r, 0.01):.4f}", "50", f"{start_angle:.4f}", "51", f"{end_angle:.4f}"])
+
+    def leader(self, layer: str, x1: float, y1: float, x2: float, y2: float, text: str, text_height: float = 0.28) -> None:
+        self.line(layer, x1, y1, x2, y2)
+        angle = math.atan2(y2 - y1, x2 - x1)
+        size = max(text_height * 1.2, 0.2)
+        self.line(layer, x1, y1, x1 + size * math.cos(angle + 2.55), y1 + size * math.sin(angle + 2.55))
+        self.line(layer, x1, y1, x1 + size * math.cos(angle - 2.55), y1 + size * math.sin(angle - 2.55))
+        self.text(layer, x2 + 0.2, y2 + 0.1, text, text_height)
 
     def rectangle(self, layer: str, x: float, y: float, w: float, h: float) -> None:
         class P:
@@ -67,8 +107,12 @@ class DxfWriter:
         frame_layer = layers.get("frame", "PIT_FRAME")
         title_layer = layers.get("title", "PIT_TITLE")
         text_layer = layers.get("text", "PIT_TEXT")
-        x0, y0 = float(block.get("originX", 0.0)), float(block.get("originY", -18.0))
-        width, height = float(block.get("width", 120.0)), float(block.get("height", 16.0))
+        drawing_min_x, drawing_max_x, drawing_min_y, _drawing_max_y = self.drawing_bounds()
+        height = float(block.get("height", 16.0))
+        default_width = max(120.0, drawing_max_x - drawing_min_x)
+        width = float(block.get("width", default_width))
+        x0 = float(block["originX"]) if "originX" in block else drawing_min_x
+        y0 = float(block["originY"]) if "originY" in block else drawing_min_y - height - 4.0
         self.rectangle(frame_layer, x0, y0, width, height)
         for ratio in (0.15, 0.66, 0.79, 0.90):
             self.line(frame_layer, x0 + width * ratio, y0, x0 + width * ratio, y0 + height)
@@ -177,9 +221,16 @@ def _write_support_plan(project: Project, path: Path) -> None:
                 a, b = beam.axis.points[0], beam.axis.points[-1]
                 dxf.line("PIT_WALE", a.x, a.y, b.x, b.y)
         for support in ret.supports:
-            dxf.line("PIT_SUPPORT", support.start.x, support.start.y, support.end.x, support.end.y)
+            role_layer = {
+                "main_strut": "PIT_SUPPORT_MAIN",
+                "secondary_strut": "PIT_SUPPORT_SECONDARY",
+                "corner_diagonal": "PIT_SUPPORT_CORNER",
+                "ring_strut": "PIT_SUPPORT_RING",
+            }.get(support.support_role, "PIT_SUPPORT")
+            role_tag = {"main_strut": "M", "secondary_strut": "G", "corner_diagonal": "DB", "ring_strut": "R"}.get(support.support_role, "S")
+            dxf.line(role_layer, support.start.x, support.start.y, support.end.x, support.end.y)
             mx, my = _mid(support.start, support.end)
-            dxf.text("PIT_TEXT", mx, my, f"{support.code} L{support.level_index} N={support.design_axial_force or 0:.0f}kN", 0.32, _angle(support.start, support.end))
+            dxf.text("PIT_TEXT", mx, my, f"{support.code}[{role_tag}] L{support.level_index} N={support.design_axial_force or 0:.0f}kN", 0.32, _angle(support.start, support.end))
         for col in ret.columns:
             dxf.circle("PIT_COLUMN", col.location.x, col.location.y, max((col.section.width or col.section.diameter or 0.6) / 2, 0.2))
             dxf.text("PIT_TEXT", col.location.x + 0.4, col.location.y + 0.4, col.code, 0.3)
@@ -383,9 +434,9 @@ def _write_delivery_consistency_matrix(project: Project, path: Path) -> None:
 
 
 
-def _write_rebar_bending_schedule(project: Project, path: Path) -> None:
+def _write_rebar_bending_schedule(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
     dxf = DxfWriter()
-    detailing = build_rebar_detailing(project)
+    detailing = detailing or build_rebar_detailing(project)
     dxf.text("PIT_TITLE", 0, 4, "S-07 Rebar bending schedule and bar-mark table", 0.55)
     headers = ["Mark", "Host", "Type", "D", "Shape", "Qty", "L(m)", "W(kg)"]
     xs = [0, 18, 48, 68, 78, 92, 104, 116]
@@ -409,8 +460,8 @@ def _write_rebar_bending_schedule(project: Project, path: Path) -> None:
     dxf.write(path)
 
 
-def _write_rebar_bending_schedule_csv(project: Project, path: Path) -> None:
-    detailing = build_rebar_detailing(project)
+def _write_rebar_bending_schedule_csv(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
+    detailing = detailing or build_rebar_detailing(project)
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["bar_mark", "host_type", "host_code", "group_name", "bar_type", "diameter_mm", "spacing_mm", "shape_code", "shape_description", "quantity", "single_length_m", "total_length_m", "total_weight_kg", "anchorage_status", "lap_status", "hook_status", "note"])
@@ -428,8 +479,8 @@ def _write_enterprise_template_manifest(project: Project, path: Path) -> None:
         "reviewBoundary": "Company title block, signature workflow and registered engineer approval remain project-specific.",
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
-def _write_individual_bar_geometry_csv(project: Project, path: Path) -> None:
-    detailing = build_rebar_detailing(project)
+def _write_individual_bar_geometry_csv(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
+    detailing = detailing or build_rebar_detailing(project)
     bars = detailing.get("individualBars", [])
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
@@ -440,9 +491,9 @@ def _write_individual_bar_geometry_csv(project: Project, path: Path) -> None:
             writer.writerow([bar.get("barId"), bar.get("barMark"), bar.get("subIndex"), bar.get("hostType"), bar.get("hostCode"), bar.get("barType"), bar.get("diameterMm"), bar.get("grade"), bar.get("shapeCode"), bar.get("centerlineLengthM"), bar.get("anchorageLengthM"), bar.get("lapLengthM"), bar.get("hookLengthM"), bar.get("cutLengthM"), bar.get("weightKg"), len(points), point_text])
 
 
-def _write_rebar_geometry_plan(project: Project, path: Path) -> None:
+def _write_rebar_geometry_plan(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
     dxf = DxfWriter()
-    detailing = build_rebar_detailing(project)
+    detailing = detailing or build_rebar_detailing(project)
     bars = detailing.get("individualBars", [])[:300]
     for bar in bars:
         points = bar.get("points", [])
@@ -461,9 +512,9 @@ def _write_rebar_geometry_plan(project: Project, path: Path) -> None:
 
 
 
-def _write_splice_layout(project: Project, path: Path) -> None:
+def _write_splice_layout(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
     dxf = DxfWriter()
-    detailing = build_rebar_detailing(project)
+    detailing = detailing or build_rebar_detailing(project)
     dxf.text("PIT_TITLE", 0, 4, "S-09 Lap splice and construction-joint layout", 0.55)
     headers = ["Splice zone", "Segment", "Bar mark", "Host", "Lap(m)", "Status"]
     xs = [0, 26, 54, 82, 104, 118]
@@ -482,9 +533,9 @@ def _write_splice_layout(project: Project, path: Path) -> None:
     dxf.write(path)
 
 
-def _write_cage_lifting_plan(project: Project, path: Path) -> None:
+def _write_cage_lifting_plan(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
     dxf = DxfWriter()
-    detailing = build_rebar_detailing(project)
+    detailing = detailing or build_rebar_detailing(project)
     dxf.text("PIT_TITLE", 0, 4, "S-10 Reinforcement cage segmentation and lifting plan", 0.55)
     x0 = 0.0
     for idx, seg in enumerate(detailing.get("cageSegments", [])[:16]):
@@ -500,9 +551,9 @@ def _write_cage_lifting_plan(project: Project, path: Path) -> None:
     dxf.write(path)
 
 
-def _write_cover_conflict_check(project: Project, path: Path) -> None:
+def _write_cover_conflict_check(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
     dxf = DxfWriter()
-    detailing = build_rebar_detailing(project)
+    detailing = detailing or build_rebar_detailing(project)
     dxf.text("PIT_TITLE", 0, 4, "S-11 Cover and bend-radius check sheet", 0.55)
     headers = ["Bar", "Host", "Cover req", "Cover act", "Bend R", "Status"]
     xs = [0, 22, 48, 70, 94, 116]
@@ -520,9 +571,9 @@ def _write_cover_conflict_check(project: Project, path: Path) -> None:
     dxf.write(path)
 
 
-def _write_shop_signoff_sheet(project: Project, path: Path) -> None:
+def _write_shop_signoff_sheet(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
     dxf = DxfWriter()
-    detailing = build_rebar_detailing(project)
+    detailing = detailing or build_rebar_detailing(project)
     dxf.text("PIT_TITLE", 0, 4, "S-12 Shop drawing signoff checklist", 0.55)
     headers = ["ID", "Item", "Status", "Evidence"]
     xs = [0, 16, 82, 112]
@@ -540,8 +591,8 @@ def _write_shop_signoff_sheet(project: Project, path: Path) -> None:
     dxf.write(path)
 
 
-def _write_cage_segment_schedule_csv(project: Project, path: Path) -> None:
-    detailing = build_rebar_detailing(project)
+def _write_cage_segment_schedule_csv(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
+    detailing = detailing or build_rebar_detailing(project)
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["segment_id", "host_code", "bottom_elevation", "top_elevation", "length_m", "splice_overlap_m", "estimated_cage_weight_t", "lifting_point_count", "status"])
@@ -549,8 +600,8 @@ def _write_cage_segment_schedule_csv(project: Project, path: Path) -> None:
             writer.writerow([item.get("segmentId"), item.get("hostCode"), item.get("bottomElevation"), item.get("topElevation"), item.get("lengthM"), item.get("spliceOverlapM"), item.get("estimatedCageWeightT"), item.get("liftingPointCount"), item.get("status")])
 
 
-def _write_splice_schedule_csv(project: Project, path: Path) -> None:
-    detailing = build_rebar_detailing(project)
+def _write_splice_schedule_csv(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
+    detailing = detailing or build_rebar_detailing(project)
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["bar_id", "bar_mark", "host_code", "splice_zone_id", "cage_segment_id", "lap_length_m", "lap_location_status"])
@@ -558,8 +609,8 @@ def _write_splice_schedule_csv(project: Project, path: Path) -> None:
             writer.writerow([item.get("barId"), item.get("barMark"), item.get("hostCode"), item.get("spliceZoneId"), item.get("cageSegmentId"), item.get("lapLengthM"), item.get("lapLocationStatus")])
 
 
-def _write_cover_conflict_check_csv(project: Project, path: Path) -> None:
-    detailing = build_rebar_detailing(project)
+def _write_cover_conflict_check_csv(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
+    detailing = detailing or build_rebar_detailing(project)
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["bar_id", "bar_mark", "host_code", "required_cover_mm", "actual_cover_mm", "status"])
@@ -567,93 +618,714 @@ def _write_cover_conflict_check_csv(project: Project, path: Path) -> None:
             writer.writerow([item.get("barId"), item.get("barMark"), item.get("hostCode"), item.get("requiredCoverMm"), item.get("actualCoverMm"), item.get("status")])
 
 
-def _write_shop_signoff_checklist_csv(project: Project, path: Path) -> None:
-    detailing = build_rebar_detailing(project)
+def _write_shop_signoff_checklist_csv(project: Project, path: Path, detailing: dict[str, Any] | None = None) -> None:
+    detailing = detailing or build_rebar_detailing(project)
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["id", "item", "label", "status", "evidence_count"])
         for item in detailing.get("signoffChecklist", []):
             writer.writerow([item.get("id"), item.get("item"), item.get("label"), item.get("status"), item.get("evidenceCount")])
 
-def export_construction_cad_package(project: Project, output_dir: str | Path) -> Path:
-    out = Path(output_dir)
-    package_dir = out / f"{project.id}_cad_package"
-    package_dir.mkdir(parents=True, exist_ok=True)
-    files = [
-        package_dir / "S-01_support_plan.dxf",
-        package_dir / "S-02_wall_rebar_cage.dxf",
-        package_dir / "S-03_support_wale_node_detail.dxf",
-        package_dir / "S-04_excavation_section.dxf",
-        package_dir / "S-05_column_pile_detail.dxf",
-        package_dir / "S-06_monitoring_plan.dxf",
-        package_dir / "S-07_rebar_bending_schedule.dxf",
-        package_dir / "S-08_individual_rebar_geometry.dxf",
-        package_dir / "S-09_lap_splice_layout.dxf",
-        package_dir / "S-10_cage_segment_lifting_plan.dxf",
-        package_dir / "S-11_cover_bend_check.dxf",
-        package_dir / "S-12_shop_drawing_signoff_checklist.dxf",
-        package_dir / "drawing_register.csv",
-        package_dir / "rebar_schedule.csv",
-        package_dir / "material_schedule.csv",
-        package_dir / "rebar_bending_schedule.csv",
-        package_dir / "individual_bar_geometry.csv",
-        package_dir / "cage_segment_schedule.csv",
-        package_dir / "splice_schedule.csv",
-        package_dir / "cover_conflict_check.csv",
-        package_dir / "shop_drawing_checklist.csv",
-        package_dir / "delivery_consistency_matrix.csv",
-        package_dir / "enterprise_template_manifest.json",
+
+
+def _plan_extents(project: Project) -> tuple[float, float, float, float]:
+    points = project.excavation.outline.points if project.excavation else []
+    if not points:
+        return 0.0, 60.0, 0.0, 30.0
+    xs = [float(p.x) for p in points]
+    ys = [float(p.y) for p in points]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _draw_north_arrow(dxf: DxfWriter, x: float, y: float, size: float = 4.0) -> None:
+    dxf.line("PIT_SYMBOL", x, y, x, y + size)
+    dxf.line("PIT_SYMBOL", x, y + size, x - size * 0.22, y + size * 0.68)
+    dxf.line("PIT_SYMBOL", x, y + size, x + size * 0.22, y + size * 0.68)
+    dxf.text("PIT_SYMBOL", x - 0.25, y + size + 0.35, "N", max(size * 0.12, 0.35))
+
+
+def _draw_plan_base(dxf: DxfWriter, project: Project, *, support_level: int | None = None, show_all_supports: bool = True) -> None:
+    ret = project.retaining_system
+    if project.excavation:
+        dxf.lwpolyline("PIT_EXCAVATION", project.excavation.outline.points, closed=True)
+        for idx, segment in enumerate(project.excavation.segments, start=1):
+            dxf.text("PIT_TEXT", segment.midpoint.x + 0.2, segment.midpoint.y + 0.2, f"E{idx:02d}/{segment.name}", 0.24)
+        for obs in project.excavation.obstacles:
+            if obs.outline:
+                dxf.lwpolyline("PIT_OBSTACLE", obs.outline.points, closed=obs.outline.closed)
+            elif obs.center and obs.width and obs.length:
+                dxf.rectangle("PIT_OBSTACLE", obs.center.x - obs.width / 2, obs.center.y - obs.length / 2, obs.width, obs.length)
+    if not ret:
+        return
+    for wall in ret.diaphragm_walls:
+        if len(wall.axis.points) < 2:
+            continue
+        a, b = wall.axis.points[0], wall.axis.points[-1]
+        dxf.line("PIT_WALL", a.x, a.y, b.x, b.y)
+        mx, my = _mid(a, b)
+        dxf.text("PIT_TEXT", mx, my, wall.panel_code, 0.25, _angle(a, b))
+    for beam in [*ret.crown_beams, *ret.wale_beams, *(ret.ring_beams or [])]:
+        if support_level is not None and beam.support_level not in {None, support_level}:
+            continue
+        if len(beam.axis.points) >= 2:
+            a, b = beam.axis.points[0], beam.axis.points[-1]
+            dxf.line(f"PIT_WALE_L{beam.support_level or 0:02d}", a.x, a.y, b.x, b.y)
+    for support in ret.supports:
+        if support_level is not None and support.level_index != support_level:
+            continue
+        if not show_all_supports and support_level is None:
+            continue
+        role_suffix = {"main_strut": "MAIN", "secondary_strut": "GRID", "corner_diagonal": "CORNER", "ring_strut": "RING"}.get(support.support_role, "OTHER")
+        layer = f"PIT_SUPPORT_L{support.level_index:02d}_{role_suffix}"
+        dxf.line(layer, support.start.x, support.start.y, support.end.x, support.end.y)
+        mx, my = _mid(support.start, support.end)
+        role_tag = {"main_strut": "M", "secondary_strut": "G", "corner_diagonal": "DB", "ring_strut": "R"}.get(support.support_role, "S")
+        dxf.text("PIT_TEXT", mx, my, f"{support.code}[{role_tag}] N={support.design_axial_force or 0:.0f}", 0.24, _angle(support.start, support.end))
+    for col in ret.columns:
+        radius = max((col.section.width or col.section.diameter or 0.6) / 2.0, 0.2)
+        dxf.circle("PIT_COLUMN", col.location.x, col.location.y, radius)
+        dxf.text("PIT_TEXT", col.location.x + 0.35, col.location.y + 0.35, col.code, 0.22)
+
+
+def build_drawing_set_manifest(project: Project) -> dict[str, Any]:
+    ret = project.retaining_system
+    levels = sorted({int(item.level_index) for item in (ret.supports if ret else [])})
+    sheets: list[dict[str, Any]] = [
+        {"sheetNo": "G-00", "title": "图纸目录、设计总说明与图例", "category": "general", "scale": "NTS", "file": "00_general/G-00_drawing_index_general_notes.dxf", "modelBinding": ["project", "standards", "drawing_register"]},
+        {"sheetNo": "S-00", "title": "基坑围护与支撑总平面图", "category": "global_plan", "scale": "1:200", "file": "10_plans/S-00_retaining_support_general_arrangement.dxf", "modelBinding": ["excavation", "walls", "wales", "supports", "columns"]},
+        {"sheetNo": "S-01", "title": "围护结构分幅及构件编号图", "category": "plan", "scale": "1:200", "file": "S-01_support_plan.dxf", "legacy": True},
     ]
-    _write_support_plan(project, files[0])
-    _write_wall_rebar_detail(project, files[1])
-    _write_node_detail(project, files[2])
-    _write_excavation_section(project, files[3])
-    _write_column_pile_detail(project, files[4])
-    _write_monitoring_plan(project, files[5])
-    _write_rebar_bending_schedule(project, files[6])
-    _write_rebar_geometry_plan(project, files[7])
-    _write_splice_layout(project, files[8])
-    _write_cage_lifting_plan(project, files[9])
-    _write_cover_conflict_check(project, files[10])
-    _write_shop_signoff_sheet(project, files[11])
-    _write_drawing_register(project, files[12])
-    _write_rebar_schedule(project, files[13])
-    _write_material_schedule(project, files[14])
-    _write_rebar_bending_schedule_csv(project, files[15])
-    _write_individual_bar_geometry_csv(project, files[16])
-    _write_cage_segment_schedule_csv(project, files[17])
-    _write_splice_schedule_csv(project, files[18])
-    _write_cover_conflict_check_csv(project, files[19])
-    _write_shop_signoff_checklist_csv(project, files[20])
-    _write_delivery_consistency_matrix(project, files[21])
-    _write_enterprise_template_manifest(project, files[22])
-    manifest = package_dir / "drawing_package_manifest.json"
-    import json
-    manifest.write_text(json.dumps({
+    for level in levels:
+        sheets.append({"sheetNo": f"S-02-L{level:02d}", "title": f"第{level}道支撑平面布置图", "category": "level_plan", "scale": "1:150", "file": f"10_plans/S-02-L{level:02d}_support_level_plan.dxf", "modelBinding": [f"support_level_{level}", "walls", "columns", "nodes"]})
+    sheets.extend([
+        {"sheetNo": "S-03", "title": "典型开挖剖面与施工阶段图", "category": "section", "scale": "1:100", "file": "20_sections/S-03_excavation_stage_section.dxf"},
+        {"sheetNo": "M-01", "title": "监测点布置总图", "category": "monitoring", "scale": "1:200", "file": "S-06_monitoring_plan.dxf", "legacy": True},
+        {"sheetNo": "R-01", "title": "地下连续墙配筋总图", "category": "rebar_general", "scale": "1:200", "file": "30_rebar/R-01_wall_rebar_general_arrangement.dxf"},
+        {"sheetNo": "R-02", "title": "地下连续墙分区配筋立面图", "category": "rebar_elevation", "scale": "1:100", "file": "30_rebar/R-02_wall_rebar_zone_elevation.dxf"},
+        {"sheetNo": "R-03", "title": "地下连续墙钢筋笼、接头与吊装详图", "category": "rebar_detail", "scale": "1:50", "file": "S-02_wall_rebar_cage.dxf", "legacy": True},
+        {"sheetNo": "R-04", "title": "钢筋混凝土支撑配筋总图", "category": "rebar_general", "scale": "1:100", "file": "30_rebar/R-04_support_rebar_general_arrangement.dxf"},
+        {"sheetNo": "R-05", "title": "冠梁、围檩及环梁配筋总图", "category": "rebar_general", "scale": "1:100", "file": "30_rebar/R-05_wale_rebar_general_arrangement.dxf"},
+        {"sheetNo": "D-00", "title": "典型节点大样索引与组合图", "category": "detail_index", "scale": "1:20/1:50", "file": "40_details/D-00_typical_detail_compilation.dxf"},
+        {"sheetNo": "D-01", "title": "支撑—围檩节点大样", "category": "node_detail", "scale": "1:20", "file": "S-03_support_wale_node_detail.dxf", "legacy": True},
+        {"sheetNo": "D-02", "title": "角撑节点与转角加强大样", "category": "node_detail", "scale": "1:20", "file": "40_details/D-02_corner_brace_node_detail.dxf"},
+        {"sheetNo": "D-03", "title": "支撑—立柱交叉节点大样", "category": "node_detail", "scale": "1:20", "file": "40_details/D-03_support_column_intersection_detail.dxf"},
+        {"sheetNo": "D-04", "title": "地连墙支撑区局部加强大样", "category": "node_detail", "scale": "1:20", "file": "40_details/D-04_wall_support_zone_detail.dxf"},
+        {"sheetNo": "D-05", "title": "临时立柱与立柱桩详图", "category": "pile_detail", "scale": "1:50", "file": "S-05_column_pile_detail.dxf", "legacy": True},
+        {"sheetNo": "D-06", "title": "地下连续墙墙幅接头与钢筋笼连接大样", "category": "node_detail", "scale": "1:20", "file": "40_details/D-06_wall_panel_joint_detail.dxf"},
+        {"sheetNo": "D-07", "title": "钢筋混凝土支撑端部锚固与错开搭接大样", "category": "node_detail", "scale": "1:20", "file": "40_details/D-07_support_anchorage_splice_detail.dxf"},
+        {"sheetNo": "D-08", "title": "主次支撑网格交叉节点与立柱连接大样", "category": "node_detail", "scale": "1:20", "file": "40_details/D-08_bidirectional_grid_node_detail.dxf", "modelBinding": ["main_strut", "secondary_strut", "columns"]},
+        {"sheetNo": "Q-02", "title": "长期效应与裂缝控制检查图", "category": "quality", "scale": "NTS", "file": "50_quality/Q-02_serviceability_crack_check.dxf", "modelBinding": ["wall_rebar_zones", "serviceability"]},
+        {"sheetNo": "Q-03", "title": "构件碰撞、净距与节点拥挤检查图", "category": "quality", "scale": "NTS", "file": "50_quality/Q-03_collision_clearance_check.dxf", "modelBinding": ["supports", "obstacles", "rebar"]},
+        {"sheetNo": "N-01", "title": "高利用率节点局部复核索引图", "category": "node_analysis", "scale": "NTS", "file": "50_quality/N-01_node_local_analysis.dxf", "modelBinding": ["support_nodes", "bearing_plates"]},
+        {"sheetNo": "M-02", "title": "监测反演与参数校准记录图", "category": "monitoring", "scale": "NTS", "file": "60_monitoring/M-02_monitoring_calibration.dxf", "modelBinding": ["monitoring_records", "calibration_runs"]},
+        {"sheetNo": "R-06", "title": "钢筋下料、弯曲及逐根索引图", "category": "rebar_schedule", "scale": "NTS", "file": "S-07_rebar_bending_schedule.dxf", "legacy": True},
+        {"sheetNo": "Q-01", "title": "保护层、弯折、搭接与签审检查图", "category": "quality", "scale": "NTS", "file": "S-11_cover_bend_check.dxf", "legacy": True},
+    ])
+    if ret:
+        wall_detail_sheets: list[dict[str, Any]] = []
+        for index, wall in enumerate(ret.diaphragm_walls, start=1):
+            sheet_no = f"R-02-W{index:02d}"
+            token = _safe_file_token(wall.panel_code)
+            wall_detail_sheets.append({
+                "sheetNo": sheet_no,
+                "title": f"{wall.panel_code} 地下连续墙单幅分区配筋立面",
+                "category": "wall_rebar_elevation",
+                "scale": "1:50",
+                "file": f"30_rebar/walls/{sheet_no}_{token}_rebar_elevation.dxf",
+                "modelBinding": [wall.id, wall.segment_id, "rebar_design_scheme"],
+            })
+        insert_at = next((i + 1 for i, item in enumerate(sheets) if item.get("sheetNo") == "R-02"), len(sheets))
+        sheets[insert_at:insert_at] = wall_detail_sheets
+    return {
         "projectId": project.id,
-        "packageType": "V2.5.0 formal CAD drawing-set interface with shop-detailing sheets",
-        "sheetCount": 12,
-        "tables": ["drawing_register.csv", "rebar_schedule.csv", "material_schedule.csv", "rebar_bending_schedule.csv", "individual_bar_geometry.csv", "cage_segment_schedule.csv", "splice_schedule.csv", "cover_conflict_check.csv", "shop_drawing_checklist.csv", "delivery_consistency_matrix.csv"],
-        "template": "enterprise_template_manifest.json",
+        "softwareVersion": SOFTWARE_VERSION,
+        "sheetCount": len(sheets),
+        "supportLevels": levels,
+        "categories": {key: sum(1 for item in sheets if item["category"] == key) for key in sorted({item["category"] for item in sheets})},
+        "sheets": sheets,
+        "packageFolders": ["00_general", "10_plans", "20_sections", "30_rebar", "40_details", "90_schedules"],
+        "issueBoundary": "本图纸包为可编辑的设计辅助成果。正式施工图出图仍需完成项目专项规范复核、企业图签、设计/校核/审核签署及注册工程师审查。",
+    }
+
+
+def _write_general_notes_sheet(project: Project, path: Path, manifest: dict[str, Any]) -> None:
+    dxf = DxfWriter()
+    dxf.text("PIT_TITLE", 0, 8, "G-00 Drawing index, general notes and legend", 0.65)
+    headers = ["No.", "Drawing title", "Scale", "Category"]
+    xs = [0, 14, 88, 108]
+    for index, header in enumerate(headers):
+        dxf.text("PIT_TITLE", xs[index], 4.5, header, 0.3)
+    for row, item in enumerate(manifest.get("sheets", [])[:26], start=1):
+        y = 4.5 - row * 1.05
+        values = [item.get("sheetNo"), item.get("title"), item.get("scale"), item.get("category")]
+        for index, value in enumerate(values):
+            dxf.text("PIT_TEXT", xs[index], y, str(value), 0.23)
+    note_x = 0.0
+    note_y = -25.5
+    notes = [
+        "1. All coordinates and elevations follow the project coordinate system; dimensions are in metres unless noted.",
+        "2. Rebar labels follow diameter@spacing or count-diameter conventions; zone schedules govern local reductions.",
+        "3. Support installation, preload, replacement and removal shall follow the approved staged construction sequence.",
+        "4. Node, splice, cage lifting, coupler and embedded-item details require constructability review before issue.",
+        "5. CAD layers are separated by discipline, support level and reinforcement type for editable downstream use.",
+        "6. The drawing package is automatically generated from the same object IDs used by calculation, IFC and schedules.",
+    ]
+    for index, note in enumerate(notes):
+        dxf.text("PIT_TEXT", note_x, note_y - index * 1.1, note, 0.24)
+    dxf.line("PIT_WALL", 86, -27, 102, -27); dxf.text("PIT_TEXT", 104, -27, "Diaphragm wall", 0.24)
+    dxf.line("PIT_SUPPORT_L01", 86, -29, 102, -29); dxf.text("PIT_TEXT", 104, -29, "Internal support", 0.24)
+    dxf.circle("PIT_COLUMN", 94, -31, 0.45); dxf.text("PIT_TEXT", 104, -31, "Temporary column", 0.24)
+    dxf.line("PIT_REBAR_MAIN", 86, -33, 102, -33); dxf.text("PIT_TEXT", 104, -33, "Main reinforcement", 0.24)
+    _title_block(dxf, project, "G00", "图纸目录、设计总说明与图例", "NTS")
+    dxf.write(path)
+
+
+def _write_master_general_arrangement(project: Project, path: Path) -> None:
+    dxf = DxfWriter()
+    _draw_plan_base(dxf, project, support_level=None, show_all_supports=True)
+    min_x, max_x, min_y, max_y = _plan_extents(project)
+    margin = max(max_x - min_x, max_y - min_y, 20.0) * 0.08
+    dxf.dim_line("PIT_DIM", min_x, max_y + margin, max_x, max_y + margin, f"L={max_x-min_x:.2f}m", offset=0.45)
+    dxf.dim_line("PIT_DIM", max_x + margin, min_y, max_x + margin, max_y, f"B={max_y-min_y:.2f}m", offset=0.45)
+    _draw_north_arrow(dxf, max_x + 2.2 * margin, max_y - margin * 0.5, max(3.0, margin * 0.8))
+    if project.excavation:
+        cx = (min_x + max_x) / 2.0
+        cy = (min_y + max_y) / 2.0
+        dxf.line("PIT_SECTION", min_x - margin, cy, max_x + margin, cy)
+        dxf.text("PIT_SECTION", min_x - margin, cy + 0.4, "A", 0.35)
+        dxf.text("PIT_SECTION", max_x + margin, cy + 0.4, "A", 0.35)
+        dxf.line("PIT_SECTION", cx, min_y - margin, cx, max_y + margin)
+        dxf.text("PIT_SECTION", cx + 0.4, min_y - margin, "B", 0.35)
+        dxf.text("PIT_SECTION", cx + 0.4, max_y + margin, "B", 0.35)
+    legend_x = max_x + margin * 1.6
+    legend_y = min_y + margin
+    dxf.text("PIT_TITLE", legend_x, legend_y + 7.5, "Support level legend", 0.32)
+    levels = sorted({item.level_index for item in (project.retaining_system.supports if project.retaining_system else [])})
+    for index, level in enumerate(levels):
+        y = legend_y + 6.0 - index * 1.2
+        dxf.line(f"PIT_SUPPORT_L{level:02d}", legend_x, y, legend_x + 4.0, y)
+        dxf.text("PIT_TEXT", legend_x + 4.5, y, f"Level {level}", 0.24)
+    dxf.text("PIT_TITLE", min_x, min_y - margin * 1.5, "S-00 Retaining and support general arrangement", 0.48)
+    _title_block(dxf, project, "S00", "基坑围护与支撑总平面图", str(_cad_template(project).get("sheetRules", {}).get("defaultScalePlan", "1:200")))
+    dxf.write(path)
+
+
+def _write_support_level_plan(project: Project, path: Path, level: int) -> None:
+    dxf = DxfWriter()
+    _draw_plan_base(dxf, project, support_level=level, show_all_supports=True)
+    min_x, max_x, min_y, max_y = _plan_extents(project)
+    ret = project.retaining_system
+    supports = [item for item in (ret.supports if ret else []) if item.level_index == level]
+    nodes = [item for item in (ret.support_nodes if ret else []) if item.level_index == level]
+    for node in nodes:
+        dxf.circle("PIT_NODE", node.location.x, node.location.y, 0.35)
+        dxf.leader("PIT_LEADER", node.location.x, node.location.y, node.location.x + 2.0, node.location.y + 1.5, f"{node.code}/D-01")
+    dxf.text("PIT_TEXT", min_x, min_y - 2.0, f"Level {level}: EL={supports[0].elevation:.2f}m" if supports else f"Level {level}", 0.35)
+    dxf.text("PIT_TEXT", min_x, min_y - 3.0, "All support end nodes refer to D-01; corner diagonal nodes refer to D-02; column crossings refer to D-03.", 0.24)
+    _title_block(dxf, project, f"S02L{level:02d}", f"第{level}道支撑平面布置图", "1:150")
+    dxf.write(path)
+
+
+def _write_wall_rebar_general_arrangement(project: Project, path: Path, scheme: dict[str, Any]) -> None:
+    dxf = DxfWriter()
+    _draw_plan_base(dxf, project, show_all_supports=False)
+    ret = project.retaining_system
+    zones_by_host: dict[str, list[dict[str, Any]]] = {}
+    for zone in scheme.get("wallZones", []):
+        zones_by_host.setdefault(str(zone.get("hostId")), []).append(zone)
+    if ret:
+        for wall in ret.diaphragm_walls:
+            if len(wall.axis.points) < 2:
+                continue
+            a, b = wall.axis.points[0], wall.axis.points[-1]
+            mx, my = _mid(a, b)
+            zones = zones_by_host.get(wall.id, [])
+            governing = max(zones, key=lambda item: max((float(face.get("requiredAsMm2PerM") or 0.0) for face in item.get("faces", [])), default=0.0), default=None)
+            token = "zone schedule pending"
+            if governing:
+                token = "/".join(str(face.get("token")) for face in governing.get("faces", []))
+            dxf.leader("PIT_LEADER", mx, my, mx + 1.8, my + 1.8, f"{wall.panel_code} {token} / R-02")
+    min_x, _, min_y, _ = _plan_extents(project)
+    dxf.text("PIT_TEXT", min_x, min_y - 2.0, "Wall plan labels show governing face reinforcement. Elevation reductions and local strengthening follow R-02/R-03/D-04.", 0.25)
+    _title_block(dxf, project, "R01", "地下连续墙配筋总图", "1:200")
+    dxf.write(path)
+
+
+def _write_wall_rebar_zone_elevation(project: Project, path: Path, scheme: dict[str, Any]) -> None:
+    dxf = DxfWriter()
+    ret = project.retaining_system
+    if not ret:
+        dxf.write(path); return
+    zones_by_host: dict[str, list[dict[str, Any]]] = {}
+    for zone in scheme.get("wallZones", []):
+        zones_by_host.setdefault(str(zone.get("hostId")), []).append(zone)
+    walls = ret.diaphragm_walls[:8]
+    x_cursor = 0.0
+    for wall in walls:
+        zones = sorted(zones_by_host.get(wall.id, []), key=lambda item: float(item.get("topElevation") or 0.0), reverse=True)
+        height = max(float(wall.top_elevation - wall.bottom_elevation), 1.0)
+        width = max(min(float(wall.design_length or 6.0), 10.0), 4.0)
+        dxf.rectangle("PIT_CONCRETE", x_cursor, wall.bottom_elevation, width, height)
+        dxf.text("PIT_TITLE", x_cursor, wall.top_elevation + 0.8, wall.panel_code, 0.3)
+        for zone in zones:
+            top = float(zone.get("topElevation") or wall.top_elevation)
+            bottom = float(zone.get("bottomElevation") or wall.bottom_elevation)
+            dxf.line("PIT_ZONE", x_cursor, top, x_cursor + width, top)
+            face_tokens = "/".join(str(face.get("token")) for face in zone.get("faces", []))
+            dxf.text("PIT_TEXT", x_cursor + 0.2, (top + bottom) / 2.0, f"{zone.get('zoneId')} {face_tokens}", 0.18)
+            dxf.text("PIT_TEXT", x_cursor + 0.2, (top + bottom) / 2.0 - 0.45, f"H:{zone.get('horizontalDistribution',{}).get('token')} T:{zone.get('tieBars',{}).get('token')}", 0.16)
+            if zone.get("zoneType") == "support_node_zone":
+                dxf.text("PIT_HIGHLIGHT", x_cursor + width - 1.4, (top + bottom) / 2.0, "D-04", 0.22)
+        dxf.line("PIT_ZONE", x_cursor, wall.bottom_elevation, x_cursor + width, wall.bottom_elevation)
+        x_cursor += width + 4.0
+    dxf.text("PIT_TEXT", 0, min((wall.bottom_elevation for wall in walls), default=-20) - 1.0, "Zone boundaries are generated from support elevations, excavation transition, wall toe and latest moment envelope.", 0.25)
+    _title_block(dxf, project, "R02", "地下连续墙分区配筋立面图", "1:100")
+    dxf.write(path)
+
+
+def _safe_file_token(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(value))[:80]
+
+
+def _write_single_wall_rebar_elevation(project: Project, path: Path, scheme: dict[str, Any], wall_id: str, sheet_no: str) -> None:
+    dxf = DxfWriter()
+    ret = project.retaining_system
+    wall = next((item for item in (ret.diaphragm_walls if ret else []) if item.id == wall_id), None)
+    if wall is None:
+        dxf.text("PIT_TEXT", 0, 0, "Wall not found", 0.35)
+        _title_block(dxf, project, sheet_no.replace("-", ""), "地下连续墙单幅分区配筋立面", "1:50")
+        dxf.write(path)
+        return
+    zones = sorted([item for item in scheme.get("wallZones", []) if str(item.get("hostId")) == wall_id], key=lambda item: float(item.get("topElevation") or 0.0), reverse=True)
+    width = max(min(float(wall.design_length or 6.0), 12.0), 5.0)
+    dxf.rectangle("PIT_CONCRETE", 0, float(wall.bottom_elevation), width, float(wall.top_elevation - wall.bottom_elevation))
+    dxf.text("PIT_TITLE", 0, float(wall.top_elevation) + 1.0, f"{wall.panel_code} wall reinforcement elevation", 0.42)
+    dxf.text("PIT_TEXT", width + 2.0, float(wall.top_elevation), f"Thickness={wall.thickness:.2f}m  Concrete={wall.concrete_grade}  Rebar={wall.rebar_grade}", 0.25)
+    schedule_y = float(wall.top_elevation) - 1.2
+    for index, zone in enumerate(zones, start=1):
+        top = float(zone.get("topElevation") or wall.top_elevation)
+        bottom = float(zone.get("bottomElevation") or wall.bottom_elevation)
+        dxf.line("PIT_ZONE", 0, top, width, top)
+        if index == len(zones):
+            dxf.line("PIT_ZONE", 0, bottom, width, bottom)
+        face_tokens = {str(face.get("face")): str(face.get("token")) for face in zone.get("faces", [])}
+        status = str(zone.get("status") or "manual_review")
+        source = str(zone.get("envelopeSource") or "calculated_moment")
+        dxf.text("PIT_TEXT", 0.25, (top + bottom) / 2.0 + 0.18, f"{zone.get('zoneId')} {zone.get('zoneType')}", 0.18)
+        dxf.text("PIT_REBAR_MAIN", 0.25, (top + bottom) / 2.0 - 0.20, f"IN {face_tokens.get('inner','-')} / OUT {face_tokens.get('outer','-')}", 0.18)
+        dxf.text("PIT_REBAR_DIST", 0.25, (top + bottom) / 2.0 - 0.55, f"H {zone.get('horizontalDistribution',{}).get('token')}  T {zone.get('tieBars',{}).get('token')}", 0.16)
+        dxf.text("PIT_TEXT", width + 2.0, schedule_y, f"{index:02d}  EL {top:.2f}~{bottom:.2f}  M={float(zone.get('maxAbsMomentKnMPerM') or 0):.1f}  {status}  {source}", 0.20)
+        schedule_y -= 0.72
+        if zone.get("zoneType") == "support_node_zone":
+            dxf.rectangle("PIT_HIGHLIGHT", -0.18, bottom, width + 0.36, top - bottom)
+            dxf.leader("PIT_LEADER", width, (top + bottom) / 2.0, width + 1.5, (top + bottom) / 2.0 + 0.6, "D-04 local strengthening", 0.18)
+    for elevation in sorted({float(item.elevation) for item in (ret.supports if ret else [])}, reverse=True):
+        if wall.bottom_elevation < elevation < wall.top_elevation:
+            dxf.line("PIT_SUPPORT_LEVEL", -0.8, elevation, width + 0.8, elevation)
+            dxf.text("PIT_SUPPORT_LEVEL", width + 0.9, elevation, f"Support EL {elevation:.2f}", 0.18)
+    if project.excavation:
+        dxf.line("PIT_EXCAVATION", -0.8, project.excavation.bottom_elevation, width + 0.8, project.excavation.bottom_elevation)
+        dxf.text("PIT_EXCAVATION", width + 0.9, project.excavation.bottom_elevation, "Final excavation level", 0.18)
+    _title_block(dxf, project, sheet_no.replace("-", ""), f"{wall.panel_code} 地下连续墙单幅分区配筋立面", "1:50")
+    dxf.write(path)
+
+
+def _write_support_rebar_general(project: Project, path: Path, scheme: dict[str, Any]) -> None:
+    dxf = DxfWriter()
+    rows = scheme.get("supportSchemes", [])
+    dxf.text("PIT_TITLE", 0, 8, "R-04 RC support reinforcement general arrangement", 0.55)
+    headers = ["Support", "Level", "Section", "N(kN)", "Longitudinal", "End zone", "Middle", "Status"]
+    xs = [0, 18, 30, 48, 64, 88, 108, 126]
+    for index, header in enumerate(headers):
+        dxf.text("PIT_TITLE", xs[index], 5.2, header, 0.26)
+    for row_index, item in enumerate(rows[:34], start=1):
+        y = 5.2 - row_index * 0.95
+        values = [item.get("hostCode"), item.get("levelIndex"), item.get("section", {}).get("name"), item.get("axialForceDesignKn"), item.get("longitudinal", {}).get("token"), item.get("endZones", {}).get("token"), item.get("middleZone", {}).get("token"), item.get("status")]
+        for index, value in enumerate(values):
+            dxf.text("PIT_TEXT", xs[index], y, str(value), 0.2)
+    y0 = -31.0
+    dxf.rectangle("PIT_CONCRETE", 0, y0, 48, 3.0)
+    dxf.text("PIT_TEXT", 0, y0 + 3.6, "Typical support elevation", 0.3)
+    dxf.line("PIT_ZONE", 7, y0, 7, y0 + 3); dxf.line("PIT_ZONE", 41, y0, 41, y0 + 3)
+    dxf.text("PIT_TEXT", 1, y0 + 1.3, "End confinement zone", 0.22)
+    dxf.text("PIT_TEXT", 18, y0 + 1.3, "Middle zone / staggered lap away from rigid nodes", 0.22)
+    dxf.text("PIT_TEXT", 42, y0 + 1.3, "End confinement zone", 0.22)
+    for offset in (0.55, 1.1, 1.65, 2.2):
+        dxf.line("PIT_REBAR_MAIN", 0.4, y0 + offset, 47.6, y0 + offset)
+    _title_block(dxf, project, "R04", "钢筋混凝土支撑配筋总图", "1:100")
+    dxf.write(path)
+
+
+def _write_wale_rebar_general(project: Project, path: Path, scheme: dict[str, Any]) -> None:
+    dxf = DxfWriter()
+    rows = [item for item in scheme.get("beamNodeSchemes", []) if item.get("hostType") == "wale_or_crown_beam"]
+    dxf.text("PIT_TITLE", 0, 7, "R-05 Crown, wale and ring beam reinforcement arrangement", 0.55)
+    headers = ["Beam", "Role", "Level", "EL", "Main bars", "Stirrups", "Node additional", "Status"]
+    xs = [0, 18, 38, 52, 66, 88, 108, 144]
+    for index, header in enumerate(headers): dxf.text("PIT_TITLE", xs[index], 4.2, header, 0.25)
+    for row_index, item in enumerate(rows[:30], start=1):
+        y = 4.2 - row_index * 1.0
+        values = [item.get("hostCode"), item.get("beamRole"), item.get("levelIndex"), item.get("elevation"), item.get("mainBars", {}).get("token"), item.get("stirrups", {}).get("token"), str(item.get("nodeAdditional") or "")[:36], item.get("status")]
+        for index, value in enumerate(values): dxf.text("PIT_TEXT", xs[index], y, str(value), 0.19)
+    _title_block(dxf, project, "R05", "冠梁、围檩及环梁配筋总图", "1:100")
+    dxf.write(path)
+
+
+def _write_detail_cell(dxf: DxfWriter, x: float, y: float, title: str, detail_no: str, kind: str) -> None:
+    dxf.rectangle("PIT_FRAME", x, y, 34, 22)
+    dxf.text("PIT_TITLE", x + 1, y + 20.5, f"{detail_no} {title}", 0.3)
+    if kind == "support_wale":
+        dxf.rectangle("PIT_WALE", x + 3, y + 8, 26, 5)
+        dxf.line("PIT_SUPPORT", x + 16, y + 2, x + 16, y + 20)
+        dxf.rectangle("PIT_PLATE", x + 13.5, y + 6.5, 5, 8)
+        for i in range(5): dxf.line("PIT_REBAR_MAIN", x + 4, y + 8.8 + i * 0.8, x + 28, y + 8.8 + i * 0.8)
+    elif kind == "corner":
+        dxf.line("PIT_WALE", x + 4, y + 4, x + 4, y + 18)
+        dxf.line("PIT_WALE", x + 4, y + 4, x + 28, y + 4)
+        dxf.line("PIT_SUPPORT", x + 5, y + 5, x + 24, y + 16)
+        dxf.arc("PIT_REBAR_MAIN", x + 6, y + 6, 4, 0, 90)
+    elif kind == "column":
+        dxf.line("PIT_SUPPORT", x + 3, y + 11, x + 31, y + 11)
+        dxf.rectangle("PIT_COLUMN", x + 14, y + 3, 6, 16)
+        dxf.rectangle("PIT_PLATE", x + 11, y + 8, 12, 6)
+    elif kind == "wall_joint":
+        dxf.rectangle("PIT_CONCRETE", x + 7, y + 3, 8, 16)
+        dxf.rectangle("PIT_CONCRETE", x + 19, y + 3, 8, 16)
+        dxf.line("PIT_JOINT", x + 17, y + 3, x + 17, y + 19)
+        for px in (9, 12.5, 21, 24.5): dxf.line("PIT_REBAR_MAIN", x + px, y + 4, x + px, y + 18)
+        dxf.arc("PIT_REBAR_ADD", x + 17, y + 10, 5, 90, 270)
+        dxf.text("PIT_TEXT", x + 10, y + 1.8, "panel joint / stop-end / waterstop / cage connector", 0.16)
+    elif kind == "support_splice":
+        dxf.rectangle("PIT_CONCRETE", x + 3, y + 7, 28, 8)
+        for offset in (8.5, 10.2, 11.9, 13.6):
+            dxf.line("PIT_REBAR_MAIN", x + 4, y + offset, x + 30, y + offset)
+        dxf.rectangle("PIT_HIGHLIGHT", x + 12, y + 6.3, 10, 9.4)
+        dxf.text("PIT_TEXT", x + 10.5, y + 17, "staggered lap / coupler zone", 0.18)
+        dxf.text("PIT_TEXT", x + 4, y + 4.8, "end rigid zones excluded; confinement follows support schedule", 0.16)
+    elif kind == "grid_node":
+        dxf.rectangle("PIT_SUPPORT_MAIN", x + 2, y + 8, 30, 6)
+        dxf.rectangle("PIT_SUPPORT_SECONDARY", x + 14, y + 2, 6, 18)
+        dxf.rectangle("PIT_COLUMN", x + 13, y + 7, 8, 8)
+        dxf.rectangle("PIT_PLATE", x + 10.5, y + 6, 13, 10)
+        for offset in (8.8, 10.2, 11.6, 13.0):
+            dxf.line("PIT_REBAR_MAIN", x + 3, y + offset, x + 31, y + offset)
+        for offset in (15.0, 16.5, 18.0, 19.5):
+            dxf.line("PIT_REBAR_ADD", x + offset, y + 3, x + offset, y + 19)
+        dxf.text("PIT_TEXT", x + 2.5, y + 1.0, "main/grid struts intersect at temporary column; verify elevation, bearing plate, couplers and cage clearance", 0.145)
+    else:
+        dxf.rectangle("PIT_CONCRETE", x + 6, y + 3, 20, 16)
+        for i in range(6): dxf.line("PIT_REBAR_MAIN", x + 8 + i * 3, y + 4, x + 8 + i * 3, y + 18)
+        dxf.rectangle("PIT_HIGHLIGHT", x + 5, y + 8, 22, 5)
+    dxf.text("PIT_TEXT", x + 1, y + 1, "Dimensions and reinforcement marks refer to zone/node schedules.", 0.16)
+
+
+def _write_typical_detail_compilation(project: Project, path: Path) -> None:
+    dxf = DxfWriter()
+    _write_detail_cell(dxf, 0, 0, "Support-wale bearing node", "D-01", "support_wale")
+    _write_detail_cell(dxf, 38, 0, "Corner diagonal brace node", "D-02", "corner")
+    _write_detail_cell(dxf, 0, -26, "Support-column intersection", "D-03", "column")
+    _write_detail_cell(dxf, 38, -26, "Wall support-zone strengthening", "D-04", "wall")
+    _write_detail_cell(dxf, 0, -52, "Wall panel joint and cage connector", "D-06", "wall_joint")
+    _write_detail_cell(dxf, 38, -52, "Support anchorage and staggered lap", "D-07", "support_splice")
+    _write_detail_cell(dxf, 0, -78, "Bidirectional grid node at temporary column", "D-08", "grid_node")
+    _title_block(dxf, project, "D00", "典型节点大样索引与组合图", "1:20/1:50")
+    dxf.write(path)
+
+
+def _write_corner_detail(project: Project, path: Path) -> None:
+    dxf = DxfWriter(); _write_detail_cell(dxf, 0, 0, "Corner diagonal brace node", "D-02", "corner"); _title_block(dxf, project, "D02", "角撑节点与转角加强大样", "1:20"); dxf.write(path)
+
+
+def _write_support_column_detail(project: Project, path: Path) -> None:
+    dxf = DxfWriter(); _write_detail_cell(dxf, 0, 0, "Support-column intersection", "D-03", "column"); _title_block(dxf, project, "D03", "支撑—立柱交叉节点大样", "1:20"); dxf.write(path)
+
+
+def _write_wall_support_zone_detail(project: Project, path: Path) -> None:
+    dxf = DxfWriter(); _write_detail_cell(dxf, 0, 0, "Wall support-zone strengthening", "D-04", "wall"); _title_block(dxf, project, "D04", "地连墙支撑区局部加强大样", "1:20"); dxf.write(path)
+
+
+def _write_wall_joint_detail(project: Project, path: Path) -> None:
+    dxf = DxfWriter(); _write_detail_cell(dxf, 0, 0, "Wall panel joint and cage connector", "D-06", "wall_joint"); _title_block(dxf, project, "D06", "地下连续墙墙幅接头与钢筋笼连接大样", "1:20"); dxf.write(path)
+
+
+def _write_support_splice_detail(project: Project, path: Path) -> None:
+    dxf = DxfWriter(); _write_detail_cell(dxf, 0, 0, "Support anchorage and staggered lap", "D-07", "support_splice"); _title_block(dxf, project, "D07", "钢筋混凝土支撑端部锚固与错开搭接大样", "1:20"); dxf.write(path)
+
+
+def _write_bidirectional_grid_node_detail(project: Project, path: Path) -> None:
+    dxf = DxfWriter()
+    _write_detail_cell(dxf, 0, 0, "Bidirectional grid node at temporary column", "D-08", "grid_node")
+    _title_block(dxf, project, "D08", "主次支撑网格交叉节点与立柱连接大样", "1:20")
+    dxf.write(path)
+
+
+def _write_rebar_zone_schedule_csv(path: Path, scheme: dict[str, Any]) -> None:
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["zone_id", "host_code", "zone_type", "top_elevation", "bottom_elevation", "face", "moment_design_knm_per_m", "required_as_mm2_per_m", "bar_diameter_mm", "bar_spacing_mm", "provided_as_mm2_per_m", "utilization", "horizontal_distribution", "tie_bars", "status", "drawing_refs"])
+        for zone in scheme.get("wallZones", []):
+            for face in zone.get("faces", []):
+                writer.writerow([zone.get("zoneId"), zone.get("hostCode"), zone.get("zoneType"), zone.get("topElevation"), zone.get("bottomElevation"), face.get("face"), face.get("momentDesignKnMPerM"), face.get("requiredAsMm2PerM"), face.get("barDiameterMm"), face.get("barSpacingMm"), face.get("providedAsMm2PerM"), face.get("utilization"), zone.get("horizontalDistribution", {}).get("token"), zone.get("tieBars", {}).get("token"), face.get("status"), ";".join(zone.get("drawingRefs", []))])
+
+
+def _write_support_rebar_schedule_csv(path: Path, scheme: dict[str, Any]) -> None:
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["support_code", "level", "elevation", "role", "span_m", "section", "axial_force_design_kn", "longitudinal", "end_zone", "middle_zone", "clear_spacing_mm", "steel_ratio", "utilization", "status", "drawing_refs"])
+        for item in scheme.get("supportSchemes", []):
+            writer.writerow([item.get("hostCode"), item.get("levelIndex"), item.get("elevation"), item.get("supportRole"), item.get("spanM"), item.get("section", {}).get("name"), item.get("axialForceDesignKn"), item.get("longitudinal", {}).get("token"), item.get("endZones", {}).get("token"), item.get("middleZone", {}).get("token"), item.get("clearSpacingMm"), item.get("longitudinalSteelRatio"), item.get("utilization"), item.get("status"), ";".join(item.get("drawingRefs", []))])
+
+
+def _write_design_diagnostic_summary(path: Path, scheme: dict[str, Any]) -> None:
+    diagnostics = scheme.get("diagnostics") or {}
+    payload = {
+        "headline": diagnostics.get("headline"),
+        "canApply": diagnostics.get("canApply"),
+        "canIssueConstructionDrawings": diagnostics.get("canIssueConstructionDrawings"),
+        "reviewWatermarkRequired": diagnostics.get("reviewWatermarkRequired"),
+        "calculation": diagnostics.get("calculation"),
+        "supportTopology": diagnostics.get("supportTopology"),
+        "failureReasons": diagnostics.get("failureReasons"),
+        "actions": diagnostics.get("actions"),
+        "summary": scheme.get("summary"),
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_design_diagnostic_csv(path: Path, scheme: dict[str, Any]) -> None:
+    diagnostics = scheme.get("diagnostics") or {}
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["category", "code", "status_or_count", "objects", "recommended_action"])
+        calculation = diagnostics.get("calculation") or {}
+        writer.writerow(["calculation", "CALCULATION_VALIDITY", calculation.get("status"), "", "; ".join(calculation.get("messages") or [])])
+        topology = diagnostics.get("supportTopology") or {}
+        writer.writerow(["support_topology", "SUPPORT_TOPOLOGY", topology.get("status"), f"secondary={topology.get('secondaryGridSupportCount')}; corner_width={topology.get('maxCornerTributaryWidthM')}", topology.get("message")])
+        for code, item in (diagnostics.get("failureReasons") or {}).items():
+            writer.writerow(["failure_reason", code, item.get("count"), ";".join(str(v) for v in item.get("objects") or []), item.get("recommendedAction")])
+        for action in diagnostics.get("actions") or []:
+            writer.writerow(["action", action.get("id"), f"P{action.get('priority')}", action.get("label"), action.get("description")])
+
+
+def _write_advanced_diagnostic_sheet(project: Project, path: Path, sheet_no: str, title: str, rows: list[tuple[str, str, str, str]]) -> None:
+    dxf = DxfWriter()
+    dxf.text(_layer(project, "title", "PIT_TITLE"), 0, 18, title, 0.65)
+    headers = ["对象/模块", "状态", "控制指标", "建议"]
+    widths = [25.0, 12.0, 28.0, 55.0]
+    x = [0.0]
+    for w in widths: x.append(x[-1] + w)
+    top = 16.5; row_h = 2.0
+    for i in range(len(rows)+2): dxf.line(_layer(project, "frame", "PIT_FRAME"), x[0], top-i*row_h, x[-1], top-i*row_h)
+    for xx in x: dxf.line(_layer(project, "frame", "PIT_FRAME"), xx, top, xx, top-(len(rows)+1)*row_h)
+    for col, text in enumerate(headers): dxf.text(_layer(project, "text", "PIT_TEXT"), x[col]+0.4, top-1.35, text, 0.3)
+    for r, values in enumerate(rows, start=1):
+        for c, value in enumerate(values): dxf.text(_layer(project, "text", "PIT_TEXT"), x[c]+0.4, top-r*row_h-1.35, str(value)[:70], 0.25)
+    _title_block(dxf, project, sheet_no.replace("-", ""), title, "NTS")
+    dxf.write(path)
+
+
+def _write_manifest_files(package_dir: Path, manifest: dict[str, Any], scheme: dict[str, Any]) -> None:
+    (package_dir / "drawing_set_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (package_dir / "rebar_design_scheme.json").write_text(json.dumps(scheme, ensure_ascii=False, indent=2), encoding="utf-8")
+    with (package_dir / "drawing_register.csv").open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["sheet_no", "title", "category", "scale", "file", "model_binding", "legacy"])
+        for item in manifest.get("sheets", []):
+            writer.writerow([item.get("sheetNo"), item.get("title"), item.get("category"), item.get("scale"), item.get("file"), ";".join(item.get("modelBinding", [])), item.get("legacy", False)])
+
+
+def export_construction_cad_package(project: Project, output_dir: str | Path, scope: str = "full", rebar_mode: str = "balanced", issue_mode: str = "review") -> Path:
+    if scope not in {"full", "general", "rebar", "details"}:
+        raise ValueError(f"Unsupported CAD package scope: {scope}")
+    if issue_mode not in {"review", "construction"}:
+        raise ValueError(f"Unsupported CAD issue mode: {issue_mode}")
+    out = Path(output_dir)
+    package_dir = out / f"{project.id}_cad_package_{scope}_{issue_mode}"
+    if package_dir.exists():
+        shutil.rmtree(package_dir)
+    package_dir.mkdir(parents=True, exist_ok=True)
+    for folder in ("00_general", "10_plans", "20_sections", "30_rebar", "40_details", "50_quality", "60_monitoring", "90_schedules"):
+        (package_dir / folder).mkdir(parents=True, exist_ok=True)
+
+    detailing = build_rebar_detailing(project, mode=rebar_mode)
+    scheme = detailing.get("designScheme") or build_rebar_design_scheme(project, mode=rebar_mode)
+    manifest = build_drawing_set_manifest(project)
+    advanced_suite = build_advanced_engineering_suite(project, rebar_mode)
+    manifest["scope"] = scope
+    manifest["rebarMode"] = rebar_mode
+    manifest["issueMode"] = issue_mode
+    manifest["reviewWatermark"] = issue_mode == "review"
+
+    generated: list[Path] = []
+    def add(path: Path, writer) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        writer(path)
+        generated.append(path)
+
+    if scope in {"full", "general"}:
+        add(package_dir / "00_general/G-00_drawing_index_general_notes.dxf", lambda path: _write_general_notes_sheet(project, path, manifest))
+        add(package_dir / "10_plans/S-00_retaining_support_general_arrangement.dxf", lambda path: _write_master_general_arrangement(project, path))
+        add(package_dir / "S-01_support_plan.dxf", lambda path: _write_support_plan(project, path))
+        levels = sorted({item.level_index for item in (project.retaining_system.supports if project.retaining_system else [])})
+        for level in levels:
+            add(package_dir / f"10_plans/S-02-L{level:02d}_support_level_plan.dxf", lambda path, level=level: _write_support_level_plan(project, path, level))
+        add(package_dir / "20_sections/S-03_excavation_stage_section.dxf", lambda path: _write_excavation_section(project, path))
+        add(package_dir / "S-04_excavation_section.dxf", lambda path: _write_excavation_section(project, path))
+        add(package_dir / "S-06_monitoring_plan.dxf", lambda path: _write_monitoring_plan(project, path))
+
+    if scope in {"full", "rebar"}:
+        add(package_dir / "30_rebar/R-01_wall_rebar_general_arrangement.dxf", lambda path: _write_wall_rebar_general_arrangement(project, path, scheme))
+        add(package_dir / "30_rebar/R-02_wall_rebar_zone_elevation.dxf", lambda path: _write_wall_rebar_zone_elevation(project, path, scheme))
+        if project.retaining_system:
+            for index, wall in enumerate(project.retaining_system.diaphragm_walls, start=1):
+                sheet_no = f"R-02-W{index:02d}"
+                token = _safe_file_token(wall.panel_code)
+                add(package_dir / f"30_rebar/walls/{sheet_no}_{token}_rebar_elevation.dxf", lambda path, wall_id=wall.id, sheet_no=sheet_no: _write_single_wall_rebar_elevation(project, path, scheme, wall_id, sheet_no))
+        add(package_dir / "30_rebar/R-04_support_rebar_general_arrangement.dxf", lambda path: _write_support_rebar_general(project, path, scheme))
+        add(package_dir / "30_rebar/R-05_wale_rebar_general_arrangement.dxf", lambda path: _write_wale_rebar_general(project, path, scheme))
+        add(package_dir / "S-02_wall_rebar_cage.dxf", lambda path: _write_wall_rebar_detail(project, path))
+        add(package_dir / "S-07_rebar_bending_schedule.dxf", lambda path: _write_rebar_bending_schedule(project, path, detailing=detailing))
+        add(package_dir / "S-08_individual_rebar_geometry.dxf", lambda path: _write_rebar_geometry_plan(project, path, detailing=detailing))
+        add(package_dir / "S-09_lap_splice_layout.dxf", lambda path: _write_splice_layout(project, path, detailing=detailing))
+        add(package_dir / "S-10_cage_segment_lifting_plan.dxf", lambda path: _write_cage_lifting_plan(project, path, detailing=detailing))
+        add(package_dir / "S-11_cover_bend_check.dxf", lambda path: _write_cover_conflict_check(project, path, detailing=detailing))
+        add(package_dir / "S-12_shop_drawing_signoff_checklist.dxf", lambda path: _write_shop_signoff_sheet(project, path, detailing=detailing))
+
+    if scope in {"full", "details"}:
+        add(package_dir / "40_details/D-00_typical_detail_compilation.dxf", lambda path: _write_typical_detail_compilation(project, path))
+        add(package_dir / "S-03_support_wale_node_detail.dxf", lambda path: _write_node_detail(project, path))
+        add(package_dir / "40_details/D-02_corner_brace_node_detail.dxf", lambda path: _write_corner_detail(project, path))
+        add(package_dir / "40_details/D-03_support_column_intersection_detail.dxf", lambda path: _write_support_column_detail(project, path))
+        add(package_dir / "40_details/D-04_wall_support_zone_detail.dxf", lambda path: _write_wall_support_zone_detail(project, path))
+        add(package_dir / "S-05_column_pile_detail.dxf", lambda path: _write_column_pile_detail(project, path))
+        add(package_dir / "40_details/D-06_wall_panel_joint_detail.dxf", lambda path: _write_wall_joint_detail(project, path))
+        add(package_dir / "40_details/D-07_support_anchorage_splice_detail.dxf", lambda path: _write_support_splice_detail(project, path))
+        add(package_dir / "40_details/D-08_bidirectional_grid_node_detail.dxf", lambda path: _write_bidirectional_grid_node_detail(project, path))
+
+    if scope in {"full", "details"}:
+        svc = advanced_suite["serviceability"]
+        svc_rows = [(str(x.get("hostCode")), str(x.get("status")), f"w={x.get('estimatedCrackWidthMm')}mm / {x.get('limitMm')}mm", str(x.get("recommendedAction"))) for x in svc.get("wallZoneChecks", []) if x.get("status") != "pass"][:18]
+        if not svc_rows: svc_rows = [("ALL", "pass", f"max w={svc['summary'].get('maxEstimatedCrackWidthMm')}mm", "维持当前抗裂构造并结合监测复核")]
+        add(package_dir / "50_quality/Q-02_serviceability_crack_check.dxf", lambda path, rows=svc_rows: _write_advanced_diagnostic_sheet(project, path, "Q-02", "长期效应与裂缝控制检查图", rows))
+        col = advanced_suite["collisions"]
+        col_rows = [(str(x.get("objectA")), str(x.get("status")), str(x.get("type")), str(x.get("recommendedAction"))) for x in col.get("collisions", [])][:18]
+        if not col_rows: col_rows = [("ALL", "pass", "no hard collision", "按施工偏差和净距要求实施")]
+        add(package_dir / "50_quality/Q-03_collision_clearance_check.dxf", lambda path, rows=col_rows: _write_advanced_diagnostic_sheet(project, path, "Q-03", "构件碰撞、净距与节点拥挤检查图", rows))
+        nod = advanced_suite["nodeLocal"]
+        nod_rows = [(str(x.get("nodeCode")), str(x.get("status")), f"util={x.get('governingUtilization')}, slip={x.get('localSlipMm')}mm", str(x.get("recommendedAction"))) for x in nod.get("nodes", []) if x.get("status") != "pass"][:18]
+        if not nod_rows: nod_rows = [("ALL", "pass", f"max util={nod['summary'].get('maxUtilization')}", "按节点大样实施")]
+        add(package_dir / "50_quality/N-01_node_local_analysis.dxf", lambda path, rows=nod_rows: _write_advanced_diagnostic_sheet(project, path, "N-01", "高利用率节点局部复核索引图", rows))
+        mon = advanced_suite["monitoring"]
+        mon_rows = [("监测记录", "info", str(mon.get("recordCount", 0)), "导入墙体位移、支撑轴力、水位与沉降数据"), ("最近反演", str((mon.get("latestCalibration") or {}).get("status", "not_run")), str((mon.get("latestCalibration") or {}).get("confidence", "-")), "应用后必须重新计算")]
+        add(package_dir / "60_monitoring/M-02_monitoring_calibration.dxf", lambda path, rows=mon_rows: _write_advanced_diagnostic_sheet(project, path, "M-02", "监测反演与参数校准记录图", rows))
+
+    schedule_files = [
+        package_dir / "90_schedules/rebar_schedule.csv",
+        package_dir / "90_schedules/material_schedule.csv",
+        package_dir / "90_schedules/rebar_bending_schedule.csv",
+        package_dir / "90_schedules/individual_bar_geometry.csv",
+        package_dir / "90_schedules/cage_segment_schedule.csv",
+        package_dir / "90_schedules/splice_schedule.csv",
+        package_dir / "90_schedules/cover_conflict_check.csv",
+        package_dir / "90_schedules/shop_drawing_checklist.csv",
+        package_dir / "90_schedules/rebar_zone_schedule.csv",
+        package_dir / "90_schedules/support_rebar_schedule.csv",
+        package_dir / "90_schedules/delivery_consistency_matrix.csv",
+        package_dir / "enterprise_template_manifest.json",
+        package_dir / "90_schedules/design_diagnostic_summary.json",
+        package_dir / "90_schedules/design_diagnostic_summary.csv",
+        package_dir / "90_schedules/advanced_engineering_suite.json",
+        package_dir / "90_schedules/serviceability_checks.csv",
+        package_dir / "90_schedules/collision_clearance_checks.csv",
+        package_dir / "90_schedules/node_local_analysis.csv",
+        package_dir / "90_schedules/support_topology_graph.json",
+        package_dir / "90_schedules/monitoring_calibration.json",
+        package_dir / "90_schedules/review_workflow.json",
+        package_dir / "90_schedules/drawing_revision_log.csv",
+    ]
+    _write_rebar_schedule(project, schedule_files[0])
+    _write_material_schedule(project, schedule_files[1])
+    _write_rebar_bending_schedule_csv(project, schedule_files[2], detailing=detailing)
+    _write_individual_bar_geometry_csv(project, schedule_files[3], detailing=detailing)
+    _write_cage_segment_schedule_csv(project, schedule_files[4], detailing=detailing)
+    _write_splice_schedule_csv(project, schedule_files[5], detailing=detailing)
+    _write_cover_conflict_check_csv(project, schedule_files[6], detailing=detailing)
+    _write_shop_signoff_checklist_csv(project, schedule_files[7], detailing=detailing)
+    _write_rebar_zone_schedule_csv(schedule_files[8], scheme)
+    _write_support_rebar_schedule_csv(schedule_files[9], scheme)
+    _write_delivery_consistency_matrix(project, schedule_files[10])
+    _write_enterprise_template_manifest(project, schedule_files[11])
+    _write_design_diagnostic_summary(schedule_files[12], scheme)
+    _write_design_diagnostic_csv(schedule_files[13], scheme)
+    schedule_files[14].write_text(json.dumps(advanced_suite, ensure_ascii=False, indent=2), encoding="utf-8")
+    def _write_rows(path: Path, headers: list[str], rows: list[list[Any]]) -> None:
+        with path.open("w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f); w.writerow(headers); w.writerows(rows)
+    _write_rows(schedule_files[15], ["object_id","host_code","face","crack_width_mm","limit_mm","status","drawing_refs"], [[x.get("objectId"),x.get("hostCode"),x.get("face"),x.get("estimatedCrackWidthMm"),x.get("limitMm"),x.get("status"),";".join(x.get("drawingRefs") or [])] for x in advanced_suite["serviceability"].get("wallZoneChecks", [])])
+    _write_rows(schedule_files[16], ["id","object_a","object_b","type","status","message","recommended_action"], [[x.get("id"),x.get("objectA"),x.get("objectB"),x.get("type"),x.get("status"),x.get("message"),x.get("recommendedAction")] for x in advanced_suite["collisions"].get("collisions", [])])
+    _write_rows(schedule_files[17], ["node_code","support_code","force_kn","bearing_util","splitting_util","eccentric_util","slip_mm","status"], [[x.get("nodeCode"),x.get("supportCode"),x.get("designForceKn"),x.get("bearingUtilization"),x.get("splittingUtilization"),x.get("eccentricityUtilization"),x.get("localSlipMm"),x.get("status")] for x in advanced_suite["nodeLocal"].get("nodes", [])])
+    schedule_files[18].write_text(json.dumps(advanced_suite["topology"], ensure_ascii=False, indent=2), encoding="utf-8")
+    schedule_files[19].write_text(json.dumps(advanced_suite["monitoring"], ensure_ascii=False, indent=2), encoding="utf-8")
+    schedule_files[20].write_text(json.dumps(review_status(project), ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_rows(schedule_files[21], ["revision","description","sheets","author","issue_status","snapshot_hash","created_at"], [[r.revision,r.description,";".join(r.sheet_numbers),r.author,r.issue_status,r.snapshot_hash,r.created_at] for r in project.drawing_revisions])
+    generated.extend(schedule_files)
+    # Preserve V2.x flat-package schedule names for downstream scripts while the
+    # canonical V3.2 files remain organized under 90_schedules/.
+    for source in (schedule_files[3], schedule_files[4], schedule_files[5], schedule_files[6], schedule_files[7]):
+        legacy = package_dir / source.name
+        shutil.copy2(source, legacy)
+        generated.append(legacy)
+    manifest["includedFiles"] = [file.relative_to(package_dir).as_posix() for file in generated if file.exists()]
+    manifest["includedSheetCount"] = len([file for file in generated if file.suffix.lower() == ".dxf"])
+    _write_manifest_files(package_dir, manifest, scheme)
+    generated.extend([package_dir / "drawing_set_manifest.json", package_dir / "rebar_design_scheme.json", package_dir / "drawing_register.csv"])
+
+    package_manifest = package_dir / "drawing_package_manifest.json"
+    package_manifest.write_text(json.dumps({
+        "projectId": project.id,
+        "packageType": f"PitGuard V{SOFTWARE_VERSION} coordinated CAD drawing set",
+        "scope": scope,
+        "rebarMode": rebar_mode,
+        "issueMode": issue_mode,
+        "reviewWatermark": issue_mode == "review",
+        "sheetCount": len([path for path in generated if path.suffix.lower() == ".dxf"]),
+        "tableCount": len([path for path in generated if path.suffix.lower() == ".csv"]),
+        "folders": manifest.get("packageFolders"),
+        "drawingSet": "drawing_set_manifest.json",
+        "rebarDesignScheme": "rebar_design_scheme.json",
         "softwareModuleCompletion": 100,
         "cadTemplate": _cad_template(project),
-        "officialIssueBoundary": "Generated drawings are editable CAD deliverables. Company title blocks, signature workflow and registered engineer review are still required before sealed issue.",
+        "officialIssueBoundary": manifest.get("issueBoundary"),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
+    generated.append(package_manifest)
     readme = package_dir / "README.txt"
     readme.write_text(
-        "PitGuard V2.5.0 construction CAD drawing-set package\n"
-        "Format: AutoCAD R12 DXF + UTF-8 BOM CSV schedules + JSON manifest.\n"
-        "Sheets: S-01 support plan, S-02 diaphragm-wall rebar cage, S-03 support-wale node, S-04 excavation section, S-05 column pile, S-06 monitoring plan, S-07 rebar bending, S-08 individual rebar geometry, S-09 splice layout, S-10 cage lifting, S-11 cover/bend check, S-12 signoff checklist.\n"
-        "Schedules: drawing register, rebar schedule, material schedule, rebar bending, individual geometry, cage segment, splice, cover conflict, shop checklist and delivery consistency matrix.\n"
-        "Layers: PIT_EXCAVATION, PIT_WALL, PIT_WALE, PIT_SUPPORT, PIT_COLUMN, PIT_PILE, PIT_REBAR_MAIN, PIT_REBAR_STIRRUP, PIT_MONITOR, PIT_TEXT, PIT_DIM.\n"
-        "Status: formal CAD drawing-set interface. Final sealed construction drawings require company title block, designer/checker signatures, anchorage/lap/hook review and registered engineer approval.\n",
+        f"PitGuard V{SOFTWARE_VERSION} coordinated construction CAD package\n"
+        f"Scope: {scope}; reinforcement mode: {rebar_mode}.\n"
+        "Folders: 00_general, 10_plans, 20_sections, 30_rebar, 40_details, 50_quality, 60_monitoring and 90_schedules.\n"
+        "Global drawings include drawing index/general notes, retaining-support master plan and separate support-level plans.\n"
+        "Reinforcement drawings include wall zone plans/elevations, RC support end/middle zones, wale/node schedules, cage/splice/lifting and bar bending data.\n"
+        "Detail drawings include support-wale, corner brace, support-column and wall support-zone local strengthening details.\n"
+        "All DXF files are AutoCAD R12-compatible model-space drawings. CSV files use UTF-8 BOM.\n"
+        "Final sealed construction issue requires project-specific crack, seismic, coupler, embedded-item, lifting and professional signoff checks.\n",
         encoding="utf-8",
     )
-    zip_path = out / f"{project.id}_construction_cad_formal_set.zip"
+    generated.append(readme)
+    if issue_mode == "review":
+        review_notice = package_dir / "REVIEW_ONLY_审查版.txt"
+        review_notice.write_text(
+            "本图纸包为审查版/设计辅助成果，不得直接用于正式施工。\n"
+            "请先消除配筋阻断项、完成企业图签与设计/校核/审核签署，并由注册工程师复核。\n",
+            encoding="utf-8",
+        )
+        generated.append(review_notice)
+    zip_path = out / f"{project.id}_construction_cad_{scope}_{issue_mode}_v{SOFTWARE_VERSION.replace('.', '_')}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for file in [*files, manifest, readme]:
-            zf.write(file, arcname=file.name)
+        for file in generated:
+            if file.exists():
+                zf.write(file, arcname=file.relative_to(package_dir).as_posix())
     return zip_path
+
 
 def export_construction_svg_package(project: Project, output_dir: str | Path) -> Path:
     out = Path(output_dir)

@@ -8,6 +8,7 @@ $DbPath = if ($env:PITGUARD_DB_PATH) { $env:PITGUARD_DB_PATH } else { Join-Path 
 $BackendPort = if ($env:PITGUARD_BACKEND_PORT) { $env:PITGUARD_BACKEND_PORT } else { "8000" }
 $FrontendPort = if ($env:PITGUARD_FRONTEND_PORT) { $env:PITGUARD_FRONTEND_PORT } else { "5173" }
 $InstallDeps = if ($env:PITGUARD_INSTALL_DEPS) { $env:PITGUARD_INSTALL_DEPS } else { "1" }
+$NumericThreads = if ($env:PITGUARD_NUMERIC_THREADS) { $env:PITGUARD_NUMERIC_THREADS } else { "1" }
 $BackendLog = Join-Path $RuntimeDir "backend.log"
 $FrontendLog = Join-Path $RuntimeDir "frontend.log"
 $CheckScriptPath = Join-Path $RuntimeDir "check_backend_modules.py"
@@ -83,9 +84,8 @@ function Get-MissingBackendModules {
 function Install-BackendPackages($MissingModules) {
   $Packages = @($MissingModules -split "\s+" | Where-Object { $_ })
   if ($Packages.Count -eq 0) { return }
-  Write-Host "[PitGuard] Installing backend dependencies into the CURRENT Python environment. No virtual environment will be created."
-  Write-Host "[PitGuard] Packages: $($Packages -join ' ')"
-  & $PythonExe -m pip install @Packages 2>&1 | Tee-Object -FilePath $BackendLog -Append
+  Write-Host "[PitGuard] Installing the locked backend project dependencies into the CURRENT Python environment. No virtual environment will be created."
+  & $PythonExe -m pip install -e $ApiDir 2>&1 | Tee-Object -FilePath $BackendLog -Append
   if ($LASTEXITCODE -ne 0) {
     Write-Host "[PitGuard] pip install failed in the current environment. Last backend log lines:" -ForegroundColor Red
     Get-Content $BackendLog -Tail 80
@@ -115,28 +115,42 @@ if ($PostMissingModules) {
   exit 1
 }
 
-if (-not (Test-Path (Join-Path $WebDir "node_modules"))) {
-  Write-Host "[PitGuard] Installing frontend dependencies with npm ci..."
+function Test-FrontendDependencies {
+  $Required = @("vite", "typescript", "react", "react-dom", "three", "zustand", "@vitejs/plugin-react")
+  $Missing = @()
+  foreach ($Name in $Required) {
+    $ModulePath = Join-Path (Join-Path $WebDir "node_modules") $Name
+    if (-not (Test-Path $ModulePath)) { $Missing += $Name }
+  }
+  return $Missing
+}
+
+$MissingFrontend = Test-FrontendDependencies
+if (-not (Test-Path (Join-Path $WebDir "node_modules")) -or $MissingFrontend.Count -gt 0) {
+  if ($MissingFrontend.Count -gt 0) { Write-Host "[PitGuard] Missing frontend modules: $($MissingFrontend -join ' ')" -ForegroundColor Yellow }
+  Write-Host "[PitGuard] Installing frontend dependencies from package-lock.json with npm ci..."
   Push-Location $WebDir
   npm ci 2>&1 | Tee-Object -FilePath $FrontendLog -Append
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
-    Write-Host "[PitGuard] npm ci failed. Last frontend log lines:" -ForegroundColor Red
+    Write-Host "[PitGuard] npm install failed. Last frontend log lines:" -ForegroundColor Red
     Get-Content $FrontendLog -Tail 80
     exit 1
   }
   Pop-Location
 } else {
-  Write-Host "[PitGuard] Frontend node_modules found."
+  Write-Host "[PitGuard] Frontend node_modules look complete."
 }
 
 $env:PITGUARD_DB_PATH = $DbPath
+$env:PITGUARD_NUMERIC_THREADS = $NumericThreads
 $ExistingPythonPath = if ($env:PYTHONPATH) { ";$env:PYTHONPATH" } else { "" }
 $env:PYTHONPATH = "$ApiDir$ExistingPythonPath"
 
 $BackendScript = @"
 cd /d "$ApiDir"
 set "PITGUARD_DB_PATH=$DbPath"
+set "PITGUARD_NUMERIC_THREADS=$NumericThreads"
 set "PYTHONPATH=$ApiDir;%PYTHONPATH%"
 "$PythonPath" -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 1>>"$BackendLog" 2>>&1
 "@
@@ -188,6 +202,7 @@ Write-Host "Backend API : http://127.0.0.1:$BackendPort/health"
 Write-Host "Diagnostics : http://127.0.0.1:$BackendPort/api/system/diagnostics"
 Write-Host "Frontend UI : http://127.0.0.1:$FrontendPort"
 Write-Host "Database    : $DbPath"
+Write-Host "Numeric thr.: $NumericThreads"
 Write-Host "Backend log : $BackendLog"
 Write-Host "Frontend log: $FrontendLog"
 Write-Host "Close the two service windows to stop PitGuard."

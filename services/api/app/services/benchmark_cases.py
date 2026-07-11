@@ -370,6 +370,23 @@ def _run_benchmark_case_isolated(case_id: str, timeout_s: int = 180) -> dict[str
 
 
 
+def run_benchmark_case_isolated(
+    case_id: str,
+    repo: ProjectRepository | None = None,
+    persist: bool = False,
+    timeout_s: int = 180,
+) -> dict[str, Any]:
+    """Public deterministic runner for repeated regression and CI execution.
+
+    Persistence is intentionally rejected because the isolated child has no
+    access to the caller's repository object. Call ``run_benchmark_case`` when
+    persistence is required.
+    """
+    if persist or repo is not None:
+        raise ValueError("Isolated benchmark execution does not support persistence.")
+    return _run_benchmark_case_isolated(case_id, timeout_s=timeout_s)
+
+
 def _run_benchmark_case_pool_worker(case_id: str) -> dict[str, Any]:
     return run_benchmark_case(case_id, repo=None, persist=False)
 

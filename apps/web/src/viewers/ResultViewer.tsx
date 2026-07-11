@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { Project, SupportLayoutOptimizationCandidate, CalculationResult } from '../types/domain';
+import WallCloud3DViewer from './WallCloud3DViewer';
 
 function conclusion(status?: string) {
   if (status === 'fail') return '存在 fail 项，自动方案不得进入施工图或正式报审。';
@@ -62,6 +63,84 @@ function SupportAxialBarChart({ rows, highlightLocator }: { rows: Record<string,
   return <div className="envelopeChartCard wide"><div className="chartTitle"><strong>支撑轴力包络</strong><span>按前 18 条控制支撑显示，单位 kN</span></div><div className="barEnvelope">{data.map((row) => <div key={row.label} className={`barRow ${targetId && row.label.includes(targetId) ? 'locatorBarHighlight' : ''}`}><span>{row.label}</span><div><em style={{ width: `${Math.max(3, row.value / maxValue * 100)}%` }} /></div><strong>{row.value.toFixed(0)}</strong></div>)}</div></div>;
 }
 
+
+function metricLabel(metric: string) {
+  if (metric === 'moment') return '弯矩 kN·m/m';
+  if (metric === 'shear') return '剪力 kN/m';
+  return '变形 mm';
+}
+
+function metricValue(point: Record<string, unknown>, metric: string) {
+  if (metric === 'moment') return Math.abs(toNumber(point.moment));
+  if (metric === 'shear') return Math.abs(toNumber(point.shear));
+  return Math.abs(toNumber(point.displacement));
+}
+
+function heatColor(ratio: number) {
+  const r = Math.max(0, Math.min(1, ratio || 0));
+  const hue = 220 - 220 * r;
+  return `hsl(${hue.toFixed(0)} 82% 52%)`;
+}
+
+function WallContourMap({ project, latest, highlightLocator }: { project: Project; latest: CalculationResult; highlightLocator?: Record<string, unknown> }) {
+  const [metric, setMetric] = useState<'moment' | 'shear' | 'displacement'>('displacement');
+  const samples = (((latest.reportDiagramData ?? {}).wallForceSamples as any[]) ?? latest.stageResults.map((r) => r.wallInternalForce).filter(Boolean) ?? []) as any[];
+  const walls = project.retainingSystem?.diaphragmWalls ?? [];
+  const bySegment = new Map<string, any[]>();
+  samples.forEach((sample) => {
+    const key = String(sample?.segmentId ?? '');
+    if (!key) return;
+    bySegment.set(key, [...(bySegment.get(key) ?? []), sample]);
+  });
+  const rows = walls.map((wall) => {
+    const wallSamples = bySegment.get(wall.segmentId) ?? [];
+    const points = wallSamples.flatMap((sample) => sample?.points ?? []) as Record<string, unknown>[];
+    const value = Math.max(0, ...points.map((pt) => metricValue(pt, metric)));
+    return { wall, points, value };
+  }).filter((row) => row.points.length);
+  if (!rows.length) return null;
+  const maxValue = Math.max(1, ...rows.map((row) => row.value));
+  const pts = walls.flatMap((wall) => wall.axis.points ?? []);
+  const xs = pts.map((pt) => pt.x); const ys = pts.map((pt) => pt.y);
+  const minX = Math.min(...xs, 0); const maxX = Math.max(...xs, 60);
+  const minY = Math.min(...ys, 0); const maxY = Math.max(...ys, 40);
+  const pad = Math.max(3, Math.max(maxX - minX, maxY - minY) * 0.08);
+  const viewBox = `${minX - pad} ${minY - pad} ${Math.max(1, maxX - minX + pad * 2)} ${Math.max(1, maxY - minY + pad * 2)}`;
+  const targetId = String(highlightLocator?.objectId ?? highlightLocator?.objectCode ?? '');
+  return (
+    <section className="wallCloudPanel">
+      <div className="sectionLead"><h4>围护墙变形与内力云图</h4><div className="segmentedControls"><button className={metric === 'displacement' ? 'active' : ''} onClick={() => setMetric('displacement')}>变形</button><button className={metric === 'moment' ? 'active' : ''} onClick={() => setMetric('moment')}>弯矩</button><button className={metric === 'shear' ? 'active' : ''} onClick={() => setMetric('shear')}>剪力</button></div></div>
+      <div className="wallCloudGrid">
+        <div className="wallCloudCard">
+          <strong>平面控制云图 · {metricLabel(metric)}</strong>
+          <svg viewBox={viewBox} preserveAspectRatio="xMidYMid meet" className="wallCloudSvg">
+            {walls.map((wall) => {
+              const row = rows.find((item) => item.wall.id === wall.id || item.wall.segmentId === wall.segmentId);
+              const a = wall.axis.points[0]; const b = wall.axis.points[wall.axis.points.length - 1];
+              if (!a || !b) return null;
+              const highlighted = Boolean(targetId && (targetId === wall.id || targetId === wall.panelCode || targetId === wall.segmentId));
+              const color = row ? heatColor(row.value / maxValue) : '#cbd5e1';
+              return <g key={wall.id}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={highlighted ? '#eab308' : color} strokeWidth={highlighted ? 2.4 : 1.6} className="wallCloudLine" /><text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2} className="wallCloudLabel">{wall.panelCode}</text></g>;
+            })}
+          </svg>
+          <div className="heatLegend"><span>低</span><em /><span>高：{maxValue.toFixed(metric === 'displacement' ? 1 : 0)}</span></div>
+        </div>
+        <div className="wallCloudCard">
+          <strong>墙身深度云图 · 前 6 面墙</strong>
+          <div className="wallStripList">
+            {rows.slice(0, 6).map((row) => {
+              const sorted = [...row.points].sort((a, b) => toNumber(a.depth) - toNumber(b.depth));
+              const top = Math.min(...sorted.map((pt) => toNumber(pt.depth)));
+              const bottom = Math.max(...sorted.map((pt) => toNumber(pt.depth)));
+              return <div className="wallStrip" key={row.wall.id}><span>{row.wall.panelCode}</span><svg viewBox="0 0 160 28" preserveAspectRatio="none">{sorted.slice(0, 24).map((pt, idx) => { const x = ((toNumber(pt.depth) - top) / Math.max(0.01, bottom - top)) * 152 + 4; const v = metricValue(pt, metric); return <rect key={idx} x={x - 3} y="4" width="6" height="20" fill={heatColor(v / maxValue)} />; })}</svg><strong>{row.value.toFixed(metric === 'displacement' ? 1 : 0)}</strong></div>;
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function InternalForceVisualization({ latest, highlightLocator }: { latest: CalculationResult; highlightLocator?: Record<string, unknown> }) {
   const diagram = latest.reportDiagramData ?? {};
   const wallSamples = ((diagram.wallForceSamples as any[]) ?? latest.stageResults.map((r) => r.wallInternalForce).filter(Boolean) ?? []) as any[];
@@ -74,7 +153,7 @@ function InternalForceVisualization({ latest, highlightLocator }: { latest: Calc
   if (!wallRows.length && !waleRows.length && !supportRows.length) return null;
   return (
     <section className="envelopeVisualization">
-      <div className="sectionLead"><h4>关键部件内力包络可视化</h4><p className="small">把墙体弯矩/剪力/位移、围檩弯矩/剪力/挠度和支撑轴力从表格转换为控制曲线，便于快速识别控制部位。当前为初步设计级包络图，正式图纸仍需结合完整计算书复核。</p></div>
+      <div className="sectionLead"><h4>关键部件内力包络</h4></div>
       <div className="envelopeChartGrid">
         <MiniLineChart title={`围护墙包络 ${wall?.segmentId ?? ''}`} xLabel="深度 m" yLabel="内力 / 位移" rows={wallRows} xKey="depth" series={[{ key: 'absMoment', label: '|M| kN·m/m', className: 'moment' }, { key: 'absShear', label: '|V| kN/m', className: 'shear' }, { key: 'displacementValue', label: '|δ| mm', className: 'deflection' }]} />
         <MiniLineChart title={`围檩包络 ${wale?.waleBeamCode ?? ''}`} xLabel="里程 m" yLabel="内力 / 挠度" rows={waleRows} xKey="chainage" series={[{ key: 'momentPositive', label: 'M+ kN·m', className: 'moment' }, { key: 'momentNegative', label: 'M- kN·m', className: 'momentNeg' }, { key: 'shearAbs', label: '|V| kN', className: 'shear' }, { key: 'deflectionAbs', label: '|δ|', className: 'deflection' }]} />
@@ -162,7 +241,119 @@ function CandidatePlanSvg({ candidate, selected = false, onClick }: { candidate:
   );
 }
 
-export default function ResultViewer({ project, runStep, highlightLocator }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; highlightLocator?: Record<string, unknown> }) {
+
+
+function statusText(status?: string) {
+  const map: Record<string, string> = {
+    applied_pending_recalculation: '已采纳，待复算',
+    candidate_ready: '可优化',
+    manual_review_required: '需复核',
+    closed_after_recalculation: '已闭环',
+    analysis_complete: '已分析',
+  };
+  return map[status ?? ''] ?? (status ?? '-');
+}
+
+function redundancyFaceStatusText(status?: string) {
+  const map: Record<string, string> = {
+    fail: '不满足',
+    near_limit: '接近下限',
+    target: '目标带内',
+    conservative: '偏保守',
+    over_redundant: '严重冗余',
+    manual_review: '需复核',
+  };
+  return map[status ?? ''] ?? (status ?? '-');
+}
+
+function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
+  const [mode, setMode] = useState('balanced');
+  const [data, setData] = useState<Record<string, any> | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
+  const latestId = project.calculationResults[project.calculationResults.length - 1]?.id ?? 'none';
+  const load = () => {
+    setLoading(true);
+    setError(undefined);
+    api.getWallLengthRedundancy(project.id, mode)
+      .then((result) => setData(result as Record<string, any>))
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { if (project.retainingSystem?.diaphragmWalls?.length) load(); }, [project.id, latestId, mode, project.retainingSystem?.diaphragmWalls?.length, project.retainingSystem?.layoutSummary?.wallLengthOptimizationRecomputeRequired]);
+  if (!project.retainingSystem?.diaphragmWalls?.length) return null;
+  const faces = (data?.faces ?? []) as Record<string, any>[];
+  const candidates = (data?.candidates ?? []) as Record<string, any>[];
+  const suggestions = (data?.issueSuggestions ?? []) as Record<string, any>[];
+  const band = data?.targetBand as Record<string, unknown> | undefined;
+  const thickness = data?.uniformThickness as Record<string, unknown> | undefined;
+  const closed = (data?.closedLoopStatus ?? {}) as Record<string, any>;
+  const history = ((data?.historySummary?.latest ? [data.historySummary.latest] : []) as Record<string, any>[]);
+  const statusClass = closed.severity === 'pass' ? 'success' : closed.severity === 'fail' ? 'error' : closed.severity === 'warning' ? 'warning' : 'infoBox';
+  const applyCandidate = (candidateId: string) => {
+    const action = () => api.applyWallLengthCandidate(project.id, candidateId, mode).then(() => load());
+    return runStep ? runStep('正在写入围护墙设计长度优化建议', action) : action();
+  };
+  const applyAndRecompute = (candidateId: string) => {
+    const action = async () => {
+      await api.applyWallLengthCandidate(project.id, candidateId, mode);
+      await api.runCalculation(project.id);
+      await load();
+    };
+    return runStep ? runStep('正在采纳设计长度建议并重新计算', action) : action();
+  };
+  const exportReport = () => {
+    if (runTask) return runTask('正在导出围护墙设计长度冗余优化报告', 'export_wall_length_redundancy', { mode }, true);
+    window.open(api.wallLengthRedundancyReportUrl(project.id, mode), '_blank');
+    return Promise.resolve();
+  };
+  return (
+    <section className="wallLengthOptimizationPanel">
+      <div className="sectionLead">
+        <div>
+          <h4>围护墙设计长度与冗余均衡</h4>
+          <p className="small">项目统一墙厚；优化设计面长度、槽段分幅和局部加强段，不改变外轮廓。</p>
+        </div>
+        <div className="segmentedControls"><button className={mode === 'conservative' ? 'active' : ''} onClick={() => setMode('conservative')}>保守</button><button className={mode === 'balanced' ? 'active' : ''} onClick={() => setMode('balanced')}>均衡</button><button className={mode === 'economic' ? 'active' : ''} onClick={() => setMode('economic')}>经济</button></div>
+      </div>
+      {error && <div className="error">{error}</div>}
+      {loading && <div className="operationPanel compactOperation"><div className="operationHeader"><strong>正在分析设计长度冗余</strong><span>读取计算追溯链、墙段分组和设计面长度。</span></div><div className="operationBar"><em style={{ width: '54%' }} /></div></div>}
+      {data && <>
+        <div className={`redundancyClosedLoop ${statusClass}`}><strong>{statusText(String(closed.status ?? ''))}</strong><span>{String(closed.message ?? '')}</span><em>{String(closed.nextAction ?? '')}</em></div>
+        <div className="metricGrid compact">
+          <div><strong>{String(thickness?.value ?? '-')} m</strong><span>项目统一墙厚</span></div>
+          <div><strong>{String(band?.low ?? '-')}–{String(band?.high ?? '-')}</strong><span>目标冗余带 R</span></div>
+          <div><strong>{String(data.summary?.faceCount ?? '-')}</strong><span>设计面</span></div>
+          <div><strong>{String(data.summary?.overRedundantFaceCount ?? 0)}</strong><span>严重冗余面</span></div>
+          <div><strong>{String(data.summary?.nearLimitFaceCount ?? 0)}</strong><span>接近下限面</span></div>
+          <div><strong>{String(data.summary?.repairActionCount ?? 0)}</strong><span>修复建议</span></div>
+        </div>
+        {thickness?.isUniform === false && <div className="warning">当前墙厚存在多个取值：{String((thickness?.allThicknesses as unknown[])?.join(' / '))}；建议先统一项目墙厚策略。</div>}
+        {suggestions.length > 0 && <div className="repairSuggestionList"><h5>冗余修复建议</h5>{suggestions.slice(0, 5).map((item) => <div className={`repairSuggestion ${String(item.severity)}`} key={String(item.id)}><strong>{String(item.title ?? item.faceCode)}</strong><span>{String(item.message ?? '')}</span><em>{String(item.recommendation ?? '')}</em></div>)}</div>}
+        <table className="table compactTable redundancyTable"><thead><tr><th>设计面</th><th>当前设计长度</th><th>槽段均长</th><th>Rmin</th><th>Rmax</th><th>状态</th><th>推荐动作</th></tr></thead><tbody>
+          {faces.map((face) => <tr key={String(face.faceCode)}><td>{String(face.faceCode)}</td><td>{Number(face.physicalLength ?? 0).toFixed(2)} m</td><td>{Number(face.currentPanelLength ?? 0).toFixed(2)} m</td><td>{String(face.rMin ?? '-')}</td><td>{String(face.rMax ?? '-')}</td><td><span className={`redundancyStatus ${String(face.status)}`}>{redundancyFaceStatusText(String(face.status ?? '-'))}</span></td><td>{String(face.recommendation?.reason ?? '-')}</td></tr>)}
+        </tbody></table>
+        <div className="wallLengthCandidateGrid">
+          {candidates.map((candidate) => <div className="candidateCard wallLengthCandidate" key={String(candidate.candidateId)}><h5>{String(candidate.faceCode)} · {redundancyFaceStatusText(String(candidate.action)) || String(candidate.action)}</h5><p className="small">{String(candidate.reason)}</p><div className="metricGrid compact"><div><strong>{String(candidate.before?.designLength ?? '-')} m</strong><span>原设计面长度</span></div><div><strong>{String(candidate.after?.designSectionLength ?? '-')} m</strong><span>推荐设计段</span></div><div><strong>{String(candidate.after?.panelLength ?? '-')} m</strong><span>分幅长度</span></div><div><strong>{String(candidate.after?.localStrengtheningLength ?? '-')} m</strong><span>局部加强段</span></div><div><strong>{String(candidate.after?.estimatedRMax ?? '-')}</strong><span>估算 Rmax</span></div></div>
+            {Array.isArray(candidate.repairActions) && candidate.repairActions.length > 0 && <ul className="small repairActionBullets">{candidate.repairActions.slice(0, 3).map((action: Record<string, unknown>) => <li key={String(action.actionId)}><strong>{String(action.label)}</strong>：{String(action.description)}</li>)}</ul>}
+            {candidate.status === 'candidate' && <div className="buttonRow"><button onClick={() => applyCandidate(String(candidate.candidateId))}>采纳长度建议</button><button className="secondary" onClick={() => applyAndRecompute(String(candidate.candidateId))}>采纳并重新计算</button></div>}
+          </div>)}
+        </div>
+        <div className="wallLengthHistory"><div><strong>优化历史</strong><span>{String(data.historySummary?.count ?? 0)} 次；{data.historySummary?.recomputeRequired ? '最近一次待复算' : '无待复算项'}</span></div>{history.map((item) => <p className="small" key={String(item.appliedAt)}>{String(item.appliedAt)} · {String(item.candidateId)} · 设计面 {String((item.changedFaces ?? []).join('、'))}</p>)}<button className="secondary" onClick={exportReport}>导出冗余优化记录</button></div>
+      </>}
+    </section>
+  );
+}
+
+function CheckSummaryPills({ summary }: { summary?: Record<string, unknown> }) {
+  const pass = Number(summary?.pass ?? 0);
+  const fail = Number(summary?.fail ?? 0);
+  const warning = Number(summary?.warning ?? 0);
+  const manual = Number(summary?.manualReview ?? summary?.manual_review ?? 0);
+  return <div className="checkSummary"><span className="checkTag pass">合规 {pass}</span><span className="checkTag fail">不合规 {fail}</span><span className="checkTag warning">预警 {warning}</span><span className="checkTag manual_review">复核 {manual}</span></div>;
+}
+
+export default function ResultViewer({ project, runStep, runTask, highlightLocator }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown> }) {
   const latest = project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
   const checks = latest?.checks ?? [];
   const candidates = latest?.supportLayoutRepair?.candidates?.slice(0, 5) ?? [];
@@ -182,10 +373,12 @@ export default function ResultViewer({ project, runStep, highlightLocator }: { p
             <div><strong>{latest.governingValues.maxDisplacement ?? '-'}</strong><span>最大位移 mm</span></div>
           </div>
           <InternalForceVisualization latest={latest} highlightLocator={highlightLocator} />
+          <WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} />
+          <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} />
           <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
           <p>专业复核：{latest.professionalReviewRequired ? '需要' : '否'}</p>
           <h4>校核汇总</h4>
-          <p className="small">{JSON.stringify(latest.checkSummary ?? {})}</p>
+          <CheckSummaryPills summary={latest.checkSummary} />
           {latest.formalReportGate && (
             <>
               <h4>计算书正式化检查与出图闸门</h4>
@@ -261,24 +454,6 @@ export default function ResultViewer({ project, runStep, highlightLocator }: { p
                 <div><strong>{latest.designReviewSummary.maxStiffnessUtilization ?? '-'}</strong><span>最大刚度利用率</span></div>
                 <div><strong>{latest.designReviewSummary.minStabilitySafetyFactor ?? '-'}</strong><span>最小稳定安全系数</span></div>
               </div>
-            </>
-          )}
-
-          {latest.designIterationSummary && (
-            <>
-              <h4>V2.0 空间杆系耦合、稳定专项与成果表达摘要</h4>
-              <div className="metricGrid compact">
-                <div><strong>{String(latest.designIterationSummary.p6GlobalCoupledMatrix ?? '-')}</strong><span>全局联立刚度</span></div>
-                <div><strong>{String(latest.designIterationSummary.p7ReportCharts ?? '-')}</strong><span>计算书图表化</span></div>
-                <div><strong>{String(latest.designIterationSummary.p8CadGeometryKernel ?? '-')}</strong><span>CAD 几何内核</span></div>
-                <div><strong>{String(latest.designIterationSummary.p9GroundwaterStabilitySpecials ?? '-')}</strong><span>地下水稳定专项</span></div>
-                <div><strong>{String(latest.designIterationSummary.p10DesignReviewSummary ?? '-')}</strong><span>强度/刚度/稳定性复核</span></div>
-                <div><strong>{String(latest.designIterationSummary.p11SpatialFrameKernel ?? '-')}</strong><span>空间杆系内核</span></div>
-                <div><strong>{String(latest.designIterationSummary.p12ReviewableStabilityPackage ?? '-')}</strong><span>可审查稳定专项</span></div>
-                <div><strong>{String(latest.designIterationSummary.p13ConstructionDrawingOutput ?? '-')}</strong><span>施工图输出</span></div>
-                <div><strong>{String(latest.governingValues.governingCheckStatus ?? '-')}</strong><span>综合状态</span></div>
-              </div>
-              <p className="small">{String(latest.designIterationSummary.remainingBoundary ?? '')}</p>
             </>
           )}
 
@@ -375,7 +550,7 @@ export default function ResultViewer({ project, runStep, highlightLocator }: { p
               {checks.length === 0 && <tr><td colSpan={6}>暂无校核结果</td></tr>}
             </tbody>
           </table>
-          {latest.warnings.map((item) => <div key={item} className="warning">{item}</div>)}
+          {latest.warnings.filter((item) => !/V\d|本版本|迭代/.test(item)).map((item) => <div key={item} className="warning">{item}</div>)}
         </>
       )}
     </div>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { Project } from '../types/domain';
+import type { Project, ProjectSummary } from '../types/domain';
 
 export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) => void }) {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [name, setName] = useState('新建基坑项目');
   const [location, setLocation] = useState('');
   const [error, setError] = useState<string | undefined>();
@@ -17,7 +17,7 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
     try {
       setError(undefined);
       const project = await api.createProject({ name, location });
-      setProjects([project, ...projects]);
+      refresh();
       onOpen(project);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -45,7 +45,7 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
                 <td>{project.name}</td>
                 <td>{project.location ?? '-'}</td>
                 <td>{new Date(project.updatedAt).toLocaleString()}</td>
-                <td><button onClick={() => onOpen(project)}>打开</button></td>
+                <td><button onClick={() => void api.getProject(project.id).then(onOpen).catch((err) => setError(err.message))}>打开</button></td>
               </tr>
             ))}
             {projects.length === 0 && <tr><td colSpan={4}>暂无项目</td></tr>}

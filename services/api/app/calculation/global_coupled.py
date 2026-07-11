@@ -370,6 +370,9 @@ def solve_global_wall_wale_support_system(
     soil_profile: list[Any],
     stage_id: str,
     stage_type: str | None = None,
+    wall_stiffness_factor: float = 1.0,
+    soil_modulus_factor: float = 1.0,
+    support_stiffness_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Solve a compact wall-wale-support global stiffness model.
 
@@ -409,6 +412,7 @@ def solve_global_wall_wale_support_system(
         endpoint_name, point = endpoint
         try:
             spring_k, normal_projection = support_spring_stiffness(support, segment)
+            spring_k *= max(0.25, min(float(support_stiffness_factor), 4.0))
         except Exception:
             spring_k, normal_projection = 1.0e5, 1.0
         if spring_k <= 0:
@@ -432,7 +436,9 @@ def solve_global_wall_wale_support_system(
         return {"method": "global stiffness matrix unavailable", "fallback": True, "reason": "no dofs"}
     k_global = np.zeros((n, n), dtype=float)
     f_global = np.zeros(n, dtype=float)
-    ei = _wall_ei_knm2(wall_thickness, concrete_grade)
+    wall_stiffness_factor = max(0.25, min(float(wall_stiffness_factor), 4.0))
+    soil_modulus_factor = max(0.25, min(float(soil_modulus_factor), 4.0))
+    ei = _wall_ei_knm2(wall_thickness, concrete_grade) * wall_stiffness_factor
 
     # Wall beam translational chain stiffness. Rotational DOFs are condensed out
     # for this compact design-assist model, so the value is a screening lateral
@@ -460,7 +466,7 @@ def solve_global_wall_wale_support_system(
             dz_left = d - wall_depths[i - 1] if i > 0 else 0.5
             dz_right = wall_depths[i + 1] - d if i < len(wall_depths) - 1 else 0.5
             tributary = max(0.25, 0.5 * (dz_left + dz_right))
-            _add_spring(k_global, i, None, soil_k * tributary * max(length, 1.0))
+            _add_spring(k_global, i, None, soil_k * soil_modulus_factor * tributary * max(length, 1.0))
     _add_spring(k_global, 0, None, END_ANCHOR_KN_M)
     _add_spring(k_global, len(wall_depths) - 1, None, END_ANCHOR_KN_M * 2.0)
 

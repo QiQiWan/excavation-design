@@ -34,6 +34,18 @@ RING_SUPPORT_MIN_SHORT_SPAN_M = 38.0
 RING_SUPPORT_MAX_ASPECT = 1.35
 
 
+@dataclass(frozen=True)
+class SupportLayoutConfig:
+    target_main_support_spacing_m: float = TARGET_MAIN_SUPPORT_SPACING_M
+    column_max_unbraced_span_m: float = COLUMN_MAX_UNBRACED_SPAN_M
+
+    def normalized(self) -> "SupportLayoutConfig":
+        return SupportLayoutConfig(
+            target_main_support_spacing_m=max(MIN_PRACTICAL_MAIN_SUPPORT_SPACING_M, min(MAX_PRACTICAL_MAIN_SUPPORT_SPACING_M, float(self.target_main_support_spacing_m))),
+            column_max_unbraced_span_m=max(6.0, min(30.0, float(self.column_max_unbraced_span_m))),
+        )
+
+
 @dataclass
 class SupportLayoutLine:
     role: str
@@ -337,12 +349,12 @@ def _assign_tributary_widths(supports: list[SupportElement], excavation) -> None
             support.force_distribution_note = "V1.6 支撑轴力由围檩连续梁-弹性支座节点反力计算；tributary width 仅作为节点位置和结果解释的参考。"
 
 
-def _main_strut_layout(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> tuple[list[SupportLayoutLine], list[str]]:
+def _main_strut_layout(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]], target_spacing: float = TARGET_MAIN_SUPPORT_SPACING_M) -> tuple[list[SupportLayoutLine], list[str]]:
     min_x, min_y, max_x, max_y, span_x, span_y = _bounds(points)
     warnings: list[str] = []
     long_is_x = span_x >= span_y
     long_span = span_x if long_is_x else span_y
-    count = _main_support_count(long_span)
+    count = _main_support_count(long_span, target_spacing)
     if count <= 0:
         return [], ["基坑平面尺寸过小，未自动生成主对撑。"]
     bay_spacing = long_span / (count + 1)
@@ -397,6 +409,82 @@ def _angle_between(v1: tuple[float, float], v2: tuple[float, float]) -> float:
         return 0.0
     dot = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2)))
     return math.degrees(math.acos(dot))
+
+
+
+
+def _should_use_bidirectional_grid(points: list[Point2D], excavation) -> bool:
+    """Return True when a deep elongated pit needs direct restraint on all faces.
+
+    A single family of short-span struts leaves the two return walls relying on
+    corner braces and long wale cantilevers.  For deep/large rectangular pits a
+    second orthogonal family is generated at practical column-grid locations.
+    """
+    _, _, _, _, span_x, span_y = _bounds(points)
+    short_span = min(span_x, span_y)
+    long_span = max(span_x, span_y)
+    aspect = long_span / max(short_span, EPS)
+    depth = abs(float(getattr(excavation, "top_elevation", 0.0)) - float(getattr(excavation, "bottom_elevation", 0.0)))
+    return short_span >= 24.0 and depth >= 18.0 and (aspect >= 1.55 or long_span >= 65.0)
+
+
+def _secondary_grid_layout(
+    points: list[Point2D],
+    obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
+    excavation,
+) -> tuple[list[SupportLayoutLine], list[str]]:
+    """Generate the orthogonal support family for deep elongated pits."""
+    if not _should_use_bidirectional_grid(points, excavation):
+        return [], []
+    min_x, min_y, max_x, max_y, span_x, span_y = _bounds(points)
+    long_is_x = span_x >= span_y
+    short_span = span_y if long_is_x else span_x
+    # 12--18 m secondary-grid bays work with the default temporary-column grid.
+    count = max(1, min(4, int(math.ceil(short_span / 15.0)) - 1))
+    spacing = short_span / (count + 1)
+    lines: list[SupportLayoutLine] = []
+    shifted_count = 0
+    skipped = 0
+    for idx in range(count):
+        coordinate = (min_y if long_is_x else min_x) + (idx + 1) * spacing
+        segments, used, shifted = _find_viable_main_line(
+            points=points,
+            obstacles=obstacles,
+            long_is_x=not long_is_x,
+            base_coord=coordinate,
+            min_coord=min_y if long_is_x else min_x,
+            max_coord=max_y if long_is_x else max_x,
+            span=short_span,
+        )
+        if not segments:
+            skipped += 1
+            continue
+        shifted_count += int(shifted)
+        for start, end in segments:
+            note = (
+                "深大长条形基坑双向网格次对撑：直接约束回墙，"
+                "与主对撑交点设置临时立柱/刚性节点，避免角撑独担整面回墙荷载。"
+            )
+            if shifted:
+                note += f" 已移至坐标 {used:.2f}m 以避让障碍。"
+            lines.append(
+                SupportLayoutLine(
+                    "secondary_strut",
+                    start,
+                    end,
+                    round(_distance(start, end), 3),
+                    round(spacing, 3),
+                    note,
+                )
+            )
+    warnings = []
+    if lines:
+        warnings.append(f"已增加 {len(lines)} 条正交次对撑，形成双向支撑网格并缩短回墙围檩无支点跨度。")
+    if shifted_count:
+        warnings.append(f"其中 {shifted_count} 条次对撑已自动平移避让障碍。")
+    if skipped:
+        warnings.append(f"有 {skipped} 条次对撑因障碍或轮廓限制未生成，需人工复核回墙传力。")
+    return lines, warnings
 
 
 def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> list[SupportLayoutLine]:
@@ -517,11 +605,17 @@ def _support_lines_cross(a: SupportLayoutLine, b: SupportLayoutLine) -> bool:
 def _remove_crossing_lines(lines: list[SupportLayoutLine]) -> tuple[list[SupportLayoutLine], list[str]]:
     if not lines:
         return lines, []
-    priority = {"main_strut": 0, "ring_strut": 1, "corner_diagonal": 2}
+    priority = {"main_strut": 0, "secondary_strut": 1, "ring_strut": 2, "corner_diagonal": 3}
     kept: list[SupportLayoutLine] = []
     skipped = 0
     for line in sorted(lines, key=lambda item: (priority.get(item.role, 9), item.span_length, item.start.x, item.start.y)):
-        if any(_support_lines_cross(line, other) for other in kept):
+        def incompatible_crossing(other: SupportLayoutLine) -> bool:
+            # Main/secondary grid crossings are intentional structural nodes and
+            # receive temporary columns in make_column_elements().
+            if {line.role, other.role} == {"main_strut", "secondary_strut"}:
+                return False
+            return _support_lines_cross(line, other)
+        if any(incompatible_crossing(other) for other in kept):
             skipped += 1
             continue
         kept.append(line)
@@ -529,7 +623,49 @@ def _remove_crossing_lines(lines: list[SupportLayoutLine]) -> tuple[list[Support
     warnings = [f"已跳过 {skipped} 条会与既有支撑无节点交叉的候选支撑；请复核角撑/环撑局部布置。"] if skipped else []
     return kept, warnings
 
-def generate_support_layout_lines(excavation) -> tuple[list[SupportLayoutLine], list[str]]:
+
+def _snap_corner_diagonals_to_main_nodes(lines: list[SupportLayoutLine], tolerance: float = 1.75) -> tuple[list[SupportLayoutLine], int]:
+    """Snap corner-brace ends to nearby main-strut wall nodes.
+
+    Dense 3--6 m main-strut bays often place the first strut only a few
+    centimetres away from the rule-generated diagonal endpoint. Treating those
+    lines as independent makes the crossing filter delete the diagonal and can
+    leave the return wall without any direct restraint. Snapping creates a
+    constructible shared node and preserves the corner load path.
+    """
+    main_endpoints = [point for line in lines if line.role == "main_strut" for point in (line.start, line.end)]
+    if not main_endpoints:
+        return lines, 0
+    snapped = 0
+    output: list[SupportLayoutLine] = []
+    for line in lines:
+        if line.role != "corner_diagonal":
+            output.append(line)
+            continue
+        start = line.start
+        end = line.end
+        nearest_start = min(main_endpoints, key=lambda point: _distance(point, start))
+        nearest_end = min(main_endpoints, key=lambda point: _distance(point, end))
+        if _distance(nearest_start, start) <= tolerance:
+            start = Point2D(x=nearest_start.x, y=nearest_start.y)
+            snapped += 1
+        if _distance(nearest_end, end) <= tolerance:
+            end = Point2D(x=nearest_end.x, y=nearest_end.y)
+            snapped += 1
+        output.append(
+            SupportLayoutLine(
+                line.role,
+                start,
+                end,
+                round(_distance(start, end), 3),
+                line.bay_spacing,
+                (line.layout_note or "") + (" 角撑端部已吸附至相邻主对撑节点，形成共享传力节点。" if start != line.start or end != line.end else ""),
+            )
+        )
+    return output, snapped
+
+def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None = None) -> tuple[list[SupportLayoutLine], list[str]]:
+    config = (config or SupportLayoutConfig()).normalized()
     points = _dedup_points(list(excavation.outline.points))
     if len(points) < 3:
         return [], ["基坑轮廓点数不足，无法生成水平支撑。"]
@@ -537,25 +673,94 @@ def generate_support_layout_lines(excavation) -> tuple[list[SupportLayoutLine], 
     if _should_use_ring(points, obstacles):
         lines, warnings = _ring_layout(points, obstacles)
     else:
-        main_lines, warnings = _main_strut_layout(points, obstacles)
+        main_lines, warnings = _main_strut_layout(points, obstacles, config.target_main_support_spacing_m)
+        secondary_lines, secondary_warnings = _secondary_grid_layout(points, obstacles, excavation)
+        warnings.extend(secondary_warnings)
         diagonal_lines = _corner_diagonal_layout(points, obstacles)
-        lines = main_lines + diagonal_lines
+        lines = main_lines + secondary_lines + diagonal_lines
         if diagonal_lines:
             warnings.append("已根据长宽比/平面尺寸在凸直角位置生成角撑；凹角、坡道和出土口位置不自动跨越布撑。")
+            lines, snapped_count = _snap_corner_diagonals_to_main_nodes(lines)
+            if snapped_count:
+                warnings.append(f"已将 {snapped_count} 个角撑端部吸附至相邻主对撑节点，避免近节点伪交叉导致角撑被删除。")
     lines, crossing_warnings = _remove_crossing_lines(lines)
     warnings.extend(crossing_warnings)
     _attach_faces(lines, excavation)
     return lines, warnings
 
 
-def make_support_elements(excavation, elevations: list[float]) -> tuple[list[SupportElement], list[str]]:
-    layout_lines, warnings = generate_support_layout_lines(excavation)
+def _support_reinforcement(level_idx: int, section_type: str = "rc_rectangular") -> list[ReinforcementGroup]:
+    """Rule-based preliminary reinforcement for cast-in-place RC struts.
+
+    Steel struts intentionally return no reinforcement; they are tagged by
+    section/material and checked by steel-member rules in the calculation layer.
+    """
+    if section_type != "rc_rectangular":
+        return []
+    # First-level cast-in-place concrete supports receive a fuller detailing
+    # proxy because they are normally visible in the construction drawing set.
+    # Lower-level concrete supports keep the same family, with closer stirrups
+    # and slightly denser distribution/tie bars for construction-stage control.
+    stirrup_spacing = 180 if level_idx <= 1 else 150
+    distribution_spacing = 200 if level_idx <= 1 else 180
+    tie_spacing = 450 if level_idx <= 1 else 400
+    return [
+        ReinforcementGroup(
+            name="支撑纵向主筋",
+            bar_type="longitudinal",
+            diameter=25 if level_idx <= 1 else 28,
+            count=12 if level_idx <= 1 else 14,
+            grade="HRB400",
+            location_description="cast-in-place concrete strut perimeter longitudinal bars with staggered lap and anchorage zones",
+            check_status="manual_review",
+        ),
+        ReinforcementGroup(
+            name="支撑封闭箍筋",
+            bar_type="stirrup",
+            diameter=12,
+            spacing=stirrup_spacing,
+            grade="HRB400",
+            location_description="closed stirrups along concrete strut; node-end densification is shown in rebar viewer",
+            check_status="manual_review",
+        ),
+        ReinforcementGroup(
+            name="支撑分布筋",
+            bar_type="distribution",
+            diameter=16 if level_idx <= 1 else 18,
+            spacing=distribution_spacing,
+            grade="HRB400",
+            location_description="top/bottom and side-face distribution bars for concrete support crack control",
+            check_status="manual_review",
+        ),
+        ReinforcementGroup(
+            name="支撑拉结/架立筋",
+            bar_type="tie",
+            diameter=12,
+            spacing=tie_spacing,
+            grade="HRB400",
+            location_description="tie and erection bars connecting longitudinal cages and maintaining support cage geometry",
+            check_status="manual_review",
+        ),
+        ReinforcementGroup(
+            name="搭接加强筋",
+            bar_type="additional",
+            diameter=20 if level_idx <= 1 else 22,
+            count=4,
+            grade="HRB400",
+            location_description="additional bars around staggered lap and support anchorage zones; exact splice length requires review",
+            check_status="manual_review",
+        ),
+    ]
+
+
+def make_support_elements(excavation, elevations: list[float], config: SupportLayoutConfig | None = None) -> tuple[list[SupportElement], list[str]]:
+    layout_lines, warnings = generate_support_layout_lines(excavation, config=config)
     supports: list[SupportElement] = []
     for level_idx, elevation in enumerate(elevations, start=1):
-        role_counts = {"main_strut": 0, "corner_diagonal": 0, "ring_strut": 0}
+        role_counts = {"main_strut": 0, "secondary_strut": 0, "corner_diagonal": 0, "ring_strut": 0}
         for line in layout_lines:
             role_counts[line.role] = role_counts.get(line.role, 0) + 1
-            prefix = {"main_strut": "SP", "corner_diagonal": "DB", "ring_strut": "RS"}.get(line.role, "SP")
+            prefix = {"main_strut": "SP", "secondary_strut": "GS", "corner_diagonal": "DB", "ring_strut": "RS"}.get(line.role, "SP")
             support = SupportElement(
                 code=f"{prefix}-L{level_idx}-{role_counts[line.role]}",
                 level_index=level_idx,
@@ -572,8 +777,13 @@ def make_support_elements(excavation, elevations: list[float]) -> tuple[list[Sup
                 end_tributary_width=line.end_tributary_width,
                 force_distribution_note="V1.6 支撑轴力按围檩连续梁节点反力分配；墙面 tributary width 作为参考宽度保留。",
                 section_type="rc_rectangular",
-                section=SectionDefinition(width=1.6, height=1.6, name="1600x1600 RC"),
+                section=SectionDefinition(
+                    width=1.8 if line.role == "secondary_strut" else 1.6,
+                    height=1.8 if line.role == "secondary_strut" else 1.6,
+                    name="1800x1800 RC" if line.role == "secondary_strut" else "1600x1600 RC",
+                ),
                 material=MaterialDefinition(name="Concrete", grade="C40"),
+                reinforcement=_support_reinforcement(level_idx, "rc_rectangular"),
             )
             supports.append(support)
     _assign_tributary_widths(supports, excavation)
@@ -606,27 +816,61 @@ def _column_key(p: Point2D) -> tuple[int, int]:
     return (round(p.x / COLUMN_DEDUP_GRID_M), round(p.y / COLUMN_DEDUP_GRID_M))
 
 
-def make_column_elements(excavation, supports: list[SupportElement]) -> list[ColumnElement]:
+def _segment_intersection_point(a: Point2D, b: Point2D, c: Point2D, d: Point2D) -> Point2D | None:
+    """Return a proper segment intersection for grid-column placement."""
+    x1, y1, x2, y2 = a.x, a.y, b.x, b.y
+    x3, y3, x4, y4 = c.x, c.y, d.x, d.y
+    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if abs(den) <= EPS:
+        return None
+    px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / den
+    py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / den
+    point = Point2D(x=round(px, 3), y=round(py, 3))
+    if _point_on_segment(point, a, b, tol=1e-4) and _point_on_segment(point, c, d, tol=1e-4):
+        return point
+    return None
+
+
+def make_column_elements(excavation, supports: list[SupportElement], max_unbraced_span_m: float = COLUMN_MAX_UNBRACED_SPAN_M) -> list[ColumnElement]:
     if not supports:
         return []
+    max_unbraced_span_m = max(6.0, min(30.0, float(max_unbraced_span_m)))
     obstacles = _active_obstacle_polygons(getattr(excavation, "obstacles", []))
     column_points: dict[tuple[int, int], ColumnPlanPoint] = {}
     for support in supports:
-        if support.support_role not in {"main_strut", "ring_strut"}:
+        if support.support_role not in {"main_strut", "secondary_strut", "ring_strut"}:
             continue
+        # Orthogonal grid struts are vertically supported at every intentional
+        # main/secondary crossing. This avoids duplicate nearby columns and
+        # creates an explicit shared load-transfer node.
+        if support.support_role == "secondary_strut":
+            intersections = []
+            for main in supports:
+                if main.level_index != support.level_index or main.support_role != "main_strut":
+                    continue
+                point = _segment_intersection_point(support.start, support.end, main.start, main.end)
+                if point and _point_avoids_obstacles(point, obstacles):
+                    intersections.append((point, main.code))
+            if intersections:
+                for point, main_code in intersections:
+                    key = _column_key(point)
+                    if key not in column_points:
+                        column_points[key] = ColumnPlanPoint(location=point)
+                    column_points[key].support_codes.update({support.code, main_code})
+                continue
         length = _distance(support.start, support.end)
-        n_cols = max(0, int(math.ceil(length / COLUMN_MAX_UNBRACED_SPAN_M)) - 1)
+        n_cols = max(0, int(math.ceil(length / max_unbraced_span_m)) - 1)
         for idx in range(n_cols):
             t = (idx + 1) / (n_cols + 1)
-            p = Point2D(x=round(support.start.x + (support.end.x - support.start.x) * t, 3), y=round(support.start.y + (support.end.y - support.start.y) * t, 3))
-            if not _point_avoids_obstacles(p, obstacles):
+            point = Point2D(x=round(support.start.x + (support.end.x - support.start.x) * t, 3), y=round(support.start.y + (support.end.y - support.start.y) * t, 3))
+            if not _point_avoids_obstacles(point, obstacles):
                 continue
-            key = _column_key(p)
+            key = _column_key(point)
             if key not in column_points:
-                column_points[key] = ColumnPlanPoint(location=p)
+                column_points[key] = ColumnPlanPoint(location=point)
             column_points[key].support_codes.add(support.code)
     if not column_points:
-        level1 = [s for s in supports if s.level_index == 1 and s.support_role in {"main_strut", "ring_strut"}]
+        level1 = [s for s in supports if s.level_index == 1 and s.support_role in {"main_strut", "secondary_strut", "ring_strut"}]
         if level1:
             p = Point2D(x=round(mean([(s.start.x + s.end.x) / 2.0 for s in level1]), 3), y=round(mean([(s.start.y + s.end.y) / 2.0 for s in level1]), 3))
             if _point_avoids_obstacles(p, obstacles):
@@ -641,7 +885,7 @@ def make_column_elements(excavation, supports: list[SupportElement]) -> list[Col
             section=SectionDefinition(diameter=0.8, width=0.8, height=0.8, name="D800 steel lattice column with bored pile"),
             material=MaterialDefinition(name="Steel", grade="Q355"),
             support_codes=sorted(item.support_codes),
-            service_area_note="立柱位置由主对撑/环撑跨长分点生成，自动避让坡道、出土口、中心岛和保护区。",
+            service_area_note="立柱位置由主/次对撑交点及跨长控制点生成，自动避让坡道、出土口、中心岛和保护区。",
         ))
     return columns
 
@@ -686,18 +930,20 @@ def make_support_wale_nodes(supports: list[SupportElement], wale_beams: list[Bea
     return nodes
 
 
-def support_layout_summary(supports: list[SupportElement], columns: list[ColumnElement], ring_beams: list[BeamElement], warnings: list[str]) -> dict:
+def support_layout_summary(supports: list[SupportElement], columns: list[ColumnElement], ring_beams: list[BeamElement], warnings: list[str], config: SupportLayoutConfig | None = None) -> dict:
+    config = (config or SupportLayoutConfig()).normalized()
     by_role: dict[str, int] = {}
     for support in supports:
         by_role[support.support_role] = by_role.get(support.support_role, 0) + 1
-    main_spans = [s.span_length for s in supports if s.support_role == "main_strut" and s.span_length]
+    main_spans = [s.span_length for s in supports if s.support_role in {"main_strut", "secondary_strut"} and s.span_length]
     return {
         "supportCount": len(supports),
         "supportCountByRole": by_role,
         "columnCount": len(columns),
         "ringBeamCount": len(ring_beams),
         "maxMainSpan": round(max(main_spans), 3) if main_spans else None,
-        "targetMainSupportSpacing_m": TARGET_MAIN_SUPPORT_SPACING_M,
+        "targetMainSupportSpacing_m": config.target_main_support_spacing_m,
+        "columnMaxUnbracedSpan_m": config.column_max_unbraced_span_m,
         "practicalSupportSpacingRange_m": [MIN_PRACTICAL_MAIN_SUPPORT_SPACING_M, MAX_PRACTICAL_MAIN_SUPPORT_SPACING_M],
         "tributaryWidthMethod": "V1.6 continuous wale-beam reactions; tributary width retained as explanatory fallback/reference",
         "supportForceDistribution": "wall pressure band -> continuous wale beam -> elastic strut node reactions",

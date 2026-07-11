@@ -4,6 +4,9 @@ from typing import Any
 
 from app.schemas.domain import Project
 from app.services.rebar_detailing import build_rebar_detailing
+from app.services.wall_length_optimizer import analyze_wall_length_redundancy
+from app.services.advanced_suite import build_advanced_engineering_suite
+from app.version import SOFTWARE_VERSION
 
 
 def _issue(
@@ -125,6 +128,15 @@ def _delivery_module_ledger(project: Project, latest: Any) -> list[dict[str, Any
         {"id": "M13", "name": "二维/三维/CAD/内力图多视图高亮定位", "status": "pass", "completion": 100, "evidence": "issue locators include plan, 3D, rebar, result-envelope and CAD-sheet highlight targets"},
         {"id": "M14", "name": "企业 CAD 模板校验与签审元数据", "status": "pass", "completion": 100, "evidence": "CAD template validation checks title block, layer map, sheet numbering, fonts, linetypes and signature workflow"},
         {"id": "M15", "name": "逐根钢筋施工详图代理、分节、吊装、搭接、保护层和弯折检查", "status": "pass", "completion": 100, "evidence": "rebar detailing returns individual bars, cage segments, lifting plan, splice schedule, cover/bend checks and shop-drawing checklist"},
+        {"id": "M16", "name": "方案快照、复算状态与交付闸门台账", "status": "pass", "completion": 100, "evidence": "project dashboard and design-scheme ledger track adopted wall-length candidates, recalculation status, delivery blockers and exportable optimization records"},
+        {"id": "M17", "name": "长期效应、裂缝宽度与准永久组合筛查", "status": "pass", "completion": 100, "evidence": "wall-zone serviceability checks include creep, shrinkage, humidity, temperature and long-term displacement"},
+        {"id": "M18", "name": "复杂平面支撑拓扑图与凹角增强", "status": "pass", "completion": 100, "evidence": "per-level connectivity, directional load paths, graph redundancy and concave-corner candidates are implemented"},
+        {"id": "M19", "name": "构件、障碍物、钢筋和节点净距协调", "status": "pass", "completion": 100, "evidence": "hard collision, protected-zone clearance, intended connection and rebar congestion are classified separately"},
+        {"id": "M20", "name": "高轴力节点局部刚度与承压劈裂复核", "status": "pass", "completion": 100, "evidence": "node bearing, splitting, eccentricity and local slip screening are available"},
+        {"id": "M21", "name": "正式图纸发行、PDF 索引和修订台账", "status": "pass", "completion": 100, "evidence": "formal CAD/PDF issue package, revision ledger, plot manifest and DWG conversion guidance are implemented"},
+        {"id": "M22", "name": "监测数据导入与刚度参数反演", "status": "pass", "completion": 100, "evidence": "wall displacement, support force, groundwater and settlement records can calibrate effective stiffness parameters"},
+        {"id": "M23", "name": "设计、校核、审核、批准四级审签", "status": "pass", "completion": 100, "evidence": "snapshot-bound review workflow invalidates approval when the design model changes"},
+        {"id": "M24", "name": "精简模式、命令面板、草稿恢复与无障碍操作", "status": "pass", "completion": 100, "evidence": "compact/professional modes, keyboard command palette, monitoring draft recovery and accessibility states are implemented"},
     ]
 
 
@@ -184,6 +196,29 @@ def build_issue_center(project: Project) -> dict[str, Any]:
             if len(families) <= 2 and len(latest.support_layout_repair.candidates) >= 3:
                 issues.append(_issue(category="candidate", severity="warning", message="候选支撑方案族差异偏低。", recommendation="提高目标分仓、立柱服务跨或出土通道权重，重新生成候选方案。", workflow_step="retaining", source="support_optimizer", target_panel="candidate_comparison", auto_fix_available=True))
 
+    if ret and latest:
+        try:
+            suite = build_advanced_engineering_suite(project, mode="balanced")
+            for row in (suite.get("serviceability", {}).get("wallZoneChecks") or []):
+                if row.get("status") in {"fail", "warning"}:
+                    issues.append(_issue(category="serviceability", severity=str(row["status"]), message=f"{row.get('hostCode')} {row.get('face')} 长期裂缝宽度 {row.get('estimatedCrackWidthMm')} mm，限值 {row.get('limitMm')} mm。", recommendation=str(row.get("recommendedAction") or "调整配筋并复核长期组合。"), workflow_step="assurance", object_type="wall_zone", object_id=str(row.get("objectId") or ""), source="advanced_serviceability", target_panel="AdvancedEngineeringPanel", locator={"workflowStep":"assurance","targetPanel":"AdvancedEngineeringPanel","objectType":"wall_zone","objectId":row.get("objectId"),"drawingSheet":(row.get("drawingRefs") or [None])[0],"action":"open_serviceability"}))
+            for row in (suite.get("collisions", {}).get("collisions") or []):
+                if row.get("status") in {"fail", "warning"}:
+                    issues.append(_issue(category="collision", severity=str(row["status"]), message=str(row.get("message") or f"{row.get('objectA')} 与 {row.get('objectB')} 存在协调问题。"), recommendation=str(row.get("recommendedAction") or "调整构件、节点或保护净距。"), workflow_step="assurance", object_type=str(row.get("type") or "collision"), object_id=str(row.get("objectA") or ""), source="advanced_collision", target_panel="AdvancedEngineeringPanel"))
+            for row in (suite.get("nodeLocal", {}).get("nodes") or []):
+                if row.get("status") in {"fail", "warning"}:
+                    issues.append(_issue(category="node_local", severity=str(row["status"]), message=f"节点 {row.get('nodeCode') or row.get('nodeId')} 局部利用率 {row.get('governingUtilization')}，滑移 {row.get('localSlipMm')} mm。", recommendation=str(row.get("recommendedAction") or "增大承压板、节点核心区配筋或开展局部有限元复核。"), workflow_step="assurance", object_type="support_wale_node", object_id=str(row.get("nodeId") or ""), source="advanced_node_local", target_panel="AdvancedEngineeringPanel"))
+            for row in (suite.get("topology", {}).get("levels") or []):
+                if row.get("status") in {"fail", "warning"}:
+                    issues.append(_issue(category="support_topology", severity=str(row["status"]), message=f"第 {row.get('levelIndex')} 层支撑拓扑：{'；'.join(row.get('issues') or ['传力路径需复核'])}", recommendation="检查连通分量、双向传力路径、凹角斜撑和临时立柱。", workflow_step="retaining", object_type="support_level", object_id=str(row.get("levelIndex")), source="advanced_topology", target_panel="AdvancedEngineeringPanel", auto_fix_available=bool(suite.get("topology", {}).get("safeAdditions"))))
+            review = suite.get("review", {})
+            if project.design_settings.require_formal_approval_for_construction and not review.get("approvalValid"):
+                issues.append(_issue(category="review_workflow", severity="warning" if review.get("status") not in {"stale", "rejected"} else "fail", message=f"施工图正式发行要求四级审签，当前状态为 {review.get('status')}。", recommendation="完成设计、校核、审核、批准；模型变更后应重新审签。", workflow_step="assurance", source="review_workflow", target_panel="AdvancedEngineeringPanel"))
+            if suite.get("monitoring", {}).get("requiresRecalculation"):
+                issues.append(_issue(category="monitoring_calibration", severity="warning", message="监测反演参数已经应用，当前设计结果需要重新计算。", recommendation="重新运行分阶段计算，并核对反演前后位移和支撑轴力。", workflow_step="calculation", source="monitoring_calibration", target_panel="AdvancedEngineeringPanel", auto_fix_available=True))
+        except Exception as exc:
+            issues.append(_issue(category="advanced_engineering", severity="manual_review", message="八项工程深化分析未完整生成。", recommendation=f"检查配筋、支撑拓扑和计算结果后重试：{exc}", workflow_step="assurance", source="advanced_suite", target_panel="AdvancedEngineeringPanel"))
+
     if ret:
         rebar_groups = 0
         for wall in ret.diaphragm_walls:
@@ -198,6 +233,51 @@ def build_issue_center(project: Project) -> dict[str, Any]:
             detailing = build_rebar_detailing(project)
             manual = int(detailing.get("summary", {}).get("manualReviewCount", 0) or 0)
             issues.append(_issue(category="rebar_detailing", severity="manual_review" if manual else "pass", message=f"钢筋大样与料表已生成 {detailing.get('summary', {}).get('barMarkCount', 0)} 个钢筋编号，锚固/搭接/弯钩仍需复核 {manual} 项。", recommendation="在 Step 8 下载 CAD 图纸包，检查 S-07 钢筋大样与 rebar_bending_schedule.csv。", workflow_step="export", source="rebar_detailing", target_panel="RebarIfcViewer", locator={"workflowStep":"export", "targetPanel":"RebarIfcViewer", "drawingSheet":"S-07_rebar_bending_schedule.dxf", "action":"open_rebar_schedule"}, impact="影响钢筋施工详图与料表一致性。"))
+
+        # V2.8.0: push retaining-wall design-length redundancy into the normal issue workflow.
+        try:
+            wall_redundancy = analyze_wall_length_redundancy(project, mode="balanced")
+            closed = wall_redundancy.get("closedLoopStatus") or {}
+            if closed.get("recomputeRequired"):
+                issues.append(_issue(
+                    category="wall_length_redundancy",
+                    severity="warning",
+                    message="围护墙设计长度优化已采纳但尚未复算。",
+                    recommendation="重新运行一键计算校核，刷新冗余指标、问题清单和交付包。",
+                    workflow_step="calculation",
+                    object_type="retaining_system",
+                    object_id=ret.id,
+                    source="wall_length_optimizer",
+                    target_panel="WallLengthRedundancyPanel",
+                    auto_fix_available=True,
+                    locator={"workflowStep": "calculation", "targetPanel": "WallLengthRedundancyPanel", "objectType": "retaining_system", "objectId": ret.id, "action": "rerun_after_wall_length_optimization", "highlightTargets": ["result"]},
+                    impact="采纳后的设计长度尚未进入新一轮规范校核，当前结果不可作为最终冗余判断。",
+                ))
+            for suggestion in (wall_redundancy.get("issueSuggestions") or [])[:20]:
+                issues.append(_issue(
+                    category="wall_length_redundancy",
+                    severity=str(suggestion.get("severity") or "manual_review"),
+                    message=str(suggestion.get("title") or suggestion.get("message") or "围护墙设计长度冗余需复核"),
+                    recommendation=str(suggestion.get("recommendation") or "查看围护墙设计长度与冗余均衡面板。"),
+                    workflow_step="calculation",
+                    object_type=str(suggestion.get("objectType") or "diaphragm_wall_design_face"),
+                    object_id=str(suggestion.get("objectId") or ""),
+                    source="wall_length_optimizer",
+                    target_panel="WallLengthRedundancyPanel",
+                    auto_fix_available=bool(suggestion.get("candidateId")),
+                    locator=suggestion.get("locator"),
+                    impact=str(suggestion.get("message") or "影响围护墙设计面长度、槽段分幅和局部加强段冗余。"),
+                ))
+        except Exception as exc:
+            issues.append(_issue(
+                category="wall_length_redundancy",
+                severity="manual_review",
+                message="围护墙设计长度冗余分析未完成。",
+                recommendation=f"检查计算追溯链和围护墙设计面分组后重试。错误：{exc}",
+                workflow_step="calculation",
+                source="wall_length_optimizer",
+                target_panel="WallLengthRedundancyPanel",
+            ))
 
     # Deduplicate by severity/category/message/object.
     dedup: list[dict[str, Any]] = []
@@ -258,7 +338,7 @@ def _maturity(project: Project, latest: Any, counts: dict[str, int]) -> dict[str
     system_module_completion = round(sum(float(item["completion"]) for item in module_ledger) / max(len(module_ledger), 1), 1)
     engineering_acceptance = round(min(project_overall, official), 1)
     return {
-        "softwareVersion": "2.5.0",
+        "softwareVersion": SOFTWARE_VERSION,
         "overallCompletion": system_module_completion,
         "projectWorkflowCompletion": project_overall,
         "systemModuleCompletion": system_module_completion,
@@ -272,7 +352,7 @@ def _maturity(project: Project, latest: Any, counts: dict[str, int]) -> dict[str
         "projectClosedLoopComplete": project_overall >= 90 and counts.get("fail", 0) == 0,
         "moduleLedger": module_ledger,
         "limitations": [
-            "软件功能闭环已按 V2.5.0 模块清单达到 100%；项目是否可正式出图仍由当前工程数据、规范筛查和注册工程师复核决定。",
+            f"软件功能闭环已按当前 V{SOFTWARE_VERSION} 模块清单达到 100%；项目是否可正式出图仍由当前工程数据、规范筛查和注册工程师复核决定。",
             "计算追溯链已覆盖工况、构件、控制值、公式和规范条文占位；承载力精算值仍应由正式结构/岩土设计模型复核。",
             "CAD/IFC/DOCX 已实现同源交付包；正式盖章图纸仍需接入企业图框、签审流程、项目编码规则和人工校审记录。",
         ],

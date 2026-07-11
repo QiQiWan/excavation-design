@@ -1,5 +1,5 @@
 from app.schemas.domain import Project
-from app.services.benchmark_cases import list_benchmark_cases, run_benchmark_case
+from app.services.benchmark_cases import list_benchmark_cases, run_benchmark_case_isolated as run_benchmark_case
 from app.services.rebar_detailing import build_rebar_detailing
 
 

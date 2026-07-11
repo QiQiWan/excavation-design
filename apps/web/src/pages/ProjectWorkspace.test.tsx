@@ -35,3 +35,11 @@ describe('ProjectWorkspace workflow shell', () => {
     expect(screen.getAllByText('BIM 与计算书').length).toBeGreaterThan(0);
   });
 });
+
+it('exposes compact navigation, keyboard command and long-term design settings', () => {
+  render(<ProjectWorkspace project={project} onBack={() => undefined} onProjectChange={() => undefined} />);
+  expect(screen.getByRole('button', { name: /命令 Ctrl\+K/ })).toBeInTheDocument();
+  expect(screen.getByText('长期效应、抗裂与监测控制')).toBeInTheDocument();
+  expect(screen.getByLabelText('设计使用年限（年）')).toBeInTheDocument();
+  expect(screen.getByText('施工图包必须完成四级批准')).toBeInTheDocument();
+});

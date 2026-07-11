@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODE="${1:-fast}"
+export PITGUARD_NUMERIC_THREADS="${PITGUARD_NUMERIC_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="$PITGUARD_NUMERIC_THREADS"
+export OMP_NUM_THREADS="$PITGUARD_NUMERIC_THREADS"
+export MKL_NUM_THREADS="$PITGUARD_NUMERIC_THREADS"
+export NUMEXPR_NUM_THREADS="$PITGUARD_NUMERIC_THREADS"
+export VECLIB_MAXIMUM_THREADS="$PITGUARD_NUMERIC_THREADS"
+
+cd "$ROOT_DIR/services/api"
+
+run_isolated_nodes() {
+  local label="$1"
+  shift
+  local nodes=("$@")
+  printf 'Running %d %s backend test groups in isolated processes.\n' "${#nodes[@]}" "$label"
+  for node in "${nodes[@]}"; do
+    printf '\n==> %s\n' "$node"
+    PYTHONPATH=. pytest -q "$node" --maxfail=1
+  done
+}
+
+if [[ "$MODE" == "fast" ]]; then
+  python -m compileall -q app tests
+  FAST_NODES=(
+    "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_advanced_suite_covers_eight_tracks"
+    "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_monitoring_calibration_is_applied_to_next_calculation_inputs"
+    "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_review_enforces_separation_of_duties_and_reject_comment"
+    "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_design_setting_update_invalidates_old_results"
+    "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_construction_issue_requires_current_snapshot_revision"
+    "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_formal_package_contains_geometry_pdf_quality_and_revision_files"
+    "tests/test_v3_2_0_rebar_diagnostics_ux.py"
+    "tests/test_v3_1_0_rebar_cad.py"
+    "tests/test_v3_0_0_integration.py"
+    "tests/test_mvp.py::test_health"
+    "tests/test_mvp.py::test_project_crud"
+    "tests/test_v2_1_0_tasks_issues.py"
+    "tests/test_v2_2_0_trace_and_cad.py"
+  )
+  run_isolated_nodes "fast-gate" "${FAST_NODES[@]}"
+elif [[ "$MODE" == "full-isolated" ]]; then
+  python -m compileall -q app tests
+  mapfile -t TEST_NODES < <(
+    PYTHONPATH=. pytest --collect-only -q \
+      | sed -n '/^tests\/.*::/p'
+  )
+  if [[ ${#TEST_NODES[@]} -eq 0 ]]; then
+    echo "No pytest nodes collected." >&2
+    exit 2
+  fi
+  run_isolated_nodes "full-gate" "${TEST_NODES[@]}"
+else
+  echo "Usage: $0 [fast|full-isolated]" >&2
+  exit 2
+fi

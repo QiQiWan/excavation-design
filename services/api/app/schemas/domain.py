@@ -54,6 +54,15 @@ class DesignSettings(DomainModel):
     displacement_limit_ratio: float | None = None
     auto_center_excavation_on_geology: bool = True
     default_support_spacing: float = 5.0
+    service_life_years: int = 50
+    relative_humidity: float = 0.75
+    sustained_load_ratio: float = 0.65
+    creep_coefficient: float = 1.6
+    shrinkage_strain: float = 0.00025
+    temperature_range_c: float = 20.0
+    seismic_grade: str = "non_seismic_temporary"
+    monitoring_calibration_enabled: bool = True
+    require_formal_approval_for_construction: bool = False
 
 
 class Point2D(DomainModel):
@@ -388,7 +397,7 @@ class BearingPlateDesign(DomainModel):
     bearing_area: float
     bearing_stress: float | None = None
     bearing_capacity: float | None = None
-    check_status: Literal["pass", "fail", "manual_review"] = "manual_review"
+    check_status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
     design_note: str | None = None
 
 
@@ -416,7 +425,7 @@ class SupportElement(DomainModel):
     elevation: float
     start: Point2D
     end: Point2D
-    support_role: Literal["main_strut", "corner_diagonal", "ring_strut", "manual"] = "main_strut"
+    support_role: Literal["main_strut", "secondary_strut", "corner_diagonal", "ring_strut", "manual"] = "main_strut"
     layout_note: str | None = None
     span_length: float | None = None
     bay_spacing: float | None = None
@@ -439,6 +448,11 @@ class SupportElement(DomainModel):
     effective_axial_force_standard: float | None = None
     design_axial_force: float | None = None
     construction_effect_note: str | None = None
+    raw_axial_force_standard_envelope: float | None = None
+    force_reconciliation_status: Literal["pass", "warning", "manual_review"] = "manual_review"
+    force_reconciliation_note: str | None = None
+    section_optimization_status: Literal["not_run", "pass", "section_upgraded", "topology_upgrade_required"] = "not_run"
+    section_optimization_note: str | None = None
     lifecycle_note: str | None = None
     preload_stage_id: str | None = None
     removal_stage_id: str | None = None
@@ -502,6 +516,7 @@ class RetainingSystem(DomainModel):
     layout_summary: dict[str, Any] = Field(default_factory=dict)
     optimization_locks: list[dict[str, Any]] = Field(default_factory=list)
     support_layout_repair: SupportLayoutRepairSummary | None = None
+    rebar_design_scheme: dict[str, Any] = Field(default_factory=dict)
     replacement_path: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -512,6 +527,9 @@ class ConstructionStage(DomainModel):
     excavation_elevation: float
     active_support_ids: list[str] = Field(default_factory=list)
     deactivated_support_ids: list[str] = Field(default_factory=list)
+    active_support_levels: list[int] = Field(default_factory=list)
+    transferred_support_levels: list[int] = Field(default_factory=list)
+    support_topology_hash: str | None = None
     stage_type: Literal["excavation", "support_installation", "bottom_slab", "replacement", "support_removal", "final"] = "excavation"
     zone: str | None = None
     replacement_action: str | None = None
@@ -524,6 +542,8 @@ class CalculationCase(DomainModel):
     id: str = Field(default_factory=lambda: new_id("case"))
     name: str
     stages: list[ConstructionStage] = Field(default_factory=list)
+    support_topology_hash: str | None = None
+    synchronization_note: str | None = None
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -573,6 +593,10 @@ class SupportForceResult(DomainModel):
     wale_chainage: float | None = None
     tributary_width: float | None = None
     continuous_beam_reaction: float | None = None
+    reference_axial_force: float | None = None
+    global_axial_force: float | None = None
+    force_reconciliation_ratio: float | None = None
+    force_reconciliation_status: Literal["pass", "warning", "manual_review"] | None = None
     elastic_support_stiffness: float | None = None
     normal_projection_factor: float | None = None
     beam_node_count: int | None = None
@@ -899,6 +923,86 @@ class CalculationResult(DomainModel):
     calculated_at: str = Field(default_factory=now_iso)
 
 
+
+
+class MonitoringRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("mon"))
+    record_type: Literal["wall_displacement", "support_axial_force", "groundwater", "settlement"]
+    object_id: str | None = None
+    object_code: str | None = None
+    stage_id: str | None = None
+    timestamp: str = Field(default_factory=now_iso)
+    measured_value: float
+    unit: str
+    elevation: float | None = None
+    x: float | None = None
+    y: float | None = None
+    quality: Literal["verified", "provisional", "rejected"] = "verified"
+    source: str = "manual"
+    note: str | None = None
+
+
+class CalibrationRun(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("calib"))
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    sample_count: int = 0
+    wall_stiffness_factor: float = 1.0
+    support_stiffness_factor: float = 1.0
+    soil_modulus_factor: float = 1.0
+    groundwater_offset_m: float = 0.0
+    objective_before: float | None = None
+    objective_after: float | None = None
+    confidence: Literal["high", "medium", "low"] = "low"
+    applied: bool = False
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ReviewAction(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("review"))
+    role: Literal["designer", "checker", "reviewer", "approver"]
+    actor: str
+    action: Literal["submit", "accept", "reject", "reopen", "approve"]
+    comment: str | None = None
+    snapshot_hash: str
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ReviewWorkflow(DomainModel):
+    status: Literal["draft", "submitted", "checked", "reviewed", "approved", "rejected", "stale"] = "draft"
+    current_role: Literal["designer", "checker", "reviewer", "approver"] = "designer"
+    approved_snapshot_hash: str | None = None
+    actions: list[ReviewAction] = Field(default_factory=list)
+    required_roles: list[str] = Field(default_factory=lambda: ["designer", "checker", "reviewer", "approver"])
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class DrawingRevision(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("rev"))
+    revision: str = "A"
+    description: str
+    sheet_numbers: list[str] = Field(default_factory=list)
+    author: str = "AI-DRAFT"
+    snapshot_hash: str
+    issue_status: Literal["review", "construction", "superseded"] = "review"
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ProjectSummary(DomainModel):
+    id: str
+    name: str
+    location: str | None = None
+    created_at: str | None = None
+    updated_at: str
+    has_excavation: bool = False
+    has_retaining_system: bool = False
+    calculation_case_count: int = 0
+    calculation_result_count: int = 0
+    latest_calculation_id: str | None = None
+    governing_status: str | None = None
+    geometry_consistent: bool | None = None
+
+
 class Project(DomainModel):
     id: str = Field(default_factory=lambda: new_id("project"))
     name: str
@@ -916,4 +1020,9 @@ class Project(DomainModel):
     calculation_cases: list[CalculationCase] = Field(default_factory=list)
     calculation_results: list[CalculationResult] = Field(default_factory=list)
     cad_template: dict[str, Any] = Field(default_factory=dict)
+    monitoring_records: list[MonitoringRecord] = Field(default_factory=list)
+    calibration_runs: list[CalibrationRun] = Field(default_factory=list)
+    review_workflow: ReviewWorkflow = Field(default_factory=ReviewWorkflow)
+    drawing_revisions: list[DrawingRevision] = Field(default_factory=list)
+    advanced_engineering: dict[str, Any] = Field(default_factory=dict)
     messages: list[str] = Field(default_factory=list)

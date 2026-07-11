@@ -8,18 +8,19 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import assurance, benchmarks, boreholes, cad_template, calculation, design, excavation, export, geology, issues, projects, rebar, tasks
+from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, excavation, export, geology, issues, projects, rebar, tasks, wall_optimization
 from app.rules.registry import list_rules
+from app.version import SOFTWARE_VERSION, version_manifest
 
 app = FastAPI(
     title="PitGuard BIM Designer API",
-    version="2.5.0",
-    description="V2.5.0 normative-algorithm backend with completed multi-view issue highlighting, validated enterprise CAD templates, shop-detailing rebar geometry, cage segmentation, lifting, splice, cover and signoff workflows.",
+    version=SOFTWARE_VERSION,
+    description="PitGuard V3 integrated geometry, topology, calculation and delivery workflow.",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=[origin.strip() for origin in os.getenv("PITGUARD_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,6 +39,8 @@ app.include_router(calculation.router)
 app.include_router(export.router)
 app.include_router(issues.router)
 app.include_router(rebar.router)
+app.include_router(wall_optimization.router)
+app.include_router(advanced.router)
 
 
 @app.get("/health")
@@ -78,10 +81,9 @@ def system_diagnostics() -> dict:
     return {
         "service": "pitguard-api",
         "version": app.version,
-        "pythonExecutable": sys.executable,
+        **version_manifest(),
         "pythonVersion": sys.version.split()[0],
-        "workingDirectory": os.getcwd(),
-        "databasePath": db_path,
+        "databaseConfigured": bool(db_path),
         "databaseDirectoryExists": bool(db_path and Path(db_path).expanduser().parent.exists()),
         "missingModules": [item["packageName"] for item in modules if not item["available"]],
         "modules": modules,

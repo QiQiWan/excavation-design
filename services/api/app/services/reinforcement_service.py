@@ -104,6 +104,10 @@ def support_reinforcement(
     as_total = count * bar_area(dia)
     rho = as_total / max(width * height, 1.0)
     stirrup_spacing = 150 if force < 6500 else 100
+    distribution_dia = 14 if min(width, height) < 900 else 16
+    distribution_spacing = 200 if force < 6500 else 180
+    tie_spacing = 450 if force < 6500 else 400
+    lap_dia = max(16, dia - 6)
     return [
         ReinforcementGroup(
             name="支撑纵筋",
@@ -126,5 +130,32 @@ def support_reinforcement(
             grade=rebar_grade,
             check_status="manual_review",
             location_description="RC support stirrups; shear and confinement detailing requires professional review",
+        ),
+        ReinforcementGroup(
+            name="支撑分布筋",
+            bar_type="distribution",
+            diameter=distribution_dia,
+            spacing=distribution_spacing,
+            grade=rebar_grade,
+            check_status="manual_review",
+            location_description="distribution bars along support side faces for crack control and cage stability",
+        ),
+        ReinforcementGroup(
+            name="支撑拉结/架立筋",
+            bar_type="tie",
+            diameter=12,
+            spacing=tie_spacing,
+            grade=rebar_grade,
+            check_status="manual_review",
+            location_description="tie bars between longitudinal cages; helps maintain spacing and construction stability",
+        ),
+        ReinforcementGroup(
+            name="搭接加强筋",
+            bar_type="additional",
+            diameter=lap_dia,
+            count=4,
+            grade=rebar_grade,
+            check_status="manual_review",
+            location_description="additional bars around staggered lap / anchorage zone; exact lap length and hook form require detailing review",
         ),
     ]

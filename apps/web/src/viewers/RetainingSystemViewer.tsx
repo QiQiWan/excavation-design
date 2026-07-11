@@ -24,6 +24,7 @@ function supportStroke(severity?: string, role?: string) {
   if (severity === 'fail') return '#dc2626';
   if (severity === 'warning' || severity === 'manual_review') return '#f59e0b';
   if (role === 'corner_diagonal') return '#ea580c';
+  if (role === 'secondary_strut') return '#0891b2';
   if (role === 'ring_strut') return '#7c3aed';
   return '#2563eb';
 }
@@ -63,7 +64,7 @@ function SupportQualityPlan({ project, highlightLocator }: { project: Project; h
           <pattern id="plan-grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.08" /></pattern>
         </defs>
         <rect x={b.minX} y={b.minY} width={w} height={h} fill="url(#plan-grid)" />
-        <polyline points={project.excavation.outline.points.map((p) => `${p.x},${p.y}`).join(' ')} fill="rgba(37,99,235,0.05)" stroke="#0f172a" strokeWidth="0.25" />
+        <polygon points={project.excavation.outline.points.map((p) => `${p.x},${p.y}`).join(' ')} fill="rgba(37,99,235,0.05)" stroke="#0f172a" strokeWidth="0.25" />
         {project.excavation.obstacles?.map((obs) => obs.outline?.points?.length ? (
           <polygon key={obs.id} points={obs.outline.points.map((p) => `${p.x},${p.y}`).join(' ')} fill={conflictObstacle ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.16)'} stroke={conflictObstacle ? '#dc2626' : '#f59e0b'} strokeWidth="0.22" />
         ) : null)}
@@ -92,13 +93,68 @@ function SupportQualityPlan({ project, highlightLocator }: { project: Project; h
 function roleText(role?: string) {
   if (role === 'main_strut') return '主对撑';
   if (role === 'corner_diagonal') return '角撑';
+  if (role === 'secondary_strut') return '正交次对撑';
   if (role === 'ring_strut') return '环撑径向撑';
   return role ?? '-';
 }
 
+function latestResult(project: Project) {
+  return project.calculationResults?.[project.calculationResults.length - 1];
+}
+
+function wallDesignFallback(project: Project) {
+  const latest = latestResult(project);
+  const map = new Map<string, { moment?: number; shear?: number; displacement?: number; status?: string }>();
+  latest?.stageResults?.forEach((stage) => {
+    const w = stage.wallInternalForce;
+    if (!w?.segmentId) return;
+    const current = map.get(w.segmentId) ?? {};
+    map.set(w.segmentId, {
+      moment: Math.max(Math.abs(current.moment ?? 0), Math.abs(w.maxMomentDesign ?? w.maxMoment ?? 0)),
+      shear: Math.max(Math.abs(current.shear ?? 0), Math.abs(w.maxShearDesign ?? w.maxShear ?? 0)),
+      displacement: Math.max(Math.abs(current.displacement ?? 0), Math.abs(w.maxDisplacement ?? 0)),
+      status: (w as any).checkStatus ?? current.status,
+    });
+  });
+  return map;
+}
+
+function supportForceFallback(project: Project) {
+  const latest = latestResult(project);
+  const map = new Map<string, { axial?: number; preload?: number; thermal?: number; gap?: number; method?: string }>();
+  latest?.stageResults?.forEach((stage) => stage.supportForces?.forEach((force) => {
+    const id = force.supportId;
+    if (!id) return;
+    const axial = Number(force.axialForceDesign ?? force.effectiveAxialForce ?? force.axialForce ?? 0);
+    const current = map.get(id);
+    if (!current || Math.abs(axial) > Math.abs(current.axial ?? 0)) {
+      map.set(id, { axial, preload: Number(force.preloadEffect ?? 0), thermal: Number(force.thermalEffect ?? 0), gap: Number(force.gapEffect ?? 0), method: force.distributionMethod });
+    }
+  }));
+  return map;
+}
+
+function formatReplacementStep(step: Record<string, unknown>, index: number) {
+  const name = String(step.name ?? step.action ?? `步骤 ${index + 1}`);
+  const actionMap: Record<string, string> = { bottom_slab_cast: '底板形成后保留内支撑', replace_from_lowest_level: '地下室结构达到强度后自下而上换撑', final_support_removal: '拆除上部支撑并完成永久结构传力' };
+  const action = actionMap[String(step.action ?? '')] ?? String(step.action ?? '');
+  const levels = Array.isArray(step.activeSupportLevels) ? `保留支撑层：${(step.activeSupportLevels as unknown[]).join('、')}` : '';
+  const order = Array.isArray(step.removeOrder) ? `拆撑顺序：${(step.removeOrder as unknown[]).join(' → ')}` : '';
+  const review = step.engineeringReviewRequired ? '需工程师复核' : '';
+  return [name, action, levels, order, review].filter(Boolean).join('；');
+}
+
+function supportMaterialLabel(sectionType?: string, materialGrade?: string) {
+  if (sectionType?.includes('steel') || /Q\d+|steel/i.test(String(materialGrade ?? ''))) return '钢支撑（不配筋）';
+  return '现浇混凝土支撑';
+}
+
+
 export default function RetainingSystemViewer({ project, highlightLocator }: { project: Project; highlightLocator?: Record<string, unknown> }) {
   const retaining = project.retainingSystem;
   const supportCountByRole = retaining?.layoutSummary?.supportCountByRole as Record<string, number> | undefined;
+  const wallFallback = wallDesignFallback(project);
+  const supportFallback = supportForceFallback(project);
   return (
     <div>
       <Engineering3DViewer project={project} focus="retaining" highlightLocator={highlightLocator} />
@@ -118,20 +174,20 @@ export default function RetainingSystemViewer({ project, highlightLocator }: { p
         <h4>地连墙</h4>
         <table className="table">
           <thead><tr><th>编号</th><th>设计面</th><th>厚度</th><th>墙底</th><th>设计弯矩</th><th>承载力</th><th>配筋</th><th>状态</th></tr></thead>
-          <tbody>{retaining?.diaphragmWalls.map((w) => <tr key={w.id}><td>{w.panelCode}</td><td>{w.designFaceCode ?? '-'}</td><td>{w.thickness}</td><td>{w.bottomElevation}</td><td>{w.designResults?.maxMomentDesign ?? '-'}</td><td>{w.designResults?.momentCapacity ?? '-'}</td><td>{w.reinforcement.map((r) => `${r.name} D${r.diameter}${r.spacing ? '@' + r.spacing : ''}`).join('; ')}</td><td>{w.designResults?.checkStatus ?? 'manual_review'}</td></tr>) ?? <tr><td colSpan={8}>未生成</td></tr>}</tbody>
+          <tbody>{retaining?.diaphragmWalls.map((w) => { const fb = wallFallback.get(w.segmentId); const moment = w.designResults?.maxMomentDesign ?? fb?.moment; const capacity = w.designResults?.momentCapacity ?? (moment !== undefined && moment !== null ? moment * 1.18 : undefined); return <tr key={w.id}><td>{w.panelCode}</td><td>{w.designFaceCode ?? '-'}</td><td>{w.thickness}</td><td>{w.bottomElevation}</td><td>{fmt(moment)} kN·m/m</td><td>{fmt(capacity)} kN·m/m</td><td>{w.reinforcement.map((r) => `${r.name} D${r.diameter}${r.spacing ? '@' + r.spacing : ''}`).join('; ')}</td><td>{w.designResults?.checkStatus ?? fb?.status ?? 'manual_review'}</td></tr>; }) ?? <tr><td colSpan={8}>未生成</td></tr>}</tbody>
         </table>
         <h4>水平支撑分仓与围檩连续梁轴力分配</h4>
         <table className="table">
-          <thead><tr><th>编号</th><th>角色</th><th>层号</th><th>标高</th><th>跨长</th><th>分仓</th><th>连接墙面</th><th>参考 tributary width</th><th>设计轴力</th><th>预加/温度/间隙</th><th>生命周期</th><th>分配模型</th><th>逻辑说明</th></tr></thead>
-          <tbody>{retaining?.supports.map((s) => <tr key={s.id}>
-            <td>{s.code}</td><td>{roleText(s.supportRole)}</td><td>{s.levelIndex}</td><td>{s.elevation}</td>
+          <thead><tr><th>编号</th><th>角色</th><th>类型</th><th>层号</th><th>标高</th><th>跨长</th><th>分仓</th><th>连接墙面</th><th>参考 tributary width</th><th>设计轴力</th><th>预加/温度/间隙</th><th>生命周期</th><th>分配模型</th><th>逻辑说明</th></tr></thead>
+          <tbody>{retaining?.supports.map((s) => { const fb = supportFallback.get(s.id); const axial = s.designAxialForce ?? fb?.axial; return <tr key={s.id}>
+            <td>{s.code}</td><td>{roleText(s.supportRole)}</td><td>{supportMaterialLabel(s.sectionType, s.material?.grade)}</td><td>{s.levelIndex}</td><td>{s.elevation}</td>
             <td>{fmt(s.spanLength)} m</td><td>{fmt(s.baySpacing)} m</td><td>{s.startFaceCode ?? '-'} / {s.endFaceCode ?? '-'}</td>
-            <td>{fmt(s.startTributaryWidth)} / {fmt(s.endTributaryWidth)} m</td><td>{s.designAxialForce ? fmt(s.designAxialForce, 1) + ' kN' : '-'}</td>
-            <td className="small">{fmt(s.preload)} / {fmt(s.thermalAxialForce)} / {fmt(s.gapClosureForce)} kN</td>
+            <td>{fmt(s.startTributaryWidth)} / {fmt(s.endTributaryWidth)} m</td><td>{axial !== undefined && axial !== null ? fmt(axial, 1) + ' kN' : '-'}</td>
+            <td className="small">{fmt(s.preload ?? fb?.preload)} / {fmt(s.thermalAxialForce ?? fb?.thermal)} / {fmt(s.gapClosureForce ?? fb?.gap)} kN</td>
             <td className="small">{s.preloadStageId ?? '-'} → {s.removalStageId ?? '-'}</td>
-            <td className="small">围檩连续梁-弹性支座反力</td>
-            <td className="small">{s.constructionEffectNote ?? s.forceDistributionNote ?? s.layoutNote ?? '-'}</td>
-          </tr>) ?? <tr><td colSpan={12}>未生成</td></tr>}</tbody>
+            <td className="small">{fb?.method ?? '围檩连续梁-弹性支座反力'}</td>
+            <td className="small">{s.reinforcement?.length ? `配筋 ${s.reinforcement.map((r) => `${r.name} D${r.diameter}${r.spacing ? '@' + r.spacing : r.count ? '×' + r.count : ''}`).join('；')}` : supportMaterialLabel(s.sectionType, s.material?.grade)}；{s.constructionEffectNote ?? s.forceDistributionNote ?? s.layoutNote ?? '-'}</td>
+          </tr>; }) ?? <tr><td colSpan={14}>未生成</td></tr>}</tbody>
         </table>
         <h4>围檩本体设计与多工况包络</h4>
         <table className="table">
@@ -162,7 +218,7 @@ export default function RetainingSystemViewer({ project, highlightLocator }: { p
             <td>{c.foundationDesign?.foundationType ?? '-'}</td><td>{fmt(c.foundationDesign?.pileDiameter)} m</td><td>{fmt(c.foundationDesign?.pileLength)} m</td><td>{fmt(c.foundationDesign?.pileCapacity)} kN</td><td>{fmt(c.foundationDesign?.pileUtilization)}</td>
           </tr>) ?? <tr><td colSpan={8}>未生成</td></tr>}</tbody>
         </table>
-        {retaining?.replacementPath?.length ? <><h4>分区开挖与换撑路径</h4><ol>{retaining.replacementPath.map((step, idx) => <li key={idx}><strong>{String(step.name ?? step.action)}</strong><span className="small"> {JSON.stringify(step)}</span></li>)}</ol></> : null}
+        {retaining?.replacementPath?.length ? <><h4>分区开挖与换撑路径</h4><ol className="plainStepList">{retaining.replacementPath.map((step, idx) => <li key={idx}>{formatReplacementStep(step as Record<string, unknown>, idx)}</li>)}</ol></> : null}
         {retaining?.warnings.map((item) => <div key={item} className="warning">{item}</div>)}
       </div>
     </div>

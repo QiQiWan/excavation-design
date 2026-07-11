@@ -1,142 +1,23 @@
-sample-output/
-export/
-exports/
-.venv
-# ==============================================================================
-# 1. 操作系统与通用缓存 (OS & General Caches)
-# ==============================================================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-Desktop.ini
-*~
-*.swp
-*.swo
-
-# ==============================================================================
-# 2. IDE 与编辑器配置文件 (IDEs & Editors)
-# ==============================================================================
-# VS Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# JetBrains (PyCharm, WebStorm, etc.)
-.idea/
-*.iws
-*.iml
-*.ipr
-out/
-
-# ==============================================================================
-# 3. Python 环境与核心文件 (Python Core)
-# ==============================================================================
-# 字节码与缓存
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# 虚拟环境
-venv/
 .venv/
-env/
-.env_python/
-ENV/
-env.bak/
-venv.bak/
 
-# 包管理与构建
-dist/
-build/
-*.egg-info/
-.eggs/
-*.egg
-pip-log.txt
-pip-delete-this-directory.txt
-
-# ==============================================================================
-# 4. Node.js 环境与核心文件 (Node.js & Frontend Core)
-# ==============================================================================
-# 依赖库 (全局忽略所有层级的 node_modules)
+# Frontend
 node_modules/
-jspm_packages/
+dist/
+*.tsbuildinfo
 
-# 日志文件
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# 构建输出 (视你的前端打包工具而定)
-.nuxt/
-.next/
-/dist/
-/build/
-/.svelte-kit/
-out/
-
-# 缓存文件
-.npm
-.eslintcache
-.stylelintcache
-.tsbuildinfo
-
-# ==============================================================================
-# 5. 数据科学、机器学习与工程计算 (SciML & AI)
-# ==============================================================================
-# Jupyter Notebook
-.ipynb_checkpoints/
-
-# 深度学习模型与权重 (PyTorch 等)
-*.pth
-*.pt
-*.ckpt
-*.h5
-*.onnx
-*.safetensors
-
-# 数据集与计算结果 (防止将海量仿真数据或几何模型提交到 Git)
-/data/
-/datasets/
-*.tfrecord
-*.ifc  # 如果需要版本控制基础 IFC 模型，请注释此行
-*.vtk
-*.ply
-*.obj
-*.stl
-
-# ==============================================================================
-# 6. Web 后端与数据库 (Django / Flask etc.)
-# ==============================================================================
-# 静态资源与上传文件
-/media/
-/staticfiles/
-/static/collected/
-
-# 本地数据库文件
+# Runtime
+runtime/
 *.sqlite3
-db.sqlite3
-*.db
+services/api/exports/*
+!services/api/exports/.gitkeep
+exports/*
+!exports/.gitkeep
 
-# ==============================================================================
-# 7. 环境变量与本地机密 (Environment Variables & Secrets)
-# ==============================================================================
-# 极其重要：绝对不要将包含密码、API Key 的本地配置文件推送到远程
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-*.pem
-*.key
-secrets.json
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/

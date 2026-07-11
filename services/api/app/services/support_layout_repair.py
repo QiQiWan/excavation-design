@@ -164,6 +164,26 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
     old_support_count = len(project.retaining_system.supports) if project.retaining_system else 0
     old_column_count = len(project.retaining_system.columns) if project.retaining_system else 0
 
+    existing = project.retaining_system.support_layout_repair if project.retaining_system else None
+    if (
+        existing
+        and existing.candidates
+        and old_support_count > 0
+        and before.status not in {"fail", "manual_review"}
+        and not objective_weights
+        and not preset
+    ):
+        # V2.6.0: normal calculation should not repeatedly re-enumerate every
+        # support candidate.  Large projects with many stored calculation results
+        # can spend minutes in deep copies during candidate search.  Reuse the
+        # accepted/recent repair summary unless the user explicitly requests a new
+        # optimization pass.
+        existing.score_after = before.score
+        existing.status = before.status
+        existing.unresolved_issues = before.issues
+        existing.summary = before.summary
+        return existing
+
     weights = normalize_objective_weights(objective_weights)
     lock_summary = _current_lock_summary(project)
     best_system, candidates = optimize_support_layout_candidates(project, objective_weights=weights, preset=preset)

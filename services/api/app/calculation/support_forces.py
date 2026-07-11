@@ -40,7 +40,7 @@ def _group_supports_by_level(supports: list[SupportElement]) -> list[tuple[float
 
 
 def _role_factor(support: SupportElement) -> float:
-    return {"main_strut": 1.0, "ring_strut": 0.85, "corner_diagonal": 0.35, "manual": 1.0}.get(getattr(support, "support_role", "main_strut"), 1.0)
+    return {"main_strut": 1.0, "secondary_strut": 1.0, "ring_strut": 0.85, "corner_diagonal": 0.35, "manual": 1.0}.get(getattr(support, "support_role", "main_strut"), 1.0)
 
 
 def _tributary_width_for_segment(support: SupportElement, segment_name: str | None, fallback_width: float) -> float:
