@@ -1,0 +1,21 @@
+{
+  "site_size_m": [
+    200,
+    200
+  ],
+  "model_depth_m": 50,
+  "constitutive_model": "Mohr-Coulomb",
+  "borehole_count": 9,
+  "soil_layer_count": 5,
+  "units": {
+    "c": "kPa",
+    "phi": "degree",
+    "E": "MPa",
+    "gamma": "kN/m3",
+    "k": "m/s"
+  },
+  "files": [
+    "geotech_site_200x200_mc_5layers.xlsx",
+    "geotech_borehole_import_200x200_mc_5layers.csv"
+  ]
+}

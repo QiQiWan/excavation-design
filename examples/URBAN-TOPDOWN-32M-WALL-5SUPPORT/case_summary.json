@@ -1,0 +1,38 @@
+{
+  "caseId": "URBAN-TOPDOWN-32M-WALL-5SUPPORT",
+  "projectId": "project-1e5db1ce0e04",
+  "name": "邻近建筑影响的 32m 地连墙五道支撑顶顺结合基坑算例",
+  "sourceTitle": "Evaluating the Effects of Deep Excavation on Nearby Structures",
+  "sourceUrl": "https://www.mdpi.com/2076-3417/14/21/10002",
+  "publicDataBasis": "公开摘要给出：32 m 深、0.8 m 厚地下连续墙，顶顺结合法，六次开挖五道支撑。",
+  "depthM": 26.0,
+  "calculationDepthM": 26.0,
+  "sourcePlanSizeM": [
+    96.0,
+    48.0
+  ],
+  "planSizeM": [
+    90.0,
+    45.0
+  ],
+  "geometryScale": 0.9375,
+  "supportCount": 110,
+  "columnCount": 44,
+  "maxSupportAxialForce": 0.0,
+  "maxWallMoment": 39716.113,
+  "maxDisplacement": 3701.077,
+  "checkSummary": {
+    "pass": 1388,
+    "fail": 136,
+    "warning": 155,
+    "manualReview": 0
+  },
+  "issueSummary": {
+    "fail": 4,
+    "warning": 23,
+    "manual_review": 1,
+    "pass": 0
+  },
+  "traceCount": 592,
+  "officialIssueAllowed": false
+}

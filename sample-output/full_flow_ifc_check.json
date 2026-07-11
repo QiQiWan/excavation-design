@@ -1,0 +1,71 @@
+{
+  "score": 100.0,
+  "status": "pass",
+  "summary": "IFC 兼容性自检：pass，评分 100.0。",
+  "filePath": "/mnt/data/pitguard_v209_work/pitguard_v13_work/services/api/exports/project-d0f01005d5e4_coordination_light.ifc",
+  "exportMode": "coordination_light",
+  "entityCounts": {
+    "diaphragmWalls": 4,
+    "beams": 16,
+    "supports": 39,
+    "columns": 9,
+    "supportNodes": 78,
+    "rebarGroups": 94,
+    "IFCWALL": 4,
+    "IFCBEAM": 55,
+    "IFCCOLUMN": 9,
+    "IFCPLATE": 0,
+    "IFCREINFORCINGBAR": 0,
+    "IFCBUILDINGELEMENTPROXY": 87
+  },
+  "rawUnicodeFound": false,
+  "missingReferences": [],
+  "zeroDimensionCount": 0,
+  "invalidPlacementCount": 0,
+  "missingMaterialAssociationCount": 0,
+  "missingSpatialContainmentCount": 0,
+  "viewerProfiles": [
+    {
+      "viewer": "BlenderBIM / Bonsai",
+      "status": "pass",
+      "riskLevel": "low",
+      "score": 96.0,
+      "riskItems": [],
+      "recommendation": "适合作为开源 IFC 语义核查；优先检查空间归属、属性集和钢筋实体。"
+    },
+    {
+      "viewer": "BIMVision",
+      "status": "pass",
+      "riskLevel": "low",
+      "score": 94.0,
+      "riskItems": [],
+      "recommendation": "适合轻量可视化；若加载慢，可导出参数化钢筋简化版本。"
+    },
+    {
+      "viewer": "Solibri",
+      "status": "pass",
+      "riskLevel": "low",
+      "score": 90.0,
+      "riskItems": [],
+      "recommendation": "适合规则审查；建议保证材料、空间结构和属性集完整。"
+    },
+    {
+      "viewer": "Autodesk Revit",
+      "status": "pass",
+      "riskLevel": "low",
+      "score": 90.0,
+      "riskItems": [],
+      "recommendation": "轻量协调版适合进入 Revit/Navisworks 做协调浏览。"
+    },
+    {
+      "viewer": "Navisworks",
+      "status": "pass",
+      "riskLevel": "low",
+      "score": 92.0,
+      "riskItems": [],
+      "recommendation": "轻量协调版适合进入 Revit/Navisworks 做协调浏览。"
+    }
+  ],
+  "issues": [],
+  "checkedAt": "2026-07-06T13:27:41.679314+00:00"
+}

@@ -1,0 +1,117 @@
+[
+  {
+    "step": "create_project",
+    "projectId": "project-d0f01005d5e4"
+  },
+  {
+    "step": "import_boreholes",
+    "boreholeCount": 4,
+    "stratumCount": 3,
+    "warnings": []
+  },
+  {
+    "step": "build_geology",
+    "surfaceCount": 6,
+    "warnings": []
+  },
+  {
+    "step": "import_vtu",
+    "summary": {
+      "pointCount": 4,
+      "cellCount": 1,
+      "cellTypes": [
+        "tetra"
+      ]
+    },
+    "suggestedMapping": {
+      "gamma": "unit_weight",
+      "mat_id": "stratum_id",
+      "c": "cohesion",
+      "phi": "friction_angle",
+      "E": "elastic_modulus"
+    }
+  },
+  {
+    "step": "create_excavation",
+    "depth": 12.0,
+    "segmentCount": 4,
+    "area": 1500.0
+  },
+  {
+    "step": "auto_diaphragm_wall",
+    "wallCount": 4
+  },
+  {
+    "step": "auto_supports",
+    "supportCount": 39
+  },
+  {
+    "step": "optimize_supports",
+    "candidateCount": 5,
+    "comparisonCount": 0,
+    "bestCandidateId": "slopt-t3p5-c15p0-as_generated-0p0"
+  },
+  {
+    "step": "build_cases",
+    "caseCount": 1,
+    "stageCount": 7
+  },
+  {
+    "step": "run_calculation",
+    "governingValues": {
+      "maxTotalPressure": 176.58,
+      "maxSupportAxialForce": 12961.085,
+      "maxWallMoment": 308.752,
+      "maxWallShear": 287.35,
+      "maxDisplacement": 1.461,
+      "governingCheckStatus": "warning",
+      "embedmentSafetyFactorMin": 1.918,
+      "heaveSafetyFactorMin": 7.762,
+      "seepageSafetyFactorMin": 0.0,
+      "strengthCheckStatus": "warning",
+      "stiffnessCheckStatus": "warning",
+      "stabilityCheckStatus": "warning"
+    },
+    "stageResults": 28
+  },
+  {
+    "step": "export_ifc-light",
+    "file": "full_flow_coordination_light.ifc",
+    "bytes": 436147
+  },
+  {
+    "step": "export_ifc-analysis",
+    "file": "full_flow_analysis_model.ifc",
+    "bytes": 548929
+  },
+  {
+    "step": "export_ifc-detailed",
+    "file": "full_flow_design_detailed.ifc",
+    "bytes": 853920
+  },
+  {
+    "step": "export_report",
+    "file": "full_flow_report.docx",
+    "bytes": 515812
+  },
+  {
+    "step": "export_json",
+    "file": "full_flow_export.json",
+    "bytes": 14995246
+  },
+  {
+    "step": "export_ifc_check",
+    "status": "pass",
+    "score": 100.0
+  },
+  {
+    "step": "checks",
+    "summary": {
+      "pass": 396,
+      "fail": 0,
+      "warning": 100,
+      "manualReview": 1,
+      "manual_review": 1
+    }
+  }
+]

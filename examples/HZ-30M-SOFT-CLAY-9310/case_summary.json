@@ -1,0 +1,38 @@
+{
+  "caseId": "HZ-30M-SOFT-CLAY-9310",
+  "projectId": "project-58903334d264",
+  "name": "杭州软土 30.2m 深大型地下室基坑规范算法回归算例",
+  "sourceTitle": "Observed performance / Performance of diaphragm walls in a 30.2 m deep Hangzhou soft-clay basement excavation",
+  "sourceUrl": "https://link.springer.com/article/10.1007/s11204-022-09797-5",
+  "publicDataBasis": "公开摘要给出：约 9310 m2、开挖深度 30.2 m、地连墙约 51/52 m、六道混凝土支撑。",
+  "depthM": 30.2,
+  "calculationDepthM": 28.0,
+  "sourcePlanSizeM": [
+    122.0,
+    76.0
+  ],
+  "planSizeM": [
+    90.0,
+    56.066
+  ],
+  "geometryScale": 0.7377,
+  "supportCount": 110,
+  "columnCount": 66,
+  "maxSupportAxialForce": 0.0,
+  "maxWallMoment": 64267.719,
+  "maxDisplacement": 5021.407,
+  "checkSummary": {
+    "pass": 1428,
+    "fail": 250,
+    "warning": 46,
+    "manualReview": 0
+  },
+  "issueSummary": {
+    "fail": 115,
+    "warning": 11,
+    "manual_review": 1,
+    "pass": 0
+  },
+  "traceCount": 592,
+  "officialIssueAllowed": false
+}
