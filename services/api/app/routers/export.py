@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 
 from app.drawings.cad_export import build_drawing_set_manifest, export_construction_cad_package, export_construction_svg_package
 from app.drawings.formal_issue import export_formal_drawing_package
+from app.drawing_rules import evaluate_drawing_issue_gate
 from app.services.review_workflow import review_status
 from app.ifc.exporter import export_simplified_ifc
 from app.ifc.rebar_visualization import build_rebar_ifc_visualization
@@ -18,6 +19,7 @@ from app.storage.repository import ProjectRepository, get_repository
 from app.services.wall_length_optimizer import export_wall_length_redundancy_report
 from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
+from app.services.rebar_export import export_rebar_detailing_package
 
 router = APIRouter(prefix="/api/projects/{project_id}/export", tags=["export"])
 
@@ -107,15 +109,18 @@ def export_drawings_cad(
     scheme = build_rebar_design_scheme(project, mode=rebar_mode)
     can_issue = bool((scheme.get("diagnostics") or {}).get("canIssueConstructionDrawings"))
     approval = review_status(project)
-    approval_required = bool(project.design_settings.require_formal_approval_for_construction)
-    if issue_mode == "construction" and (not can_issue or (approval_required and not approval.get("approvalValid"))):
+    current_revision = next((r for r in reversed(project.drawing_revisions) if r.issue_status == "construction" and r.snapshot_hash == approval.get("currentSnapshotHash")), None)
+    issue_gate = evaluate_drawing_issue_gate(
+        project, issue_mode=issue_mode, engineering_gate_allowed=can_issue, approval=approval, current_revision_valid=current_revision is not None
+    )
+    if not issue_gate["allowed"]:
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "仍有工程阻断项或正式审签尚未生效，只能导出审查版 CAD。",
+                "message": "当前出图规则集的施工版发行条件未满足，只能导出审查版 CAD。",
                 "diagnostics": scheme.get("diagnostics"),
                 "review": approval,
-                "approvalRequired": approval_required,
+                "drawingIssueGate": issue_gate,
             },
         )
     path = export_construction_cad_package(project, EXPORT_DIR, scope=scope, rebar_mode=rebar_mode, issue_mode=issue_mode)
@@ -131,6 +136,19 @@ def get_drawings_manifest(project_id: str, repo: ProjectRepository = Depends(get
 def export_drawings_svg(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path = export_construction_svg_package(project, EXPORT_DIR)
+    return FileResponse(path=path, filename=path.name, media_type="application/zip")
+
+
+
+
+@router.api_route("/rebar-detailing-package", methods=["GET", "POST"])
+def export_rebar_detailing_zip(
+    project_id: str,
+    mode: Literal["conservative", "balanced", "economic"] = Query("balanced"),
+    repo: ProjectRepository = Depends(get_repository),
+) -> FileResponse:
+    project = repo.require(project_id)
+    path = export_rebar_detailing_package(project, EXPORT_DIR, mode=mode)
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
 
 
@@ -175,15 +193,18 @@ def export_formal_drawings(
     scheme = build_rebar_design_scheme(project, mode=rebar_mode)
     approval = review_status(project)
     current_revision = next((r for r in reversed(project.drawing_revisions) if r.issue_status == "construction" and r.snapshot_hash == approval.get("currentSnapshotHash")), None)
-    if issue_mode == "construction" and (
-        not bool((scheme.get("diagnostics") or {}).get("canIssueConstructionDrawings"))
-        or (project.design_settings.require_formal_approval_for_construction and not approval.get("approvalValid"))
-        or current_revision is None
-    ):
+    issue_gate = evaluate_drawing_issue_gate(
+        project,
+        issue_mode=issue_mode,
+        engineering_gate_allowed=bool((scheme.get("diagnostics") or {}).get("canIssueConstructionDrawings")),
+        approval=approval,
+        current_revision_valid=current_revision is not None,
+    )
+    if not issue_gate["allowed"]:
         raise HTTPException(status_code=409, detail={
-            "message": "正式图纸包发行条件未满足：需通过配筋闸门、当前快照四级审签，并建立绑定当前快照的施工版修订记录。",
+            "message": "正式图纸包发行条件未满足。",
             "review": approval, "constructionRevisionValid": current_revision is not None,
-            "diagnostics": scheme.get("diagnostics"),
+            "diagnostics": scheme.get("diagnostics"), "drawingIssueGate": issue_gate,
         })
     path = export_formal_drawing_package(project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode)
     return FileResponse(path=path, filename=path.name, media_type="application/zip")

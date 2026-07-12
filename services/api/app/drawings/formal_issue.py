@@ -14,6 +14,9 @@ plt.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "Noto Sans CJK JP", "Deja
 plt.rcParams["axes.unicode_minus"] = False
 
 from app.drawings.cad_export import build_drawing_set_manifest, export_construction_cad_package
+from app.drawings.professional_pdf import export_professional_batch_pdf
+from app.services.rebar_detailing import build_rebar_detailing
+from app.drawing_rules import get_effective_drawing_rule_set
 from app.schemas.domain import DrawingRevision, Project
 from app.services.advanced_suite import build_advanced_engineering_suite
 from app.services.review_workflow import project_snapshot_hash, review_status
@@ -61,8 +64,9 @@ def _table_page(pdf: PdfPages, title: str, headers: list[str], rows: list[list[A
 
 
 def _issue_footer(fig, project: Project, sheet_no: str, title: str, review: dict[str, Any]) -> None:
+    rules = get_effective_drawing_rule_set(project)
     fig.text(0.02, 0.015, f"{sheet_no}  {title}", fontsize=7)
-    fig.text(0.50, 0.015, f"PitGuard V{SOFTWARE_VERSION} · {review.get('status')} · {review.get('currentSnapshotHash')}", ha="center", fontsize=6)
+    fig.text(0.50, 0.015, f"PitGuard V{SOFTWARE_VERSION} · {review.get('status')} · rule {rules.get('ruleSetHash')} · {review.get('currentSnapshotHash')}", ha="center", fontsize=6)
     fig.text(0.98, 0.015, "AI-DRAFT / PROFESSIONAL REVIEW REQUIRED", ha="right", fontsize=6)
 
 
@@ -141,36 +145,12 @@ def _plot_advanced_summary_page(pdf: PdfPages, project: Project, review: dict[st
     _issue_footer(fig, project, "Q-00", "八项工程深化发行状态", review)
     pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
 
-def export_batch_pdf(project: Project, output_path: Path, mode: str = "balanced") -> Path:
+def export_batch_pdf(project: Project, output_path: Path, mode: str = "balanced", issue_mode: str = "review") -> Path:
     suite = build_advanced_engineering_suite(project, mode)
-    manifest = build_drawing_set_manifest(project)
-    review = review_status(project)
-    with PdfPages(output_path) as pdf:
-        fig, ax = plt.subplots(figsize=(11.69, 8.27))
-        _page_title(ax, f"{project.name}\n基坑围护结构图纸发行预览", f"PitGuard V{SOFTWARE_VERSION} · {review['status']} · snapshot {review['currentSnapshotHash']}")
-        ax.text(0.5, 0.42, "本 PDF 为批量审阅与发行索引，正式施工图以经企业图签和审签的 CAD/DWG/PDF 为准。", ha="center", fontsize=9)
-        pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
-        _plot_advanced_summary_page(pdf, project, review, suite)
-        _plot_plan_page(pdf, project, review, None)
-        levels = sorted({s.level_index for s in project.retaining_system.supports}) if project.retaining_system else []
-        for level in levels:
-            _plot_plan_page(pdf, project, review, level)
-        _plot_wall_elevation_page(pdf, project, review)
-        rows = [[x.get("sheetNo"), x.get("title"), x.get("scale"), x.get("category"), x.get("file")] for x in manifest.get("sheets", [])]
-        for start in range(0, len(rows), 24):
-            _table_page(pdf, "图纸目录", ["图号", "图名", "比例", "类别", "文件"], rows[start:start+24])
-        status_rows = [
-            ["长期与裂缝", suite["serviceability"]["status"], suite["serviceability"]["summary"].get("maxEstimatedCrackWidthMm"), suite["serviceability"]["summary"].get("crackWidthLimitMm")],
-            ["复杂拓扑", suite["topology"]["status"], suite["topology"]["summary"].get("concaveVertexCount"), suite["topology"]["summary"].get("levelCount")],
-            ["碰撞净距", suite["collisions"]["status"], suite["collisions"]["summary"].get("hardCollisionCount"), suite["collisions"]["summary"].get("warningCount")],
-            ["节点局部", suite["nodeLocal"]["status"], suite["nodeLocal"]["summary"].get("maxUtilization"), suite["nodeLocal"]["summary"].get("maxLocalSlipMm")],
-            ["监测反演", "available", suite["monitoring"].get("recordCount"), suite["monitoring"].get("requiresRecalculation")],
-            ["审签", review["status"], review["actionCount"], review["approvalValid"]],
-        ]
-        _table_page(pdf, "工程闭环摘要", ["模块", "状态", "指标 1", "指标 2"], status_rows, suite["serviceability"].get("boundary", ""))
-        rev_rows = [[r.revision, r.description, ",".join(r.sheet_numbers), r.author, r.issue_status, r.created_at] for r in project.drawing_revisions]
-        _table_page(pdf, "图纸修订记录", ["版本", "说明", "图号", "编制", "状态", "时间"], rev_rows or [["-", "尚未建立修订记录", "-", "-", "-", "-"]])
-    return output_path
+    rules = get_effective_drawing_rule_set(project)
+    manifest = build_drawing_set_manifest(project, scope="full", issue_mode=issue_mode, advanced_suite=suite, rule_set=rules)
+    detailing = build_rebar_detailing(project, mode=mode)
+    return export_professional_batch_pdf(project, output_path, manifest, detailing, suite, review_status(project))
 
 
 def export_formal_drawing_package(project: Project, output_dir: str | Path, issue_mode: str = "review", rebar_mode: str = "balanced") -> Path:
@@ -180,8 +160,12 @@ def export_formal_drawing_package(project: Project, output_dir: str | Path, issu
     work.mkdir(parents=True)
     cad_zip = export_construction_cad_package(project, out, scope="full", rebar_mode=rebar_mode, issue_mode=issue_mode)
     with zipfile.ZipFile(cad_zip) as zf: zf.extractall(work / "CAD")
-    pdf = export_batch_pdf(project, work / "PitGuard_drawing_issue_preview.pdf", rebar_mode)
+    pdf = export_batch_pdf(project, work / "PitGuard_drawing_issue_preview.pdf", rebar_mode, issue_mode)
     suite = build_advanced_engineering_suite(project, rebar_mode)
+    rules = get_effective_drawing_rule_set(project)
+    plan = build_drawing_set_manifest(project, scope="full", issue_mode=issue_mode, advanced_suite=suite, rule_set=rules)
+    (work / "drawing_rule_set.json").write_text(json.dumps(rules, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "drawing_plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     (work / "advanced_engineering_suite.json").write_text(json.dumps(suite, ensure_ascii=False, indent=2), encoding="utf-8")
     (work / "review_workflow.json").write_text(json.dumps(review_status(project), ensure_ascii=False, indent=2), encoding="utf-8")
     (work / "drawing_revisions.json").write_text(json.dumps([x.model_dump(mode="json", by_alias=True) for x in project.drawing_revisions], ensure_ascii=False, indent=2), encoding="utf-8")
@@ -189,13 +173,16 @@ def export_formal_drawing_package(project: Project, output_dir: str | Path, issu
         w=csv.writer(f); w.writerow(["revision","description","sheets","author","issue_status","snapshot_hash","created_at"])
         for r in project.drawing_revisions: w.writerow([r.revision,r.description,";".join(r.sheet_numbers),r.author,r.issue_status,r.snapshot_hash,r.created_at])
     (work / "DWG_CONVERSION_README.txt").write_text(
-        "DXF files use AutoCAD R12-compatible entities. Batch DWG conversion requires AutoCAD, BricsCAD or ODA File Converter.\n"
-        "Recommended: convert each CAD/**/*.dxf to DWG 2018 while preserving layer names, then bind the enterprise CTB/STB and page setup.\n", encoding="utf-8")
+        "DXF files are native AutoCAD R2018 with 1:1 mm model space, paper-space layouts, locked viewports, Unicode text and native dimensions.\n"
+        "Batch DWG conversion still requires AutoCAD, BricsCAD or ODA File Converter; preserve layouts, plot styles and enterprise page setups.\n", encoding="utf-8")
     (work / "plot_publish_manifest.json").write_text(json.dumps({
         "source": "CAD/drawing_set_manifest.json", "batchPdf": pdf.name, "paperSizes": ["A1", "A2", "A3"],
         "pageSetupRequired": True, "ctbRequired": True, "issueMode": issue_mode, "review": review_status(project),
         "pdfContainsGeometryPreviews": True, "geometryPreviewTypes": ["overall_plan", "support_level_plans", "wall_elevation", "engineering_closure"],
         "revisionCount": len(project.drawing_revisions),
+        "drawingRuleSetId": rules.get("id"), "drawingRuleSetVersion": rules.get("version"),
+        "drawingRuleSetHash": rules.get("ruleSetHash"), "drawingPlanHash": plan.get("planHash"),
+        "drawingRulePreset": rules.get("preset"), "drawingSheetCount": plan.get("sheetCount"),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     zip_path = out / f"{project.id}_formal_drawing_issue_{issue_mode}_v{SOFTWARE_VERSION.replace('.', '_')}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:

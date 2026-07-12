@@ -229,6 +229,18 @@ def _pit_centroid(points: list[Point2D]) -> Point2D:
     return Point2D(x=mean([p.x for p in points]), y=mean([p.y for p in points]))
 
 
+def support_layout_config_from_settings(settings, *, topology_strategy: str = "balanced_grid", target_spacing: float | None = None, column_span: float | None = None) -> SupportLayoutConfig:
+    return SupportLayoutConfig(
+        target_main_support_spacing_m=float(target_spacing if target_spacing is not None else getattr(settings, "default_support_spacing", 5.0)),
+        column_max_unbraced_span_m=float(column_span if column_span is not None else 18.0),
+        support_wall_clearance_m=float(getattr(settings, "support_wall_clearance_m", 1.0)),
+        max_direct_strut_span_m=float(getattr(settings, "max_direct_strut_span_m", 24.0)),
+        diagonal_brace_min_wall_length_m=float(getattr(settings, "diagonal_brace_min_wall_length_m", 18.0)),
+        prefer_diagonal_braces=bool(getattr(settings, "prefer_diagonal_braces", True)),
+        topology_strategy=topology_strategy,
+    ).normalized()
+
+
 def auto_supports(project_excavation, existing_system: RetainingSystem | None = None, layout_config: SupportLayoutConfig | None = None) -> RetainingSystem:
     excavation = project_excavation
     layout_config = (layout_config or SupportLayoutConfig()).normalized()

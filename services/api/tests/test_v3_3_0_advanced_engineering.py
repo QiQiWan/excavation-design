@@ -81,9 +81,15 @@ def test_v3_3_formal_package_contains_geometry_pdf_quality_and_revision_files(be
         assert "review_workflow.json" in names
         assert "drawing_revisions.csv" in names
         assert "plot_publish_manifest.json" in names
+        assert "drawing_rule_set.json" in names
+        assert "drawing_plan.json" in names
+        assert "CAD/drawing_rule_set.json" in names
+        assert "CAD/90_schedules/drawing_rule_decisions.csv" in names
         plot = json.loads(zf.read("plot_publish_manifest.json"))
         assert plot["pdfContainsGeometryPreviews"] is True
         assert "support_level_plans" in plot["geometryPreviewTypes"]
+        assert plot["drawingRuleSetHash"]
+        assert plot["drawingPlanHash"]
         assert any(name.startswith("CAD/50_quality/") for name in names)
         assert any(name.startswith("CAD/60_monitoring/") for name in names)
 

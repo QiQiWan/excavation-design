@@ -63,6 +63,15 @@ class DesignSettings(DomainModel):
     seismic_grade: str = "non_seismic_temporary"
     monitoring_calibration_enabled: bool = True
     require_formal_approval_for_construction: bool = False
+    support_wall_clearance_m: float = 1.0
+    max_direct_strut_span_m: float = 24.0
+    diagonal_brace_min_wall_length_m: float = 18.0
+    prefer_diagonal_braces: bool = True
+    replacement_slab_effective_width_m: float = 6.0
+    replacement_slab_thickness_m: float = 0.25
+    replacement_slab_elastic_modulus_mpa: float = 30000.0
+    replacement_connection_reduction: float = 0.65
+    default_workspace_mode: Literal["compact", "professional"] = "compact"
 
 
 class Point2D(DomainModel):
@@ -368,7 +377,7 @@ class WaleBeamDesignResult(DomainModel):
     wall_connection_note: str | None = None
     envelope: WaleBeamEnvelopeResult | None = None
     check_status: Literal["preliminary", "manual_review", "pass", "fail", "warning"] = "manual_review"
-    method: str = "GB/T 50010 rectangular RC wale-beam subset with node reinforcement coordination"
+    method: str = "GB 50010 rectangular RC wale-beam subset with node reinforcement coordination"
     notes: list[str] = Field(default_factory=list)
 
 
@@ -463,6 +472,12 @@ class SupportElement(DomainModel):
     optimization_locked_start: bool = False
     optimization_locked_end: bool = False
     optimization_lock_reason: str | None = None
+    start_wall_connection: Point2D | None = None
+    end_wall_connection: Point2D | None = None
+    centerline_offset_m: float | None = None
+    start_wall_clearance_m: float | None = None
+    end_wall_clearance_m: float | None = None
+    topology_family: Literal["direct_grid", "hybrid_diagonal", "bidirectional_grid", "manual"] = "direct_grid"
 
 
 class FoundationDesign(DomainModel):
@@ -673,6 +688,7 @@ class GlobalCoupledSystemResult(DomainModel):
     reason: str | None = None
     matrix_size: int = 0
     condition_number: float | None = None
+    equilibrium_diagnostics: dict[str, Any] = Field(default_factory=dict)
     dof_summary: dict[str, Any] = Field(default_factory=dict)
     dofs: list[GlobalCoupledDof] = Field(default_factory=list)
     wall_displacement_profile: list[dict[str, Any]] = Field(default_factory=list)
@@ -690,6 +706,10 @@ class GlobalCoupledSystemResult(DomainModel):
     support_axial_dofs: list[dict[str, Any]] = Field(default_factory=list)
     column_vertical_dofs: list[dict[str, Any]] = Field(default_factory=list)
     slab_replacement_stiffness: float | None = None
+    slab_replacement_status: Literal["not_active", "active", "missing", "invalid"] | None = None
+    slab_replacement_source: str | None = None
+    slab_replacement_required: bool | None = None
+    slab_replacement_components: dict[str, Any] = Field(default_factory=dict)
     rigid_node_zones: list[dict[str, Any]] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
@@ -915,7 +935,7 @@ class CalculationResult(DomainModel):
         "JGJ 120-2012 建筑基坑支护技术规程",
         "GB 55003-2021 建筑与市政地基基础通用规范",
         "GB 55008-2021 混凝土结构通用规范",
-        "GB/T 50010-2010（2024年局部修订）混凝土结构设计标准",
+        "GB 50010-2010（2024年局部修订）混凝土结构设计规范",
         "GB 50009-2012 建筑结构荷载规范",
         "GB 50007-2011 建筑地基基础设计规范",
     ])
@@ -1020,6 +1040,7 @@ class Project(DomainModel):
     calculation_cases: list[CalculationCase] = Field(default_factory=list)
     calculation_results: list[CalculationResult] = Field(default_factory=list)
     cad_template: dict[str, Any] = Field(default_factory=dict)
+    drawing_rule_set: dict[str, Any] = Field(default_factory=dict)
     monitoring_records: list[MonitoringRecord] = Field(default_factory=list)
     calibration_runs: list[CalibrationRun] = Field(default_factory=list)
     review_workflow: ReviewWorkflow = Field(default_factory=ReviewWorkflow)

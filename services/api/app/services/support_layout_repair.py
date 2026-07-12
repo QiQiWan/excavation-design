@@ -4,7 +4,7 @@ from typing import Any
 
 from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.schemas.domain import Project, SupportLayoutRepairSummary, QualityGateIssue
-from app.services.design_service import auto_supports
+from app.services.design_service import auto_supports, support_layout_config_from_settings
 from app.services.support_layout_optimizer import OBJECTIVE_WEIGHTS, build_support_system_from_candidate, normalize_objective_weights, optimize_support_layout_candidates
 
 
@@ -208,7 +208,7 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
             or any(issue.category in REPAIRABLE_CATEGORIES for issue in before.issues)
         )
         if should_regenerate:
-            project.retaining_system = auto_supports(project.excavation, project.retaining_system)
+            project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings))
             actions.append({
                 "action": "fallback_regenerate_dense_bays_and_repair_layout",
                 "description": "优化器未生成候选方案，退回 3-6m 分仓规则修复。",
@@ -299,7 +299,8 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
         return SupportLayoutRepairSummary(status="fail", summary=f"未找到候选方案 {candidate_id}，无法采用。")
     pattern = str((selected.variable_summary or {}).get("positionPattern", "as_generated"))
     amplitude = float((selected.variable_summary or {}).get("lineOffsetAmplitude", 0.0) or 0.0)
-    system, adjustments = build_support_system_from_candidate(project, selected.target_spacing, selected.column_max_span, pattern, amplitude)
+    topology_strategy = str((selected.variable_summary or {}).get("topologyFamily", "balanced_grid"))
+    system, adjustments = build_support_system_from_candidate(project, selected.target_spacing, selected.column_max_span, pattern, amplitude, topology_strategy)
     if system is None:
         return SupportLayoutRepairSummary(status="fail", summary=f"候选方案 {candidate_id} 重建失败。")
     # Preserve lock registry and support-local lock flags from the current retained system.
@@ -336,11 +337,12 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
             "targetSpacing": selected.target_spacing,
             "columnMaxSpan": selected.column_max_span,
             "positionPattern": pattern,
+            "topologyFamily": topology_strategy,
             "changedSupportCount": len(adjustments),
             "lockSummary": lock_summary,
         }],
         unresolved_issues=[i for i in quality.issues if i.severity in {"fail", "warning", "manual_review"}][:30],
-        summary=f"已采用支撑优化候选方案 {selected.id}：目标分仓 {selected.target_spacing:.1f}m，立柱服务跨 {selected.column_max_span:.1f}m，线位策略 {pattern}。",
+        summary=f"已采用支撑优化候选方案 {selected.id}：整体拓扑 {topology_strategy}，目标分仓 {selected.target_spacing:.1f}m，立柱服务跨 {selected.column_max_span:.1f}m，线位策略 {pattern}。",
     )
     project.retaining_system.support_layout_repair = repair
     project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})

@@ -37,6 +37,15 @@ export interface DesignSettings {
   seismicGrade?: string;
   monitoringCalibrationEnabled?: boolean;
   requireFormalApprovalForConstruction?: boolean;
+  supportWallClearanceM?: number;
+  maxDirectStrutSpanM?: number;
+  diagonalBraceMinWallLengthM?: number;
+  preferDiagonalBraces?: boolean;
+  replacementSlabEffectiveWidthM?: number;
+  replacementSlabThicknessM?: number;
+  replacementSlabElasticModulusMpa?: number;
+  replacementConnectionReduction?: number;
+  defaultWorkspaceMode?: 'compact' | 'professional';
 }
 
 export interface Point2D { x: number; y: number }
@@ -191,6 +200,12 @@ export interface SupportElement {
   baySpacing?: number;
   startFaceCode?: string;
   endFaceCode?: string;
+  startWallConnection?: Point2D;
+  endWallConnection?: Point2D;
+  centerlineOffsetM?: number;
+  startWallClearanceM?: number;
+  endWallClearanceM?: number;
+  topologyFamily?: 'direct_grid' | 'hybrid_diagonal' | 'bidirectional_grid' | 'manual';
   startTributaryWidth?: number;
   endTributaryWidth?: number;
   forceDistributionNote?: string;
@@ -305,7 +320,7 @@ export interface CheckResult { ruleId?: string; rule_id?: string; objectId?: str
 
 export interface GlobalCoupledDof { index: number; name: string; value: number; unit: string; dofType?: string; objectId?: string; stageStatus?: string }
 export interface GlobalCoupledSupportReaction { supportId: string; supportCode: string; endpoint: string; faceCode: string; levelIndex: number; chainage: number; depth: number; nodeDisplacement: number; springStiffness: number; nodeReaction: number; axialForce: number; axialDeformation: number; normalProjectionFactor: number; directionCosineX?: number; directionCosineY?: number; rigidNodeFactor?: number; governingSource?: string }
-export interface GlobalCoupledSystemResult { method: string; stageId?: string; faceCode?: string; fallback: boolean; reason?: string; matrixSize: number; conditionNumber?: number; dofSummary: Record<string, unknown>; dofs: GlobalCoupledDof[]; wallDisplacementProfile: Record<string, unknown>[]; supportReactions: GlobalCoupledSupportReaction[]; columnVerticalSupports: Record<string, unknown>[]; maxWallDisplacement: number; maxSupportAxialForce: number; modelDimension?: string; spatialMatrixSize?: number; spatialConditionNumber?: number; spatialDofSummary?: Record<string, unknown>; wallRotationProfile?: Record<string, unknown>[]; waleNodeProfile?: Record<string, unknown>[]; supportAxialDofs?: Record<string, unknown>[]; columnVerticalDofs?: Record<string, unknown>[]; slabReplacementStiffness?: number; rigidNodeZones?: Record<string, unknown>[]; notes: string[] }
+export interface GlobalCoupledSystemResult { method: string; stageId?: string; faceCode?: string; fallback: boolean; reason?: string; matrixSize: number; conditionNumber?: number; dofSummary: Record<string, unknown>; dofs: GlobalCoupledDof[]; wallDisplacementProfile: Record<string, unknown>[]; supportReactions: GlobalCoupledSupportReaction[]; columnVerticalSupports: Record<string, unknown>[]; maxWallDisplacement: number; maxSupportAxialForce: number; modelDimension?: string; spatialMatrixSize?: number; spatialConditionNumber?: number; spatialDofSummary?: Record<string, unknown>; wallRotationProfile?: Record<string, unknown>[]; waleNodeProfile?: Record<string, unknown>[]; supportAxialDofs?: Record<string, unknown>[]; columnVerticalDofs?: Record<string, unknown>[]; slabReplacementStiffness?: number; slabReplacementStatus?: 'not_active' | 'active' | 'missing' | 'invalid'; slabReplacementSource?: string; slabReplacementRequired?: boolean; slabReplacementComponents?: Record<string, unknown>; rigidNodeZones?: Record<string, unknown>[]; notes: string[] }
 export interface StabilityDetailedResult { method?: string; controllingSectionId?: string; controllingSectionName?: string; heaveFactor?: number; confinedUpliftFactor?: number; seepageFactor?: number; overallStabilityFactor?: number; weakLayerIndex?: number; minSafetyFactor?: number; controllingMode?: string; circularSlipSurfaces?: Record<string, unknown>[]; seepagePaths?: Record<string, unknown>[]; drawdownProcess?: Record<string, unknown>[]; dewateringWells?: Record<string, unknown>[]; depressurizationWells?: Record<string, unknown>[]; improvementOptions?: Record<string, unknown>[]; diagramData?: Record<string, unknown>; reviewNotes?: string[] }
 export interface DrawingSheetResult { sheetId: string; title: string; scale: string; filePath?: string; sheetType?: string; modelObjects?: string[]; notes?: string[] }
 
@@ -384,6 +399,7 @@ export interface Project {
   calculationCases: unknown[];
   calculationResults: CalculationResult[];
   cadTemplate?: CadTemplateConfig;
+  drawingRuleSet?: DrawingRuleSet;
   monitoringRecords?: MonitoringRecord[];
   calibrationRuns?: Record<string, unknown>[];
   reviewWorkflow?: ReviewWorkflow;
@@ -405,6 +421,21 @@ export interface ImportResult {
 
 export interface AcceptanceMatrixItem { id: string; title: string; required: boolean; status: string; message: string }
 
+export interface ModuleCompletionGap { item: string; recommendation: string }
+export interface ModuleCompletionItem {
+  id: string;
+  name: string;
+  ownerRole: string;
+  completion: number;
+  status: string;
+  completedItemCount: number;
+  totalItemCount: number;
+  blocking: boolean;
+  gaps: ModuleCompletionGap[];
+  evidence: string[];
+  nextAction: string;
+}
+
 export interface CalculationTraceEntry { id: string; category: string; title: string; objectType?: string; objectId?: string; stageId?: string; stageName: string; demandName: string; demandValue?: number; capacityValue?: number; utilization?: number; unit?: string; status: string; formula?: string; codeReference?: string; method?: string; inputParameters?: Record<string, unknown>; resultPath?: string; locator?: Record<string, unknown> }
 export interface CalculationTraceResult { projectId: string; calculationResultId?: string; summary: { traceCount: number; controlPathCompleteness: number; governingObjectCount: number; codeReferenceCount: number; status: string; message: string; statusCounts?: Record<string, number> }; entries: CalculationTraceEntry[]; governingMap: string[]; notes: string[] }
 
@@ -413,6 +444,9 @@ export interface AssuranceResult {
   softwareVersion: string;
   capabilityCompleteness?: number;
   completionPercent: number;
+  moduleOverallCompleteness?: number;
+  moduleBlockingCount?: number;
+  moduleCompletionReview?: ModuleCompletionItem[];
   softwareFlowComplete?: boolean;
   softwareFlowMissingItems?: AcceptanceMatrixItem[];
   engineeringCheckStatus?: string;
@@ -523,7 +557,15 @@ export interface RebarDesignScheme {
   summary: Record<string, unknown>; drawingIndex: Record<string, string>;
   limitations: string[]; diagnostics?: RebarDesignDiagnostics; requiresRecalculation?: boolean;
 }
-export interface DrawingSetManifest { projectId: string; softwareVersion: string; sheetCount: number; supportLevels: number[]; categories: Record<string, number>; sheets: { sheetNo: string; title: string; category: string; scale: string; file: string; modelBinding?: string[]; legacy?: boolean }[]; packageFolders: string[]; issueBoundary: string }
+export interface DrawingRuleCondition { path?: string; op?: string; value?: unknown; all?: DrawingRuleCondition[]; any?: DrawingRuleCondition[]; not?: DrawingRuleCondition }
+export interface DrawingSheetRule { id: string; enabled: boolean; module?: string; sheetNo: string; title: string; category: string; scope: 'general' | 'rebar' | 'details'; renderer: string; file: string; fixedScale?: string; scalePolicy?: Record<string, unknown>; trigger?: DrawingRuleCondition; expansion?: string; modelBinding?: string[]; priority?: number; required?: boolean; legacy?: boolean }
+export interface DrawingRuleSet { schemaVersion: string; id: string; name: string; version: string; description?: string; preset?: string; ruleSetHash?: string; modules?: Record<string, { enabled?: boolean; required?: boolean }>; parameters: Record<string, any>; objectiveWeights: Record<string, number>; issuePolicy?: Record<string, unknown>; sheetRules: DrawingSheetRule[] }
+export interface DrawingRuleValidation { valid: boolean; errors: { path: string; message: string }[]; warnings: { path: string; message: string }[] }
+export interface DrawingIntelligenceRecommendation { id: string; title: string; reason: string; priority: 'high' | 'medium' | 'low' | string; action: string; sheetRuleIds: string[]; confidence: number; satisfied?: boolean }
+export interface DrawingIntelligenceResult { engineVersion?: string; knowledgePackage?: string; facts?: Record<string, any>; recommendations: DrawingIntelligenceRecommendation[]; quality?: { overall?: number; grade?: string; coverage?: number; readability?: number; traceability?: number; constructability?: number; consistency?: number; missingCapabilities?: string[]; overflowCount?: number }; explanation?: string }
+export interface DrawingSetManifest { projectId: string; softwareVersion: string; sheetCount: number; supportLevels: number[]; categories: Record<string, number>; sheets: { id?: string; ruleId?: string; sheetNo: string; title: string; category: string; scope?: string; renderer?: string; scale: string; scaleDecision?: Record<string, unknown>; file: string; modelBinding?: string[]; legacy?: boolean }[]; packageFolders: string[]; issueBoundary: string; drawingRuleSetId?: string; drawingRuleSetVersion?: string; drawingRuleSetHash?: string; planHash?: string; preset?: string; decisions?: Record<string, any>[]; overflowSheets?: Record<string, any>[]; parameters?: Record<string, any>; drawingIntelligence?: DrawingIntelligenceResult }
+export interface DrawingRuleCandidate { candidateId: string; rank: number; preset: string; source?: string; label?: string; paperSize: string; wallSheetsPerDrawing?: number; score: number; metrics: Record<string, number>; sheetCount: number; overflowCount: number; ruleSet?: DrawingRuleSet; ruleSetMeta: { id?: string; name?: string; version?: string; preset?: string; ruleSetHash?: string }; planSummary: Record<string, any> }
+export interface DrawingRuleOptimization { projectId: string; baseRuleSetHash: string; candidateCount: number; recommendedCandidateId?: string; candidates: DrawingRuleCandidate[]; method: string; boundary: string }
 
 export interface RebarDetailingEntry { barMark: string; hostType: string; hostCode: string; hostId?: string; groupId?: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; quantity: number; grade: string; shapeCode: string; shapeDescription: string; singleLengthM: number; totalLengthM: number; totalWeightKg: number; anchorageStatus: string; lapStatus: string; hookStatus: string; checkStatus?: string; note?: string }
 export interface IndividualRebarPoint { x: number; y: number; z: number }
@@ -546,4 +588,55 @@ export interface AdvancedEngineeringSuite {
   monitoring: { recordCount: number; counts: Record<string, number>; latestCalibration?: Record<string, any>; requiresRecalculation?: boolean };
   review: { status: string; currentRole: string; actionCount: number; currentSnapshotHash: string; approvedSnapshotHash?: string; approvalValid: boolean; requiredRoles: string[]; actions: Record<string, any>[]; roleActors?: Record<string, string>; separationOfDutiesValid?: boolean };
   formalDrawings: Record<string, unknown>; ux: Record<string, unknown>;
+}
+
+export interface StandardReference {
+  id: string;
+  code: string;
+  name: string;
+  level: string;
+  levelLabel: string;
+  effectiveDate?: string;
+  priority?: number;
+  appliesTo: string[];
+  implementedScope: string;
+  boundary: string;
+  sourceUrl?: string;
+}
+
+export interface StandardsProcessStep {
+  workflowStep: string;
+  index: number;
+  title: string;
+  keyCalculations: string[];
+  standardIds: string[];
+  clauseFocus: string[];
+  outputs: string[];
+  implementationLevel: string;
+  status: string;
+  checkSummary: Record<string, number>;
+  standardRefs: StandardReference[];
+  ruleCount: number;
+  rules: Record<string, unknown>[];
+  highlight: 'critical' | 'primary' | string;
+}
+
+export interface StandardsProcessMatrix {
+  schemaVersion: string;
+  softwareVersion: string;
+  ruleSetVersion: string;
+  projectId?: string;
+  catalog: StandardReference[];
+  steps: StandardsProcessStep[];
+  precedence: string[];
+  usageNote: string;
+}
+
+export interface OnlineDocumentation {
+  title: string;
+  version: string;
+  chapters: { id: string; title: string; summary: string }[];
+  calculationPrinciples: { name: string; inputs: string; method: string; equations?: string[]; assumptions?: string[]; outputs: string; verification?: string; standards: string[] }[];
+  fileGuide: { file: string; use: string }[];
+  standardsMatrix: StandardsProcessMatrix;
 }

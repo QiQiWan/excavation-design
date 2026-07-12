@@ -11,8 +11,8 @@ from docx.shared import Pt, Inches
 
 from app.schemas.domain import Project
 from app.reports.charts import generate_report_charts
-
-SOFTWARE_VERSION = "2.0.9"
+from app.services.standards_matrix import build_online_documentation, build_standards_process_matrix
+from app.version import SOFTWARE_VERSION
 
 DISCLAIMER = (
     "本计算书由软件根据输入资料和当前规则库自动生成。当前结果用于方案设计和技术复核辅助，"
@@ -283,18 +283,53 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         f"地下水位：{project.design_settings.groundwater_level} m；地面超载：{project.design_settings.surcharge} kPa。"
     )
 
-    doc.add_heading("2 设计依据与规则库", level=1)
-    rows = [
-        ["JGJ120-2012 建筑基坑支护技术规程", "水平荷载、土/水压力、弹性地基梁、嵌固、抗隆起、抗渗流筛查子集", "部分实现；适用条件需复核"],
-        ["GB/T50010-2010（2024局部修订）混凝土结构设计标准", "矩形截面受弯、受剪、轴压和最小配筋率筛查子集", "部分实现；裂缝、锚固、节点、构造需复核"],
-        ["GB55008-2021 混凝土结构通用规范", "强制性工程建设规范约束提示、混凝土构件承载能力/正常使用复核入口", "通用规范优先；未覆盖条款需专业复核"],
-        ["GB55003-2021 建筑与市政地基基础通用规范", "地基基础、基坑支护、环境安全与地下水控制通用要求提示", "场地与监测参数不足时需专业复核"],
-        ["GB50009-2012 建筑结构荷载规范", "永久/可变作用组合参数记录", "软件默认组合，不替代正式组合"],
-        ["GB50007-2011 建筑地基基础设计规范", "基坑工程要求提示、立柱基础承载力接口", "立柱基础按输入参数筛查，基础详勘参数需复核"],
-        ["GB50017-2017 钢结构设计标准", "钢管支撑轴压强度/稳定筛查接口", "长细比和节点需复核"],
+    doc.add_heading("2 设计依据、规范优先级与规则库", level=1)
+    standards_matrix = build_standards_process_matrix(project)
+    standard_rows = [
+        [
+            f"{item.get('code')} {item.get('name')}",
+            item.get("levelLabel"),
+            item.get("implementedScope"),
+            item.get("boundary"),
+        ]
+        for item in standards_matrix.get("catalog", [])
     ]
-    _add_table(doc, ["标准/规则", "本软件实现范围", "结论边界"], rows)
-    doc.add_paragraph("说明：本计算书明确区分“规则库子集筛查”和“正式规范验算”。缺少适用条件、项目参数或未覆盖公式的项目均进入专业复核范围。")
+    _add_table(doc, ["标准/规则", "等级", "本软件实现范围", "结论边界"], standard_rows, font_size=7)
+    doc.add_paragraph("规范优先级：" + "；".join(standards_matrix.get("precedence", [])))
+    doc.add_paragraph("说明：规则结果仅覆盖软件已实现的参数化子集。未覆盖条文、项目专用条件、地方标准、审图意见和专家论证要求均进入专业复核。")
+
+    doc.add_heading("2.1 设计流程—关键计算—规范条文对应矩阵", level=2)
+    process_rows: list[list[Any]] = []
+    for step in standards_matrix.get("steps", []):
+        rule_trace = "；".join(
+            f"{rule.get('ruleId')}｜{rule.get('clauseReference') or '条文待项目复核'}"
+            for rule in (step.get("rules") or [])[:6]
+        ) or "当前步骤暂无可自动执行规则，按人工复核边界处理"
+        process_rows.append([
+            f"{step.get('index')}. {step.get('title')}",
+            "；".join(step.get("keyCalculations") or []),
+            "；".join(ref.get("code", "") for ref in step.get("standardRefs") or []),
+            "；".join(step.get("clauseFocus") or []),
+            rule_trace,
+            step.get("status"),
+            "；".join(step.get("outputs") or []),
+        ])
+    _add_table(doc, ["流程", "关键计算", "主控规范", "条文关注点", "已实现规则/条文", "状态", "输出"], process_rows, font_size=6)
+
+    doc.add_heading("2.2 关键计算原理、公式与复核点", level=2)
+    online_docs = build_online_documentation()
+    principle_rows: list[list[Any]] = []
+    for item in online_docs.get("calculationPrinciples", []):
+        principle_rows.append([
+            item.get("name"),
+            item.get("inputs"),
+            item.get("method"),
+            "；".join(item.get("equations") or []),
+            item.get("outputs"),
+            item.get("verification"),
+            "；".join(item.get("standards") or []),
+        ])
+    _add_table(doc, ["计算模块", "输入", "模型/方法", "核心公式", "输出", "复核点", "规范"], principle_rows, font_size=6)
 
     doc.add_heading("3 地质资料", level=1)
     doc.add_paragraph(f"输入钻孔数量：{len(project.boreholes)}；地层参数数量：{len(project.strata)}。")
@@ -353,8 +388,8 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         ["主动/被动土压力", "Ka=tan^2(45-phi/2), Kp=tan^2(45+phi/2); pa=(sigma-u)Ka-2c sqrt(Ka)+u; pp=(sigma-u)Kp+2c sqrt(Kp)+u", "JGJ120 水土分算/朗肯子集"],
         ["水压力", "u=gamma_w*(z_w-z)", "静止地下水压力子集"],
         ["墙体内力", "EI*y'''' + k_s*y + sum(k_i*y_i)=q(z)", "一维弹性地基梁有限差分"],
-        ["正截面受弯", "M <= alpha1*fc*b*x*(h0-x/2), alpha1*fc*b*x=fy*As", "GB/T50010 单筋矩形截面子集"],
-        ["受剪筛查", "V <= 0.7*ft*b*h0（箍筋贡献另需详设）", "GB/T50010 斜截面简化筛查"],
+        ["正截面受弯", "M <= alpha1*fc*b*x*(h0-x/2), alpha1*fc*b*x=fy*As", "GB50010 单筋矩形截面子集"],
+        ["受剪筛查", "V <= 0.7*ft*b*h0（箍筋贡献另需详设）", "GB50010 斜截面简化筛查"],
         ["围檩连续梁", "EI*w\'\'\'\' + k_i*w_i=q；R_i=k_i*w_i；N_i=R_i/cos(theta)", "围檩弯矩/剪力/挠度和支撑节点反力子集"],
         ["支撑施工效应", "N_eff=N_wale+0.5N_preload+N_temperature+N_gap；M_e=N*e0", "预加轴力、温度、间隙和偏心筛查"],
         ["抗隆起", "K=(c*Nc+gamma_eff*D*Nq)/(gamma*H+q); phi=0 -> Nc=5.14,Nq=1", "JGJ120 抗隆起概念筛查"],
@@ -416,7 +451,7 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
 
     doc.add_heading("10 围檩连续梁内力、截面设计和配筋", level=1)
     if retaining and retaining.wale_beams:
-        doc.add_paragraph("围檩按连续梁计算本体弯矩、剪力和挠度；支撑节点作为弹性支座。下表为围檩包络和 GB/T50010 子集配筋结果。")
+        doc.add_paragraph("围檩按连续梁计算本体弯矩、剪力和挠度；支撑节点作为弹性支座。下表为围檩包络和 GB50010 子集配筋结果。")
         _add_table(doc, ["围檩", "层号", "墙面", "Mmax", "Vmax", "挠度", "Md", "Vd", "As_req", "As_prov", "配筋", "状态"], [
             [
                 beam.code,
@@ -485,7 +520,20 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
             for r in g.support_reactions[:8]:
                 reaction_rows.append([_stage_label(sr.stage_id), r.support_code, r.endpoint, r.face_code, r.chainage, r.node_reaction, r.axial_force, r.axial_deformation])
         _add_table(doc, ["阶段", "支撑", "端点", "墙面", "里程", "节点反力", "轴力", "轴向变形"], reaction_rows[:48])
-    doc.add_paragraph("说明：V2.0 已由平动凝聚矩阵升级为空间杆系代理内核：墙体梁和围檩梁具有转角自由度，支撑按空间方向刚度进入，立柱竖向自由度、节点刚域和楼板换撑刚度均进入全局矩阵。该模型仍为设计辅助内核，正式工程应通过完整三维杆系/FEM和审查意见复核。")
+        numerical_rows = []
+        for sr in latest.stage_results[:36]:
+            g = sr.global_coupled_result
+            if not g:
+                continue
+            q = dict(g.equilibrium_diagnostics or {})
+            numerical_rows.append([
+                _stage_label(sr.stage_id), sr.segment_id, g.condition_number,
+                q.get("relativeResidual"), q.get("originalRelativeResidual"),
+                q.get("matrixSymmetryError"), q.get("regularization"),
+                _status_label(q.get("status")), _short(q.get("message"), 64),
+            ])
+        _add_table(doc, ["阶段", "边段", "条件数", "有效残差", "原始残差", "对称误差", "正则化", "状态", "说明"], numerical_rows[:36])
+    doc.add_paragraph("说明：全局矩阵同步输出 K·u=F 残差、矩阵对称误差、条件数和正则化状态。该部分用于证明数值求解质量，与工程规范验算分开记录。空间杆系代理内核包含墙体/围檩转角自由度、支撑空间方向刚度、立柱竖向自由度、节点刚域和楼板换撑刚度；正式工程仍应结合完整三维杆系/FEM和审查意见复核。")
 
     doc.add_heading("14 墙-围檩-支撑耦合摘要与包络图表数据", level=1)
     if latest:

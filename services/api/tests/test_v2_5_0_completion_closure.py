@@ -11,6 +11,7 @@ from app.services.cad_template import validate_cad_template
 from app.services.issue_center import build_issue_center, locate_issue
 from app.services.rebar_detailing import build_rebar_detailing
 from app.drawings.cad_export import export_construction_cad_package
+from app.version import SOFTWARE_VERSION
 
 
 @lru_cache(maxsize=1)
@@ -68,7 +69,7 @@ def test_v2_5_0_cad_package_contains_shop_detailing_sheets(tmp_path) -> None:
 def test_v2_5_0_issue_locator_endpoint_contract() -> None:
     project = _benchmark_project()
     center = build_issue_center(project)
-    assert center['maturity']['softwareVersion'] == '3.2.0'
+    assert center['maturity']['softwareVersion'] == SOFTWARE_VERSION
     issue_id = center['issues'][0]['id'] if center['issues'] else 'missing'
     located = locate_issue(project, issue_id)
     if center['issues']:

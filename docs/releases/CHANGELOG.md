@@ -1,4 +1,78 @@
+# V3.11.0 - Standards traceability, rebar package and online engineering documentation
+
+- Replaced the misleading rebar JSON download with a structured ZIP containing XLSX, CSV, JSON, checks and usage guidance.
+- Added project-aware workflow-to-standard traceability APIs and highlighted mandatory standards in every design step.
+- Added formulas, assumptions, verification points and standard references to online documentation and DOCX reports.
+- Removed hard-coded 100% completion values from delivery manifests and unified assurance check aggregation.
+- Added auditable K·u=F residual, symmetry, condition-number and regularization quality gates to the global coupled solver.
+- Optimized large reinforcement ZIP generation and added workbook truncation-to-complete-CSV/JSON traceability.
+
+# V3.10.0 - Geometry write-back, parallel schemes, site routing and module assurance
+
+- Added persisted geometry write-back for rebar rerouting, local reinforcement, embedded-item shifting and designed openings.
+- Re-runs fabrication, spacing, collision and detailing checks after geometry changes.
+- Added A* crane/site route planning with boundaries, roads, exclusion zones and crane footprint clearance.
+- Added independent A/B/C full-calculation tasks with stable input hashes, file cache and per-scheme progress.
+- Added canonical engineering unit registry shared by backend and generated frontend code.
+- Retained the full acceptance matrix and added a twelve-module completion review with evidence, gaps and next actions.
+- Rebuilt scheme previews to auto-fit the true geometry bounds and support pan, wheel zoom and reset.
+- Added six role-focused workspace modes without hiding closed-loop review or secondary modules.
+- Lazy-loaded 3D viewers and added runtime LOD; ProjectWorkspace production chunk reduced to about 161 kB.
+- External finite-element execution remains out of scope for this release.
+
+## V3.9.0
+
+- 构造协调增加四类参数化几何候选、净距预测、验证条件和应用后重新筛查。
+- 高风险节点增加设计变体和 CalculiX/Abaqus 非线性实体接触输入文件。
+- 钢筋笼吊装增加项目吊机库、实际站位、地基、风载、禁入区及运输路径约束。
+- 建立统一 SI 工程单位注册表，关键界面和导出台账明确显示单位。
+- 将 A/B/C 整案候选和完整计算入口恢复到主工作流。
+- 工作台默认采用“当前成果—关键问题—下一步动作”，专业明细按需展开。
+- 后端默认端口保持 8002。
+
+## V3.8.0
+
+- 深化设计：节点钢构件、焊缝、锚筋、钢筋笼吊装、套筒、预埋件碰撞和施工顺序闭环。
+- 启动诊断：按 pyproject 检查当前 Python 环境，退出时打印缺失依赖安装命令。
+- 后端默认端口继续使用 8002。
+
+# V3.7.0 - Professional construction drawing production pipeline
+
+- Replaced hand-written R12 output with validated R2018 DXF, mm model space and paper-space layouts.
+- Added native dimensions, Unicode text style, title-block blocks and locked viewports.
+- Added real-width wall/wale/support graphics and wall-connection rigid arms.
+- Added stock/transport-aware rebar fabrication segmentation, coupler/lap schedules and geometric spacing checks.
+- Added drawing completeness, DXF validation and construction issue gates with SHA-256 manifests.
+- Added one-sheet-per-page vector PDF publication with Chinese CID text.
+
 # Changelog
+
+## V3.6.0
+
+- 水平支撑轴线与围护墙脱开，并保留墙面连接点、刚臂和净距质量检查。
+- 增加斜撑+短对撑混合、双向网格和传统直对撑三类完整拓扑候选。
+- A/B/C 候选执行完整计算后二次决策排名，输出推荐理由和不可绕过的工程闸门。
+- 换撑刚度采用状态化表达，未激活显示“—”，缺失和无效参数形成阻断。
+- 结果页改为三维整案比选，局部优化、矩阵台账和评分分解默认折叠。
+- 项目设置增加净距、跨度、斜撑和楼板换撑刚度参数。
+
+## V3.5.0
+
+- 修复 L/T 形基坑凹角回墙缺少直接支撑导致的计算失败。
+- 增加旧项目支撑拓扑增量修复和施工工况自动同步。
+- 增加计算根因诊断、重复检查归并和修复前后对比。
+- 增加 Drawing Intelligence Engine、D-09 大样及图纸质量评分。
+- 增加计算诊断与智能出图 CAD 台账，优化宽屏工作台。
+
+## V3.4.0
+
+- 将出图组合、触发、拆图、比例和发行条件抽离为独立规则引擎。
+- 核心预设迁移到 `packages/drawing-rules/presets/*.json`，支持企业目录覆盖。
+- 增加安全条件 DSL、渲染器白名单、规则校验和决策轨迹。
+- 支持按支撑层、按墙幅动态展开及多墙合图。
+- 增加保留项目自定义规则的多目标候选优化。
+- CAD/PDF 正式发行记录规则集和图纸计划哈希。
+- 前端增加规则配置、预览、优化与候选采用工作台。
 
 ## V3.3.0
 
@@ -192,6 +266,16 @@
 
 # Changelog
 
+## V3.4.0
+
+- 将出图组合、触发、拆图、比例和发行条件抽离为独立规则引擎。
+- 核心预设迁移到 `packages/drawing-rules/presets/*.json`，支持企业目录覆盖。
+- 增加安全条件 DSL、渲染器白名单、规则校验和决策轨迹。
+- 支持按支撑层、按墙幅动态展开及多墙合图。
+- 增加保留项目自定义规则的多目标候选优化。
+- CAD/PDF 正式发行记录规则集和图纸计划哈希。
+- 前端增加规则配置、预览、优化与候选采用工作台。
+
 ## V2.0.3 - Quality gates for support layout, IFC compatibility and official report readiness
 
 - Added support layout quality scoring for spacing, span length, corner diagonals, temporary columns, obstacles, muck-out openings and replacement path.
@@ -330,7 +414,7 @@
 - IDW 三维地质模型和 VTU 导入。
 - 基坑轮廓、边段生成、地连墙和支撑自动初选。
 - 土压力、水压力、支撑轴力、墙体内力和配筋建议。
-- JGJ120、GB/T50010、GB50007、GB50009、GB50017、GB55003、GB55008 规范子集筛查。
+- JGJ120、GB50010、GB50007、GB50009、GB50017、GB55003、GB55008 规范子集筛查。
 - IFC4 STEP 导出和 DOCX 计算书导出。
 
 ### Known problems before V1.2.0

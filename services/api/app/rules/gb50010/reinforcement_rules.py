@@ -5,7 +5,7 @@ from app.rules.gb50010.rc_section_rules import as_per_m_for_spacing
 
 MIN_REINFORCEMENT_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-MINREBAR-001",
-    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
+    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="构造配筋与最小配筋率要求（软件简化诊断）",
     name="最小配筋率快速诊断",
@@ -18,11 +18,13 @@ MIN_REINFORCEMENT_RULE = DesignRule(
 def recommend_bar_spacing(required_as_mm2_per_m: float, preferred_diameters: tuple[int, ...] = (22, 25, 28, 32)) -> tuple[int, int, float]:
     for dia in preferred_diameters:
         for spacing in (250, 225, 200, 180, 160, 150, 140, 125, 120, 100):
+            if spacing - dia < 75:
+                continue
             provided = as_per_m_for_spacing(dia, spacing)
             if provided >= required_as_mm2_per_m:
                 return dia, spacing, round(provided, 2)
     dia = preferred_diameters[-1]
-    spacing = 100
+    spacing = next((item for item in (120, 125, 140, 150, 160, 180, 200, 225, 250) if item - dia >= 75), 250)
     return dia, spacing, round(as_per_m_for_spacing(dia, spacing), 2)
 
 

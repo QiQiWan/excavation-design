@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from typing import Any
 
 from app.calculation.earth_pressure import calculate_lateral_pressure_profile
@@ -47,6 +48,9 @@ from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
 from app.quality.formal_gate import build_formal_report_gate
 from app.services.support_layout_repair import auto_repair_support_layout
+from app.services.support_layout import repair_concave_return_supports
+from app.services.calculation_diagnostics import build_calculation_diagnostics
+from app.services.candidate_result_cache import candidate_input_hash, get_cached_candidate_result, put_cached_candidate_result
 
 LOAD_FACTOR_RETAINING = 1.25
 
@@ -284,6 +288,98 @@ def _summary(checks: list[dict[str, Any]]) -> dict[str, int]:
         "warning": sum(1 for c in checks if c.get("status") == "warning"),
         "manualReview": sum(1 for c in checks if c.get("status") == "manual_review"),
     }
+
+
+_ADVISORY_GROUP_RULES = {
+    "JGJ120-SUPPORT-CONSTRUCTION-EFFECTS-SUBSET",
+    "JGJ120-SUPPORT-LIFECYCLE-PATH-SUBSET",
+    "GB50010-WALE-FLEXURE-SUBSET",
+    "GB50010-WALE-SHEAR-SUBSET",
+    "GB50010-WALE-NODE-REBAR-COORDINATION-SUBSET",
+    "WALE-DEFLECTION-ENVELOPE-SUBSET",
+    "JGJ120-2012-4.7-INTERNAL-SUPPORT-LAYOUT-SCREEN-SPAN",
+    "QUALITY-LONG_DIRECT_STRUT",
+}
+
+
+def _check_governing_score(check: dict[str, Any]) -> tuple[int, float]:
+    """Return a stable severity/governing score for duplicate check records."""
+    status_rank = {"pass": 0, "manual_review": 1, "warning": 2, "fail": 3}
+    status = str(check.get("status") or "manual_review")
+    calculated = check.get("calculatedValue")
+    limit = check.get("limitValue")
+    numeric_score = 0.0
+    if isinstance(calculated, (int, float)):
+        numeric_score = abs(float(calculated))
+        if isinstance(limit, (int, float)) and abs(float(limit)) > 1.0e-9:
+            ratio = float(calculated) / float(limit)
+            rule_id = str(check.get("ruleId") or "").upper()
+            # Stability/safety factors are worse when the ratio is smaller;
+            # demand/capacity and deformation checks are worse when larger.
+            if any(token in rule_id for token in ("STABILITY", "EMBEDMENT", "HEAVE", "SEEPAGE", "UPLIFT")):
+                numeric_score = -ratio
+            else:
+                numeric_score = abs(ratio)
+    return status_rank.get(status, 1), numeric_score
+
+
+def _consolidate_global_checks(project: Project, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse repeated stage checks while retaining full trace metadata.
+
+    Stage results keep their detailed check arrays.  The project-level list is
+    a governing issue register: one record per rule/object plus a small number
+    of system-level advisory groups.  This prevents the dashboard from showing
+    the same wall detailing warning seven times or 45 identical support life-
+    cycle notices as separate engineering problems.
+    """
+    normalized = [_normalize_check_dict(item) for item in checks]
+    per_object: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for item in normalized:
+        key = (
+            str(item.get("ruleId") or "UNKNOWN"),
+            str(item.get("objectId") or project.id),
+            str(item.get("objectType") or "EngineeringObject"),
+        )
+        per_object.setdefault(key, []).append(item)
+    governing: list[dict[str, Any]] = []
+    for records in per_object.values():
+        selected = max(records, key=_check_governing_score)
+        merged = dict(selected)
+        stage_ids = sorted({str(item.get("stageId")) for item in records if item.get("stageId")})
+        stage_names = sorted({str(item.get("stageName")) for item in records if item.get("stageName")})
+        if len(records) > 1:
+            merged["occurrenceCount"] = len(records)
+        if stage_ids:
+            merged["stageIds"] = stage_ids
+            merged["governingStageId"] = selected.get("stageId")
+        if stage_names:
+            merged["stageNames"] = stage_names
+        governing.append(merged)
+
+    grouped_advisories: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    passthrough: list[dict[str, Any]] = []
+    for item in governing:
+        rule_id = str(item.get("ruleId") or "")
+        status = str(item.get("status") or "manual_review")
+        if rule_id in _ADVISORY_GROUP_RULES and status != "fail":
+            grouped_advisories.setdefault((rule_id, status, str(item.get("objectType") or "EngineeringObject")), []).append(item)
+        else:
+            passthrough.append(item)
+    for (rule_id, status, object_type), records in grouped_advisories.items():
+        selected = max(records, key=_check_governing_score)
+        merged = dict(selected)
+        object_ids = sorted({str(item.get("objectId")) for item in records if item.get("objectId")})
+        merged.update({
+            "objectId": project.id,
+            "objectType": f"{object_type}Group",
+            "affectedObjectIds": object_ids,
+            "affectedObjectCount": len(object_ids),
+            "occurrenceCount": sum(int(item.get("occurrenceCount") or 1) for item in records),
+            "message": f"{len(object_ids)} 个对象采用同一类工程假定/复核要求。{selected.get('message') or ''}",
+        })
+        passthrough.append(merged)
+    passthrough.sort(key=lambda item: (-_check_governing_score(item)[0], str(item.get("ruleId")), str(item.get("objectId"))))
+    return passthrough
 
 
 def _governing_status(checks: list[dict[str, Any]]) -> str:
@@ -615,7 +711,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "limitValue": design.provided_reinforcement_area,
                 "unit": "mm2/m",
                 "message": f"围檩正截面受弯配筋子集：Md={design.max_moment_design} kN*m，建议 {flex['barArrangement']['description']}。",
-                "clauseReference": "GB/T 50010 rectangular flexure subset for RC wale beam; final clause applicability to verify",
+                "clauseReference": "GB 50010 rectangular flexure subset for RC wale beam; final clause applicability to verify",
                 "formula": "M <= alpha1*fc*b*x*(h0-x/2); alpha1*fc*b*x = fy*As; total beam M converted by beam width",
             },
             {
@@ -627,7 +723,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "limitValue": round(shear_capacity, 3),
                 "unit": "kN",
                 "message": f"围檩斜截面抗剪子集：建议 D12@{stirrup_spacing} 箍筋，节点两侧加密。",
-                "clauseReference": "GB/T 50010 shear subset for RC wale beam; stirrup detailing to verify",
+                "clauseReference": "GB 50010 shear subset for RC wale beam; stirrup detailing to verify",
                 "formula": "V <= 0.7*ft*b*h0 plus stirrup contribution in detailed design",
             },
             {
@@ -651,7 +747,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "limitValue": design.moment_capacity,
                 "unit": "kN*m",
                 "message": "围檩节点区附加筋与围檩主筋协调：主筋连续通过，承压板后方设置附加竖筋、U 形筋和加密箍筋。",
-                "clauseReference": "GB/T 50010 anchorage/detailing coordination subset; project detailing to verify",
+                "clauseReference": "GB 50010 anchorage/detailing coordination subset; project detailing to verify",
                 "formula": "node additional reinforcement >= 20% of controlling main reinforcement area, screening rule",
             },
         ])
@@ -882,6 +978,9 @@ def _summarize_candidate_calculation(label: str, candidate, result: CalculationR
         "positionPattern": (candidate.variable_summary or {}).get("positionPattern"),
         "supportCount": len(trial_project.retaining_system.supports) if trial_project.retaining_system else candidate.support_count,
         "columnCount": len(trial_project.retaining_system.columns) if trial_project.retaining_system else candidate.column_count,
+        "maxSpanLength": candidate.max_span_length,
+        "excessiveDirectStrutCount": int((candidate.metrics or {}).get("excessiveDirectStrutCount", 0) or 0),
+        "minSupportWallClearance": (candidate.metrics or {}).get("minSupportWallClearance"),
         "maxSupportAxialForce": result.governing_values.max_support_axial_force,
         "maxDisplacement": result.governing_values.max_displacement,
         "maxWallMoment": result.governing_values.max_wall_moment,
@@ -898,10 +997,174 @@ def _summarize_candidate_calculation(label: str, candidate, result: CalculationR
         "formalGateStatus": formal_gate.status if formal_gate else "manual_review",
         "formalGateAllowed": bool(formal_gate.allowed_for_official_issue) if formal_gate else False,
         "checkSummary": result.check_summary,
+        "failCount": int((result.check_summary or {}).get("fail", 0) or 0),
+        "warningCount": int((result.check_summary or {}).get("warning", 0) or 0),
+        "manualReviewCount": int((result.check_summary or {}).get("manualReview", (result.check_summary or {}).get("manual_review", 0)) or 0),
         "governingCheckStatus": result.governing_values.governing_check_status,
         "calculationResultId": result.id,
         "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
     }
+
+
+def _rank_full_candidate_calculations(outputs: list[dict[str, Any]]) -> None:
+    """Add an auditable decision score after all A/B/C schemes complete calculation.
+
+    The pre-screen score remains available for geometry search.  Final decision
+    scoring uses the actual calculated response together with member count and
+    long-direct-strut exposure.  It only ranks the compared schemes; it never
+    bypasses engineering failures or the formal issue gate.
+    """
+    valid = [item for item in outputs if not item.get("error")]
+    if not valid:
+        return
+
+    lower_is_better: dict[str, float] = {
+        "maxSupportAxialForce": 0.12,
+        "maxDisplacement": 0.12,
+        "maxWallMoment": 0.08,
+        "maxWallShear": 0.03,
+        "maxWaleMoment": 0.06,
+        "maxWaleDeflection": 0.09,
+        "supportCount": 0.08,
+        "columnCount": 0.07,
+        "maxSpanLength": 0.12,
+        "excessiveDirectStrutCount": 0.08,
+    }
+    # The original constrained-optimizer score contributes 15%; this preserves
+    # obstacle, spacing, muck-path and symmetry knowledge not repeated below.
+    higher_is_better = {"score": 0.15}
+
+    values: dict[str, list[float]] = {}
+    for key in [*lower_is_better, *higher_is_better]:
+        vals: list[float] = []
+        for item in valid:
+            raw = item.get(key)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                value = 0.0
+            if not math.isfinite(value):
+                value = 0.0
+            vals.append(value)
+        values[key] = vals
+
+    def normalized(key: str, index: int, lower: bool) -> float:
+        vals = values[key]
+        low, high = min(vals), max(vals)
+        if abs(high - low) <= 1e-12:
+            return 1.0
+        value = vals[index]
+        return (high - value) / (high - low) if lower else (value - low) / (high - low)
+
+    for index, item in enumerate(valid):
+        component_scores: dict[str, float] = {}
+        total = 0.0
+        for key, weight in lower_is_better.items():
+            score = normalized(key, index, True)
+            component_scores[key] = round(score * 100.0, 2)
+            total += weight * score
+        for key, weight in higher_is_better.items():
+            score = normalized(key, index, False)
+            component_scores[key] = round(score * 100.0, 2)
+            total += weight * score
+
+        fail_count = int(item.get("failCount", 0) or 0)
+        warning_count = int(item.get("warningCount", 0) or 0)
+        manual_count = int(item.get("manualReviewCount", 0) or 0)
+        penalty = min(80.0, fail_count * 25.0 + warning_count * 0.35 + manual_count * 0.5)
+        decision_score = max(0.0, total * 100.0 - penalty)
+        item["decisionScore"] = round(decision_score, 2)
+        item["decisionComponents"] = component_scores
+        item["decisionPenalty"] = round(penalty, 2)
+
+    ranked = sorted(
+        valid,
+        key=lambda item: (
+            int(item.get("failCount", 0) or 0) > 0,
+            -float(item.get("decisionScore", 0.0) or 0.0),
+            int(item.get("rank", 999) or 999),
+        ),
+    )
+    for rank, item in enumerate(ranked, start=1):
+        item["decisionRank"] = rank
+        item["recommendedByFullCalculation"] = rank == 1 and int(item.get("failCount", 0) or 0) == 0
+        strengths = sorted(
+            ((key, value) for key, value in (item.get("decisionComponents") or {}).items()),
+            key=lambda pair: -float(pair[1]),
+        )[:3]
+        label_map = {
+            "maxSupportAxialForce": "支撑轴力",
+            "maxDisplacement": "墙体位移",
+            "maxWallMoment": "墙体弯矩",
+            "maxWallShear": "墙体剪力",
+            "maxWaleMoment": "围檩弯矩",
+            "maxWaleDeflection": "围檩挠度",
+            "supportCount": "支撑数量",
+            "columnCount": "立柱数量",
+            "maxSpanLength": "最大跨度",
+            "excessiveDirectStrutCount": "超长直对撑",
+            "score": "几何与施工代理评分",
+        }
+        strengths_text = "、".join(label_map.get(key, key) for key, _value in strengths)
+        item["decisionReason"] = (
+            f"完整计算综合排名第 {rank}；优势指标：{strengths_text}。"
+            f"Fail={int(item.get('failCount', 0) or 0)}，Warning={int(item.get('warningCount', 0) or 0)}；"
+            "采用后仍须重新计算并通过正式发行闸门。"
+        )
+
+    for item in outputs:
+        if item.get("error"):
+            item["decisionScore"] = 0.0
+            item["decisionRank"] = None
+            item["recommendedByFullCalculation"] = False
+            item["decisionReason"] = f"完整计算失败：{item.get('error')}"
+
+
+def run_single_candidate_calculation(
+    project: Project,
+    candidate,
+    *,
+    index: int = 0,
+    use_cache: bool = True,
+) -> dict[str, Any]:
+    from app.services.support_layout_optimizer import build_support_system_from_candidate
+
+    label = _candidate_label(index)
+    input_hash = candidate_input_hash(project, candidate)
+    if use_cache:
+        cached = get_cached_candidate_result(input_hash)
+        if cached is not None:
+            result = dict(cached)
+            result["cacheHit"] = True
+            result["inputHash"] = input_hash
+            return result
+    pattern = str((candidate.variable_summary or {}).get("positionPattern", "as_generated"))
+    amplitude = float((candidate.variable_summary or {}).get("lineOffsetAmplitude", 0.0) or 0.0)
+    topology_strategy = str((candidate.variable_summary or {}).get("topologyFamily", "balanced_grid"))
+    trial_project = project.model_copy(deep=True)
+    system, adjustments = build_support_system_from_candidate(
+        project, candidate.target_spacing, candidate.column_max_span, pattern, amplitude, topology_strategy
+    )
+    if system is None:
+        return {
+            "schemeLabel": label, "candidateId": candidate.id, "rank": candidate.rank,
+            "error": "候选支撑体系重建失败。", "cacheHit": False, "inputHash": input_hash,
+        }
+    trial_project.retaining_system = system
+    trial_project.calculation_results = []
+    trial_project.calculation_cases = build_default_construction_cases(trial_project)
+    candidate_result = run_calculation(
+        trial_project, trial_project.calculation_cases[0], auto_repair=False, include_candidate_comparison=False
+    )
+    summary = _summarize_candidate_calculation(label, candidate, candidate_result, trial_project)
+    summary["changedSupportCount"] = len(adjustments)
+    summary["topologyFamily"] = topology_strategy
+    summary["schemeName"] = str((candidate.variable_summary or {}).get("schemeLabel", topology_strategy))
+    summary["cacheHit"] = False
+    summary["inputHash"] = input_hash
+    if use_cache and not summary.get("error"):
+        put_cached_candidate_result(input_hash, summary)
+    return summary
 
 
 def _compare_top_support_candidates(project: Project, support_repair, top_n: int = 3) -> list[dict[str, Any]]:
@@ -912,23 +1175,10 @@ def _compare_top_support_candidates(project: Project, support_repair, top_n: int
         return []
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from app.services.support_layout_optimizer import build_support_system_from_candidate
 
     def worker(index_and_candidate):
         index, candidate = index_and_candidate
-        label = _candidate_label(index)
-        pattern = str((candidate.variable_summary or {}).get("positionPattern", "as_generated"))
-        amplitude = float((candidate.variable_summary or {}).get("lineOffsetAmplitude", 0.0) or 0.0)
-        trial_project = project.model_copy(deep=True)
-        system, adjustments = build_support_system_from_candidate(project, candidate.target_spacing, candidate.column_max_span, pattern, amplitude)
-        if system is None:
-            return {"schemeLabel": label, "candidateId": candidate.id, "rank": candidate.rank, "error": "候选支撑体系重建失败。"}
-        trial_project.retaining_system = system
-        trial_project.calculation_cases = build_default_construction_cases(trial_project)
-        candidate_result = run_calculation(trial_project, trial_project.calculation_cases[0], auto_repair=False, include_candidate_comparison=False)
-        summary = _summarize_candidate_calculation(label, candidate, candidate_result, trial_project)
-        summary["changedSupportCount"] = len(adjustments)
-        return summary
+        return run_single_candidate_calculation(project, candidate, index=index, use_cache=True)
 
     outputs: list[dict[str, Any]] = []
     max_workers = max(1, min(top_n, len(candidates)))
@@ -940,6 +1190,7 @@ def _compare_top_support_candidates(project: Project, support_repair, top_n: int
             except Exception as exc:  # keep the main calculation usable if one candidate fails
                 outputs.append({"schemeLabel": _candidate_label(future_map[future]), "error": str(exc)})
     outputs.sort(key=lambda item: item.get("schemeLabel", "Z"))
+    _rank_full_candidate_calculations(outputs)
     by_id = {item.get("candidateId"): item for item in outputs if item.get("candidateId")}
     for candidate in support_repair.candidates or []:
         if candidate.id in by_id:
@@ -966,6 +1217,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         raise ValueError("Project has no excavation")
     if not project.retaining_system:
         raise ValueError("Project has no retaining system")
+    topology_preflight = repair_concave_return_supports(project) if auto_repair else {"changed": False}
     if auto_repair:
         current_quality = evaluate_support_layout_quality(project)
         hard_geometry_failure = any(
@@ -1020,6 +1272,11 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     warnings = [
         "计算结果用于工程设计辅助；正式施工图和专家论证仍需注册岩土/结构工程师签审。",
     ]
+    if topology_preflight.get("changed"):
+        warnings.append(
+            "计算前拓扑诊断发现凹形回墙缺少直接支点，已增补 "
+            f"{topology_preflight.get('addedSupportCount', 0)} 根局部法向次对撑并重建立柱/节点。"
+        )
     if support_case_sync.get("synchronized"):
         before = support_case_sync.get("before") or {}
         warnings.append(
@@ -1120,6 +1377,13 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 wall_stiffness_factor=wall_stiffness_factor,
                 soil_modulus_factor=soil_modulus_factor,
                 support_stiffness_factor=support_stiffness_factor,
+                replacement_slab_properties={
+                    "effectiveWidthM": project.design_settings.replacement_slab_effective_width_m,
+                    "thicknessM": project.design_settings.replacement_slab_thickness_m,
+                    "elasticModulusMpa": project.design_settings.replacement_slab_elastic_modulus_mpa,
+                    "connectionReduction": project.design_settings.replacement_connection_reduction,
+                    "transferLengthM": float(segment.length),
+                },
             )
             global_coupled = GlobalCoupledSystemResult(**global_coupled_raw)
             # Upgrade support force entries with global matrix reactions when the
@@ -1171,6 +1435,66 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             segment_design["moment"] = max(segment_design["moment"], m_design)
             segment_design["shear"] = max(segment_design["shear"], v_design)
             stage_checks: list[dict[str, Any]] = []
+            numerical = dict(global_coupled.equilibrium_diagnostics or {})
+            numerical_status = str(numerical.get("status") or "manual_review")
+            stage_checks.append({
+                "ruleId": "PITGUARD-NUMERICAL-EQUILIBRIUM",
+                "objectId": segment.id,
+                "objectType": "GlobalCoupledSystem",
+                "status": numerical_status,
+                "calculatedValue": numerical.get("relativeResidual"),
+                "limitValue": 1.0e-8,
+                "unit": "relative residual",
+                "message": numerical.get("message") or "全局刚度方程数值质量需要复核。",
+                "clauseReference": "PitGuard numerical quality gate; engineering-code checks remain independent",
+                "stageId": stage.id,
+                "stageName": stage.name,
+                "diagnostics": numerical,
+            })
+            condition_number = global_coupled.condition_number
+            if condition_number is None:
+                condition_status = "manual_review"
+                condition_message = "未获得全局矩阵条件数，需复核矩阵组装与边界约束。"
+            elif condition_number > 1.0e14:
+                condition_status = "fail"
+                condition_message = "全局矩阵严重病态，当前内力与位移结果不得作为设计依据。"
+            elif condition_number > 1.0e12:
+                condition_status = "manual_review"
+                condition_message = "全局矩阵条件数过高，需复核刚度尺度、约束和构件连接。"
+            elif condition_number > 1.0e10:
+                condition_status = "warning"
+                condition_message = "全局矩阵条件数偏高，建议开展参数尺度与边界条件复核。"
+            else:
+                condition_status = "pass"
+                condition_message = "全局矩阵条件数处于软件质量门禁允许范围。"
+            stage_checks.append({
+                "ruleId": "PITGUARD-MATRIX-CONDITION",
+                "objectId": segment.id,
+                "objectType": "GlobalCoupledSystem",
+                "status": condition_status,
+                "calculatedValue": condition_number,
+                "limitValue": 1.0e10,
+                "unit": "dimensionless",
+                "message": condition_message,
+                "clauseReference": "PitGuard numerical conditioning gate; no fabricated code clause",
+                "stageId": stage.id,
+                "stageName": stage.name,
+            })
+            replacement_status = str(global_coupled.slab_replacement_status or "not_active")
+            if global_coupled.slab_replacement_required and replacement_status in {"missing", "invalid"}:
+                stage_checks.append({
+                    "ruleId": "REPLACEMENT-STIFFNESS-MISSING",
+                    "objectId": project.retaining_system.id,
+                    "objectType": "ReplacementSlabSystem",
+                    "status": "fail",
+                    "calculatedValue": None,
+                    "limitValue": 1.0,
+                    "unit": "kN/m",
+                    "message": "当前施工阶段要求楼板/换撑参与，但等效刚度参数缺失或无效。请补充有效宽度、板厚、弹性模量和连接折减后重新计算。",
+                    "clauseReference": "project replacement-stage load-path requirement",
+                    "stageId": stage.id,
+                    "stageName": stage.name,
+                })
             if wall:
                 embedment_check = check_embedment_stability(
                     object_id=wall.id,
@@ -1253,7 +1577,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     "limitValue": flex["barArrangement"]["providedAs"],
                     "unit": "mm2/m",
                     "message": f"正截面受弯配筋子集：Md={flex['momentDesign']} kN*m/m，建议 {flex['barArrangement']['description']}。",
-                    "clauseReference": "GB/T 50010 6.2.10 subset; final clause applicability to verify",
+                    "clauseReference": "GB 50010 6.2.10 subset; final clause applicability to verify",
                     "formula": "M <= alpha1*fc*b*x*(h0-x/2); alpha1*fc*b*x = fy*As",
                 })
                 stage_checks.append({
@@ -1265,7 +1589,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     "limitValue": shear["concreteShearCapacity"],
                     "unit": "kN/m",
                     "message": "斜截面抗剪承载力子集筛查；箍筋、构造和截面尺寸需复核。",
-                    "clauseReference": "GB/T 50010 shear subset; final clause applicability to verify",
+                    "clauseReference": "GB 50010 shear subset; final clause applicability to verify",
                     "formula": "V <= 0.7*ft*b*h0 plus stirrup contribution if detailed",
                 })
                 stage_checks.append(_check_to_dict(check_minimum_wall_reinforcement(wall.id, wall_thickness, flex["barArrangement"]["diameter"], flex["barArrangement"]["spacing"])))
@@ -1299,6 +1623,11 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     horizontal_bar_spacing_mm=200,
                 ):
                     stage_checks.append(_check_to_dict(detail_check))
+            for check in stage_checks:
+                check.setdefault("stageId", stage.id)
+                check.setdefault("stageName", stage.name)
+                check.setdefault("segmentId", segment.id)
+                check.setdefault("segmentName", segment.name)
             global_checks.extend(stage_checks)
             coupled_system_result = {
                 "method": "V2.0 spatial wall-wale-support-column-slab stiffness matrix summary",
@@ -1313,6 +1642,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "globalDofSummary": global_coupled.dof_summary,
                 "globalMaxWallDisplacement": global_coupled.max_wall_displacement,
                 "globalMaxSupportAxialForce": global_coupled.max_support_axial_force,
+                "globalEquilibriumDiagnostics": global_coupled.equilibrium_diagnostics,
                 "fallback": global_coupled.fallback,
                 "globalSpatialMatrixSize": global_coupled.spatial_matrix_size,
                 "globalSpatialDofSummary": global_coupled.spatial_dof_summary,
@@ -1320,7 +1650,11 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "waleRotationNodeCount": len(global_coupled.wale_node_profile),
                 "columnVerticalDofCount": len(global_coupled.column_vertical_dofs),
                 "slabReplacementStiffness": global_coupled.slab_replacement_stiffness,
-                "note": "V2.0 已将墙体/围檩转角自由度、支撑空间方向刚度、立柱竖向自由度、支撑节点刚域和楼板换撑刚度纳入空间杆系代理矩阵。",
+                "slabReplacementStatus": global_coupled.slab_replacement_status,
+                "slabReplacementSource": global_coupled.slab_replacement_source,
+                "slabReplacementRequired": global_coupled.slab_replacement_required,
+                "slabReplacementComponents": global_coupled.slab_replacement_components,
+                "note": "墙体/围檩转角、支撑空间方向、立柱竖向、节点刚域和楼板换撑均进入空间杆系代理矩阵；换撑未激活显示为—，激活阶段按 EA/L 计算。",
             }
             stage_results.append(
                 StageCalculationResult(
@@ -1462,7 +1796,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "limitValue": rc_check["capacity"],
                 "unit": "kN",
                 "message": "混凝土支撑轴压承载力子集筛查；长细比、节点、偏心和施工阶段需复核。",
-                "clauseReference": "GB/T 50010 axial compression subset; final clause applicability to verify",
+                "clauseReference": "GB 50010 axial compression subset; final clause applicability to verify",
                 "formula": "N <= phi*(fc*Ac + fy*As)",
             })
         elif support.section_type == "steel_pipe":
@@ -1560,14 +1894,14 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "alpha1*fc*b*x=fy*As; M<=alpha1*fc*b*x*(h0-x/2)",
             ],
             check_status=status,
-            method="JGJ120 lateral pressure + staged elastic-foundation beam + GB/T50010 RC section subset",
+            method="JGJ120 lateral pressure + staged elastic-foundation beam + GB50010 RC section subset",
             notes=[
-                "已由 JGJ120 土压力、水压力和弹性地基梁子集生成内力包络，并由 GB/T50010 子集生成配筋建议。",
+                "已由 JGJ120 土压力、水压力和弹性地基梁子集生成内力包络，并由 GB50010 子集生成配筋建议。",
                 "本版本已增加裂缝、锚固/搭接、内支撑布置、整体稳定圆弧搜索、承压水和基础承载力筛查；正式施工图仍需工程师签审。",
             ],
         )
 
-    global_checks = [_normalize_check_dict(c) for c in global_checks]
+    global_checks = _consolidate_global_checks(project, global_checks)
     for stage_result in stage_results:
         stage_result.checks = [_normalize_check_dict(c) for c in stage_result.checks]
         stage_result.stability_checks = [_normalize_check_dict(c) for c in stage_result.stability_checks]
@@ -1600,8 +1934,24 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "message": issue.message + ((" 建议：" + issue.recommendation) if issue.recommendation else ""),
             "clauseReference": "PitGuard V2.0.4 quality gate",
         })
+    global_checks = _consolidate_global_checks(project, global_checks)
     result_summary = _summary(global_checks)
+    design_review = _design_review_summary(global_checks, stage_results)
     formal_gate = build_formal_report_gate(project, support_quality, ifc_quality, latest_result=type("TempLatest", (), {"check_summary": result_summary, "stability_detailed_result": stability_package, "drawing_sheets": drawing_sheets, "report_diagram_data": {"checkSummary": result_summary}})())
+    calculation_diagnostics = build_calculation_diagnostics(
+        project,
+        case,
+        stage_results,
+        global_checks,
+        topology_preflight=topology_preflight,
+        support_case_sync=support_case_sync,
+        governing_values={
+            "maxDisplacement": round(max_displacement, 3),
+            "maxWallMoment": round(max_wall_moment, 3),
+            "maxWallShear": round(max_wall_shear, 3),
+            "maxSupportAxialForce": round(max_support_force, 3),
+        },
+    )
     result = CalculationResult(
         project_id=project.id,
         case_id=case.id,
@@ -1650,10 +2000,13 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "p19DualModeIfcExport": True,
             "p20SupportQualityPlanFigureInReport": True,
             "p21CandidateAbcFullCalculationComparison": bool(candidate_full_calculations),
+            "p22ConcavePitTopologyRecovery": True,
+            "p23CalculationRootCauseDiagnostics": True,
             "geometryConsistency": geometry_consistency_summary(project),
+            "calculationDiagnostics": calculation_diagnostics,
             "supportTopologySynchronization": support_case_sync,
             "supportRoleCount": {role: sum(1 for item in project.retaining_system.supports if item.support_role == role) for role in sorted({item.support_role for item in project.retaining_system.supports})},
-            "remainingBoundary": "V3.0 已完成统一墙段拓扑、逐墙面支撑映射、结果载荷去重和几何一致性哈希；生产级仍需经验证的三维 FEM、现场监测反分析及逐条标准条文确认。",
+            "remainingBoundary": "V3.5 已完成异形基坑凹角回墙支撑诊断、施工工况同步、计算根因分组和智能出图建议；生产级仍需经验证的三维非线性 FEM、企业图纸标准及逐条规范适用性确认。",
         },
         optimization_actions=[
             {"target": "wale_beam_section", "action": "auto_size_width_height", "count": len([b for b in project.retaining_system.wale_beams if b.design_result])},
@@ -1667,6 +2020,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     "segmentId": sr.segment_id,
                     "matrixSize": sr.global_coupled_result.matrix_size,
                     "conditionNumber": sr.global_coupled_result.condition_number,
+                    "equilibriumDiagnostics": sr.global_coupled_result.equilibrium_diagnostics,
                     "maxWallDisplacement": sr.global_coupled_result.max_wall_displacement,
                     "maxSupportAxialForce": sr.global_coupled_result.max_support_axial_force,
                     "fallback": sr.global_coupled_result.fallback,
@@ -1698,6 +2052,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             # backward-compatible clients while avoiding multi-megabyte duplication.
             "wallForceSamples": None,
             "geometryConsistency": geometry_consistency_summary(project),
+            "calculationDiagnostics": calculation_diagnostics,
         },
         design_review_summary=design_review,
         stability_detailed_result=stability_package,
@@ -1708,7 +2063,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         formal_report_gate=formal_gate,
         standards=[
             "JGJ120-2012 建筑基坑支护技术规程：水平荷载、土/水压力、弹性支点法、嵌固/抗隆起/渗透稳定、整体稳定圆弧搜索、内支撑布置筛查子集",
-            "GB/T50010-2010(2024局部修订) 混凝土结构设计标准：矩形截面受弯、受剪、轴压、裂缝、锚固搭接和最小配筋率筛查子集",
+            "GB50010-2010(2024局部修订) 混凝土结构设计规范：矩形截面受弯、受剪、轴压、裂缝、锚固搭接和最小配筋率筛查子集",
             "GB55008-2021 混凝土结构通用规范：混凝土构件强制性约束提示和复核入口",
             "GB55003-2021 建筑与市政地基基础通用规范：地基、基坑、地下水控制通用要求提示子集",
             "GB50009-2012 建筑结构荷载规范：作用组合参数记录子集",

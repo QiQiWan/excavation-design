@@ -246,8 +246,8 @@ export default function ExcavationEditor({ project, onSaved }: { project: Projec
       </div>
 
       <div className="toolbar cadToolbar">
-        <label>坑顶标高 <input type="number" value={topElevation} onChange={(e) => setTopElevation(Number(e.target.value))} /></label>
-        <label>坑底标高 <input type="number" value={bottomElevation} onChange={(e) => setBottomElevation(Number(e.target.value))} /></label>
+        <label>坑顶标高（m） <input type="number" value={topElevation} onChange={(e) => setTopElevation(Number(e.target.value))} /></label>
+        <label>坑底标高（m） <input type="number" value={bottomElevation} onChange={(e) => setBottomElevation(Number(e.target.value))} /></label>
         <button className="secondary" onClick={() => commitPoints([...points, offsetNewPoint(points)])}>添加点</button>
         <button className="secondary" onClick={deleteSelected} disabled={selectedIndex === undefined || points.length <= 3}>删除点</button>
         <button className="secondary" onClick={undo} disabled={!history.length}>撤销</button>

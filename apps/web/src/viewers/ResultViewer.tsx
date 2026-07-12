@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { Project, SupportLayoutOptimizationCandidate, CalculationResult } from '../types/domain';
 import WallCloud3DViewer from './WallCloud3DViewer';
+import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 
 function conclusion(status?: string) {
   if (status === 'fail') return '存在 fail 项，自动方案不得进入施工图或正式报审。';
@@ -243,6 +244,65 @@ function CandidatePlanSvg({ candidate, selected = false, onClick }: { candidate:
 
 
 
+
+function schemeLetter(rank: number) {
+  return String.fromCharCode(64 + Math.max(1, Math.min(26, rank || 1)));
+}
+
+function candidateSchemeName(candidate: SupportLayoutOptimizationCandidate) {
+  return String(candidate.variableSummary?.schemeLabel ?? candidate.variableSummary?.topologyFamily ?? `方案 ${schemeLetter(candidate.rank)}`);
+}
+
+function CandidateScheme3D({ candidate, selected = false, onClick, fullCalculation }: { candidate: SupportLayoutOptimizationCandidate; selected?: boolean; onClick?: () => void; fullCalculation?: Record<string, unknown> }) {
+  const geom = (candidate.planGeometry ?? {}) as Record<string, any>;
+  const outline = (geom.outline ?? []) as { x: number; y: number }[];
+  const supports = (geom.supports ?? []) as Record<string, any>[];
+  const columns = (geom.columns ?? []) as Record<string, any>[];
+  const allX = [...outline.map((p) => Number(p.x)), ...supports.flatMap((item) => [Number(item.start?.x), Number(item.end?.x)])].filter(Number.isFinite);
+  const allY = [...outline.map((p) => Number(p.y)), ...supports.flatMap((item) => [Number(item.start?.y), Number(item.end?.y)])].filter(Number.isFinite);
+  const minX = Math.min(...allX, 0); const maxX = Math.max(...allX, 1);
+  const minY = Math.min(...allY, 0); const maxY = Math.max(...allY, 1);
+  const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
+  const planSpan = Math.max(1, maxX - minX, maxY - minY);
+  const elevations = supports.map((item) => Number(item.elevation ?? 0)).filter(Number.isFinite);
+  const topZ = Math.max(...elevations, 0); const bottomZ = Math.min(...elevations, -1);
+  const zSpan = Math.max(1, topZ - bottomZ);
+  const project = (x: number, y: number, z = 0) => ({
+    x: 160 + ((x - cx) - (y - cy)) * (112 / planSpan),
+    y: 118 + ((x - cx) + (y - cy)) * (46 / planSpan) - (z - bottomZ) * (72 / zSpan),
+  });
+  const outlineProjected = outline.map((point) => project(point.x, point.y, topZ)).map((point) => `${point.x},${point.y}`).join(' ');
+  const family = String(candidate.variableSummary?.topologyFamily ?? 'direct_grid');
+  const schemeName = candidateSchemeName(candidate);
+  const letter = schemeLetter(candidate.rank);
+  const decisionScore = fullCalculation?.decisionScore;
+  const recommended = Boolean(fullCalculation?.recommendedByFullCalculation);
+  return (
+    <button type="button" className={`candidateScheme3d ${selected ? 'selected' : ''} ${recommended ? 'recommended' : ''}`} onClick={onClick} aria-pressed={selected}>
+      <div className="candidatePlanHeader"><strong>方案 {letter} · {schemeName}</strong><span>{decisionScore != null ? `决策 ${String(decisionScore)} 分` : `预筛 ${candidate.score} 分`}</span></div>
+      {recommended && <div className="schemeRecommendationBadge">完整计算推荐</div>}
+      <svg viewBox="0 0 320 220" role="img" aria-label={`方案 ${letter} 三维支撑模型`}>
+        <defs><linearGradient id={`pit-${candidate.id ?? candidate.rank}`} x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#dbeafe" stopOpacity=".9"/><stop offset="1" stopColor="#eff6ff" stopOpacity=".35"/></linearGradient></defs>
+        {outlineProjected && <polygon points={outlineProjected} fill={`url(#pit-${candidate.id ?? candidate.rank})`} stroke="#475569" strokeWidth="1.5" />}
+        {supports.map((item, index) => {
+          const a = project(Number(item.start?.x ?? 0), Number(item.start?.y ?? 0), Number(item.elevation ?? bottomZ));
+          const b = project(Number(item.end?.x ?? 0), Number(item.end?.y ?? 0), Number(item.elevation ?? bottomZ));
+          const role = String(item.role ?? item.supportRole ?? 'main_strut');
+          return <line key={`${item.id ?? index}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`scheme3dSupport ${role}`} />;
+        })}
+        {columns.map((item, index) => {
+          const top = project(Number(item.location?.x ?? 0), Number(item.location?.y ?? 0), topZ);
+          const bottom = project(Number(item.location?.x ?? 0), Number(item.location?.y ?? 0), bottomZ);
+          return <line key={`column-${index}`} x1={top.x} y1={top.y} x2={bottom.x} y2={bottom.y} className="scheme3dColumn" />;
+        })}
+      </svg>
+      <div className="schemeMetricStrip"><span>{candidate.supportCount} 支撑</span><span>{candidate.columnCount} 立柱</span><span>最长 {candidate.maxSpanLength ?? '-'}m</span><span>{family === 'hybrid_diagonal' ? '斜撑混合' : family === 'bidirectional_grid' ? '双向网格' : '直对撑'}</span></div>
+      <div className="schemeOutcomeRow"><span>轴力 {String(fullCalculation?.maxSupportAxialForce ?? candidate.axialPeakProxy ?? '-')}</span><span>位移 {String(fullCalculation?.maxDisplacement ?? '-')}</span><span className={Number(fullCalculation?.failCount ?? candidate.failCount ?? 0) > 0 ? 'bad' : 'good'}>Fail {String(fullCalculation?.failCount ?? candidate.failCount ?? 0)}</span></div>
+      {Boolean(fullCalculation?.decisionReason) && <p className="schemeDecisionReason">{String(fullCalculation?.decisionReason)}</p>}
+    </button>
+  );
+}
+
 function statusText(status?: string) {
   const map: Record<string, string> = {
     applied_pending_recalculation: '已采纳，待复算',
@@ -353,12 +413,31 @@ function CheckSummaryPills({ summary }: { summary?: Record<string, unknown> }) {
   return <div className="checkSummary"><span className="checkTag pass">合规 {pass}</span><span className="checkTag fail">不合规 {fail}</span><span className="checkTag warning">预警 {warning}</span><span className="checkTag manual_review">复核 {manual}</span></div>;
 }
 
-export default function ResultViewer({ project, runStep, runTask, highlightLocator }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown> }) {
+export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional' }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional' }) {
   const latest = project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
   const checks = latest?.checks ?? [];
   const candidates = latest?.supportLayoutRepair?.candidates?.slice(0, 5) ?? [];
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | undefined>(latest?.supportLayoutRepair?.selectedCandidateId ?? latest?.supportLayoutRepair?.bestCandidateId ?? candidates[0]?.id);
   const selectedCandidate = useMemo(() => candidates.find((c) => c.id === selectedCandidateId) ?? candidates[0], [candidates, selectedCandidateId]);
+  if (density === 'compact') {
+    return <div className="viewer compactResultViewer">
+      <div className="focusSectionHeader"><div><span className="sectionKicker">计算核心成果</span><h3>计算结果与规范复核</h3><p>专注模式仅展示控制指标和出图闸门。完整矩阵、逐阶段内力和原始台账请切换专业模式。</p></div></div>
+      {!latest ? <div className="emptyDecisionState"><strong>尚未运行计算</strong><p>完成围护结构后执行“一键计算校核”。</p></div> : <>
+        <div className="resultCards focusResultCards">
+          <div><strong>{formatEngineeringValue(latest.governingValues.maxTotalPressure, 'pressure')}</strong><span>最大合成侧压力</span></div>
+          <div><strong>{formatEngineeringValue(latest.governingValues.maxSupportAxialForce, 'force')}</strong><span>最大支撑轴力</span></div>
+          <div><strong>{formatEngineeringValue(latest.governingValues.maxWallMoment, 'wallMoment')}</strong><span>最大墙体弯矩</span></div>
+          <div><strong>{formatEngineeringValue(latest.governingValues.maxDisplacement, 'displacement')}</strong><span>最大墙体位移</span></div>
+        </div>
+        <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
+        <div className="compactDecisionGrid">
+          <section className="summaryPanel"><h4>校核数量</h4><CheckSummaryPills summary={latest.checkSummary} /></section>
+          <section className="summaryPanel"><h4>施工图闸门</h4><div className="metricLine"><span>状态</span><strong>{latest.formalReportGate?.status ?? '未评估'}</strong></div><div className="metricLine"><span>正式发行</span><strong>{latest.formalReportGate?.allowedForOfficialIssue ? '允许' : '暂不允许'}</strong></div><p className="small">{latest.formalReportGate?.headline ?? '完成计算后自动评估。'}</p></section>
+        </div>
+        <details className="focusDetails"><summary>查看控制云图与内力包络</summary><InternalForceVisualization latest={latest} highlightLocator={highlightLocator} /><WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} /></details>
+      </>}
+    </div>;
+  }
   return (
     <div className="viewer">
       <h3>计算结果与规范复核</h3>
@@ -372,10 +451,13 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
             <div><strong>{latest.governingValues.maxWallShear ?? '-'}</strong><span>最大设计剪力 kN/m</span></div>
             <div><strong>{latest.governingValues.maxDisplacement ?? '-'}</strong><span>最大位移 mm</span></div>
           </div>
-          <InternalForceVisualization latest={latest} highlightLocator={highlightLocator} />
-          <WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} />
-          <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} />
           <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
+          <details className="engineeringDetails">
+            <summary>查看内力包络、墙体云图与设计面局部优化</summary>
+            <InternalForceVisualization latest={latest} highlightLocator={highlightLocator} />
+            <WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} />
+            <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} />
+          </details>
           <p>专业复核：{latest.professionalReviewRequired ? '需要' : '否'}</p>
           <h4>校核汇总</h4>
           <CheckSummaryPills summary={latest.checkSummary} />
@@ -411,18 +493,25 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
               <p className="small">{latest.supportLayoutQuality.summary}</p>
               {candidates.length ? (
                 <>
-                  <h4>支撑约束优化候选方案对比</h4>
-                  <CandidateDiversityNotice candidates={candidates} />
-                  <p className="small">点击任一候选方案可播放“原方案 → 候选方案”的支撑线移动过程；灰色为原线位，红色为移动线，黑色为局部锁定支撑或端点。采用候选方案后将写回围护体系并刷新项目。</p>
-                  {(latest.supportLayoutRepair?.candidateFullCalculations?.length || ((latest.reportDiagramData?.candidateFullCalculationComparison as any[]) ?? []).length) ? <><h5>方案 A/B/C 完整计算比选</h5><table className="table compactTable"><thead><tr><th>方案</th><th>支撑/立柱</th><th>最大轴力</th><th>最大位移</th><th>围檩弯矩</th><th>围檩剪力</th><th>稳定系数</th><th>IFC风险</th><th>正式闸门</th></tr></thead><tbody>{((latest.supportLayoutRepair?.candidateFullCalculations ?? (latest.reportDiagramData?.candidateFullCalculationComparison as any[]) ?? []) as any[]).slice(0, 3).map((item) => <tr key={String(item.schemeLabel ?? item.candidateId)}><td>{String(item.schemeLabel ?? '-')}</td><td>{String(item.supportCount ?? '-')} / {String(item.columnCount ?? '-')}</td><td>{String(item.maxSupportAxialForce ?? '-')}</td><td>{String(item.maxDisplacement ?? '-')}</td><td>{String(item.maxWaleMoment ?? '-')}</td><td>{String(item.maxWaleShear ?? '-')}</td><td>{String(item.minStabilitySafetyFactor ?? '-')}</td><td>{String(item.ifcRisk ?? item.ifcStatus ?? '-')}</td><td>{String(item.formalGateStatus ?? '-')} / {item.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table></> : null}
-                  <div className="candidatePlanGrid">
-                    {candidates.map((c) => <CandidatePlanSvg key={c.id ?? c.rank} candidate={c} selected={(selectedCandidate?.id ?? selectedCandidateId) === c.id} onClick={() => setSelectedCandidateId(c.id)} />)}
-                  </div>
-                  {selectedCandidate && <div className="candidateSelectionPanel"><div><strong>当前选中：方案 {selectedCandidate.rank}</strong><p className="small">{selectedCandidate.constructabilityNote}</p></div>{runStep && selectedCandidate.id && <button onClick={() => runStep('正在采用支撑优化候选方案', () => api.adoptSupportCandidate(project.id, selectedCandidate.id!))}>采用此方案</button>}</div>}
-                  <table className="table compactTable"><thead><tr><th>排名</th><th>评分</th><th>变量策略</th><th>可区分性</th><th>分仓</th><th>立柱服务跨</th><th>支撑数</th><th>立柱数</th><th>最大跨长</th><th>交叉</th><th>障碍冲突</th><th>硬约束</th><th>导出</th></tr></thead><tbody>
-                    {candidates.map((c) => <tr key={c.id ?? c.rank} className={(selectedCandidate?.id ?? selectedCandidateId) === c.id ? 'selectedRow' : ''} onClick={() => setSelectedCandidateId(c.id)}><td>{c.rank}</td><td>{c.score}</td><td>{String(c.variableSummary?.positionPattern ?? '-')}</td><td>{candidateDifferenceLabel(c)}</td><td>{c.targetSpacing}m</td><td>{c.columnMaxSpan}m</td><td>{c.supportCount}</td><td>{c.columnCount}</td><td>{c.maxSpanLength ?? '-'}</td><td>{c.crossingCount ?? 0}</td><td>{c.obstacleConflictCount ?? 0}</td><td>{Boolean(c.hardConstraints?.passed) ? '满足' : '未满足'}</td><td>{Boolean(c.exportReadiness?.ifcReady) ? 'IFC/计算书可用' : '需修复'}</td></tr>)}
-                  </tbody></table>
-                  <div className="candidateCompareGrid">{candidates.map((c) => <div className={`candidateCard ${(selectedCandidate?.id ?? selectedCandidateId) === c.id ? 'selected' : ''}`} key={`card-${c.id ?? c.rank}`} onClick={() => setSelectedCandidateId(c.id)}><h5>方案 {c.rank} · {c.score} 分 · {candidateDifferenceLabel(c)}</h5><div className="radarBars"><RadarBar label="间距" value={Number(c.softObjectives?.spacingCloseTo3To6m ?? 0)} /><RadarBar label="短跨" value={Number(c.softObjectives?.shortSpanLength ?? 0)} /><RadarBar label="立柱" value={Number(c.softObjectives?.reasonableColumnCount ?? 0)} /><RadarBar label="轴力" value={Number(c.softObjectives?.lowAxialPeakProxy ?? 0)} /><RadarBar label="出土" value={Number(c.softObjectives?.continuousMuckPath ?? 0)} /><RadarBar label="对称" value={Number(c.softObjectives?.planSymmetry ?? 0)} /></div><p className="small">{c.constructabilityNote}</p></div>)}</div>
+                  <h4>整体支撑方案 A/B/C 比选</h4>
+                  <CandidateDiversityNotice candidates={candidates.slice(0, 3)} />
+                  <p className="small">每个卡片代表一套完整支撑体系。先比较三维传力路径、支撑跨度、立柱数量和完整计算指标，再整体采用；单墙长度微调已收纳到高级详情。</p>
+                  {(() => {
+                    const fullRows = ((latest.supportLayoutRepair?.candidateFullCalculations ?? (latest.reportDiagramData?.candidateFullCalculationComparison as any[]) ?? []) as Record<string, unknown>[]);
+                    const byId = new Map(fullRows.map((row) => [String(row.candidateId ?? ''), row]));
+                    return <>
+                      <div className="candidateSchemeGrid">
+                        {candidates.slice(0, 3).map((candidate) => <CandidateScheme3D key={candidate.id ?? candidate.rank} candidate={candidate} fullCalculation={byId.get(String(candidate.id ?? '')) ?? candidate.fullCalculation} selected={(selectedCandidate?.id ?? selectedCandidateId) === candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} />)}
+                      </div>
+                      {selectedCandidate && <div className="candidateSelectionPanel schemeSelectionPanel"><div><strong>当前选中：方案 {schemeLetter(selectedCandidate.rank)} · {candidateSchemeName(selectedCandidate)}</strong><p className="small">{selectedCandidate.constructabilityNote}</p><div className="schemeSelectedMetrics"><span>目标分仓 {selectedCandidate.targetSpacing}m</span><span>立柱服务跨 {selectedCandidate.columnMaxSpan}m</span><span>最大支撑跨 {selectedCandidate.maxSpanLength ?? '-'}m</span><span>硬约束 {Boolean(selectedCandidate.hardConstraints?.passed) ? '满足' : '未满足'}</span></div></div>{runStep && selectedCandidate.id && <button onClick={() => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, selectedCandidate.id!))}>整体采用方案 {schemeLetter(selectedCandidate.rank)}</button>}</div>}
+                      {fullRows.length ? <table className="table compactTable schemeComparisonTable"><thead><tr><th>整体方案</th><th>完整排名/得分</th><th>体系</th><th>支撑/立柱</th><th>最长跨/超长直撑</th><th>最大轴力</th><th>最大位移</th><th>围檩弯矩</th><th>Fail/Warning</th><th>正式闸门</th></tr></thead><tbody>{fullRows.slice(0, 3).map((item, index) => <tr className={item.recommendedByFullCalculation ? 'recommendedSchemeRow' : ''} key={String(item.candidateId ?? index)}><td>方案 {String(item.schemeLabel ?? schemeLetter(index + 1))}{item.recommendedByFullCalculation ? ' · 推荐' : ''}</td><td>{String(item.decisionRank ?? '-')} / {String(item.decisionScore ?? '-')}</td><td>{String(item.schemeName ?? item.topologyFamily ?? '-')}</td><td>{String(item.supportCount ?? '-')} / {String(item.columnCount ?? '-')}</td><td>{String(item.maxSpanLength ?? '-')} / {String(item.excessiveDirectStrutCount ?? 0)}</td><td>{String(item.maxSupportAxialForce ?? '-')}</td><td>{String(item.maxDisplacement ?? '-')}</td><td>{String(item.maxWaleMoment ?? '-')}</td><td>{String(item.failCount ?? 0)} / {String(item.warningCount ?? 0)}</td><td>{item.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table> : <div className="warning">尚未执行 A/B/C 完整并行计算；当前卡片使用代理评分。请运行候选方案完整计算后再正式定案。</div>}
+                      <details className="engineeringDetails compactDetails"><summary>查看评分分解、原方案动画和完整候选参数</summary>
+                        <div className="candidatePlanGrid">{candidates.slice(0, 3).map((candidate) => <CandidatePlanSvg key={`plan-${candidate.id ?? candidate.rank}`} candidate={candidate} selected={(selectedCandidate?.id ?? selectedCandidateId) === candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} />)}</div>
+                        <table className="table compactTable"><thead><tr><th>方案</th><th>评分</th><th>拓扑</th><th>分仓</th><th>立柱跨</th><th>支撑数</th><th>最长跨</th><th>交叉/障碍</th></tr></thead><tbody>{candidates.slice(0, 3).map((candidate) => <tr key={`detail-${candidate.id ?? candidate.rank}`}><td>{schemeLetter(candidate.rank)}</td><td>{candidate.score}</td><td>{candidateSchemeName(candidate)}</td><td>{candidate.targetSpacing}m</td><td>{candidate.columnMaxSpan}m</td><td>{candidate.supportCount}</td><td>{candidate.maxSpanLength ?? '-'}m</td><td>{candidate.crossingCount ?? 0}/{candidate.obstacleConflictCount ?? 0}</td></tr>)}</tbody></table>
+                        <div className="candidateCompareGrid">{candidates.slice(0, 3).map((candidate) => <div className={`candidateCard ${(selectedCandidate?.id ?? selectedCandidateId) === candidate.id ? 'selected' : ''}`} key={`card-${candidate.id ?? candidate.rank}`}><h5>方案 {schemeLetter(candidate.rank)} · {candidate.score} 分</h5><div className="radarBars"><RadarBar label="间距" value={Number(candidate.softObjectives?.spacingCloseTo3To6m ?? 0)} /><RadarBar label="短跨" value={Number(candidate.softObjectives?.shortSpanLength ?? 0)} /><RadarBar label="立柱" value={Number(candidate.softObjectives?.reasonableColumnCount ?? 0)} /><RadarBar label="轴力" value={Number(candidate.softObjectives?.lowAxialPeakProxy ?? 0)} /><RadarBar label="出土" value={Number(candidate.softObjectives?.continuousMuckPath ?? 0)} /><RadarBar label="对称" value={Number(candidate.softObjectives?.planSymmetry ?? 0)} /></div></div>)}</div>
+                      </details>
+                    </>;
+                  })()}
                 </>
               ) : null}
             </>
@@ -467,20 +556,23 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
           ) : null}
 
           {latest.stageResults.some((r) => r.coupledSystemResult && Object.keys(r.coupledSystemResult).length) && (
-            <>
-              <h4>墙—围檩—支撑全局联立刚度矩阵</h4>
+            <details className="engineeringDetails">
+              <summary>墙—围檩—支撑全局矩阵与换撑刚度明细</summary>
+              <p className="small">未进入换撑阶段显示“未激活 / —”；进入换撑阶段后按楼板 EA/L、有效宽度和连接折减计算。应激活但参数缺失会显示“缺失”并进入阻断项。</p>
               <table className="table">
-                <thead><tr><th>阶段</th><th>边段</th><th>空间矩阵</th><th>墙平动/转角</th><th>围檩平动/转角</th><th>立柱竖向</th><th>楼板换撑刚度</th><th>全局轴力</th><th>说明</th></tr></thead>
+                <thead><tr><th>阶段</th><th>边段</th><th>空间矩阵</th><th>墙平动/转角</th><th>围檩平动/转角</th><th>立柱竖向</th><th>换撑状态</th><th>{withUnitLabel('楼板换撑刚度', 'stiffness')}</th><th>刚度来源</th><th>{withUnitLabel('全局轴力', 'force')}</th><th>说明</th></tr></thead>
                 <tbody>{latest.stageResults.filter((r) => r.coupledSystemResult).slice(0, 24).map((r) => <tr key={`${r.stageId}-${r.segmentId}`}>
                   <td>{r.stageId}</td><td>{r.segmentId}</td><td>{String(r.coupledSystemResult?.globalSpatialMatrixSize ?? r.globalCoupledResult?.spatialMatrixSize ?? r.globalCoupledResult?.matrixSize ?? '-')}</td>
                   <td>{String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.wallHorizontal ?? '-')} / {String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.wallRotation ?? '-')}</td>
                   <td>{String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.waleHorizontal ?? '-')} / {String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.waleRotation ?? '-')}</td>
                   <td>{String((r.coupledSystemResult?.globalSpatialDofSummary as any)?.columnVertical ?? r.globalCoupledResult?.columnVerticalDofs?.length ?? '-')}</td>
-                  <td>{String(r.coupledSystemResult?.slabReplacementStiffness ?? r.globalCoupledResult?.slabReplacementStiffness ?? '-')}</td>
-                  <td>{String(r.coupledSystemResult?.globalMaxSupportAxialForce ?? r.globalCoupledResult?.maxSupportAxialForce ?? '-')}</td><td className="small">{String(r.coupledSystemResult?.note ?? '')}</td>
+                  <td>{String(r.coupledSystemResult?.slabReplacementStatus ?? r.globalCoupledResult?.slabReplacementStatus ?? 'not_active') === 'not_active' ? '未激活' : String(r.coupledSystemResult?.slabReplacementStatus ?? r.globalCoupledResult?.slabReplacementStatus ?? '-')}</td>
+                  <td>{String(r.coupledSystemResult?.slabReplacementStatus ?? r.globalCoupledResult?.slabReplacementStatus ?? 'not_active') === 'not_active' ? '—' : formatEngineeringValue(r.coupledSystemResult?.slabReplacementStiffness ?? r.globalCoupledResult?.slabReplacementStiffness, 'stiffness')}</td>
+                  <td className="small">{String(r.coupledSystemResult?.slabReplacementSource ?? r.globalCoupledResult?.slabReplacementSource ?? '—')}</td>
+                  <td>{formatEngineeringValue(r.coupledSystemResult?.globalMaxSupportAxialForce ?? r.globalCoupledResult?.maxSupportAxialForce, 'force')}</td><td className="small">{String(r.coupledSystemResult?.note ?? '')}</td>
                 </tr>)}</tbody>
               </table>
-            </>
+            </details>
           )}
 
           {latest.stageResults.some((r) => r.supportForces.some((f) => (f.distributionMethod?.includes('continuous_wale_beam') || f.distributionMethod?.includes('global')))) && (

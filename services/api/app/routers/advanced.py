@@ -15,6 +15,9 @@ from app.services.monitoring_calibration import calibrate_from_monitoring, monit
 from app.services.node_local_analysis import evaluate_node_local_response
 from app.services.review_workflow import review_status, transition_review
 from app.services.serviceability_service import evaluate_long_term_serviceability
+from app.services.coordination_optimizer import build_coordination_optimization, apply_coordination_candidate
+from app.services.node_submodel import build_node_submodels
+from app.services.crane_logistics import optimize_cage_crane_logistics
 from app.services.support_topology_graph import analyze_support_topology, apply_topology_enhancements, preview_topology_enhancements
 from app.drawings.formal_issue import create_drawing_revision
 from app.storage.repository import ProjectRepository, get_repository
@@ -87,6 +90,12 @@ class RevisionPayload(BaseModel):
     issue_status: Literal["review", "construction", "superseded"] = "review"
 
 
+class CoordinationApplyPayload(BaseModel):
+    issue_id: str = Field(min_length=1, max_length=120)
+    candidate_id: str = Field(min_length=1, max_length=180)
+    mode: Literal["conservative", "balanced", "economic"] = "balanced"
+
+
 @router.get("/suite")
 def suite(project_id: str, mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"), repo: ProjectRepository = Depends(get_repository)) -> dict:
     project = repo.require(project_id)
@@ -123,6 +132,48 @@ def collisions(project_id: str, mode: str = Query("balanced", pattern="^(conserv
 @router.get("/node-local")
 def node_local(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
     return evaluate_node_local_response(repo.require(project_id))
+
+
+@router.get("/coordination-optimization")
+def coordination_optimization(
+    project_id: str,
+    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    return build_coordination_optimization(repo.require(project_id), mode=mode)
+
+
+@router.post("/coordination-optimization/apply")
+def coordination_optimization_apply(
+    project_id: str,
+    payload: CoordinationApplyPayload = Body(...),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = repo.require(project_id)
+    try:
+        result = apply_coordination_candidate(project, payload.issue_id, payload.candidate_id, mode=payload.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    repo.save(project)
+    return result
+
+
+@router.get("/node-submodels")
+def node_submodels(
+    project_id: str,
+    top_n: int = Query(8, ge=1, le=20),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    return build_node_submodels(repo.require(project_id), top_n=top_n)
+
+
+@router.get("/crane-logistics")
+def crane_logistics(
+    project_id: str,
+    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    return optimize_cage_crane_logistics(repo.require(project_id), mode=mode)
 
 
 @router.get("/monitoring")

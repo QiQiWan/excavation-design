@@ -26,7 +26,7 @@ REBAR_FY_MPA: dict[str, float] = {
 
 RC_FLEXURE_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-FLEX-RECT-001",
-    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
+    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="矩形截面受弯承载力基本公式（软件实现为常规单筋截面诊断）",
     name="矩形截面受弯配筋诊断",
@@ -37,7 +37,7 @@ RC_FLEXURE_RULE = DesignRule(
 
 RC_SHEAR_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-SHEAR-RECT-001",
-    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
+    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="斜截面受剪承载力基本诊断（软件简化）",
     name="矩形截面受剪承载力诊断",
@@ -48,7 +48,7 @@ RC_SHEAR_RULE = DesignRule(
 
 GB50010_AXIAL_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-AXIAL-RECT-001",
-    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
+    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="轴压构件承载力基本诊断（软件简化）",
     name="矩形截面轴压承载力诊断",
@@ -238,9 +238,16 @@ def rectangular_flexural_capacity_knm_per_m(
 
 
 def _select_bar_arrangement(required_as: float) -> tuple[int, int, float]:
-    selected = (40, 100, as_per_m_for_spacing(40, 100))
+    # Keep the automatically proposed cage constructible.  The former D40@100
+    # fallback provided a large steel area but only 60 mm clear spacing, which
+    # then failed the software's own JGJ120 detailing check.  High demand must
+    # surface as a flexural/section upgrade issue, not as a contradictory bar
+    # spacing recommendation.
+    selected = (40, 120, as_per_m_for_spacing(40, 120))
     for dia in (20, 22, 25, 28, 32, 36, 40):
         for spacing in (250, 225, 200, 180, 160, 150, 140, 125, 120, 100):
+            if spacing - dia < 75:
+                continue
             provided = as_per_m_for_spacing(dia, spacing)
             if provided >= required_as:
                 return int(dia), int(spacing), round(provided, 2)
@@ -262,8 +269,11 @@ def design_rectangular_flexural_reinforcement(
         cover_mm=cover_mm,
     )
     dia, spacing, provided = _select_bar_arrangement(design.governing_as)
+    arrangement_status = design.status
+    if provided + 1.0e-6 < design.governing_as:
+        arrangement_status = "fail"
     return {
-        "status": design.status,
+        "status": arrangement_status,
         "momentDesign": round(abs(moment_design_knm_per_m), 3),
         "asRequired": design.governing_as,
         "asByFlexure": design.required_as,

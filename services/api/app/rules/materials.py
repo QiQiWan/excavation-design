@@ -21,7 +21,7 @@ class SteelDesignValues:
     elastic_modulus: float = 200000.0  # MPa
 
 
-# Common GB/T 50010 design strengths for ordinary concrete grades used by this prototype.
+# Common GB 50010 design strengths for ordinary concrete grades used by this prototype.
 # The rules engine keeps these values centralized so that a licensed engineering team can
 # audit or replace them against the project-specific standard edition.
 _CONCRETE: dict[str, ConcreteDesignValues] = {

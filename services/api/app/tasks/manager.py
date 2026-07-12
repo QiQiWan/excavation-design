@@ -11,9 +11,10 @@ import traceback
 import hashlib
 import shutil
 
-from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project
+from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project, run_single_candidate_calculation
 from app.drawings.cad_export import export_construction_cad_package, export_construction_svg_package
 from app.drawings.formal_issue import export_formal_drawing_package
+from app.drawing_rules import evaluate_drawing_issue_gate
 from app.ifc.exporter import export_simplified_ifc
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility, validate_ifc_file
 from app.reports.docx_report import export_docx_report
@@ -24,9 +25,11 @@ from app.services.calculation_trace import build_calculation_trace
 from app.services.issue_center import build_issue_center
 from app.services.benchmark_cases import export_benchmark_package
 from app.services.rebar_detailing import build_rebar_detailing
+from app.services.rebar_export import export_rebar_detailing_package
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 from app.services.wall_length_optimizer import export_wall_length_redundancy_report, mark_wall_length_recalculated
 from app.services.design_scheme_ledger import export_design_scheme_ledger
+from app.services.review_workflow import review_status
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
 
@@ -101,7 +104,7 @@ class TaskManager:
         self._lock = RLock()
         self._project_locks: dict[str, RLock] = {}
         self._store = SQLiteTaskStore()
-        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="pitguard-task")
+        self._executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="pitguard-task")
         for raw in self._store.list(limit=500):
             task = TaskRecord.from_dict(raw)
             if task.status in {"queued", "running"}:
@@ -129,6 +132,19 @@ class TaskManager:
             future = self._executor.submit(self._run_task, task.id, payload)
             self._futures[task.id] = future
         return task
+
+    def submit_candidate_batch(self, project_id: str, top_n: int = 3, use_cache: bool = True) -> list[TaskRecord]:
+        project = self._repo().require(project_id)
+        repair = project.retaining_system.support_layout_repair if project.retaining_system else None
+        candidates = list((repair.candidates if repair else [])[: max(1, min(top_n, 3))])
+        if not candidates:
+            raise ValueError("No support-layout candidates are available. Generate A/B/C candidates first.")
+        tasks: list[TaskRecord] = []
+        for index, candidate in enumerate(candidates):
+            tasks.append(self.submit(project_id, "candidate_scheme_calculation", {
+                "candidateId": candidate.id, "candidateIndex": index, "useCache": use_cache,
+            }))
+        return tasks
 
     def list(self, project_id: str | None = None) -> list[TaskRecord]:
         with self._lock:
@@ -165,10 +181,14 @@ class TaskManager:
         with self._lock:
             project_lock = self._project_locks.setdefault(task.project_id, RLock())
         try:
-            with project_lock:
-                self._set(task, status="running", progress=2, current_step="启动任务")
-                self._append_log(task, "已获得项目级执行锁，同一项目任务将串行执行。")
+            self._set(task, status="running", progress=2, current_step="启动任务")
+            if task.operation == "candidate_scheme_calculation":
+                self._append_log(task, "候选方案采用只读项目快照并行计算；写回结果时使用短时项目锁。")
                 result = self._execute_operation(task, payload)
+            else:
+                with project_lock:
+                    self._append_log(task, "已获得项目级执行锁，同一项目写任务将串行执行。")
+                    result = self._execute_operation(task, payload)
             if task.cancel_requested:
                 self._set(task, status="cancelled", progress=task.progress, current_step="任务已取消", finished_at=_now())
                 return
@@ -184,6 +204,8 @@ class TaskManager:
             result = self._run_calculation_full(task, payload)
         elif task.operation == "candidate_comparison":
             result = self._run_candidate_comparison(task, payload)
+        elif task.operation == "candidate_scheme_calculation":
+            result = self._run_candidate_scheme_calculation(task, payload)
         elif task.operation.startswith("export_ifc"):
             result = self._run_ifc_export(task, payload)
         elif task.operation == "export_report":
@@ -265,6 +287,55 @@ class TaskManager:
         repo.save(project)
         return {"projectId": project.id, "candidateComparisonCount": len(comparison), "refreshProject": True}
 
+    def _run_candidate_scheme_calculation(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        repo = self._repo()
+        project = repo.require(task.project_id)
+        candidate_id = str(payload.get("candidateId") or "")
+        candidate_index = int(payload.get("candidateIndex") or 0)
+        use_cache = bool(payload.get("useCache", True))
+        repair = project.retaining_system.support_layout_repair if project.retaining_system else None
+        candidate = next((item for item in (repair.candidates if repair else []) if item.id == candidate_id), None)
+        if candidate is None:
+            raise ValueError(f"Candidate not found: {candidate_id}")
+        self._stage(task, 16, f"读取方案 {candidate_index + 1} 几何与计算输入")
+        project_snapshot = project.model_copy(deep=True)
+        self._stage(task, 34, "检查候选计算缓存")
+        result = run_single_candidate_calculation(
+            project_snapshot, candidate.model_copy(deep=True), index=candidate_index, use_cache=use_cache
+        )
+        self._stage(task, 84, "写回候选计算结果")
+        with self._lock:
+            project_lock = self._project_locks.setdefault(task.project_id, RLock())
+        with project_lock:
+            current = repo.require(task.project_id)
+            current_repair = current.retaining_system.support_layout_repair if current.retaining_system else None
+            if current_repair:
+                for item in current_repair.candidates:
+                    if item.id == candidate_id:
+                        item.full_calculation = result
+                        break
+                rows = [dict(row) for row in (current_repair.candidate_full_calculations or []) if str(row.get("candidateId")) != candidate_id]
+                rows.append(result)
+                rows.sort(key=lambda row: str(row.get("schemeLabel") or "Z"))
+                from app.calculation.engine import _rank_full_candidate_calculations
+                _rank_full_candidate_calculations(rows)
+                current_repair.candidate_full_calculations = rows
+                current.retaining_system.layout_summary = dict(current.retaining_system.layout_summary or {})
+                current.retaining_system.layout_summary["candidateFullCalculationComparison"] = rows
+                if current.calculation_results:
+                    latest = current.calculation_results[-1]
+                    latest.report_diagram_data = dict(latest.report_diagram_data or {})
+                    latest.report_diagram_data["candidateFullCalculationComparison"] = rows
+                    if latest.support_layout_repair:
+                        latest.support_layout_repair.candidate_full_calculations = rows
+                repo.save(current)
+        self._stage(task, 96, "刷新方案排名和推荐状态")
+        return {
+            "projectId": task.project_id, "candidateId": candidate_id, "candidateIndex": candidate_index,
+            "cacheHit": bool(result.get("cacheHit")), "inputHash": result.get("inputHash"),
+            "result": result, "refreshProject": True,
+        }
+
     def _run_ifc_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         mode = payload.get("mode")
         if not mode:
@@ -302,18 +373,22 @@ class TaskManager:
         requested_issue_mode = str(payload.get("issueMode") or payload.get("issue_mode") or "auto")
         scheme = build_rebar_design_scheme(project, mode=rebar_mode)
         can_issue = bool((scheme.get("diagnostics") or {}).get("canIssueConstructionDrawings"))
+        approval = review_status(project)
+        current_revision = next((r for r in reversed(project.drawing_revisions) if r.issue_status == "construction" and r.snapshot_hash == approval.get("currentSnapshotHash")), None)
+        construction_gate = evaluate_drawing_issue_gate(project, issue_mode="construction", engineering_gate_allowed=can_issue, approval=approval, current_revision_valid=current_revision is not None)
         if requested_issue_mode == "auto":
-            issue_mode = "construction" if can_issue else "review"
+            issue_mode = "construction" if construction_gate["allowed"] else "review"
         elif requested_issue_mode in {"review", "construction"}:
             issue_mode = requested_issue_mode
         else:
             raise ValueError(f"Unsupported CAD issue mode: {requested_issue_mode}")
-        if issue_mode == "construction" and not can_issue:
-            raise ValueError("仍有配筋或计算阻断项，不能生成施工图复核版；请改用 review 或先处理诊断项。")
+        selected_gate = construction_gate if issue_mode == "construction" else evaluate_drawing_issue_gate(project, issue_mode="review", engineering_gate_allowed=can_issue, approval=approval, current_revision_valid=current_revision is not None)
+        if not selected_gate["allowed"]:
+            raise ValueError("当前出图规则集的施工版发行条件未满足：" + "; ".join(str(x.get("message")) for x in selected_gate.get("reasons", [])))
         mode_text = "施工图复核版" if issue_mode == "construction" else "审查版"
         self._stage(task, 22, f"生成 {scope} DXF 图纸、分区配筋和材料表（{mode_text}）")
         path = export_construction_cad_package(project, EXPORT_DIR, scope=scope, rebar_mode=rebar_mode, issue_mode=issue_mode)
-        return self._file_result(path, "application/zip", {"scope": scope, "rebarMode": rebar_mode, "issueMode": issue_mode, "canIssueConstructionDrawings": can_issue})
+        return self._file_result(path, "application/zip", {"scope": scope, "rebarMode": rebar_mode, "issueMode": issue_mode, "canIssueConstructionDrawings": can_issue, "drawingIssueGate": selected_gate})
 
     def _run_svg_export(self, task: TaskRecord) -> dict[str, Any]:
         project = self._repo().require(task.project_id)
@@ -370,18 +445,21 @@ class TaskManager:
         project = self._repo().require(task.project_id)
         issue_mode = str(payload.get("issueMode") or payload.get("issue_mode") or "review")
         rebar_mode = str(payload.get("rebarMode") or payload.get("rebar_mode") or "balanced")
+        scheme = build_rebar_design_scheme(project, mode=rebar_mode)
+        approval = review_status(project)
+        current_revision = next((r for r in reversed(project.drawing_revisions) if r.issue_status == "construction" and r.snapshot_hash == approval.get("currentSnapshotHash")), None)
+        issue_gate = evaluate_drawing_issue_gate(project, issue_mode=issue_mode, engineering_gate_allowed=bool((scheme.get("diagnostics") or {}).get("canIssueConstructionDrawings")), approval=approval, current_revision_valid=current_revision is not None)
+        if not issue_gate["allowed"]:
+            raise ValueError("正式图纸包发行条件未满足：" + "; ".join(str(x.get("message")) for x in issue_gate.get("reasons", [])))
         self._stage(task, 24, "生成 CAD、批量 PDF、修订台账和工程闭环索引")
         path = export_formal_drawing_package(project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode)
-        return self._file_result(path, "application/zip", {"issueMode": issue_mode, "refreshProject": True})
+        return self._file_result(path, "application/zip", {"issueMode": issue_mode, "refreshProject": True, "drawingIssueGate": issue_gate})
 
     def _run_rebar_detailing_export(self, task: TaskRecord) -> dict[str, Any]:
         project = self._repo().require(task.project_id)
-        self._stage(task, 28, "生成钢筋施工详图深化 JSON")
-        EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-        path = EXPORT_DIR / f"{project.id}_rebar_shop_detailing_v{SOFTWARE_VERSION.replace(chr(46), chr(95))}.json"
-        import json
-        path.write_text(json.dumps(build_rebar_detailing(project), ensure_ascii=False, indent=2), encoding="utf-8")
-        return self._file_result(path, "application/json")
+        self._stage(task, 28, "生成钢筋加工深化 ZIP（XLSX/CSV/JSON/使用说明）")
+        path = export_rebar_detailing_package(project, EXPORT_DIR, mode="balanced")
+        return self._file_result(path, "application/zip", {"packageType": "rebar_detailing", "humanReadablePrimary": "rebar_detailing_schedules.xlsx"})
 
     def _run_benchmark_export(self, task: TaskRecord) -> dict[str, Any]:
         self._stage(task, 20, "运行公开论文典型基坑规范算法回归算例")
@@ -416,13 +494,20 @@ class TaskManager:
             shutil.rmtree(bundle_dir)
         bundle_dir.mkdir(parents=True, exist_ok=True)
         import json, zipfile
+        refreshed_project = self._repo().require(task.project_id)
+        assurance = evaluate_project_assurance(refreshed_project)
         manifest = {
             "projectId": task.project_id,
             "packageVersion": SOFTWARE_VERSION,
             **version_manifest(),
-            "softwareModuleCompletion": 100,
+            "softwareCapabilityCompleteness": assurance.get("capabilityCompleteness"),
+            "projectModuleCompleteness": assurance.get("moduleOverallCompleteness"),
+            "engineeringCheckStatus": assurance.get("engineeringCheckStatus"),
+            "reviewStatus": (refreshed_project.review_workflow.status if refreshed_project.review_workflow else "not_started"),
+            "officialIssueGateStatus": assurance.get("officialIssueGateStatus"),
+            "officialIssueGateAllowed": assurance.get("officialIssueGateAllowed"),
             "outputs": outputs,
-            "officialIssueBoundary": "软件交付闭环已完成；项目正式盖章出图仍需专业复核和企业签审流程。",
+            "officialIssueBoundary": "交付文件已生成；是否允许正式发行以 officialIssueGateAllowed 和四级审签结果为准。",
         }
         (bundle_dir / "delivery_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         for name, item in outputs.items():
@@ -437,7 +522,15 @@ class TaskManager:
             for file in bundle_dir.iterdir():
                 if file.is_file():
                     zf.write(file, arcname=file.name)
-        result = self._file_result(zip_path, "application/zip", {"projectId": task.project_id, "outputs": outputs, "refreshProject": True, "softwareModuleCompletion": 100})
+        result = self._file_result(zip_path, "application/zip", {
+            "projectId": task.project_id,
+            "outputs": outputs,
+            "refreshProject": True,
+            "softwareCapabilityCompleteness": assurance.get("capabilityCompleteness"),
+            "projectModuleCompleteness": assurance.get("moduleOverallCompleteness"),
+            "engineeringCheckStatus": assurance.get("engineeringCheckStatus"),
+            "officialIssueGateAllowed": assurance.get("officialIssueGateAllowed"),
+        })
         return result
 
     def _file_result(self, path: Path, media_type: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -458,6 +551,7 @@ class TaskManager:
         return {
             "calculation_full": "一键计算校核",
             "candidate_comparison": "候选方案 A/B/C 完整比选",
+            "candidate_scheme_calculation": "单个候选方案完整计算",
             "export_ifc_light": "导出 IFC 轻量协调版",
             "export_ifc_analysis": "导出 IFC 分析模型版",
             "export_ifc_construction_visual": "导出 IFC 施工图可视化版",
@@ -470,7 +564,7 @@ class TaskManager:
             "export_json": "导出 JSON 数据",
             "export_trace": "导出计算追溯链",
             "export_issue_report": "导出问题清单与完成度评估",
-            "export_rebar_detailing": "导出钢筋施工详图深化 JSON",
+            "export_rebar_detailing": "导出钢筋加工深化 ZIP",
             "export_wall_length_redundancy": "导出围护墙设计长度冗余优化报告",
             "export_design_scheme_ledger": "导出方案快照与交付闸门台账",
             "export_benchmark_cases": "导出公开论文典型基坑回归算例包",

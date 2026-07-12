@@ -14,6 +14,7 @@ if str(API_ROOT) not in sys.path:
 
 from app.geology.idw import interpolate_surface_idw
 from app.main import app
+from app.version import SOFTWARE_VERSION
 from app.rules.enterprise.preliminary_design_rules import select_support_count, select_wall_thickness
 from app.services.borehole_import import parse_borehole_rows, read_csv_bytes
 from app.services.excavation_service import is_self_intersecting, validate_outline
@@ -411,7 +412,7 @@ def test_run_sample_workflow_equivalent_v1_2_has_no_bearing_fail(client):
     assurance = client.get(f"/api/projects/{project_id}/assurance/gap-analysis")
     assert assurance.status_code == 200, assurance.text
     assurance_data = assurance.json()
-    assert assurance_data["softwareVersion"] in {"3.2.0"}
+    assert assurance_data["softwareVersion"] == SOFTWARE_VERSION
     assert assurance_data["capabilityCompleteness"] == 100.0
     assert assurance_data["completionPercent"] == 100.0
     assert assurance_data["softwareFlowComplete"] is True
@@ -798,7 +799,7 @@ def test_v2_0_3_assurance_explains_gate_items(client):
     assurance = client.get(f"/api/projects/{project_id}/assurance/gap-analysis")
     assert assurance.status_code == 200, assurance.text
     data = assurance.json()
-    assert data["softwareVersion"] == "3.2.0"
+    assert data["softwareVersion"] == SOFTWARE_VERSION
     assert "softwareFlowMissingItems" in data
     assert "officialIssueGateStatus" in data
     assert "officialIssueBlockingItems" in data

@@ -49,6 +49,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
   const [mode, setMode] = useState<RebarMode>('balanced');
   const [scheme, setScheme] = useState<RebarDesignScheme>();
   const [manifest, setManifest] = useState<DrawingSetManifest>();
+  const [deepDetailing, setDeepDetailing] = useState<Record<string, any>>();
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string>();
@@ -60,8 +61,8 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(undefined); setNotice(undefined);
-    Promise.all([api.getRebarDesignScheme(project.id, mode), api.getDrawingSetManifest(project.id)])
-      .then(([schemeData, manifestData]) => { if (alive) { setScheme(schemeData); setManifest(manifestData); } })
+    Promise.all([api.getRebarDesignScheme(project.id, mode), api.getDrawingSetManifest(project.id), api.getDeepDetailing(project.id, mode)])
+      .then(([schemeData, manifestData, deepData]) => { if (alive) { setScheme(schemeData); setManifest(manifestData); setDeepDetailing(record(deepData.deepDetailing)); } })
       .catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -123,6 +124,16 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       {notice ? <div className="rebarGateMessage pass">{notice}</div> : null}
       {error ? <div className="error">{error}</div> : null}
       {loading ? <p className="small">正在检查计算有效性、配筋组合、节点承压和图纸闸门…</p> : null}
+
+      <div className="deepDetailingSummary" aria-label="深化设计摘要">
+        <div className="panelTitleRow"><div><h4>深化设计闭环</h4><p className="small">节点钢构件、钢筋笼吊装、机械连接、预埋件碰撞和施工顺序。</p></div><span className={`statusPill ${statusTone(record(deepDetailing?.summary).status)}`}>{localizedStatus(record(deepDetailing?.summary).status ?? 'warning')}</span></div>
+        <div className="maturityGrid rebarSummaryGrid">
+          <div className={`statusCard ${statusTone(record(deepDetailing?.summary).hardFailureCount ? 'fail' : 'pass')}`}><span>深化阻断</span><strong>{String(record(deepDetailing?.summary).hardFailureCount ?? 0)}</strong><em>节点、吊装或预埋件碰撞</em></div>
+          <div className="statusCard"><span>节点硬件</span><strong>{String(record(deepDetailing?.summary).bearingPlateCount ?? 0)}</strong><em>承压板/加劲板/焊缝/锚筋</em></div>
+          <div className="statusCard"><span>吊装工况</span><strong>{String(record(deepDetailing?.summary).cageHoistingCaseCount ?? 0)}</strong><em>分节、吊点、索力与临时加强</em></div>
+          <div className="statusCard"><span>机械连接</span><strong>{String(record(deepDetailing?.summary).couplerCount ?? 0)}</strong><em>套筒、丝头、错开组和抽检</em></div>
+        </div>
+      </div>
 
       <div className="maturityGrid rebarSummaryGrid">
         <div className={`statusCard ${statusTone(diagnostics?.calculation.status)}`}><span>计算有效性</span><strong>{localizedStatus(diagnostics?.calculation.status ?? 'warning')}</strong><em>{diagnostics?.calculation.messages?.[0] ?? '等待检查'}</em></div>

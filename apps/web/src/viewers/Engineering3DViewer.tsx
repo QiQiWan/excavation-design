@@ -190,6 +190,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
   const [measureText, setMeasureText] = useState<string | undefined>();
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
   const [hoverInfo, setHoverInfo] = useState<Record<string, unknown> | undefined>();
+  const [renderQuality, setRenderQuality] = useState<'auto' | 'performance' | 'balanced' | 'high'>('auto');
 
   const stats = useMemo(() => ({
     boreholes: project.boreholes.length,
@@ -199,6 +200,13 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     supports: project.retainingSystem?.supports.length ?? 0,
     maxSupportAxialForce: Math.max(0, ...(project.retainingSystem?.supports.map((s) => s.designAxialForce ?? 0) ?? [])),
   }), [project]);
+
+  const sceneComplexity = stats.vtuCells + stats.supports * 20 + stats.walls * 12 + stats.boreholes * 8 + stats.surfaces * 80;
+  const effectiveQuality: 'performance' | 'balanced' | 'high' = renderQuality === 'auto'
+    ? sceneComplexity > 16000 ? 'performance' : sceneComplexity > 5000 ? 'balanced' : 'high'
+    : renderQuality;
+  const vtuStride = effectiveQuality === 'performance' ? 8 : effectiveQuality === 'balanced' ? 3 : 1;
+  const radialSegments = effectiveQuality === 'performance' ? 6 : effectiveQuality === 'balanced' ? 8 : 12;
 
   const maxMomentWall = useMemo(() => {
     return project.retainingSystem?.diaphragmWalls.reduce((best, wall) => ((wall.designResults?.maxMomentDesign ?? 0) > (best?.designResults?.maxMomentDesign ?? -1) ? wall : best), project.retainingSystem?.diaphragmWalls[0]);
@@ -226,7 +234,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     const camera = new PerspectiveCamera(45, width / height, 0.1, 5000);
     const renderer = new WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, effectiveQuality === 'high' ? 2 : effectiveQuality === 'balanced' ? 1.35 : 1));
     renderer.localClippingEnabled = clip;
     mount.appendChild(renderer.domElement);
 
@@ -255,7 +263,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       project.boreholes.forEach((bh) => {
         bh.layers.forEach((layer, index) => {
           const h = Math.max(0.05, layer.topElevation - layer.bottomElevation);
-          const geometry = new CylinderGeometry(0.45, 0.45, h, 12);
+          const geometry = new CylinderGeometry(0.45, 0.45, h, radialSegments);
           const material = new MeshStandardMaterial({ color: stratumColor(project, layer.stratumCode, index), transparent: true, opacity: 0.82, clippingPlanes });
           const cyl = new Mesh(geometry, material);
           cyl.position.set(bh.x, (layer.topElevation + layer.bottomElevation) / 2, bh.y);
@@ -268,7 +276,8 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     if (layers.vtu && project.geologicalModel?.vtuMesh?.points) {
       const points = project.geologicalModel.vtuMesh.points;
       const linePositions: number[] = [];
-      project.geologicalModel.vtuMesh.cellBlocks?.forEach((block) => {
+      project.geologicalModel.vtuMesh.cellBlocks?.forEach((block, blockIndex) => {
+        if (blockIndex % vtuStride !== 0) return;
         edgesForCell(block).forEach(([a, b]) => {
           const pa = points[a]; const pb = points[b];
           if (!pa || !pb) return;
@@ -348,7 +357,15 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       if (layers.supports) project.retainingSystem.supports.forEach((support) => {
         const issue = supportIssueMap.get(support.id);
         const color = issueColor(issue) ?? (layers.results ? supportCloudColor(support.designAxialForce, stats.maxSupportAxialForce) : (support.supportRole === 'ring_strut' ? 0x9333ea : support.supportRole === 'corner_diagonal' ? 0xf97316 : support.supportRole === 'secondary_strut' ? 0x0891b2 : 0xdc2626));
-        addBeam(support.code, support.start, support.end, support.elevation, support.section.width ?? 0.8, support.section.height ?? 0.8, color, { type: 'InternalSupport', id: support.id, code: support.code, role: support.supportRole, level: support.levelIndex, axialForce: support.designAxialForce, preload: support.preload, thermalAxialForce: support.thermalAxialForce, gapClosureForce: support.gapClosureForce, spanLength: support.spanLength, baySpacing: support.baySpacing, startFace: support.startFaceCode, endFace: support.endFaceCode, startTributaryWidth: support.startTributaryWidth, endTributaryWidth: support.endTributaryWidth, section: support.section.name, material: support.material.grade, qualityIssue: issue ?? 'none' });
+        addBeam(support.code, support.start, support.end, support.elevation, support.section.width ?? 0.8, support.section.height ?? 0.8, color, { type: 'InternalSupport', id: support.id, code: support.code, role: support.supportRole, level: support.levelIndex, axialForce: support.designAxialForce, preload: support.preload, thermalAxialForce: support.thermalAxialForce, gapClosureForce: support.gapClosureForce, spanLength: support.spanLength, baySpacing: support.baySpacing, startFace: support.startFaceCode, endFace: support.endFaceCode, centerlineOffset: support.centerlineOffsetM, startWallClearance: support.startWallClearanceM, endWallClearance: support.endWallClearanceM, topologyFamily: support.topologyFamily, startTributaryWidth: support.startTributaryWidth, endTributaryWidth: support.endTributaryWidth, section: support.section.name, material: support.material.grade, qualityIssue: issue ?? 'none' });
+        // The support centreline is offset from the wall/wale. Short rigid links
+        // make the force-transfer endpoint visible without merging both solids.
+        if (support.startWallConnection && planLength(support.startWallConnection, support.start) > 0.05) {
+          addBeam(`${support.code}-WS`, support.startWallConnection, support.start, support.elevation, Math.min(0.35, support.section.width ?? 0.35), Math.min(0.35, support.section.height ?? 0.35), 0x64748b, { type: 'SupportRigidLink', supportId: support.id, endpoint: 'start', clearance: support.startWallClearanceM });
+        }
+        if (support.endWallConnection && planLength(support.end, support.endWallConnection) > 0.05) {
+          addBeam(`${support.code}-WE`, support.end, support.endWallConnection, support.elevation, Math.min(0.35, support.section.width ?? 0.35), Math.min(0.35, support.section.height ?? 0.35), 0x64748b, { type: 'SupportRigidLink', supportId: support.id, endpoint: 'end', clearance: support.endWallClearanceM });
+        }
       });
       if (layers.supports) project.retainingSystem.supportNodes?.forEach((node) => {
         const geometry = new SphereGeometry(0.75, 16, 12);
@@ -496,7 +513,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       });
       mount.innerHTML = '';
     };
-  }, [project, layers, opacity, clip, clipAxis, clipOffset, focus, stats.vtuCells, stats.maxSupportAxialForce, measureMode, measureStart, supportIssueMap, highlightId]);
+  }, [project, layers, opacity, clip, clipAxis, clipOffset, focus, stats.vtuCells, stats.maxSupportAxialForce, measureMode, measureStart, supportIssueMap, highlightId, effectiveQuality, vtuStride, radialSegments]);
 
   const layerEntries = Object.entries(layers) as [LayerKey, boolean][];
   return (
@@ -506,12 +523,13 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
           <h3>工程三维视图</h3>
           <p className="small">左键旋转，Shift+拖拽平移，滚轮缩放，点击构件查看属性。剖切面为按 X 方向的快速剖切。</p>
         </div>
-        <div className="viewerStats"><span>钻孔 {stats.boreholes}</span><span>地层面 {stats.surfaces}</span><span>VTU 单元 {stats.vtuCells}</span><span>墙 {stats.walls}</span><span>支撑 {stats.supports}</span></div>
+        <div className="viewerStats"><span>钻孔 {stats.boreholes}</span><span>地层面 {stats.surfaces}</span><span>VTU 单元 {stats.vtuCells}</span><span>墙 {stats.walls}</span><span>支撑 {stats.supports}</span><span>LOD {effectiveQuality}</span></div>
       </div>
       <div className="viewerControls">
         {layerEntries.map(([key, value]) => (
           <label key={key}><input type="checkbox" checked={value} onChange={(event) => setLayers((prev) => ({ ...prev, [key]: event.target.checked }))} /> {key}</label>
         ))}
+        <label>渲染质量 <select value={renderQuality} onChange={(event) => setRenderQuality(event.target.value as 'auto' | 'performance' | 'balanced' | 'high')}><option value="auto">自动（当前 {effectiveQuality}）</option><option value="performance">性能优先</option><option value="balanced">均衡</option><option value="high">高质量</option></select></label>
         <label>透明度 <input type="range" min="0.15" max="1" step="0.05" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label>
         <label><input type="checkbox" checked={clip} onChange={(event) => setClip(event.target.checked)} /> 剖切</label>
         <label>剖切轴 <select value={clipAxis} onChange={(event) => setClipAxis(event.target.value as 'x' | 'y' | 'z')}><option value="x">X</option><option value="y">Z/标高</option><option value="z">Y</option></select></label>

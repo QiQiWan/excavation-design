@@ -26,6 +26,21 @@ def get_rebar_detailing(
     return build_rebar_detailing(repo.require(project_id), mode=mode)
 
 
+@router.get("/deep-detailing")
+def get_deep_detailing(
+    project_id: str,
+    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    detailing = build_rebar_detailing(repo.require(project_id), mode=mode)
+    return {
+        "projectId": project_id,
+        "mode": mode,
+        "deepDetailing": detailing.get("deepDetailing", {}),
+        "summary": detailing.get("summary", {}),
+    }
+
+
 @router.get("/design-scheme")
 def get_rebar_design_scheme(
     project_id: str,

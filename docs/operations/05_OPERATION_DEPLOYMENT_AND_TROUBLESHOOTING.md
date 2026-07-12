@@ -2,12 +2,13 @@
 
 ## 本地启动
 
-Linux/macOS：`bash start-linux.sh`。Windows：运行 `start-windows.bat`。后端默认端口 8000，前端默认端口 5173。
+Linux/macOS：`bash start-linux.sh`。Windows：运行 `start-windows.bat`。后端默认端口 8002，前端默认端口 5173。
 
 前端依赖使用确定版本，安装命令为 `npm ci`。Python 包可在 `services/api` 下执行 `python -m pip install -e .[dev]`。
 
 ## 环境变量
 
+- `PITGUARD_BACKEND_PORT`：后端 API 端口，默认 `8002`。启动脚本会同步注入前端 `VITE_API_BASE_URL`。
 - `PITGUARD_DB_PATH`：SQLite 数据库路径。
 - `PITGUARD_CORS_ORIGINS`：逗号分隔的前端来源，默认仅允许本机 5173 端口。
 - `PITGUARD_NUMERIC_THREADS`：单个数值内核的线程数，默认 `1`。任务并发由后台任务管理器控制，通常不建议同时放大两级并发。

@@ -119,9 +119,9 @@ def support_spring_stiffness(support: SupportElement, segment) -> tuple[float, f
 
 def _endpoint_for_face(support: SupportElement, face_code: str) -> tuple[str, Point2D, float | None] | None:
     if support.start_face_code == face_code:
-        return "start", support.start, support.start_tributary_width
+        return "start", support.start_wall_connection or support.start, support.start_tributary_width
     if support.end_face_code == face_code:
-        return "end", support.end, support.end_tributary_width
+        return "end", support.end_wall_connection or support.end, support.end_tributary_width
     return None
 
 

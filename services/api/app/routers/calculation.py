@@ -41,6 +41,31 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
     return result
 
 
+@router.post("/diagnose-and-repair")
+def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    """Run topology preflight, synchronize construction stages and recalculate.
+
+    The response is intentionally compact so the UI can explain the root cause
+    before loading the full calculation result from the project history.
+    """
+    project = repo.require(project_id)
+    try:
+        result = run_calculation(project, None, auto_repair=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    project.calculation_results.append(result)
+    mark_wall_length_recalculated(project, result.id)
+    repo.save(project)
+    diagnostics = dict((result.design_iteration_summary or {}).get("calculationDiagnostics") or {})
+    return {
+        "projectId": project.id,
+        "resultId": result.id,
+        "checkSummary": result.check_summary,
+        "governingValues": result.governing_values.model_dump(mode="json", by_alias=True),
+        "diagnostics": diagnostics,
+    }
+
+
 @router.post("/run-candidate-comparison")
 def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepository = Depends(get_repository)) -> list[dict]:
     project = repo.require(project_id)

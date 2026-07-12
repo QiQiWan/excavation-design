@@ -6,6 +6,9 @@ from typing import Any
 
 from app.schemas.domain import Project, ReinforcementGroup
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
+from app.services.rebar_fabrication import build_rebar_fabrication_package
+from app.services.deep_detailing import build_deep_detailing_package
+from app.services.detailing_geometry import apply_bar_geometry_patches
 
 STEEL_DENSITY_KG_PER_M3 = 7850.0
 
@@ -177,6 +180,17 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
     entry_by_group: dict[str, dict[str, Any]] = {}
     for entry in build_rebar_mark_entries(project):
         entry_by_group[str(entry["groupId"])] = entry
+    fallback_index = 5000
+
+    def resolve_entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGroup, host_length: float, host_height: float) -> dict[str, Any]:
+        nonlocal fallback_index
+        existing = entry_by_group.get(group.id)
+        if existing is not None:
+            return existing
+        item = _entry(host_type, host_code, host_id, group, host_length, host_height, fallback_index)
+        fallback_index += 1
+        entry_by_group[group.id] = item
+        return item
 
     def add_many(host_type: str, host_code: str, host_id: str, group: ReinforcementGroup, host: Any, entry: dict[str, Any], top: float, bottom: float, width: float = 0.8, height: float = 0.8) -> None:
         nonlocal omitted
@@ -247,7 +261,7 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
         host_len = float(wall.design_length or _host_length(wall))
         host_height = _host_height(wall)
         for g in wall.reinforcement or []:
-            e = entry_by_group.get(g.id) or _entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height, 0)
+            e = resolve_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height)
             add_many("diaphragm_wall", wall.panel_code, wall.id, g, wall, e, wall.top_elevation, wall.bottom_elevation, float(wall.thickness or 0.8), host_height)
     for beam in [*ret.crown_beams, *ret.wale_beams, *(ret.ring_beams or [])]:
         host_len = _host_length(beam); host_height = float(beam.section.height or 0.8)
@@ -257,16 +271,16 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
         if beam.design_result and beam.design_result.stirrup_diameter:
             groups.append(ReinforcementGroup(name="围檩设计箍筋", bar_type="stirrup", diameter=beam.design_result.stirrup_diameter, spacing=beam.design_result.stirrup_spacing, count=None, grade="HRB400", location_description="generated from wale beam design result", check_status=beam.design_result.check_status or "manual_review"))
         for g in groups:
-            e = entry_by_group.get(g.id) or _entry("beam", beam.code, beam.id, g, host_len, host_height, 0)
+            e = resolve_entry("beam", beam.code, beam.id, g, host_len, host_height)
             add_many("beam", beam.code, beam.id, g, beam, e, beam.elevation, beam.elevation - host_height, float(beam.section.width or 0.8), host_height)
     for support in ret.supports:
         host_len = _host_length(support); host_height = float(support.section.height or 0.8)
         for g in support.reinforcement or []:
-            e = entry_by_group.get(g.id) or _entry("internal_support", support.code, support.id, g, host_len, host_height, 0)
+            e = resolve_entry("internal_support", support.code, support.id, g, host_len, host_height)
             add_many("internal_support", support.code, support.id, g, support, e, support.elevation, support.elevation - host_height, float(support.section.width or 0.8), host_height)
     for node in ret.support_nodes or []:
         for g in node.reinforcement or []:
-            e = entry_by_group.get(g.id) or _entry("support_wale_node", node.code, node.id, g, 3.0, 1.2, 0)
+            e = resolve_entry("support_wale_node", node.code, node.id, g, 3.0, 1.2)
             # Use a short local line around the node for additional bars.
             class NodeAxis:
                 start = type("P", (), {"x": node.location.x - 1.2, "y": node.location.y})()
@@ -321,35 +335,49 @@ def _wall_cage_segments(project: Project) -> list[dict[str, Any]]:
     if not ret:
         return []
     segments: list[dict[str, Any]] = []
-    max_segment_len = 12.0
+    max_vertical_segment_len = 12.0
+    max_panel_width = 6.0
     overlap_m = 0.75
     for wall in ret.diaphragm_walls:
         host_height = _host_height(wall)
-        n = max(1, int(math.ceil(host_height / max_segment_len)))
-        seg_height = host_height / n
-        for idx in range(n):
-            bottom = float(wall.bottom_elevation) + idx * seg_height
-            top = float(wall.bottom_elevation) + (idx + 1) * seg_height
-            if idx > 0:
-                bottom -= overlap_m / 2.0
-            if idx < n - 1:
-                top += overlap_m / 2.0
-            length = abs(top - bottom)
-            est_weight = max(0.1, _host_length(wall) * length * 0.035)
-            segments.append({
-                "segmentId": f"{wall.panel_code}-CAGE-{idx+1:02d}",
-                "hostId": wall.id,
-                "hostCode": wall.panel_code,
-                "hostType": "diaphragm_wall",
-                "bottomElevation": round(bottom, 3),
-                "topElevation": round(top, 3),
-                "lengthM": round(length, 3),
-                "spliceOverlapM": overlap_m if n > 1 else 0.0,
-                "estimatedCageWeightT": round(est_weight, 3),
-                "liftingPointCount": 4 if est_weight < 12 else 6,
-                "hoistingReviewStatus": "rule_pass" if est_weight <= 25 else "manual_review_heavy_cage",
-                "status": "rule_generated",
-            })
+        host_length = max(float(wall.design_length or _host_length(wall)), 0.5)
+        panel_count = max(1, int(math.ceil(host_length / max_panel_width)))
+        panel_width = host_length / panel_count
+        vertical_count = max(1, int(math.ceil(host_height / max_vertical_segment_len)))
+        vertical_height = host_height / vertical_count
+        for panel_idx in range(panel_count):
+            for vertical_idx in range(vertical_count):
+                bottom = float(wall.bottom_elevation) + vertical_idx * vertical_height
+                top = float(wall.bottom_elevation) + (vertical_idx + 1) * vertical_height
+                if vertical_idx > 0:
+                    bottom -= overlap_m / 2.0
+                if vertical_idx < vertical_count - 1:
+                    top += overlap_m / 2.0
+                length = abs(top - bottom)
+                # The cage is fabricated by wall panel width, not by the full face length.
+                est_weight = max(0.1, panel_width * length * 0.035)
+                lifting_points = 4 if est_weight <= 12 else 6 if est_weight <= 25 else 8
+                segments.append({
+                    "segmentId": f"{wall.panel_code}-CAGE-P{panel_idx+1:02d}-V{vertical_idx+1:02d}",
+                    "hostId": wall.id,
+                    "hostCode": wall.panel_code,
+                    "hostType": "diaphragm_wall",
+                    "panelIndex": panel_idx + 1,
+                    "panelCount": panel_count,
+                    "panelStartM": round(panel_idx * panel_width, 3),
+                    "panelEndM": round((panel_idx + 1) * panel_width, 3),
+                    "panelWidthM": round(panel_width, 3),
+                    "verticalSegmentIndex": vertical_idx + 1,
+                    "verticalSegmentCount": vertical_count,
+                    "bottomElevation": round(bottom, 3),
+                    "topElevation": round(top, 3),
+                    "lengthM": round(length, 3),
+                    "spliceOverlapM": overlap_m if vertical_count > 1 else 0.0,
+                    "estimatedCageWeightT": round(est_weight, 3),
+                    "liftingPointCount": lifting_points,
+                    "hoistingReviewStatus": "rule_pass" if est_weight <= 25 else "manual_review_heavy_cage" if est_weight <= 35 else "fail_overweight_cage",
+                    "status": "rule_generated",
+                })
     return segments
 
 
@@ -363,7 +391,11 @@ def _assign_segment_for_bar(bar: dict[str, Any], segments: list[dict[str, Any]])
     candidates = [s for s in segments if s.get("hostId") == bar.get("hostId")]
     if not candidates:
         return None
-    return min(candidates, key=lambda s: abs(((float(s["bottomElevation"]) + float(s["topElevation"])) / 2.0) - mid_z))
+    panel_count = max(int(candidates[0].get("panelCount") or 1), 1)
+    sub_index = max(int(bar.get("subIndex") or 1), 1)
+    target_panel = (sub_index - 1) % panel_count + 1
+    panel_candidates = [s for s in candidates if int(s.get("panelIndex") or 1) == target_panel]
+    return min(panel_candidates or candidates, key=lambda s: abs(((float(s["bottomElevation"]) + float(s["topElevation"])) / 2.0) - mid_z))
 
 
 def _bar_min_bend_radius_mm(diameter_mm: float, bar_type: str) -> float:
@@ -508,11 +540,30 @@ def build_rebar_detailing(project: Project, mode: str = "balanced") -> dict[str,
         by_type[e["barType"]] += 1
         total_weight += float(e["totalWeightKg"])
     individual = build_individual_rebar_geometry(project)
-    shop_detailing = _build_shop_detailing(project, entries, individual["bars"])
+    geometry_writeback = apply_bar_geometry_patches(project, individual["bars"])
+    resolved_bars = geometry_writeback["bars"]
+    individual["bars"] = resolved_bars
+    individual["summary"]["individualBarCount"] = len(resolved_bars)
+    individual["summary"]["coordinationModifiedBarCount"] = geometry_writeback["summary"].get("modifiedBarCount", 0)
+    individual["summary"]["coordinationAddedBarCount"] = geometry_writeback["summary"].get("addedBarCount", 0)
+    individual["summary"]["coordinationPatchCount"] = geometry_writeback["summary"].get("patchCount", 0)
+    individual["summary"]["totalCutLengthM"] = round(sum(float(bar.get("cutLengthM") or 0.0) for bar in resolved_bars), 3)
+    individual["summary"]["totalWeightKg"] = round(sum(float(bar.get("weightKg") or 0.0) for bar in resolved_bars), 3)
+    shop_detailing = _build_shop_detailing(project, entries, resolved_bars)
+    fabrication = build_rebar_fabrication_package(project, entries, resolved_bars)
     design_scheme = build_rebar_design_scheme(project, mode=mode)
+    deep_detailing = build_deep_detailing_package(
+        project, bars=resolved_bars, cage_segments=shop_detailing["cageSegments"], fabrication=fabrication
+    )
+    embedded_checks = deep_detailing.get("embeddedItemCollisionChecks", [])
+    fabrication["embeddedItemCollisionStatus"] = (
+        "fail" if any(x.get("status") == "fail" for x in embedded_checks)
+        else "pass" if deep_detailing.get("nodeHardware", {}).get("embeddedItems")
+        else "not_applicable"
+    )
     return {
         "projectId": project.id,
-        "detailLevel": "V3.2 diagnosis-driven zone-based reinforcement design plus bar-mark schedule, individual centerlines, cage segmentation, splice layout, congestion, bend-radius and drawing linkage",
+        "detailLevel": "V3.10 construction-detailing model with geometry write-back, reinforcement zones, fabrication pieces, site logistics, embedded-item collision and construction sequence linkage",
         "designScheme": design_scheme,
         "entries": entries,
         "individualBars": individual["bars"],
@@ -525,6 +576,13 @@ def build_rebar_detailing(project: Project, mode: str = "balanced") -> dict[str,
         "coverConflictChecks": shop_detailing["coverConflictChecks"],
         "signoffChecklist": shop_detailing["signoffChecklist"],
         "shopDrawingReadiness": shop_detailing["shopDrawingReadiness"],
+        "fabrication": fabrication,
+        "fabricationSegments": fabrication.get("fabricationSegments", []),
+        "fabricationBbs": fabrication.get("barBendingSchedule", []),
+        "fabricationSplices": fabrication.get("spliceRecords", []),
+        "geometricSpacingChecks": fabrication.get("geometricSpacingChecks", []),
+        "deepDetailing": deep_detailing,
+        "coordinationGeometryWriteback": geometry_writeback["summary"],
         "summary": {
             "barMarkCount": len(entries),
             "individualBarCount": individual["summary"].get("individualBarCount", 0),
@@ -535,7 +593,11 @@ def build_rebar_detailing(project: Project, mode: str = "balanced") -> dict[str,
             "barMarkWeightKg": round(total_weight, 2),
             "byHostType": dict(by_host),
             "byBarType": dict(by_type),
-            "manualReviewCount": 0,
+            "manualReviewCount": sum(
+                1
+                for item in (design_scheme.get("checks") or []) + (deep_detailing.get("checks") or [])
+                if str(item.get("status")) == "manual_review"
+            ),
             "shopDetailingCompletion": 100.0,
             "constructionJointCount": len(shop_detailing["constructionJointPlan"]),
             "cageSegmentCount": len(shop_detailing["cageSegments"]),
@@ -548,10 +610,23 @@ def build_rebar_detailing(project: Project, mode: str = "balanced") -> dict[str,
             "reinforcementCheckCount": design_scheme.get("summary", {}).get("checkCount", 0),
             "reinforcementFailCount": design_scheme.get("summary", {}).get("failCount", 0),
             "reinforcementWarningCount": design_scheme.get("summary", {}).get("warningCount", 0),
+            "fabricationPieceCount": fabrication.get("summary", {}).get("fabricationPieceCount", 0),
+            "splitBarCount": fabrication.get("summary", {}).get("splitBarCount", 0),
+            "maxFabricationPieceLengthM": fabrication.get("summary", {}).get("maxPieceLengthM", 0.0),
+            "mechanicalCouplerCount": fabrication.get("summary", {}).get("mechanicalCouplerCount", 0),
+            "fabricationHardFailureCount": fabrication.get("summary", {}).get("hardFailureCount", 0),
+            "geometricSpacingFailureCount": fabrication.get("summary", {}).get("spacingFailureCount", 0),
+            "deepDetailingStatus": deep_detailing.get("status"),
+            "deepDetailingHardFailureCount": deep_detailing.get("summary", {}).get("hardFailureCount", 0),
+            "deepDetailingWarningCount": deep_detailing.get("summary", {}).get("warningCount", 0),
+            "bearingPlateCount": deep_detailing.get("summary", {}).get("bearingPlateCount", 0),
+            "cageHoistingCaseCount": deep_detailing.get("summary", {}).get("cageHoistingCaseCount", 0),
+            "couplerCount": deep_detailing.get("summary", {}).get("couplerCount", 0),
         },
         "notes": [
-            "V3.2 links the latest wall-force envelope to elevation zones and generates coordinated wall, support, wale and node reinforcement schemes.",
-            "Individual rebar centerlines, cage segmentation, lifting, splice, cover, bend-radius and drawing references are generated for editable delivery.",
-            "Final sealed shop drawings still require crack-width, seismic, coupler, lifting and professional signoff checks by the project design organization.",
+            "V3.7 links the latest wall-force envelope to elevation zones and generates coordinated wall, support, wale and node reinforcement schemes.",
+            "Individual rebar centerlines are converted into fabrication pieces constrained by stock/transport length, coupler/lap rules and stagger groups; geometric clear-spacing checks are exported with the BBS.",
+            "V3.8 adds node bearing plates, stiffeners, welds, anchors, cage-hoisting checks, coupler schedules, embedded-item collision screening and construction sequence linkage.",
+            "Final sealed shop drawings still require project-specific nonlinear node checks, welding procedure qualification, lifting method statement and professional signoff.",
         ],
     }

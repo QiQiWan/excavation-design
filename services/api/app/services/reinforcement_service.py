@@ -20,7 +20,7 @@ def diaphragm_wall_reinforcement(
     concrete_grade: str = "C35",
     rebar_grade: str = "HRB400",
 ) -> list[ReinforcementGroup]:
-    """Generate traceable GB/T 50010-oriented reinforcement suggestions per metre of wall.
+    """Generate traceable GB 50010-oriented reinforcement suggestions per metre of wall.
 
     ``max_moment_design`` is kN*m/m for a 1 m wide wall strip.  The returned groups are
     design-assist recommendations, not final detailing: crack width, anchorage, splice,
@@ -48,7 +48,7 @@ def diaphragm_wall_reinforcement(
             check_status="preliminary" if provided >= design.governing_as else "fail",
             location_description=(
                 f"inner face vertical bars; As_provided={provided:.0f}mm2/m; "
-                f"As_required={design.governing_as:.0f}mm2/m; GB/T50010 flexure/min-rebar subset"
+                f"As_required={design.governing_as:.0f}mm2/m; GB50010 flexure/min-rebar subset"
             ),
         ),
         ReinforcementGroup(

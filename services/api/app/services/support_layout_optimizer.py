@@ -74,6 +74,7 @@ SOFT_OBJECTIVE_LABELS = [
 
 TARGET_SPACING_VALUES = [3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 COLUMN_MAX_SPAN_VALUES = [12.0, 15.0, 18.0]
+TOPOLOGY_STRATEGIES = ["hybrid_diagonal", "bidirectional_grid", "direct_grid"]
 POSITION_PATTERNS: list[tuple[str, float]] = [
     ("as_generated", 0.0),
     ("global_shift_plus_1p0", 1.0),
@@ -470,9 +471,10 @@ def _shift_main_support_positions(project: Project, system: RetainingSystem, pat
 
 
 
-def _candidate_id(target_spacing: float, column_span: float, pattern: str, amplitude: float) -> str:
+def _candidate_id(target_spacing: float, column_span: float, pattern: str, amplitude: float, topology_strategy: str = "balanced_grid") -> str:
     pattern_key = pattern.replace(".", "p").replace("-", "m")
-    return f"slopt-t{str(target_spacing).replace('.', 'p')}-c{str(column_span).replace('.', 'p')}-{pattern_key}-{str(amplitude).replace('.', 'p').replace('-', 'm')}"
+    topology_key = topology_strategy.replace("_", "-")
+    return f"slopt-{topology_key}-t{str(target_spacing).replace('.', 'p')}-c{str(column_span).replace('.', 'p')}-{pattern_key}-{str(amplitude).replace('.', 'p').replace('-', 'm')}"
 
 
 def _locked_supports(project: Project) -> list[SupportElement]:
@@ -547,13 +549,18 @@ def _plan_geometry(project: Project, system: RetainingSystem, adjustments: list[
         supports.append({
             "id": spt.id, "code": spt.code, "role": spt.support_role, "levelIndex": spt.level_index,
             "start": _point_payload(spt.start), "end": _point_payload(spt.end),
+            "wallConnectionStart": _point_payload(spt.start_wall_connection) if getattr(spt, "start_wall_connection", None) else None,
+            "wallConnectionEnd": _point_payload(spt.end_wall_connection) if getattr(spt, "end_wall_connection", None) else None,
             "spanLength": spt.span_length, "baySpacing": spt.bay_spacing,
+            "elevation": spt.elevation, "centerlineOffsetM": getattr(spt, "centerline_offset_m", None),
+            "topologyFamily": getattr(spt, "topology_family", "direct_grid"),
             "locked": bool(getattr(spt, "optimization_locked", False)),
             "lockState": _support_lock_signature(spt),
             "changed": spt.id in changed_ids,
         })
     columns = [{"id": c.id, "code": c.code, "location": _point_payload(c.location)} for c in system.columns]
-    return {"outline": outline, "supports": supports, "columns": columns, "obstacles": obstacles, "lockSummary": _lock_summary(project)}
+    elevations = sorted({float(s.elevation) for s in system.supports}, reverse=True)
+    return {"outline": outline, "supports": supports, "columns": columns, "obstacles": obstacles, "lockSummary": _lock_summary(project), "supportElevations": elevations, "layoutSummary": dict(system.layout_summary or {})}
 
 
 def _delta_geometry(adjustments: list[dict[str, Any]]) -> dict[str, Any]:
@@ -563,12 +570,17 @@ def _delta_geometry(adjustments: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_support_system_from_candidate(project: Project, target_spacing: float, column_span: float, pattern: str = "as_generated", amplitude: float = 0.0) -> tuple[RetainingSystem | None, list[dict[str, Any]]]:
+def build_support_system_from_candidate(project: Project, target_spacing: float, column_span: float, pattern: str = "as_generated", amplitude: float = 0.0, topology_strategy: str = "balanced_grid") -> tuple[RetainingSystem | None, list[dict[str, Any]]]:
     if not project.excavation:
         return None, []
     trial_project = project.model_copy(deep=True)
-    with _temporary_layout_parameters(target_spacing, column_span):
-        trial_project.retaining_system = design_service.auto_supports(trial_project.excavation, trial_project.retaining_system)
+    config = design_service.support_layout_config_from_settings(
+        project.design_settings,
+        topology_strategy=topology_strategy,
+        target_spacing=target_spacing,
+        column_span=column_span,
+    )
+    trial_project.retaining_system = design_service.auto_supports(trial_project.excavation, trial_project.retaining_system, layout_config=config)
     if getattr(project, "retaining_system", None):
         trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
     _apply_locked_supports(project, trial_project.retaining_system)
@@ -637,107 +649,119 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     locked = _locked_supports(project)
     locked_ids = [s.id for s in locked]
     candidates: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
-    for target_spacing in TARGET_SPACING_VALUES:
-        for column_span in COLUMN_MAX_SPAN_VALUES:
-            for pattern, amplitude in POSITION_PATTERNS:
-                # V2.6.0: avoid deep-copying historical calculation results and large
-                # report payloads for every candidate.  Candidate generation only needs
-                # geometry, settings and the current retaining system.
-                trial_project = project.model_copy(deep=False)
-                trial_project.calculation_results = []
-                trial_project.calculation_cases = []
-                trial_project.retaining_system = project.retaining_system.model_copy(deep=True) if project.retaining_system else None
-                layout_config = layout_mod.SupportLayoutConfig(
-                    target_main_support_spacing_m=target_spacing,
-                    column_max_unbraced_span_m=column_span,
-                )
-                trial_project.retaining_system = design_service.auto_supports(
-                    trial_project.excavation,
-                    trial_project.retaining_system,
-                    layout_config=layout_config,
-                )
-                if getattr(project, "retaining_system", None):
-                    trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
-                locked_count = _apply_locked_supports(project, trial_project.retaining_system, column_max_span=column_span)
-                adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude, column_max_span=column_span)
-                adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system, column_max_span=column_span))
-                quality = evaluate_support_layout_quality(trial_project)
-                metrics = dict(quality.metrics or {})
-                fail_count = sum(1 for i in quality.issues if i.severity == "fail")
-                warning_count = sum(1 for i in quality.issues if i.severity == "warning")
-                terms = _objective_terms(trial_project, trial_project.retaining_system, target_spacing, metrics)
-                hard = _hard_constraints(trial_project, metrics, trial_project.retaining_system)
-                spans = _span_lengths(trial_project.retaining_system)
-                bay = _bay_spacings(trial_project.retaining_system)
-                score = _candidate_score(quality.score, terms, hard, fail_count, warning_count, weights)
-                fingerprint = _geometry_fingerprint(trial_project.retaining_system)
-                difference_score = _geometry_difference_score(adjustments, len(trial_project.retaining_system.supports))
-                candidate = SupportLayoutOptimizationCandidate(
-                    id=_candidate_id(target_spacing, column_span, pattern, amplitude),
-                    score=score,
-                    status=quality.status,
-                    target_spacing=target_spacing,
-                    column_max_span=column_span,
-                    objective_terms=terms,
-                    soft_objectives={
-                        "spacingCloseTo3To6m": 1.0 - min(1.0, terms.get("spacingDeviation", 1.0)),
-                        "shortSpanLength": 1.0 - min(1.0, terms.get("spanLength", 1.0) / 2.0),
-                        "reasonableColumnCount": 1.0 - min(1.0, terms.get("columnCount", 1.0)),
-                        "lowAxialPeakProxy": 1.0 - min(1.0, terms.get("axialPeakProxy", 1.0)),
-                        "continuousMuckPath": 1.0 - min(1.0, terms.get("muckPathContinuity", 1.0)),
-                        "planSymmetry": 1.0 - min(1.0, terms.get("symmetry", 1.0)),
-                    },
-                    hard_constraints=hard,
-                    variable_summary={
-                        "variableType": "main_support_line_position",
-                        "positionPattern": pattern,
-                        "lineOffsetAmplitude": amplitude,
-                        "adjustedLineCount": len(adjustments),
-                        "targetSpacing": target_spacing,
-                        "columnMaxSpan": column_span,
-                        "lockedSupportCount": locked_count,
-                        "lockedSupportIds": locked_ids,
-                        "lockSummary": _lock_summary(project),
-                        "geometryFingerprint": ";".join(["-".join(map(str, row)) for row in fingerprint[:80]]),
-                        "geometryDifferenceScore": difference_score,
-                        "materiallyDifferent": difference_score >= 0.03 or pattern == "as_generated",
-                    },
-                    line_adjustments=adjustments[:30],
-                    plan_geometry=_plan_geometry(trial_project, trial_project.retaining_system, adjustments),
-                    delta_geometry=_delta_geometry(adjustments),
-                    weight_summary={"weights": weights, "preset": preset or "custom", "lockedSupportCount": locked_count, "lockedSupportIds": locked_ids, "lockSummary": _lock_summary(project)},
-                    metrics=metrics,
-                    issue_count=len(quality.issues),
-                    fail_count=fail_count,
-                    warning_count=warning_count,
-                    support_count=len(trial_project.retaining_system.supports),
-                    column_count=len(trial_project.retaining_system.columns),
-                    max_span_length=round(max(spans), 3) if spans else None,
-                    max_bay_spacing=round(max(bay), 3) if bay else None,
-                    crossing_count=int(metrics.get("supportCrossingCount", 0) or 0),
-                    obstacle_conflict_count=int(metrics.get("obstacleConflictCount", 0) or 0),
-                    axial_peak_proxy=round(_axial_peak_proxy(trial_project.retaining_system, bay, spans, target_spacing), 3) if spans else None,
-                    symmetry_score=round(_symmetry_score(trial_project.retaining_system, trial_project), 3),
-                    muck_path_continuity_score=round(_muck_path_continuity_score(trial_project, trial_project.retaining_system, metrics), 3),
-                    export_readiness=_export_readiness(quality.status, hard, metrics),
-                    constructability_note=_candidate_note(target_spacing, column_span, pattern, terms, hard),
-                )
-                candidates.append((candidate, trial_project.retaining_system))
+    spacing_values = [4.0, 5.0, 6.0]
+    column_values = [12.0, 18.0]
+    for topology_strategy in TOPOLOGY_STRATEGIES:
+        for target_spacing in spacing_values:
+            for column_span in column_values:
+                strategy_patterns = POSITION_PATTERNS[:3] if topology_strategy != "direct_grid" else POSITION_PATTERNS[:2]
+                for pattern, amplitude in strategy_patterns:
+                    # V2.6.0: avoid deep-copying historical calculation results and large
+                    # report payloads for every candidate.  Candidate generation only needs
+                    # geometry, settings and the current retaining system.
+                    trial_project = project.model_copy(deep=False)
+                    trial_project.calculation_results = []
+                    trial_project.calculation_cases = []
+                    trial_project.retaining_system = project.retaining_system.model_copy(deep=True) if project.retaining_system else None
+                    layout_config = design_service.support_layout_config_from_settings(
+                        project.design_settings,
+                        topology_strategy=topology_strategy,
+                        target_spacing=target_spacing,
+                        column_span=column_span,
+                    )
+                    trial_project.retaining_system = design_service.auto_supports(
+                        trial_project.excavation,
+                        trial_project.retaining_system,
+                        layout_config=layout_config,
+                    )
+                    if getattr(project, "retaining_system", None):
+                        trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
+                    locked_count = _apply_locked_supports(project, trial_project.retaining_system, column_max_span=column_span)
+                    adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude, column_max_span=column_span)
+                    adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system, column_max_span=column_span))
+                    quality = evaluate_support_layout_quality(trial_project)
+                    metrics = dict(quality.metrics or {})
+                    fail_count = sum(1 for i in quality.issues if i.severity == "fail")
+                    warning_count = sum(1 for i in quality.issues if i.severity == "warning")
+                    terms = _objective_terms(trial_project, trial_project.retaining_system, target_spacing, metrics)
+                    hard = _hard_constraints(trial_project, metrics, trial_project.retaining_system)
+                    spans = _span_lengths(trial_project.retaining_system)
+                    bay = _bay_spacings(trial_project.retaining_system)
+                    score = _candidate_score(quality.score, terms, hard, fail_count, warning_count, weights)
+                    fingerprint = _geometry_fingerprint(trial_project.retaining_system)
+                    difference_score = _geometry_difference_score(adjustments, len(trial_project.retaining_system.supports))
+                    candidate = SupportLayoutOptimizationCandidate(
+                        id=_candidate_id(target_spacing, column_span, pattern, amplitude, topology_strategy),
+                        score=score,
+                        status=quality.status,
+                        target_spacing=target_spacing,
+                        column_max_span=column_span,
+                        objective_terms=terms,
+                        soft_objectives={
+                            "spacingCloseTo3To6m": 1.0 - min(1.0, terms.get("spacingDeviation", 1.0)),
+                            "shortSpanLength": 1.0 - min(1.0, terms.get("spanLength", 1.0) / 2.0),
+                            "reasonableColumnCount": 1.0 - min(1.0, terms.get("columnCount", 1.0)),
+                            "lowAxialPeakProxy": 1.0 - min(1.0, terms.get("axialPeakProxy", 1.0)),
+                            "continuousMuckPath": 1.0 - min(1.0, terms.get("muckPathContinuity", 1.0)),
+                            "planSymmetry": 1.0 - min(1.0, terms.get("symmetry", 1.0)),
+                        },
+                        hard_constraints=hard,
+                        variable_summary={
+                            "variableType": "whole_scheme_topology_and_line_position",
+                            "topologyFamily": topology_strategy,
+                            "schemeLabel": {"hybrid_diagonal": "斜撑+短对撑混合", "bidirectional_grid": "双向网格", "direct_grid": "传统直对撑"}.get(topology_strategy, topology_strategy),
+                            "positionPattern": pattern,
+                            "lineOffsetAmplitude": amplitude,
+                            "adjustedLineCount": len(adjustments),
+                            "targetSpacing": target_spacing,
+                            "columnMaxSpan": column_span,
+                            "lockedSupportCount": locked_count,
+                            "lockedSupportIds": locked_ids,
+                            "lockSummary": _lock_summary(project),
+                            "geometryFingerprint": ";".join(["-".join(map(str, row)) for row in fingerprint[:80]]),
+                            "geometryDifferenceScore": difference_score,
+                            "materiallyDifferent": difference_score >= 0.03 or pattern == "as_generated",
+                        },
+                        line_adjustments=adjustments[:30],
+                        plan_geometry=_plan_geometry(trial_project, trial_project.retaining_system, adjustments),
+                        delta_geometry=_delta_geometry(adjustments),
+                        weight_summary={"weights": weights, "preset": preset or "custom", "lockedSupportCount": locked_count, "lockedSupportIds": locked_ids, "lockSummary": _lock_summary(project)},
+                        metrics=metrics,
+                        issue_count=len(quality.issues),
+                        fail_count=fail_count,
+                        warning_count=warning_count,
+                        support_count=len(trial_project.retaining_system.supports),
+                        column_count=len(trial_project.retaining_system.columns),
+                        max_span_length=round(max(spans), 3) if spans else None,
+                        max_bay_spacing=round(max(bay), 3) if bay else None,
+                        crossing_count=int(metrics.get("supportCrossingCount", 0) or 0),
+                        obstacle_conflict_count=int(metrics.get("obstacleConflictCount", 0) or 0),
+                        axial_peak_proxy=round(_axial_peak_proxy(trial_project.retaining_system, bay, spans, target_spacing), 3) if spans else None,
+                        symmetry_score=round(_symmetry_score(trial_project.retaining_system, trial_project), 3),
+                        muck_path_continuity_score=round(_muck_path_continuity_score(trial_project, trial_project.retaining_system, metrics), 3),
+                        export_readiness=_export_readiness(quality.status, hard, metrics),
+                        constructability_note=(
+                            {"hybrid_diagonal": "角部采用短斜撑并减少靠角超长对撑；", "bidirectional_grid": "双向网格直接约束长边与回墙；", "direct_grid": "传统短跨直对撑，构造直观；"}.get(topology_strategy, "")
+                            + _candidate_note(target_spacing, column_span, pattern, terms, hard)
+                        ),
+                    )
+                    candidates.append((candidate, trial_project.retaining_system))
     # Feasible candidates first, then score, geometry diversity, then fewer supports/columns for constructability.
     candidates.sort(key=lambda item: (not item[0].hard_constraints.get("passed", False), -item[0].score, -float(item[0].variable_summary.get("geometryDifferenceScore", 0.0)), _status_rank(item[0].status), item[0].support_count, item[0].column_count))
     ranked: list[SupportLayoutOptimizationCandidate] = []
     seen: set[tuple] = set()
     selected_system: RetainingSystem | None = None
 
-    def _structural_signature(candidate: SupportLayoutOptimizationCandidate) -> tuple[int, int, int, int]:
+    def _structural_signature(candidate: SupportLayoutOptimizationCandidate) -> tuple[str, int, int, int, int]:
         return (
+            str((candidate.variable_summary or {}).get("topologyFamily", "unknown")),
             int(candidate.support_count or 0),
             int(candidate.column_count or 0),
             int(round(float(candidate.max_bay_spacing or 0.0) * 10.0)),
             int(round(float(candidate.max_span_length or 0.0) * 10.0)),
         )
 
-    structural_seen: set[tuple[int, int, int, int]] = set()
+    structural_seen: set[tuple[str, int, int, int, int]] = set()
 
     def add_candidate(candidate: SupportLayoutOptimizationCandidate, system: RetainingSystem, *, force: bool = False) -> bool:
         nonlocal selected_system
@@ -763,11 +787,20 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
             selected_system = system.model_copy(deep=True)
         return True
 
-    # Keep the best feasible scheme, then deliberately add different spacing /
-    # column-span families.  This makes the A/B/C comparison meaningful because
-    # full calculation can only differ materially when the force path, support
-    # count, column grid or bay spacing changes.
-    if candidates:
+    # Select one feasible representative from each topology family first.  The
+    # operator compares complete A/B/C schemes rather than confirming wall faces
+    # one by one.  Remaining slots are filled by score and spacing diversity.
+    family_best: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
+    for family in TOPOLOGY_STRATEGIES:
+        item = next((pair for pair in candidates if pair[0].hard_constraints.get("passed", False) and str((pair[0].variable_summary or {}).get("topologyFamily")) == family), None)
+        if item:
+            family_best.append(item)
+    family_best.sort(key=lambda item: -item[0].score)
+    for candidate, system in family_best:
+        add_candidate(candidate, system, force=True)
+        if len(ranked) >= min(max_candidates, 3):
+            break
+    if not ranked and candidates:
         add_candidate(candidates[0][0], candidates[0][1], force=True)
 
     used_spacing_buckets: set[int] = set()

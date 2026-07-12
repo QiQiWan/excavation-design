@@ -118,6 +118,34 @@ def _support_geometry(s: SupportElement) -> dict:
     return {"kind": "segment", "start": {"x": s.start.x, "y": s.start.y}, "end": {"x": s.end.x, "y": s.end.y}, "levelIndex": s.level_index, "supportCode": s.code}
 
 
+def _point_segment_distance(point: Point2D, a: Point2D, b: Point2D) -> float:
+    dx, dy = b.x - a.x, b.y - a.y
+    length2 = dx * dx + dy * dy
+    if length2 <= 1e-12:
+        return math.hypot(point.x - a.x, point.y - a.y)
+    t = max(0.0, min(1.0, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length2))
+    px, py = a.x + t * dx, a.y + t * dy
+    return math.hypot(point.x - px, point.y - py)
+
+
+def _support_wall_clearances(project: Project, support: SupportElement) -> list[float]:
+    if not project.excavation:
+        return []
+    by_code = {str(seg.name): seg for seg in project.excavation.segments}
+    rows: list[float] = []
+    for point, face_code, stored in (
+        (support.start, support.start_face_code, support.start_wall_clearance_m),
+        (support.end, support.end_face_code, support.end_wall_clearance_m),
+    ):
+        if stored is not None:
+            rows.append(float(stored))
+            continue
+        segment = by_code.get(str(face_code or ""))
+        if segment:
+            rows.append(_point_segment_distance(point, segment.start, segment.end))
+    return rows
+
+
 def _issue(category: str, severity: str, message: str, object_id: str | None = None, object_type: str | None = None, recommendation: str | None = None, *, geometry: dict | None = None, related: list[str] | None = None, hint: str | None = None) -> QualityGateIssue:
     return QualityGateIssue(category=category, severity=severity, object_id=object_id, object_type=object_type, message=message, recommendation=recommendation, highlight_geometry=geometry or {}, related_object_ids=related or [], display_hint=hint)
 
@@ -191,9 +219,23 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         if len(items_sorted) <= 1 and project.excavation and project.excavation.depth >= 8.0:
             issues.append(_issue("support_spacing", "warning", f"第 {level} 道只有 {len(items_sorted)} 根主对撑，深基坑布置可能偏稀。", object_type="SupportLevel", recommendation="增加主对撑或采用环撑/角撑组合。"))
 
+    target_clearance = float(getattr(project.design_settings, "support_wall_clearance_m", 1.0) or 1.0)
+    max_direct_span = float(getattr(project.design_settings, "max_direct_strut_span_m", 24.0) or 24.0)
+    clearance_values: list[float] = []
+    excessive_direct_count = 0
     for s in supports:
         sp = float(s.span_length or _span(s))
         unbraced = _effective_unbraced_span(project, s)
+        clearances = _support_wall_clearances(project, s)
+        clearance_values.extend(clearances)
+        for clearance in clearances:
+            if clearance < max(0.20, target_clearance * 0.65):
+                issues.append(_issue("support_wall_clearance", "fail", f"支撑 {s.code} 中心线距围护墙仅 {clearance:.2f}m，小于目标净距 {target_clearance:.2f}m。", s.id, "SupportElement", "将支撑中心线向坑内偏移，并通过围檩刚臂节点连接墙体。", geometry=_support_geometry(s), hint="support_wall_overlap"))
+            elif clearance < target_clearance * 0.90:
+                issues.append(_issue("support_wall_clearance", "warning", f"支撑 {s.code} 中心线距围护墙 {clearance:.2f}m，接近目标净距下限。", s.id, "SupportElement", "复核围檩宽度、承压板和安装空间。", geometry=_support_geometry(s), hint="support_wall_clearance"))
+        if s.support_role == "main_strut" and sp > max_direct_span:
+            excessive_direct_count += 1
+            issues.append(_issue("long_direct_strut", "warning", f"主对撑 {s.code} 长度 {sp:.2f}m 超过建议直对撑上限 {max_direct_span:.1f}m。", s.id, "SupportElement", "优先比较角部斜撑、短对撑混合或双向网格方案。", geometry=_support_geometry(s), hint="prefer_diagonal"))
         max_span = max(max_span, sp)
         max_unbraced_span = max(max_unbraced_span, unbraced)
         if unbraced > FAIL_MAX_SPAN_M:
@@ -277,7 +319,12 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         "supportedGridNodeCount": supported_grid_nodes,
         "supportCrossingCount": len(crossing_pairs),
         "highlightCount": len(highlights),
+        "minSupportWallClearance": round(min(clearance_values), 3) if clearance_values else None,
+        "targetSupportWallClearance": round(target_clearance, 3),
+        "excessiveDirectStrutCount": excessive_direct_count,
+        "maxRecommendedDirectStrutSpan": round(max_direct_span, 3),
         "preferredSpacingRange": [PRACTICAL_MIN_SPACING_M, PRACTICAL_MAX_SPACING_M],
     }
-    summary = f"支撑布置评分 {score:.1f}；主对撑 {len(main)} 根，次对撑 {len(secondary)} 根，角撑 {len(corners)} 根，立柱 {len(columns)} 根，未设节点交叉 {len(crossing_pairs)} 处，最大无支承长度 {max_unbraced_span:.2f}m。"
+    min_clearance_text = f"，最小墙边净距 {min(clearance_values):.2f}m" if clearance_values else ""
+    summary = f"支撑布置评分 {score:.1f}；主对撑 {len(main)} 根，次对撑 {len(secondary)} 根，角撑 {len(corners)} 根，立柱 {len(columns)} 根，未设节点交叉 {len(crossing_pairs)} 处，最大无支承长度 {max_unbraced_span:.2f}m{min_clearance_text}。"
     return SupportLayoutQualitySummary(score=score, status=status, summary=summary, metrics=metrics, issues=issues, highlights=highlights, crossing_pairs=crossing_pairs)

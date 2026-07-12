@@ -164,7 +164,7 @@ def check_wall_rc_capacity(
     return [
         CheckResult(
             rule_id="GBT50010-2024-FLEXURE-RECT",
-            standard_name="GB/T 50010",
+            standard_name="GB 50010",
             standard_version="2010(2024)",
             clause_reference="6.2.10",
             name="矩形截面正截面受弯承载力",
@@ -176,7 +176,7 @@ def check_wall_rc_capacity(
         ),
         CheckResult(
             rule_id="GBT50010-2024-SHEAR-RECT",
-            standard_name="GB/T 50010",
+            standard_name="GB 50010",
             standard_version="2010(2024)",
             clause_reference="6.3",
             name="矩形截面斜截面受剪承载力",
@@ -210,7 +210,7 @@ def check_rectangular_support_axial_capacity(
     util = abs(axial_design_kn) / max(capacity_kn, 1e-9)
     return CheckResult(
         rule_id="GBT50010-2024-RC-SUPPORT-AXIAL",
-        standard_name="GB/T 50010",
+        standard_name="GB 50010",
         standard_version="2010(2024)",
         clause_reference="6.2/6.3; compression member rules simplified",
         name="钢筋混凝土支撑轴压承载力简化复核",

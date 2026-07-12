@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.domain import RetainingSystem, SupportLayoutRepairSummary
 from app.geology.model_builder import ensure_geological_model_covers_excavation
-from app.services.design_service import auto_diaphragm_wall, auto_supports
+from app.services.design_service import auto_diaphragm_wall, auto_supports, support_layout_config_from_settings
 from app.services.support_layout_repair import adopt_support_layout_candidate, auto_repair_support_layout, set_support_optimization_locks
 from app.storage.repository import ProjectRepository, get_repository
 
@@ -65,7 +65,7 @@ def design_diaphragm_wall(project_id: str, repo: ProjectRepository = Depends(get
 def design_supports(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> RetainingSystem:
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
-    project.retaining_system = auto_supports(project.excavation, project.retaining_system)
+    project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings))
     repo.save(project)
     return project.retaining_system
 

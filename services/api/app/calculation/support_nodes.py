@@ -39,7 +39,7 @@ def update_support_node_design(nodes: list[SupportWaleNode], supports: list[Supp
                 "objectType": "SupportWaleNode",
                 "status": "manual_review",
                 "message": "缺少支撑轴力或承压板参数，支撑-围檩节点需人工复核。",
-                "clauseReference": "GB/T 50010 local compression and detailing subset; final clause applicability to verify",
+                "clauseReference": "GB 50010 local compression and detailing subset; final clause applicability to verify",
             })
             continue
         axial = float(support.design_axial_force or 0.0)
@@ -83,7 +83,7 @@ def update_support_node_design(nodes: list[SupportWaleNode], supports: list[Supp
             "limitValue": round(capacity, 3),
             "unit": "kPa",
             "message": "支撑端部-围檩节点局部承压子集筛查，并生成节点附加筋/加密箍筋建议。",
-            "clauseReference": "GB/T 50010 local compression/detailing subset; final clause applicability to verify",
+            "clauseReference": "GB 50010 local compression/detailing subset; final clause applicability to verify",
             "formula": "auto-enlarge bearing plate; sigma_bearing = N_design / A_plate <= 0.60*f_c",
             "supportCode": support.code,
             "nodeCode": node.code,

@@ -54,6 +54,73 @@ def _add_spring(k: np.ndarray, i: int, j: int | None, stiffness: float) -> None:
         k[j, i] -= stiffness
 
 
+def _matrix_equilibrium_diagnostics(
+    k_original: np.ndarray,
+    f: np.ndarray,
+    u: np.ndarray,
+    *,
+    regularization: float = 0.0,
+    solve_failed: bool = False,
+) -> dict[str, Any]:
+    """Return auditable numerical-quality evidence for K u = F.
+
+    The residual of the effective matrix proves the linear solve itself.  The
+    residual of the original matrix is retained separately because a
+    regularized solve can converge numerically while no longer satisfying the
+    unmodified structural system.  This is a software quality gate and is not
+    presented as a substitute for an engineering-code check.
+    """
+    n = int(k_original.shape[0]) if k_original.ndim == 2 else 0
+    if n == 0 or solve_failed:
+        return {
+            "status": "fail",
+            "equation": "K u = F",
+            "matrixSize": n,
+            "relativeResidual": None,
+            "originalRelativeResidual": None,
+            "maxResidual": None,
+            "loadNormL2": None,
+            "matrixSymmetryError": None,
+            "regularization": float(regularization),
+            "message": "线性方程组未获得有效解。",
+        }
+    effective_k = k_original + np.eye(n) * float(regularization) if regularization > 0.0 else k_original
+    load_norm = max(float(np.linalg.norm(f, ord=2)), 1.0)
+    residual = effective_k @ u - f
+    original_residual = k_original @ u - f
+    relative = float(np.linalg.norm(residual, ord=2)) / load_norm
+    original_relative = float(np.linalg.norm(original_residual, ord=2)) / load_norm
+    max_residual = float(np.max(np.abs(residual))) if residual.size else 0.0
+    matrix_norm = max(float(np.linalg.norm(k_original, ord="fro")), 1.0)
+    symmetry_error = float(np.linalg.norm(k_original - k_original.T, ord="fro")) / matrix_norm
+    if regularization > 0.0:
+        status = "manual_review"
+        message = "方程组采用正则化求解；有效矩阵残差合格时仍需复核原始结构模型约束。"
+    elif relative <= 1.0e-8 and symmetry_error <= 1.0e-10:
+        status = "pass"
+        message = "全局刚度方程残差与矩阵对称性满足数值质量门禁。"
+    elif relative <= 1.0e-5 and symmetry_error <= 1.0e-7:
+        status = "warning"
+        message = "全局刚度方程已收敛，但残差或矩阵对称误差接近软件质量阈值。"
+    else:
+        status = "fail"
+        message = "全局刚度方程残差或矩阵对称误差超出软件质量阈值。"
+    return {
+        "status": status,
+        "equation": "K u = F",
+        "matrixSize": n,
+        "relativeResidual": float(f"{relative:.12g}"),
+        "originalRelativeResidual": float(f"{original_relative:.12g}"),
+        "absoluteResidualL2": float(f"{float(np.linalg.norm(residual, ord=2)):.12g}"),
+        "maxResidual": float(f"{max_residual:.12g}"),
+        "loadNormL2": float(f"{load_norm:.12g}"),
+        "matrixSymmetryError": float(f"{symmetry_error:.12g}"),
+        "regularization": float(regularization),
+        "residualBasis": "effective regularized matrix" if regularization > 0.0 else "original matrix",
+        "message": message,
+    }
+
+
 def _segment_length(segment: Any) -> float:
     return float(getattr(segment, "length", 0.0) or math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y))
 
@@ -71,9 +138,9 @@ def _chainage(point: Point2D, segment: Any) -> float:
 
 def _endpoint_for_face(support: SupportElement, face_code: str) -> tuple[str, Point2D] | None:
     if support.start_face_code == face_code:
-        return "start", support.start
+        return "start", support.start_wall_connection or support.start
     if support.end_face_code == face_code:
-        return "end", support.end
+        return "end", support.end_wall_connection or support.end
     return None
 
 
@@ -110,6 +177,50 @@ def _support_direction_cosines(support: SupportElement) -> tuple[float, float, f
     return dx / length, dy / length, length
 
 
+def _replacement_slab_state(stage_type: str | None, wall_length: float, properties: dict[str, Any] | None) -> dict[str, Any]:
+    required = stage_type in {"bottom_slab", "replacement", "support_removal", "final"}
+    if not required:
+        return {
+            "required": False,
+            "status": "not_active",
+            "stiffness": None,
+            "source": "stage does not activate replacement slab",
+            "components": {},
+        }
+    props = dict(properties or {})
+    width = float(props.get("effectiveWidthM") or 0.0)
+    thickness = float(props.get("thicknessM") or 0.0)
+    elastic_modulus_mpa = float(props.get("elasticModulusMpa") or 0.0)
+    reduction = float(props.get("connectionReduction") or 0.0)
+    if min(width, thickness, elastic_modulus_mpa, reduction) <= 0.0:
+        return {
+            "required": True,
+            "status": "missing",
+            "stiffness": None,
+            "source": "replacement slab properties are incomplete",
+            "components": {"effectiveWidthM": width, "thicknessM": thickness, "elasticModulusMpa": elastic_modulus_mpa, "connectionReduction": reduction},
+        }
+    transfer_length = max(float(props.get("transferLengthM") or wall_length), 3.0)
+    # E [MPa] -> kN/m2, A = width * thickness, k = EA/L.
+    gross = elastic_modulus_mpa * 1000.0 * width * thickness / transfer_length
+    stiffness = gross * max(0.05, min(reduction, 1.0))
+    status = "active" if math.isfinite(stiffness) and stiffness > 1.0 else "invalid"
+    return {
+        "required": True,
+        "status": status,
+        "stiffness": stiffness if status == "active" else None,
+        "source": "EA/L equivalent in-plane slab/frame transfer stiffness with connection reduction",
+        "components": {
+            "effectiveWidthM": round(width, 4),
+            "thicknessM": round(thickness, 4),
+            "elasticModulusMpa": round(elastic_modulus_mpa, 3),
+            "connectionReduction": round(reduction, 4),
+            "transferLengthM": round(transfer_length, 4),
+            "grossStiffnessKnM": round(gross, 3),
+        },
+    }
+
+
 def _solve_spatial_frame_proxy(
     *,
     wall_depths: list[float],
@@ -123,6 +234,7 @@ def _solve_spatial_frame_proxy(
     soil_k: float,
     stage_id: str,
     stage_type: str | None,
+    replacement_slab_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Solve a reviewable spatial-frame proxy with rotational and vertical DOFs.
 
@@ -184,10 +296,10 @@ def _solve_spatial_frame_proxy(
     rigid_zones: list[dict[str, Any]] = []
     support_reactions: list[dict[str, Any]] = []
     column_records: list[dict[str, Any]] = []
-    slab_k = 0.0
     stage_type = stage_type or "excavation"
-    if stage_type in {"bottom_slab", "replacement", "support_removal", "final"}:
-        slab_k = max(2.5e5, 0.10 * wall_ei / max(wall_depth, 1.0))
+    replacement_state = dict(replacement_slab_state or {})
+    slab_value = replacement_state.get("stiffness")
+    slab_k = float(slab_value) if slab_value is not None else 0.0
     # Wale beam continuity by support level, including rotations.
     level_items: dict[int, list[tuple[int, dict[str, Any]]]] = {}
     for j, node in enumerate(wale_nodes):
@@ -228,20 +340,26 @@ def _solve_spatial_frame_proxy(
             "rigidRotationalStiffness": round(rot_k, 3),
             "nodeZoneLength": round(max(0.8, min(2.5, sup_len * 0.04)), 3),
         })
+    regularization = 0.0
+    solve_failed = False
     try:
         U = np.linalg.solve(K, F)
         fallback = False
         reason = None
     except np.linalg.LinAlgError as exc:
-        reg = max(float(np.max(np.diag(K))) * 1e-6, 10.0)
+        regularization = max(float(np.max(np.diag(K))) * 1e-6, 10.0)
         try:
-            U = np.linalg.solve(K + np.eye(n) * reg, F)
+            U = np.linalg.solve(K + np.eye(n) * regularization, F)
             fallback = True
             reason = f"regularized spatial frame matrix: {exc}"
         except np.linalg.LinAlgError:
             U = np.zeros(n)
             fallback = True
+            solve_failed = True
             reason = f"failed spatial frame matrix: {exc}"
+    equilibrium_diagnostics = _matrix_equilibrium_diagnostics(
+        K, F, U, regularization=regularization, solve_failed=solve_failed
+    )
     max_axial = 0.0
     support_axial_dofs: list[dict[str, Any]] = []
     column_dofs: list[dict[str, Any]] = []
@@ -331,6 +449,7 @@ def _solve_spatial_frame_proxy(
         "reason": reason,
         "matrixSize": n,
         "conditionNumber": cond,
+        "equilibriumDiagnostics": equilibrium_diagnostics,
         "dofs": [
             {"index": i, "name": name, "value": round(float(U[i]), 8), "unit": dof_meta[i]["unit"], "dofType": dof_meta[i]["type"], "objectId": dof_meta[i].get("objectId"), "stageStatus": stage_type}
             for i, name in enumerate(dof_names)
@@ -350,7 +469,11 @@ def _solve_spatial_frame_proxy(
         "supportReactions": support_reactions,
         "supportAxialDofs": support_axial_dofs,
         "columnVerticalDofs": column_dofs,
-        "slabReplacementStiffness": round(slab_k, 3),
+        "slabReplacementStiffness": round(slab_k, 3) if slab_k > 0 else None,
+        "slabReplacementStatus": replacement_state.get("status", "not_active"),
+        "slabReplacementSource": replacement_state.get("source"),
+        "slabReplacementRequired": bool(replacement_state.get("required", False)),
+        "slabReplacementComponents": dict(replacement_state.get("components") or {}),
         "rigidNodeZones": rigid_zones,
         "maxWallDisplacement": max((abs(p["horizontalDisplacement"]) for p in wall_profile), default=0.0),
         "maxSupportAxialForce": round(max_axial, 3),
@@ -373,6 +496,7 @@ def solve_global_wall_wale_support_system(
     wall_stiffness_factor: float = 1.0,
     soil_modulus_factor: float = 1.0,
     support_stiffness_factor: float = 1.0,
+    replacement_slab_properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Solve a compact wall-wale-support global stiffness model.
 
@@ -490,20 +614,26 @@ def solve_global_wall_wale_support_system(
             span = max(abs(b["chainage"] - a["chainage"]), 1.0)
             _add_spring(k_global, idx_a, idx_b, 12.0 * wale_ei / (span ** 3))
 
+    regularization = 0.0
+    solve_failed = False
     try:
         u = np.linalg.solve(k_global, f_global)
         fallback = False
         reason = None
     except np.linalg.LinAlgError as exc:
-        reg = max(float(np.max(np.diag(k_global))) * 1.0e-6, 1.0)
+        regularization = max(float(np.max(np.diag(k_global))) * 1.0e-6, 1.0)
         try:
-            u = np.linalg.solve(k_global + np.eye(n) * reg, f_global)
+            u = np.linalg.solve(k_global + np.eye(n) * regularization, f_global)
             fallback = True
             reason = f"regularized global matrix: {exc}"
         except np.linalg.LinAlgError:
             u = np.zeros(n)
             fallback = True
+            solve_failed = True
             reason = f"failed to solve global matrix: {exc}"
+    condensed_equilibrium_diagnostics = _matrix_equilibrium_diagnostics(
+        k_global, f_global, u, regularization=regularization, solve_failed=solve_failed
+    )
 
     support_reactions: list[dict[str, Any]] = []
     max_axial = 0.0
@@ -548,6 +678,7 @@ def solve_global_wall_wale_support_system(
             "modelRole": "V1.9 column vertical reaction proxy; superseded by V2.0 columnVerticalDofs when available",
         })
 
+    replacement_state = _replacement_slab_state(stage_type, length, replacement_slab_properties)
     spatial = _solve_spatial_frame_proxy(
         wall_depths=wall_depths,
         support_nodes=support_nodes,
@@ -560,6 +691,7 @@ def solve_global_wall_wale_support_system(
         soil_k=soil_k,
         stage_id=stage_id,
         stage_type=stage_type,
+        replacement_slab_state=replacement_state,
     )
     if spatial.get("available"):
         support_reactions = spatial.get("supportReactions", support_reactions) or support_reactions
@@ -577,6 +709,7 @@ def solve_global_wall_wale_support_system(
         "reason": reason,
         "matrixSize": spatial.get("matrixSize", n) if spatial.get("available") else n,
         "conditionNumber": spatial.get("conditionNumber") if spatial.get("available") else (round(float(np.linalg.cond(k_global + np.eye(n) * 1e-9)), 3) if n else None),
+        "equilibriumDiagnostics": spatial.get("equilibriumDiagnostics") if spatial.get("available") else condensed_equilibrium_diagnostics,
         "spatialMatrixSize": spatial.get("matrixSize") if spatial.get("available") else None,
         "spatialConditionNumber": spatial.get("conditionNumber") if spatial.get("available") else None,
         "dofSummary": {
@@ -601,11 +734,15 @@ def solve_global_wall_wale_support_system(
         "waleNodeProfile": spatial.get("waleNodeProfile", []) if spatial.get("available") else [],
         "supportAxialDofs": spatial.get("supportAxialDofs", []) if spatial.get("available") else [],
         "columnVerticalDofs": spatial.get("columnVerticalDofs", []) if spatial.get("available") else [],
-        "slabReplacementStiffness": spatial.get("slabReplacementStiffness") if spatial.get("available") else None,
+        "slabReplacementStiffness": spatial.get("slabReplacementStiffness") if spatial.get("available") else replacement_state.get("stiffness"),
+        "slabReplacementStatus": spatial.get("slabReplacementStatus") if spatial.get("available") else replacement_state.get("status"),
+        "slabReplacementSource": spatial.get("slabReplacementSource") if spatial.get("available") else replacement_state.get("source"),
+        "slabReplacementRequired": spatial.get("slabReplacementRequired") if spatial.get("available") else replacement_state.get("required"),
+        "slabReplacementComponents": spatial.get("slabReplacementComponents", {}) if spatial.get("available") else replacement_state.get("components", {}),
         "rigidNodeZones": spatial.get("rigidNodeZones", []) if spatial.get("available") else [],
         "notes": [
             "V2.0 已将墙体梁转角自由度、围檩梁转角自由度、支撑轴向变形自由度、立柱竖向自由度和支撑节点刚域纳入同一空间杆系代理矩阵。",
-            "地下室楼板换撑刚度由 stage_type=bottom_slab/replacement/support_removal/final 激活，作为围檩节点附加水平约束进入矩阵。",
+            "地下室楼板换撑在 bottom_slab/replacement/support_removal/final 阶段激活；未激活显示为 not_active/—，激活阶段按 EA/L 与连接折减计算，缺失参数会标记 missing 而不会伪装成 0。",
             "施工阶段激活/失活由 active_supports、deactivated_support_ids 和 stage_id 控制；正式生产级仍应采用完整三维杆系/FEM求解器复核。",
         ],
     }

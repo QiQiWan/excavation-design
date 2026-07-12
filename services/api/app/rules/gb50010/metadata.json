@@ -1,5 +1,5 @@
 {
-  "standard_name": "GB/T 50010",
+  "standard_name": "GB 50010",
   "standard_version": "2010 with 2024 partial revision; GB 55008-2021 mandatory general code also applies",
   "status": "partially_implemented_with_manual_review",
   "implemented": [
@@ -8,5 +8,5 @@
     "minimum reinforcement diagnostic",
     "C25-C50 and HRB400/HRB500 material defaults"
   ],
-  "limitations": "Does not replace full GB/T 50010 detailing, crack width, durability, anchorage, lap, seismic, node, lifting cage and construction-stage design."
+  "limitations": "Does not replace full GB 50010 detailing, crack width, durability, anchorage, lap, seismic, node, lifting cage and construction-stage design."
 }

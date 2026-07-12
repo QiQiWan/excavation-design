@@ -1,19 +1,27 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { api } from '../api/client';
 import BoreholeImport from '../components/BoreholeImport';
 import ExcavationEditor from '../components/ExcavationEditor';
-import GeologyViewer from '../viewers/GeologyViewer';
-import RetainingSystemViewer from '../viewers/RetainingSystemViewer';
-import ResultViewer from '../viewers/ResultViewer';
-import Engineering3DViewer from '../viewers/Engineering3DViewer';
-import RebarIfcViewer from '../viewers/RebarIfcViewer';
 import RebarDesignPanel from '../components/RebarDesignPanel';
-import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult } from '../types/domain';
+import DrawingRuleSetPanel from '../components/DrawingRuleSetPanel';
+import CalculationRecoveryPanel from '../components/CalculationRecoveryPanel';
+import SchemeComparisonPanel from '../components/SchemeComparisonPanel';
+import { formatEngineeringValue, withUnitLabel } from '../utils/units';
+import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult, StandardsProcessMatrix, StandardsProcessStep } from '../types/domain';
 
 const AdvancedEngineeringPanel = lazy(() => import('../components/AdvancedEngineeringPanel'));
+const GeologyViewer = lazy(() => import('../viewers/GeologyViewer'));
+const RetainingSystemViewer = lazy(() => import('../viewers/RetainingSystemViewer'));
+const ResultViewer = lazy(() => import('../viewers/ResultViewer'));
+const Engineering3DViewer = lazy(() => import('../viewers/Engineering3DViewer'));
+const RebarIfcViewer = lazy(() => import('../viewers/RebarIfcViewer'));
 
 type WorkflowStepKey = 'settings' | 'boreholes' | 'geology' | 'excavation' | 'retaining' | 'calculation' | 'assurance' | 'export';
 type StepStatus = 'done' | 'ready' | 'blocked' | 'warning' | 'error';
+type WorkspaceRole = 'designer' | 'calculator' | 'detailer' | 'construction' | 'reviewer' | 'publisher';
+
+const ROLE_LABELS: Record<WorkspaceRole, string> = { designer: '方案设计', calculator: '结构计算', detailer: '配筋深化', construction: '施工策划', reviewer: '校核审核', publisher: '图纸发行' };
+const ROLE_STEPS: Record<WorkspaceRole, WorkflowStepKey[]> = { designer: ['settings','boreholes','geology','excavation','retaining'], calculator: ['retaining','calculation','assurance'], detailer: ['calculation','assurance','export'], construction: ['retaining','assurance','export'], reviewer: ['calculation','assurance'], publisher: ['assurance','export'] };
 
 type OperationPhaseStatus = 'pending' | 'running' | 'done' | 'error';
 
@@ -23,6 +31,14 @@ interface ActiveOperation { title: string; detail?: string; progress: number; ph
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
 type BackendTaskOperation = 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+
+function DeferredDetails({ summary, defaultOpen = false, children }: { summary: string; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return <details className="focusDetails" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>{summary}</summary>
+    {open ? children : null}
+  </details>;
+}
 
 interface WorkflowStep {
   key: WorkflowStepKey;
@@ -42,15 +58,24 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   const [operation, setOperation] = useState<ActiveOperation | undefined>();
   const [vtuMessage, setVtuMessage] = useState<string | undefined>();
   const [selectedLocator, setSelectedLocator] = useState<Record<string, unknown> | undefined>();
-  const [viewMode, setViewMode] = useState<'compact' | 'professional'>(() => window.localStorage.getItem('pitguard-workspace-mode') === 'professional' ? 'professional' : 'compact');
+  const [viewMode, setViewMode] = useState<'compact' | 'professional'>(() => {
+    const saved = window.localStorage.getItem('pitguard-workspace-mode');
+    if (saved === 'professional' || saved === 'compact') return saved;
+    return project.designSettings?.defaultWorkspaceMode === 'professional' ? 'professional' : 'compact';
+  });
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
+  const [workspaceRole, setWorkspaceRole] = useState<WorkspaceRole>(() => {
+    const saved = window.localStorage.getItem('pitguard-workspace-role') as WorkspaceRole | null;
+    return saved && saved in ROLE_LABELS ? saved : 'designer';
+  });
 
   useEffect(() => {
     setCurrent(project);
   }, [project]);
 
   useEffect(() => { window.localStorage.setItem('pitguard-workspace-mode', viewMode); }, [viewMode]);
+  useEffect(() => { window.localStorage.setItem('pitguard-workspace-role', workspaceRole); }, [workspaceRole]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -202,7 +227,9 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
         </div>
         <div className="workspaceBadges">
           <button className="secondary" onClick={() => setCommandOpen(true)} title="命令面板快捷键 Ctrl/Command + K">命令 Ctrl+K</button>
-          <button className="secondary workspaceModeToggle" onClick={() => setViewMode((value) => value === 'compact' ? 'professional' : 'compact')} title="精简模式保留当前步骤、下一步和交付状态；专业模式显示全部工程指标与决策面板。">{viewMode === 'compact' ? '切换专业模式' : '切换精简模式'}</button>
+          <span className="unitSystemBadge" title="工程数据默认采用 SI 工程单位；表头和关键数值均显式标注单位。">SI · m / kN / MPa</span>
+          <label className="workspaceRoleSelect">角色<select value={workspaceRole} onChange={(event) => setWorkspaceRole(event.target.value as WorkspaceRole)}>{Object.entries(ROLE_LABELS).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <button className="secondary workspaceModeToggle" onClick={() => setViewMode((value) => value === 'compact' ? 'professional' : 'compact')} title="精简模式保留当前步骤、下一步和交付状态；专业模式显示全部工程指标与决策面板。">{viewMode === 'compact' ? '进入专业模式' : '返回专注模式'}</button>
           <StatusPill label="流程" value={overallFlowLabel(steps)} tone={steps.every((s) => s.status === 'done' || s.status === 'warning') ? 'pass' : 'warn'} />
           <StatusPill label="Fail" value={String(failCount)} tone={failCount > 0 ? 'fail' : 'pass'} />
           <StatusPill label="Warning" value={String(warningCount)} tone={warningCount > 0 ? 'warn' : 'pass'} />
@@ -224,7 +251,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
           <p className="small">按设计流程推进。精简模式仅保留当前操作和必要状态。</p>
           <ol className="workflowStepper">
             {steps.map((step) => (
-              <li key={step.key} className={`workflowStep ${active === step.key ? 'active' : ''} ${step.status}`}>
+              <li key={step.key} className={`workflowStep ${active === step.key ? 'active' : ''} ${step.status} ${ROLE_STEPS[workspaceRole].includes(step.key) ? 'rolePrimary' : 'roleSecondary'}`}>
                 <button onClick={() => setActive(step.key)}>
                   <span className="stepIndex">{step.index}</span>
                   <span className="stepText">
@@ -239,24 +266,27 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
         </aside>
 
         <section className="workflowMain card" id="workflow-main-panel" tabIndex={-1}>
-          {viewMode === 'professional' ? <OperatorDashboard project={current} steps={steps} /> : null}
-          <ProjectDeliveryDashboard project={current} onJump={setActive} />
-          <NextActionPanel activeStep={activeStep} nextStep={nextStep} project={current} />
-          {viewMode === 'professional' ? <EngineeringDecisionBoard project={current} steps={steps} onJump={setActive} /> : null}
-          <StepHeader step={activeStep} project={current} />
+          {viewMode === 'compact'
+            ? <WorkspaceFocusSummary project={current} activeStep={activeStep} nextStep={nextStep} onJump={setActive} />
+            : <><OperatorDashboard project={current} steps={steps} /><ProjectDeliveryDashboard project={current} onJump={setActive} /><NextActionPanel activeStep={activeStep} nextStep={nextStep} project={current} /><EngineeringDecisionBoard project={current} steps={steps} onJump={setActive} /></>}
+          <StepHeader step={activeStep} project={current} compact={viewMode === 'compact'} />
+          <WorkflowStandardsRibbon projectId={current.id} revision={current.updatedAt} stepKey={activeStep.key} />
           {selectedLocator && <LocatorBanner locator={selectedLocator} onClear={() => setSelectedLocator(undefined)} />}
-          <StepBody
-            active={active}
-            project={current}
-            onRefresh={refresh}
-            runStep={runStep}
-            runWorkflow={runWorkflow}
-            runTask={runBackendTask}
-            importVtu={importVtu}
-            vtuMessage={vtuMessage}
-            selectedLocator={selectedLocator}
-            onLocateIssue={locateIssue}
-          />
+          <Suspense fallback={<div className="viewerLoadFallback">正在按需加载当前专业视图…</div>}>
+            <StepBody
+              active={active}
+              project={current}
+              onRefresh={refresh}
+              runStep={runStep}
+              runWorkflow={runWorkflow}
+              runTask={runBackendTask}
+              importVtu={importVtu}
+              vtuMessage={vtuMessage}
+              selectedLocator={selectedLocator}
+              onLocateIssue={locateIssue}
+              viewMode={viewMode}
+            />
+          </Suspense>
           <div className="workflowFooter">
             <button className="secondary" onClick={goPrevious} disabled={!previousStep}>上一步</button>
             <button onClick={goNext} disabled={!nextStep}>下一步：{nextStep?.title ?? '已到末尾'}</button>
@@ -268,6 +298,59 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   );
 }
 
+
+
+function RoleFocusBar({ role, steps, active, onJump }: { role: WorkspaceRole; steps: WorkflowStep[]; active: WorkflowStepKey; onJump: (key: WorkflowStepKey) => void }) {
+  const primary = ROLE_STEPS[role].map((key) => steps.find((step) => step.key === key)).filter(Boolean) as WorkflowStep[];
+  const next = primary.find((step) => !['done','warning'].includes(step.status)) ?? primary.find((step) => step.key === active) ?? primary[0];
+  return <section className="roleFocusBar">
+    <div><span>当前角色</span><strong>{ROLE_LABELS[role]}</strong><em>仅调整信息优先级，不隐藏闭环审查和其他专业模块。</em></div>
+    <nav aria-label={`${ROLE_LABELS[role]}重点流程`}>{primary.map((step) => <button type="button" key={step.key} className={step.key === active ? 'active' : ''} onClick={() => onJump(step.key)}>{step.title}<small>{step.status}</small></button>)}</nav>
+    {next ? <button type="button" className="roleNextButton" onClick={() => onJump(next.key)}>角色下一步：{next.title}</button> : null}
+  </section>;
+}
+
+function WorkspaceFocusSummary({ project, activeStep, nextStep, onJump }: { project: Project; activeStep: WorkflowStep; nextStep?: WorkflowStep; onJump: (key: WorkflowStepKey) => void }) {
+  const latest = getLatestResult(project);
+  const fail = Number(latest?.checkSummary?.fail ?? 0);
+  const warning = Number(latest?.checkSummary?.warning ?? 0);
+  const review = Number(latest?.checkSummary?.manualReview ?? latest?.checkSummary?.manual_review ?? 0);
+  const gate = latest?.formalReportGate;
+  const candidateCount = project.retainingSystem?.supportLayoutRepair?.candidates?.length ?? 0;
+  const fullCount = latest?.supportLayoutRepair?.candidateFullCalculations?.length ?? 0;
+  const governing = latest?.governingValues;
+  const issueHeadline = fail > 0
+    ? `${fail} 个硬性问题需要先处理`
+    : warning > 0 || review > 0
+      ? `${warning} 个预警、${review} 个人工复核项`
+      : latest ? '当前计算未发现硬性阻断' : '尚未形成计算结果';
+  const nextKey: WorkflowStepKey = fail > 0 ? 'calculation' : gate?.allowedForOfficialIssue ? 'export' : nextStep?.key ?? activeStep.key;
+  const nextLabel = fail > 0 ? '处理计算问题' : gate?.allowedForOfficialIssue ? '进入图纸交付' : nextStep ? `继续：${nextStep.title}` : '保持当前步骤';
+  return <section className="workspaceFocusSummary" aria-label="当前设计焦点">
+    <article className="focusOutcomeCard">
+      <span className="sectionKicker">当前成果</span>
+      <strong>{activeStep.title}</strong>
+      <p>{activeStep.message}</p>
+      <div className="focusMetricRow">
+        <span><small>{withUnitLabel('最大位移', 'displacement')}</small><b>{formatEngineeringValue(governing?.maxDisplacement, 'displacement')}</b></span>
+        <span><small>{withUnitLabel('最大轴力', 'force')}</small><b>{formatEngineeringValue(governing?.maxSupportAxialForce, 'force')}</b></span>
+        <span><small>候选 / 完整比选</small><b>{candidateCount} / {fullCount}</b></span>
+      </div>
+    </article>
+    <article className={`focusIssueCard ${fail > 0 ? 'fail' : warning > 0 || review > 0 ? 'warn' : 'pass'}`}>
+      <span className="sectionKicker">关键问题</span>
+      <strong>{issueHeadline}</strong>
+      <p>{gate?.headline ?? (latest ? '问题已按构件和控制工况归并，详细矩阵与原始台账放在专业模式。' : '先完成围护结构和施工工况。')}</p>
+      <div className="focusIssueCounts"><span>Fail {fail}</span><span>Warning {warning}</span><span>复核 {review}</span></div>
+    </article>
+    <article className="focusNextCard">
+      <span className="sectionKicker">下一步动作</span>
+      <strong>{nextLabel}</strong>
+      <p>主流程只保留一个推荐动作；高级参数、逐墙微调和原始结果均可在专业模式查看。</p>
+      <button onClick={() => onJump(nextKey)}>{nextLabel}</button>
+    </article>
+  </section>;
+}
 
 
 function CommandPalette({ steps, query, onQuery, onClose, onSelect, onToggleMode }: { steps: WorkflowStep[]; query: string; onQuery: (value: string) => void; onClose: () => void; onSelect: (key: WorkflowStepKey) => void; onToggleMode: () => void }) {
@@ -347,11 +430,11 @@ function ProjectDeliveryDashboard({ project, onJump }: { project: Project; onJum
         <StatusCard title="方案快照" value={String(activeScheme.schemeId ?? '-')} detail={activeScheme.status ? String(activeScheme.status) : '尚未采纳优化'} tone={statusToneFromText(activeScheme.status)} />
       </div>
       <div className="deliveryKpiRow">
-        <span>统一墙厚 <strong>{String(kpis.uniformWallThickness ?? '-')}m</strong></span>
+        <span>统一墙厚 <strong>{formatEngineeringValue(kpis.uniformWallThickness, 'length')}</strong></span>
         <span>设计/物理长度 <strong>{String(kpis.designToPhysicalLengthRatio ?? '-')}</strong></span>
-        <span>最大位移 <strong>{String(kpis.maxWallDisplacement ?? '-')}</strong></span>
-        <span>支撑轴力峰值 <strong>{String(kpis.maxSupportAxialForce ?? '-')}</strong></span>
-        <span>墙长变化 <strong>{String(delta.changedDesignLengthDelta ?? 0)}m</strong></span>
+        <span>最大位移 <strong>{formatEngineeringValue(kpis.maxWallDisplacement, 'displacement')}</strong></span>
+        <span>支撑轴力峰值 <strong>{formatEngineeringValue(kpis.maxSupportAxialForce, 'force')}</strong></span>
+        <span>墙长变化 <strong>{formatEngineeringValue(delta.changedDesignLengthDelta ?? 0, 'length')}</strong></span>
       </div>
       {nextActions.length ? <ol className="nextActionList dashboardActions">{nextActions.slice(0, 4).map((item, index) => <li key={`${String(item.title)}-${index}`}><strong>{String(item.workflowStep)}</strong><span>{String(item.title)}</span><em>{String(item.recommendation)}</em></li>)}</ol> : null}
     </section>
@@ -484,7 +567,7 @@ function buildWorkflowSteps(project: Project): WorkflowStep[] {
   return base;
 }
 
-function StepHeader({ step, project }: { step: WorkflowStep; project: Project }) {
+function StepHeader({ step, project, compact = false }: { step: WorkflowStep; project: Project; compact?: boolean }) {
   return (
     <header className={`stepHeader ${step.status}`}>
       <div>
@@ -496,12 +579,36 @@ function StepHeader({ step, project }: { step: WorkflowStep; project: Project })
         <strong>{statusText(step.status)}</strong>
         <span>{step.message}</span>
       </div>
-      <div className="requiredList">
+      {!compact ? <div className="requiredList">
         {requirementStatuses(step.key, project).map((item) => <span key={item.label} className={item.done ? 'reqDone' : 'reqOpen'}>{item.done ? '✓' : '○'} {item.label}</span>)}
-      </div>
+      </div> : null}
       {project.messages?.length > 0 && <div className="small">项目消息：{project.messages.slice(-2).join('；')}</div>}
     </header>
   );
+}
+
+const standardsCache = new Map<string, StandardsProcessMatrix>();
+
+function WorkflowStandardsRibbon({ projectId, revision, stepKey }: { projectId: string; revision: string; stepKey: WorkflowStepKey }) {
+  const cacheKey = `${projectId}:${revision}`;
+  const [matrix, setMatrix] = useState<StandardsProcessMatrix | undefined>(() => standardsCache.get(cacheKey));
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const cached = standardsCache.get(cacheKey);
+    if (cached) { setMatrix(cached); return () => { alive = false; }; }
+    api.getProjectStandardsMatrix(projectId).then((value) => { if (alive) { standardsCache.set(cacheKey, value); setMatrix(value); } }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [projectId, cacheKey]);
+  const step = matrix?.steps.find((item: StandardsProcessStep) => item.workflowStep === stepKey);
+  if (!step) return null;
+  const mandatory = step.standardRefs.filter((item) => item.level === 'mandatory_all');
+  return <section className={`workflowStandardsRibbon ${step.status}`}>
+    <div className="workflowStandardLead"><span>本步骤规范</span><strong>{step.standardRefs.map((item) => item.code).join(' · ')}</strong><em>{mandatory.length ? `含 ${mandatory.length} 项全文强制通用规范` : '专业设计标准与规程'}</em></div>
+    <div className="workflowStandardBadges">{step.standardRefs.map((item) => item.sourceUrl ? <a href={item.sourceUrl} target="_blank" rel="noreferrer" className={`standardBadge ${item.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={item.id}><b>{item.code}</b><em>{item.levelLabel}</em></a> : <span className={`standardBadge ${item.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={item.id}><b>{item.code}</b><em>{item.levelLabel}</em></span>)}</div>
+    <button className="secondary tiny" onClick={() => setOpen((value) => !value)}>{open ? '收起规范矩阵' : '展开计算与条文对应'}</button>
+    {open ? <div className="workflowStandardDetail"><div><h4>关键计算</h4><p>{step.keyCalculations.join('；')}</p></div><div><h4>条文关注点</h4><p>{step.clauseFocus.join('；')}</p></div><div><h4>输出与状态</h4><p>{step.outputs.join('；')}</p><span className={`matrixStatus ${step.status}`}>{step.status} · 规则 {step.ruleCount} 项</span></div><div className="workflowRuleTrace"><h4>已实现规则与条文证据</h4>{step.rules.length ? step.rules.map((rule) => <span className="ruleTrace" key={String(rule.ruleId)}><b>{String(rule.ruleId)}</b><em>{String(rule.clauseReference ?? '条文待项目复核')}</em></span>) : <p>当前步骤仅建立规范入口和人工复核边界，尚无可自动执行的条文规则。</p>}</div><a href="/docs" target="_blank" rel="noreferrer">打开完整在线计算与规范文档</a></div> : null}
+  </section>;
 }
 
 function StepBody({
@@ -514,7 +621,8 @@ function StepBody({
   importVtu,
   vtuMessage,
   selectedLocator,
-  onLocateIssue
+  onLocateIssue,
+  viewMode
 }: {
   active: WorkflowStepKey;
   project: Project;
@@ -526,18 +634,19 @@ function StepBody({
   vtuMessage?: string;
   selectedLocator?: Record<string, unknown>;
   onLocateIssue: (issue: IssueCenterItem) => void;
+  viewMode: 'compact' | 'professional';
 }) {
-  if (active === 'settings') return <SettingsStep project={project} onChanged={onRefresh} />;
+  if (active === 'settings') return <SettingsStep project={project} onChanged={onRefresh} viewMode={viewMode} />;
   if (active === 'boreholes') return <BoreholeImport project={project} onImported={onRefresh} />;
   if (active === 'geology') return <GeologyStep project={project} runStep={runStep} importVtu={importVtu} vtuMessage={vtuMessage} />;
   if (active === 'excavation') return <ExcavationEditor project={project} onSaved={onRefresh} />;
-  if (active === 'retaining') return <RetainingStep project={project} runStep={runStep} selectedLocator={selectedLocator} />;
-  if (active === 'calculation') return <CalculationStep project={project} runStep={runStep} runWorkflow={runWorkflow} runTask={runTask} selectedLocator={selectedLocator} />;
-  if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} onChanged={onRefresh} />;
-  return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} onRefresh={onRefresh} />;
+  if (active === 'retaining') return <RetainingStep project={project} runStep={runStep} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} />;
+  if (active === 'calculation') return <CalculationStep project={project} runStep={runStep} runWorkflow={runWorkflow} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} />;
+  if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} onChanged={onRefresh} viewMode={viewMode} />;
+  return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} onRefresh={onRefresh} viewMode={viewMode} />;
 }
 
-function SettingsStep({ project, onChanged }: { project: Project; onChanged: () => void | Promise<void> }) {
+function SettingsStep({ project, onChanged, viewMode }: { project: Project; onChanged: () => void | Promise<void>; viewMode: 'compact' | 'professional' }) {
   const [draft, setDraft] = useState(() => ({ ...project.designSettings }));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -587,6 +696,22 @@ function SettingsStep({ project, onChanged }: { project: Project; onChanged: () 
           </div>
         </div>
       </div>
+      <details className="focusDetails settingsAdvancedDetails" open={viewMode === 'professional'}><summary>高级设计控制：支撑拓扑、换撑刚度、长期效应与监测</summary>
+      <section className="summaryPanel">
+        <div className="panelTitleRow"><div><h3>支撑拓扑、墙体净距与换撑刚度</h3><p className="small">这些参数控制支撑轴线内偏移、超长对撑替代、斜撑候选和楼板换撑 EA/L 装配。</p></div><button onClick={() => void save()} disabled={saving}>{saving ? '保存中…' : '保存并使旧结果失效'}</button></div>
+        <div className="settingsFormGrid advancedSettingsGrid">
+          <label>支撑轴线距墙最小净距（m）<input type="number" min="0.35" max="3" step="0.1" value={draft.supportWallClearanceM ?? 1.0} onChange={(e) => numberValue('supportWallClearanceM', e.target.value)} /></label>
+          <label>直对撑建议最大跨度（m）<input type="number" min="12" max="45" step="1" value={draft.maxDirectStrutSpanM ?? 24} onChange={(e) => numberValue('maxDirectStrutSpanM', e.target.value)} /></label>
+          <label>长墙斜撑优先阈值（m）<input type="number" min="8" max="40" step="1" value={draft.diagonalBraceMinWallLengthM ?? 18} onChange={(e) => numberValue('diagonalBraceMinWallLengthM', e.target.value)} /></label>
+          <label className="settingCheck"><input type="checkbox" checked={draft.preferDiagonalBraces ?? true} onChange={(e) => setDraft((v) => ({ ...v, preferDiagonalBraces: e.target.checked }))} /><span>长墙转角优先生成斜撑/短撑混合候选</span></label>
+          <label>换撑楼板有效宽度（m）<input type="number" min="0.5" max="30" step="0.5" value={draft.replacementSlabEffectiveWidthM ?? 6} onChange={(e) => numberValue('replacementSlabEffectiveWidthM', e.target.value)} /></label>
+          <label>换撑楼板厚度（m）<input type="number" min="0.1" max="2" step="0.05" value={draft.replacementSlabThicknessM ?? 0.25} onChange={(e) => numberValue('replacementSlabThicknessM', e.target.value)} /></label>
+          <label>换撑弹性模量（MPa）<input type="number" min="1000" max="60000" step="500" value={draft.replacementSlabElasticModulusMpa ?? 30000} onChange={(e) => numberValue('replacementSlabElasticModulusMpa', e.target.value)} /></label>
+          <label>换撑连接折减系数<input type="number" min="0.05" max="1" step="0.05" value={draft.replacementConnectionReduction ?? 0.65} onChange={(e) => numberValue('replacementConnectionReduction', e.target.value)} /></label>
+          <label>默认工作台模式<select value={draft.defaultWorkspaceMode ?? 'compact'} onChange={(e) => setDraft((v) => ({ ...v, defaultWorkspaceMode: e.target.value as 'compact' | 'professional' }))}><option value="compact">精简模式</option><option value="professional">专业模式</option></select></label>
+        </div>
+        <p className="small boundaryNote">未进入换撑阶段，刚度显示“未激活/—”；进入换撑阶段后若参数缺失，系统将产生硬阻断，不再用 0 代表未知状态。</p>
+      </section>
       <section className="summaryPanel">
         <div className="panelTitleRow"><div><h3>长期效应、抗裂与监测控制</h3><p className="small">这些参数参与准永久组合、长期位移、裂缝筛查和正式图纸发行闸门。</p></div><button onClick={() => void save()} disabled={saving}>{saving ? '保存中…' : '保存设计参数'}</button></div>
         <div className="settingsFormGrid advancedSettingsGrid">
@@ -602,6 +727,7 @@ function SettingsStep({ project, onChanged }: { project: Project; onChanged: () 
         </div>
         <p className="small boundaryNote">裂缝与长期效应当前属于透明工程筛查；正式施工图仍应结合项目实际龄期、暴露环境、温度场、施工缝和监测方案完成专业复核。</p>
       </section>
+      </details>
     </div>
   );
 }
@@ -619,7 +745,7 @@ function GeologyStep({ project, runStep, importVtu, vtuMessage }: { project: Pro
   );
 }
 
-function RetainingStep({ project, runStep, selectedLocator }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; selectedLocator?: Record<string, unknown> }) {
+function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
   const [open, setOpen] = useState(false);
   const [weightPreset, setWeightPreset] = useState<'balanced' | 'fewer_columns' | 'low_axial_force' | 'muck_path_priority'>('balanced');
   const defaultWeights: Record<string, number> = {
@@ -723,12 +849,20 @@ function RetainingStep({ project, runStep, selectedLocator }: { project: Project
         </div>
         <p className="small">提示：运行优化后，请到“计算校核”页查看候选方案差异动画、A/B/C 完整计算比选，并选择“采用此方案”。</p>
       </aside></div>}
-      <RetainingSystemViewer project={project} highlightLocator={selectedLocator} />
+      <SchemeComparisonPanel
+        project={project}
+        compact={viewMode === 'compact'}
+        onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))}
+        onRunComparison={() => runTask('正在并行计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })}
+        onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))}
+        onRefresh={onRefresh}
+      />
+      <DeferredDetails summary="查看当前围护结构模型与构件明细" defaultOpen={viewMode === 'professional'}><RetainingSystemViewer project={project} highlightLocator={selectedLocator} /></DeferredDetails>
     </div>
   );
 }
 
-function CalculationStep({ project, runStep, runWorkflow, runTask, selectedLocator }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; selectedLocator?: Record<string, unknown> }) {
+function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
   const [open, setOpen] = useState(false);
   const runAll = () => runTask('一键计算校核', 'calculation_full', { topN: 3 });
   return (
@@ -739,8 +873,10 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, selectedLocat
         
       </div>
       {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runStep('正在运行计算和规范子集校核', () => api.runCalculation(project.id))} disabled={!project.retainingSystem}>仅运行计算</button><button onClick={() => runTask('正在并行计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
-      <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} />
-      <CalculationTracePanel project={project} />
+      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))} onRunComparison={() => runTask('正在并行计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
+      <CalculationRecoveryPanel project={project} runStep={runStep} />
+      <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />
+      {viewMode === 'professional' ? <CalculationTracePanel project={project} /> : <details className="focusDetails"><summary>查看完整计算追溯链、公式和规范条文</summary><CalculationTracePanel project={project} /></details>}
     </div>
   );
 }
@@ -864,7 +1000,29 @@ function CalculationTracePanel({ project }: { project: Project }) {
   );
 }
 
-function AssurancePanel({ project, onLocateIssue, onChanged }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void; onChanged: () => void | Promise<void> }) {
+function ModuleCompletionReview({ assurance }: { assurance: AssuranceResult }) {
+  const modules = assurance.moduleCompletionReview ?? [];
+  if (!modules.length) return null;
+  const blocking = modules.filter((item) => item.blocking).length;
+  const incomplete = modules.filter((item) => item.completion < 100).length;
+  return <section className="moduleCompletionReview">
+    <div className="moduleCompletionHeader">
+      <div><span className="sectionKicker">闭环审查核心成果</span><h3>全系统模块完成度审查</h3><p>保留全部模块，不因界面精简而隐藏。每个模块显示完成度、阻断状态、证据、缺项和下一步动作。</p></div>
+      <div className="moduleCompletionSummary"><strong>{assurance.moduleOverallCompleteness ?? assurance.completionPercent}%</strong><span>12 个模块 · 阻断 {blocking} · 未完成 {incomplete}</span></div>
+    </div>
+    <div className="moduleCompletionGrid">
+      {modules.map((item) => <article key={item.id} className={`moduleCompletionCard status-${item.status} ${item.blocking ? 'blocking' : ''}`}>
+        <div className="moduleCardTitle"><span>{item.id}</span><strong>{item.name}</strong><em>{item.ownerRole}</em></div>
+        <div className="moduleProgressLine"><progress max={100} value={item.completion} /><b>{item.completion}%</b></div>
+        <p>{item.completedItemCount}/{item.totalItemCount} 项已完成{item.blocking ? ' · 当前存在阻断' : ''}</p>
+        {item.gaps.length ? <ul>{item.gaps.slice(0, 2).map((gap) => <li key={gap.item}><strong>{gap.item}</strong><span>{gap.recommendation}</span></li>)}</ul> : <div className="moduleCompleteEvidence">证据链完整：{item.evidence.slice(0, 2).join('、')}</div>}
+        <footer>{item.nextAction}</footer>
+      </article>)}
+    </div>
+  </section>;
+}
+
+function AssurancePanel({ project, onLocateIssue, onChanged, viewMode }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void; onChanged: () => void | Promise<void>; viewMode: 'compact' | 'professional' }) {
   const [assurance, setAssurance] = useState<AssuranceResult | undefined>();
   const [error, setError] = useState<string | undefined>();
   useEffect(() => {
@@ -875,37 +1033,37 @@ function AssurancePanel({ project, onLocateIssue, onChanged }: { project: Projec
   if (error) return <div className="error">{error}</div>;
   if (!assurance) return <div className="small">正在读取完成度分析...</div>;
   const capability = assurance.capabilityCompleteness ?? assurance.completionPercent;
-  return (
-    <div>
-      <div className="assuranceCards">
-        <StatusCard title="功能完成度" value={`${capability}%`} detail="只描述软件功能路径覆盖率；缺项见下方列表" tone={capability >= 100 ? 'pass' : 'warn'} />
-        <StatusCard title="软件流程" value={assurance.softwareFlowComplete ? '完整' : '未完整'} detail={assurance.softwareFlowComplete ? '资料-设计-计算-成果路径完整' : `仍缺 ${assurance.softwareFlowMissingItems?.length ?? 0} 个流程项`} tone={assurance.softwareFlowComplete ? 'pass' : 'warn'} />
-        <StatusCard title="工程校核" value={assurance.engineeringCheckStatus ?? 'manual_review'} detail={`fail=${assurance.failureCount}，人工复核=${assurance.manualReviewCount}`} tone={assurance.engineeringCheckStatus === 'fail' ? 'fail' : assurance.engineeringCheckStatus === 'pass' ? 'pass' : 'review'} />
-        <StatusCard title="正式出图闸门" value={assurance.officialIssueGateAllowed ? '可正式出图' : '暂不建议正式出图'} detail={assurance.officialIssueGateHeadline ?? assurance.officialIssueGateDetail ?? '查看阻断/警告/缺项'} tone={assurance.officialIssueGateStatus === 'fail' ? 'fail' : assurance.officialIssueGateStatus === 'pass' ? 'pass' : 'warn'} />
-      </div>
-      <Suspense fallback={<div className="summaryPanel"><h3>工程深化与发行闭环</h3><p className="small">正在按需加载深化分析模块…</p></div>}><AdvancedEngineeringPanel project={project} onChanged={onChanged} /></Suspense>
-      <IssueCenterPanel project={project} onLocateIssue={onLocateIssue} />
-      {assurance.supportLayoutQuality && <div className="summaryPanel"><h3>支撑布置评分</h3><p>{assurance.supportLayoutQuality.summary}</p><p className="small">状态：{assurance.supportLayoutQuality.status}；评分：{assurance.supportLayoutQuality.score}</p></div>}
-      {assurance.ifcCompatibility && <div className="summaryPanel"><h3>IFC 兼容性自检</h3><p>{assurance.ifcCompatibility.summary}</p><p className="small">raw unicode：{String(assurance.ifcCompatibility.rawUnicodeFound)}；零尺寸：{assurance.ifcCompatibility.zeroDimensionCount ?? 0}；材料缺失：{assurance.ifcCompatibility.missingMaterialAssociationCount ?? 0}</p></div>}
-      <div className="stepGrid">
-        <IssueTable title="出图阻断项" items={assurance.officialIssueBlockingItems ?? []} empty="没有硬性阻断项。" />
-        <IssueTable title="出图警告项" items={assurance.officialIssueWarningItems ?? []} empty="没有警告项。" />
-        <IssueTable title="流程/成果缺项" items={assurance.officialIssueMissingItems ?? []} empty="没有缺项。" />
-      </div>
-      {assurance.softwareFlowMissingItems?.length ? <><h3>软件流程缺项</h3><table className="dataTable"><thead><tr><th>ID</th><th>验收项</th><th>状态</th><th>说明</th></tr></thead><tbody>{assurance.softwareFlowMissingItems.map((item) => <tr key={item.id} className={`check-${item.status}`}><td>{item.id}</td><td>{item.title}</td><td>{item.status}</td><td>{item.message}</td></tr>)}</tbody></table></> : null}
-      <h3>完整验收矩阵</h3>
-      <table className="dataTable">
-        <thead><tr><th>ID</th><th>验收项</th><th>状态</th><th>说明</th></tr></thead>
-        <tbody>{assurance.acceptanceMatrix.map((item) => <tr key={item.id} className={`check-${item.status}`}><td>{item.id}</td><td>{item.title}</td><td>{item.status}</td><td>{item.message}</td></tr>)}</tbody>
-      </table>
-      <h3>边界策略</h3>
-      <ul>{assurance.remainingBoundaryPolicy.map((item) => <li key={item}>{item}</li>)}</ul>
+  const detailedAcceptance = <>
+    {assurance.supportLayoutQuality && <div className="summaryPanel"><h3>支撑布置评分</h3><p>{assurance.supportLayoutQuality.summary}</p><p className="small">状态：{assurance.supportLayoutQuality.status}；评分：{assurance.supportLayoutQuality.score}</p></div>}
+    {assurance.ifcCompatibility && <div className="summaryPanel"><h3>IFC 兼容性自检</h3><p>{assurance.ifcCompatibility.summary}</p><p className="small">raw unicode：{String(assurance.ifcCompatibility.rawUnicodeFound)}；零尺寸：{assurance.ifcCompatibility.zeroDimensionCount ?? 0}；材料缺失：{assurance.ifcCompatibility.missingMaterialAssociationCount ?? 0}</p></div>}
+    <div className="stepGrid">
+      <IssueTable title="出图阻断项" items={assurance.officialIssueBlockingItems ?? []} empty="没有硬性阻断项。" />
+      <IssueTable title="出图警告项" items={assurance.officialIssueWarningItems ?? []} empty="没有警告项。" />
+      <IssueTable title="流程/成果缺项" items={assurance.officialIssueMissingItems ?? []} empty="没有缺项。" />
     </div>
-  );
+    {assurance.softwareFlowMissingItems?.length ? <><h3>软件流程缺项</h3><table className="dataTable"><thead><tr><th>ID</th><th>验收项</th><th>状态</th><th>说明</th></tr></thead><tbody>{assurance.softwareFlowMissingItems.map((item) => <tr key={item.id} className={`check-${item.status}`}><td>{item.id}</td><td>{item.title}</td><td>{item.status}</td><td>{item.message}</td></tr>)}</tbody></table></> : null}
+    <h3>完整验收矩阵</h3>
+    <table className="dataTable"><thead><tr><th>ID</th><th>验收项</th><th>状态</th><th>说明</th></tr></thead><tbody>{assurance.acceptanceMatrix.map((item) => <tr key={item.id} className={`check-${item.status}`}><td>{item.id}</td><td>{item.title}</td><td>{item.status}</td><td>{item.message}</td></tr>)}</tbody></table>
+    <h3>边界策略</h3><ul>{assurance.remainingBoundaryPolicy.map((item) => <li key={item}>{item}</li>)}</ul>
+  </>;
+  const advancedEngineering = <Suspense fallback={<div className="summaryPanel"><h3>工程深化与发行闭环</h3><p className="small">正在按需加载深化分析模块…</p></div>}><AdvancedEngineeringPanel project={project} onChanged={onChanged} /></Suspense>;
+  return <div>
+    <div className="assuranceCards">
+      <StatusCard title="功能完成度" value={`${capability}%`} detail="软件功能路径覆盖率" tone={capability >= 100 ? 'pass' : 'warn'} />
+      <StatusCard title="软件流程" value={assurance.softwareFlowComplete ? '完整' : '未完整'} detail={assurance.softwareFlowComplete ? '资料—设计—计算—成果路径完整' : `仍缺 ${assurance.softwareFlowMissingItems?.length ?? 0} 个流程项`} tone={assurance.softwareFlowComplete ? 'pass' : 'warn'} />
+      <StatusCard title="工程校核" value={assurance.engineeringCheckStatus ?? 'manual_review'} detail={`Fail ${assurance.failureCount} · 复核 ${assurance.manualReviewCount}`} tone={assurance.engineeringCheckStatus === 'fail' ? 'fail' : assurance.engineeringCheckStatus === 'pass' ? 'pass' : 'review'} />
+      <StatusCard title="正式出图闸门" value={assurance.officialIssueGateAllowed ? '允许' : '阻断'} detail={assurance.officialIssueGateHeadline ?? assurance.officialIssueGateDetail ?? '查看阻断/警告/缺项'} tone={assurance.officialIssueGateStatus === 'fail' ? 'fail' : assurance.officialIssueGateStatus === 'pass' ? 'pass' : 'warn'} />
+    </div>
+    <ModuleCompletionReview assurance={assurance} />
+    <IssueCenterPanel project={project} onLocateIssue={onLocateIssue} compact={viewMode === 'compact'} />
+    {viewMode === 'professional' ? <>{advancedEngineering}{detailedAcceptance}</> : <>
+      <details className="focusDetails"><summary>专业深化：长期效应、碰撞、节点、监测、审签与吊装</summary>{advancedEngineering}</details>
+      <details className="focusDetails"><summary>完整验收矩阵、IFC 自检和工程边界</summary>{detailedAcceptance}</details>
+    </>}
+  </div>;
 }
 
-
-function IssueCenterPanel({ project, onLocateIssue }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void }) {
+function IssueCenterPanel({ project, onLocateIssue, compact = false }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void; compact?: boolean }) {
   const [data, setData] = useState<IssueCenterResult | undefined>();
   const [error, setError] = useState<string | undefined>();
   useEffect(() => {
@@ -922,25 +1080,25 @@ function IssueCenterPanel({ project, onLocateIssue }: { project: Project; onLoca
         <div><h3>问题清单中心 · V{maturity.softwareVersion}</h3><p>把阻断项、警告项、人工复核项和下一步动作集中到同一个闭环面板。</p></div>
         <strong>{maturity.overallCompletion}%</strong>
       </div>
-      <div className="maturityGrid">
+      {!compact && <div className="maturityGrid">
         <StatusCard title="系统模块完成度" value={`${maturity.overallCompletion}%`} detail={maturity.closedLoopComplete ? '软件闭环模块 100%' : '模块仍有缺项'} tone={maturity.closedLoopComplete ? 'pass' : 'warn'} />
         <StatusCard title="数据建模" value={`${maturity.dataModelCompletion}%`} detail="地勘、地质、基坑轮廓" tone={maturity.dataModelCompletion >= 90 ? 'pass' : 'warn'} />
         <StatusCard title="设计计算" value={`${maturity.designCalculationCompletion}%`} detail="围护、计算、规范筛查、闸门" tone={maturity.designCalculationCompletion >= 90 ? 'pass' : 'warn'} />
         <StatusCard title="BIM/CAD 交付" value={`${maturity.bimCadDeliverableCompletion}%`} detail="IFC、CAD、钢筋、图表" tone={maturity.bimCadDeliverableCompletion >= 85 ? 'pass' : 'warn'} />
         <StatusCard title="工程出图准备" value={`${maturity.engineeringAcceptanceReadiness ?? maturity.officialIssueReadiness}%`} detail="项目数据和专业复核状态" tone={(maturity.engineeringAcceptanceReadiness ?? maturity.officialIssueReadiness) >= 90 ? 'pass' : 'review'} />
-      </div>
+      </div>}
       <div className="issueCounters">
         <span className="fail">阻断 {data.summary.fail ?? 0}</span>
         <span className="warn">警告 {data.summary.warning ?? 0}</span>
         <span className="review">人工复核 {data.summary.manual_review ?? 0}</span>
         <span>合计 {data.issueCount}</span>
       </div>
-      {(maturity.moduleLedger ?? data.moduleLedger ?? []).length ? <div className="moduleLedger"><h4>软件模块清单</h4><div className="moduleLedgerGrid">{(maturity.moduleLedger ?? data.moduleLedger ?? []).map((item) => <div key={item.id} className="moduleLedgerItem"><strong>{item.id} · {item.name}</strong><span>{item.completion}% · {item.status} </span><em>{item.evidence}</em></div>)}</div></div> : null}
-      <div className="stepGrid">
-        <div className="summaryPanel"><h4>优先处理动作</h4><ol className="nextActionList">{data.nextActions.slice(0, 6).map((item, index) => <li key={`${item.title}-${index}`}><strong>{item.workflowStep}</strong><span>{item.title}</span><em>{item.recommendation}</em></li>)}</ol></div>
-        <div className="summaryPanel"><h4>当前边界</h4><ul>{maturity.limitations.map((item) => <li key={item}>{item}</li>)}</ul></div>
+      {!compact && (maturity.moduleLedger ?? data.moduleLedger ?? []).length ? <div className="moduleLedger"><h4>软件模块清单</h4><div className="moduleLedgerGrid">{(maturity.moduleLedger ?? data.moduleLedger ?? []).map((item) => <div key={item.id} className="moduleLedgerItem"><strong>{item.id} · {item.name}</strong><span>{item.completion}% · {item.status} </span><em>{item.evidence}</em></div>)}</div></div> : null}
+      <div className={`stepGrid ${compact ? 'compactIssueActions' : ''}`}>
+        <div className="summaryPanel"><h4>优先处理动作</h4><ol className="nextActionList">{data.nextActions.slice(0, compact ? 3 : 6).map((item, index) => <li key={`${item.title}-${index}`}><strong>{item.workflowStep}</strong><span>{item.title}</span><em>{item.recommendation}</em></li>)}</ol></div>
+        {!compact ? <div className="summaryPanel"><h4>当前边界</h4><ul>{maturity.limitations.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
       </div>
-      <table className="table compactTable"><thead><tr><th>等级</th><th>流程</th><th>类别</th><th>对象</th><th>问题</th><th>定位</th><th>建议</th></tr></thead><tbody>{data.issues.slice(0, 30).map((item) => <tr key={item.id} className={`issue-${item.severity} clickableRow`} onClick={() => onLocateIssue(item)} title="点击定位到对应流程、构件或 CAD 图纸"><td>{item.severity}</td><td>{item.workflowStep}</td><td>{item.category}</td><td>{item.objectId ?? '-'}</td><td>{item.message}</td><td>{String(item.locator?.targetPanel ?? item.targetPanel ?? item.workflowStep)}{item.locator?.drawingSheet ? <em> · {String(item.locator.drawingSheet)}</em> : null}</td><td>{item.recommendation}</td></tr>)}</tbody></table>
+      {compact ? <div className="compactIssueList">{data.issues.slice(0, 8).map((item) => <button key={item.id} className={`compactIssueItem issue-${item.severity}`} onClick={() => onLocateIssue(item)}><span>{item.severity} · {item.workflowStep}</span><strong>{item.message}</strong><em>{item.recommendation}</em></button>)}</div> : <table className="table compactTable"><thead><tr><th>等级</th><th>流程</th><th>类别</th><th>对象</th><th>问题</th><th>定位</th><th>建议</th></tr></thead><tbody>{data.issues.slice(0, 30).map((item) => <tr key={item.id} className={`issue-${item.severity} clickableRow`} onClick={() => onLocateIssue(item)} title="点击定位到对应流程、构件或 CAD 图纸"><td>{item.severity}</td><td>{item.workflowStep}</td><td>{item.category}</td><td>{item.objectId ?? '-'}</td><td>{item.message}</td><td>{String(item.locator?.targetPanel ?? item.targetPanel ?? item.workflowStep)}{item.locator?.drawingSheet ? <em> · {String(item.locator.drawingSheet)}</em> : null}</td><td>{item.recommendation}</td></tr>)}</tbody></table>}
     </section>
   );
 }
@@ -956,45 +1114,43 @@ function IssueTable({ title, items, empty }: { title: string; items: { category:
   );
 }
 
-function ExportPanel({ project, runTask, selectedLocator, onRefresh }: { project: Project; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; selectedLocator?: Record<string, unknown>; onRefresh: () => void }) {
+function ExportPanel({ project, runTask, selectedLocator, onRefresh, viewMode }: { project: Project; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; selectedLocator?: Record<string, unknown>; onRefresh: () => void; viewMode: 'compact' | 'professional' }) {
   const latest = getLatestResult(project);
   const [advanced, setAdvanced] = useState(false);
   const blocked = !latest || !project.retainingSystem || latest.governingValues.governingCheckStatus === 'fail' || (latest.checkSummary?.fail ?? 0) > 0;
-  return (
-    <div>
-      {blocked && <div className="warning">当前成果需复核。建议先处理 fail 或阻断项。</div>}
-      <div className="actionStrip simplifiedActions"><button onClick={() => runTask('全流程计算与成果生成', 'full_delivery', { topN: 3 })} disabled={!project.retainingSystem}>一键生成完整交付包</button><button className="secondary" onClick={() => setAdvanced((v) => !v)}>{advanced ? '收起更多导出' : '更多导出'}</button></div>
-      <div className="exportGrid preferredExports">
-        <ExportCard projectId={project.id} taskOperation="export_ifc_construction_visual" title="IFC 可视化模型" description="用于外部 BIM 查看。" href={api.exportUrl(project.id, 'ifc-construction-visual')} button="下载 IFC" />
-        <ExportCard projectId={project.id} taskOperation="export_formal_drawings" title="正式图纸发行包" description="CAD 总图/大样、批量 PDF 索引、八项工程检查、修订台账和 DWG 转换说明。" href={api.formalDrawingPackageUrl(project.id, 'review')} button="生成正式图纸包" />
-        <ExportCard projectId={project.id} taskOperation="export_report" title="计算书 DOCX" description="计算结果、问题清单和方案比选。" href={api.exportUrl(project.id, 'report')} button="下载计算书" />
-        <ExportCard projectId={project.id} taskOperation="export_rebar_detailing" title="钢筋详图数据" description="逐根钢筋几何和下料数据。" href={api.exportUrl(project.id, 'json')} button="下载钢筋数据" />
-      </div>
-      {advanced && <div className="exportGrid advancedExports">
-        <ExportCard projectId={project.id} taskOperation="export_ifc_light" title="IFC 轻量协调版" description="用于快速协调浏览。" href={api.exportUrl(project.id, 'ifc-light')} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_ifc_analysis" title="IFC 分析模型版" description="用于计算模型交换。" href={api.exportUrl(project.id, 'ifc-analysis')} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_ifc_detailed" title="IFC 语义详细版" description="用于 BIM 语义审查。" href={api.exportUrl(project.id, 'ifc-detailed')} button="下载" />
-        <ExportCard title="IFC 自检" description="检查目标 Viewer 兼容性。" href={api.ifcCheckUrl(project.id, 'construction_visual')} button="查看" />
-        <ExportCard projectId={project.id} taskOperation="export_drawings_svg" title="SVG 图纸包" description="用于汇报和插图。" href={api.exportUrl(project.id, 'drawings-svg')} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_trace" title="计算追溯链" description="JSON 追溯数据。" href={api.exportUrl(project.id, 'json')} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_issue_report" title="问题清单" description="JSON 审查清单。" href={api.exportUrl(project.id, 'json')} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_json" title="完整 JSON" description="项目归档和迁移。" href={api.exportUrl(project.id, 'json')} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_wall_length_redundancy" title="围护墙冗余优化报告" description="设计长度、分幅和局部加强记录。" href={api.wallLengthRedundancyReportUrl(project.id)} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_design_scheme_ledger" title="方案快照与交付台账" description="采纳历史、复算状态、交付闸门和当前方案 KPI。" href={api.designSchemeLedgerReportUrl(project.id)} button="下载" />
-        <ExportCard projectId={project.id} taskOperation="export_benchmark_cases" title="回归算例包" description="公开派生算例。" href={api.benchmarkPackageUrl()} button="下载" />
-      </div>}
-      <CadTemplatePanel project={project} />
-      <CadLocatorPreview project={project} locator={selectedLocator} />
-      <RebarDesignPanel project={project} onApplied={onRefresh} />
-      <RebarDetailingPanel project={project} />
-      <RebarIfcViewer project={project} highlightLocator={selectedLocator} />
-      {advanced && <BenchmarkPanel />}
-      <div className="summaryPanel exportModelPreview">
-        <h3>模型预览</h3>
-        <Engineering3DViewer project={project} focus="retaining" highlightLocator={selectedLocator} />
-      </div>
+  const professionalPanels = <>
+    <CadTemplatePanel project={project} />
+    <DrawingRuleSetPanel project={project} onApplied={onRefresh} />
+    <CadLocatorPreview project={project} locator={selectedLocator} />
+    <RebarDesignPanel project={project} onApplied={onRefresh} />
+    <RebarDetailingPanel project={project} />
+    <RebarIfcViewer project={project} highlightLocator={selectedLocator} />
+    {advanced && <BenchmarkPanel />}
+    <div className="summaryPanel exportModelPreview"><h3>模型预览</h3><Engineering3DViewer project={project} focus="retaining" highlightLocator={selectedLocator} /></div>
+  </>;
+  return <div>
+    {blocked && <div className="warning">当前成果存在阻断或尚未计算。审查成果可以生成，施工版发行仍由质量闸门控制。</div>}
+    <div className="actionStrip simplifiedActions"><button onClick={() => runTask('全流程计算与成果生成', 'full_delivery', { topN: 3 })} disabled={!project.retainingSystem}>一键生成完整交付包</button><button className="secondary" onClick={() => setAdvanced((v) => !v)}>{advanced ? '收起扩展格式' : '扩展导出格式'}</button></div>
+    <div className="exportGrid preferredExports">
+      <ExportCard projectId={project.id} taskOperation="export_formal_drawings" title="正式图纸发行包" description="CAD、PDF、图纸目录、审签、修订和质量门禁。" href={api.formalDrawingPackageUrl(project.id, 'review')} button="生成图纸包" />
+      <ExportCard projectId={project.id} taskOperation="export_ifc_construction_visual" title="IFC 可视化模型" description="用于外部 BIM 查看和专业协调。" href={api.exportUrl(project.id, 'ifc-construction-visual')} button="下载 IFC" />
+      <ExportCard projectId={project.id} taskOperation="export_report" title="计算书 DOCX" description="控制结果、问题清单和 A/B/C 方案比选。" href={api.exportUrl(project.id, 'report')} button="下载计算书" />
+      <ExportCard projectId={project.id} taskOperation="export_rebar_detailing" title="钢筋加工深化包" description="逐根钢筋、BBS、套筒、吊装和碰撞协调数据。" href={api.rebarDetailingPackageUrl(project.id)} button="下载钢筋 ZIP" />
     </div>
-  );
+    {advanced && <div className="exportGrid advancedExports">
+      <ExportCard projectId={project.id} taskOperation="export_ifc_light" title="IFC 轻量协调版" description="用于快速协调浏览。" href={api.exportUrl(project.id, 'ifc-light')} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_ifc_analysis" title="IFC 分析模型版" description="用于计算模型交换。" href={api.exportUrl(project.id, 'ifc-analysis')} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_ifc_detailed" title="IFC 语义详细版" description="用于 BIM 语义审查。" href={api.exportUrl(project.id, 'ifc-detailed')} button="下载" />
+      <ExportCard title="IFC 自检" description="检查目标 Viewer 兼容性。" href={api.ifcCheckUrl(project.id, 'construction_visual')} button="查看" />
+      <ExportCard projectId={project.id} taskOperation="export_drawings_svg" title="SVG 图纸包" description="用于汇报和插图。" href={api.exportUrl(project.id, 'drawings-svg')} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_trace" title="计算追溯链" description="JSON 追溯数据。" href={api.exportUrl(project.id, 'json')} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_issue_report" title="问题清单" description="JSON 审查清单。" href={api.exportUrl(project.id, 'json')} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_json" title="完整 JSON" description="项目归档和迁移。" href={api.exportUrl(project.id, 'json')} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_wall_length_redundancy" title="围护墙冗余优化报告" description="设计长度、分幅和局部加强记录。" href={api.wallLengthRedundancyReportUrl(project.id)} button="下载" />
+      <ExportCard projectId={project.id} taskOperation="export_design_scheme_ledger" title="方案快照与交付台账" description="采纳历史、复算状态、交付闸门和当前方案 KPI。" href={api.designSchemeLedgerReportUrl(project.id)} button="下载" />
+    </div>}
+    {viewMode === 'professional' ? professionalPanels : <DeferredDetails summary="专业出图配置、配筋深化和三维检查">{professionalPanels}</DeferredDetails>}
+  </div>;
 }
 
 function ProjectTreeSummary({ project }: { project: Project }) {

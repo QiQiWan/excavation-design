@@ -5,7 +5,7 @@ from app.rules.gb50010.rc_section_rules import rebar_fy
 
 GB50010_CRACK_RULE = DesignRule(
     rule_id="GBT50010-2024-SERVICEABILITY-CRACK-SCREEN",
-    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
+    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="正常使用极限状态裂缝宽度验算（软件为参数化工程筛查）",
     name="裂缝宽度筛查",
@@ -16,7 +16,7 @@ GB50010_CRACK_RULE = DesignRule(
 
 GB50010_ANCHORAGE_RULE = DesignRule(
     rule_id="GBT50010-2024-REBAR-ANCHORAGE-LAP-SCREEN",
-    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
+    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="钢筋锚固、搭接和构造要求（软件为参数化筛查）",
     name="锚固搭接和构造筛查",
@@ -43,7 +43,7 @@ def estimate_crack_width_mm(
 ) -> float:
     """A deterministic serviceability screening estimate.
 
-    It intentionally stays conservative and transparent instead of claiming a full GB/T 50010 crack
+    It intentionally stays conservative and transparent instead of claiming a full GB 50010 crack
     formula. The result is used as a gate in the prototype calculation book and IFC properties.
     """
     capacity = max(moment_capacity_knm_per_m, 1e-9)

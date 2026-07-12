@@ -23,6 +23,24 @@ def create_project_task(project_id: str, body: TaskCreateRequest) -> dict:
     return task.as_dict(include_logs=True)
 
 
+class CandidateBatchRequest(BaseModel):
+    top_n: int = Field(default=3, ge=1, le=3, alias="topN")
+    use_cache: bool = Field(default=True, alias="useCache")
+
+
+@router.post("/api/projects/{project_id}/tasks/candidate-comparison-batch")
+def create_candidate_comparison_batch(project_id: str, body: CandidateBatchRequest) -> dict:
+    try:
+        tasks = task_manager.submit_candidate_batch(project_id, top_n=body.top_n, use_cache=body.use_cache)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "projectId": project_id,
+        "taskCount": len(tasks),
+        "tasks": [task.as_dict(include_logs=True) for task in tasks],
+    }
+
+
 @router.get("/api/projects/{project_id}/tasks")
 def list_project_tasks(project_id: str) -> list[dict]:
     return [task.as_dict(include_logs=False) for task in task_manager.list(project_id=project_id)]

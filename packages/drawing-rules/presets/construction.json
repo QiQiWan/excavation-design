@@ -1,0 +1,1182 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pitguard-construction",
+  "name": "施工深化型",
+  "version": "3.8.0",
+  "description": "保留逐墙立面、全部节点大样和质量台账，适合施工图复核。",
+  "preset": "construction",
+  "parameters": {
+    "defaultPaperSize": "A1",
+    "usablePaperRatio": 0.82,
+    "allowedPlanScales": [
+      100,
+      150,
+      200,
+      250,
+      300,
+      400,
+      500
+    ],
+    "allowedSectionScales": [
+      50,
+      100,
+      150,
+      200
+    ],
+    "allowedDetailScales": [
+      10,
+      20,
+      25,
+      50
+    ],
+    "minimumTextHeightMm": 2.5,
+    "maximumSheetCount": 120,
+    "wallSheetsPerDrawing": 1,
+    "includeEmptyQualitySheets": true,
+    "includeLegacyCompatibilitySheets": true,
+    "includeMonitoringLayoutWithoutRecords": true,
+    "includePerWallElevations": true,
+    "constructionRequiresCurrentApproval": true,
+    "constructionRequiresRevision": true,
+    "reviewWatermark": true
+  },
+  "objectiveWeights": {
+    "coverage": 0.35,
+    "readability": 0.25,
+    "constructability": 0.27,
+    "compactness": 0.03,
+    "consistency": 0.1
+  },
+  "issuePolicy": {
+    "review": {
+      "allowBlockingChecks": true,
+      "watermark": true
+    },
+    "construction": {
+      "allowBlockingChecks": false,
+      "requireApproval": true,
+      "requireCurrentRevision": true,
+      "requireCalculation": true
+    }
+  },
+  "sheetRules": [
+    {
+      "id": "G00",
+      "enabled": true,
+      "sheetNo": "G-00",
+      "title": "图纸目录、设计总说明与图例",
+      "category": "general",
+      "scope": "general",
+      "renderer": "general_notes",
+      "file": "00_general/G-00_drawing_index_general_notes.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "op": "always"
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "project",
+        "standards",
+        "drawing_register"
+      ],
+      "priority": 100,
+      "required": true,
+      "legacy": false,
+      "module": "general"
+    },
+    {
+      "id": "S00",
+      "enabled": true,
+      "sheetNo": "S-00",
+      "title": "基坑围护与支撑总平面图",
+      "category": "global_plan",
+      "scope": "general",
+      "renderer": "master_plan",
+      "file": "10_plans/S-00_retaining_support_general_arrangement.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "plan",
+        "extent": "project",
+        "preferred": 200
+      },
+      "trigger": {
+        "op": "always"
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "excavation",
+        "walls",
+        "wales",
+        "supports",
+        "columns"
+      ],
+      "priority": 100,
+      "required": true,
+      "legacy": false,
+      "module": "general"
+    },
+    {
+      "id": "S01",
+      "enabled": true,
+      "sheetNo": "S-01",
+      "title": "围护结构分幅及构件编号图",
+      "category": "plan",
+      "scope": "general",
+      "renderer": "legacy_support_plan",
+      "file": "S-01_support_plan.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "plan",
+        "extent": "project",
+        "preferred": 200
+      },
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.wallCount",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "walls"
+      ],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "general"
+    },
+    {
+      "id": "S02",
+      "enabled": true,
+      "sheetNo": "S-02-L{level:02d}",
+      "title": "第{level}道支撑平面布置图",
+      "category": "level_plan",
+      "scope": "general",
+      "renderer": "support_level_plan",
+      "file": "10_plans/S-02-L{level:02d}_support_level_plan.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "plan",
+        "extent": "project",
+        "preferred": 150
+      },
+      "trigger": {
+        "path": "facts.supportLevelCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "per_level",
+      "modelBinding": [
+        "support_level_{level}",
+        "walls",
+        "columns",
+        "nodes"
+      ],
+      "priority": 90,
+      "required": false,
+      "legacy": false,
+      "module": "general"
+    },
+    {
+      "id": "S03",
+      "enabled": true,
+      "sheetNo": "S-03",
+      "title": "典型开挖剖面与施工阶段图",
+      "category": "section",
+      "scope": "general",
+      "renderer": "excavation_section",
+      "file": "20_sections/S-03_excavation_stage_section.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "section",
+        "extent": "depth",
+        "preferred": 100
+      },
+      "trigger": {
+        "path": "facts.hasExcavation",
+        "op": "eq",
+        "value": true
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 95,
+      "required": true,
+      "legacy": false,
+      "module": "general"
+    },
+    {
+      "id": "M01",
+      "enabled": true,
+      "sheetNo": "M-01",
+      "title": "监测点布置总图",
+      "category": "monitoring",
+      "scope": "general",
+      "renderer": "monitoring_plan",
+      "file": "S-06_monitoring_plan.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "plan",
+        "extent": "project",
+        "preferred": 200
+      },
+      "trigger": {
+        "any": [
+          {
+            "path": "facts.monitoringRecordCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "parameters.includeMonitoringLayoutWithoutRecords",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "monitoring"
+    },
+    {
+      "id": "R01",
+      "enabled": true,
+      "sheetNo": "R-01",
+      "title": "地下连续墙配筋总图",
+      "category": "rebar_general",
+      "scope": "rebar",
+      "renderer": "wall_rebar_general",
+      "file": "30_rebar/R-01_wall_rebar_general_arrangement.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "plan",
+        "extent": "project",
+        "preferred": 200
+      },
+      "trigger": {
+        "path": "facts.wallCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 95,
+      "required": true,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "R02",
+      "enabled": true,
+      "sheetNo": "R-02",
+      "title": "地下连续墙分区配筋立面图",
+      "category": "rebar_elevation",
+      "scope": "rebar",
+      "renderer": "wall_rebar_elevation",
+      "file": "30_rebar/R-02_wall_rebar_zone_elevation.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "section",
+        "extent": "wall_elevation",
+        "preferred": 100
+      },
+      "trigger": {
+        "path": "facts.wallCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 95,
+      "required": true,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "R02W",
+      "enabled": true,
+      "sheetNo": "R-02-W{wall_index:02d}",
+      "title": "{wall_code} 地下连续墙单幅分区配筋立面",
+      "category": "wall_rebar_elevation",
+      "scope": "rebar",
+      "renderer": "single_wall_rebar_elevation",
+      "file": "30_rebar/walls/R-02-W{wall_index:02d}_{wall_token}_rebar_elevation.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "section",
+        "extent": "single_wall",
+        "preferred": 50
+      },
+      "trigger": {
+        "all": [
+          {
+            "path": "facts.wallCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "parameters.includePerWallElevations",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "per_wall",
+      "modelBinding": [
+        "{wall_id}",
+        "{segment_id}",
+        "rebar_design_scheme"
+      ],
+      "priority": 80,
+      "required": false,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "R03",
+      "enabled": true,
+      "sheetNo": "R-03",
+      "title": "地下连续墙钢筋笼、接头与吊装详图",
+      "category": "rebar_detail",
+      "scope": "rebar",
+      "renderer": "wall_rebar_cage",
+      "file": "S-02_wall_rebar_cage.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 50
+      },
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.wallCount",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "rebar"
+    },
+    {
+      "id": "R04",
+      "enabled": true,
+      "sheetNo": "R-04",
+      "title": "钢筋混凝土支撑配筋总图",
+      "category": "rebar_general",
+      "scope": "rebar",
+      "renderer": "support_rebar_general",
+      "file": "30_rebar/R-04_support_rebar_general_arrangement.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "section",
+        "preferred": 100
+      },
+      "trigger": {
+        "path": "facts.rcSupportCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 90,
+      "required": false,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "R05",
+      "enabled": true,
+      "sheetNo": "R-05",
+      "title": "冠梁、围檩及环梁配筋总图",
+      "category": "rebar_general",
+      "scope": "rebar",
+      "renderer": "wale_rebar_general",
+      "file": "30_rebar/R-05_wale_rebar_general_arrangement.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "section",
+        "preferred": 100
+      },
+      "trigger": {
+        "path": "facts.beamCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 85,
+      "required": false,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "R06",
+      "enabled": true,
+      "sheetNo": "R-06",
+      "title": "钢筋下料、弯曲及逐根索引图",
+      "category": "rebar_schedule",
+      "scope": "rebar",
+      "renderer": "rebar_bending_schedule",
+      "file": "S-07_rebar_bending_schedule.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.hasRetainingSystem",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "rebar"
+    },
+    {
+      "id": "R07",
+      "enabled": true,
+      "sheetNo": "R-07",
+      "title": "逐根钢筋几何索引图",
+      "category": "rebar_schedule",
+      "scope": "rebar",
+      "renderer": "rebar_geometry_plan",
+      "file": "S-08_individual_rebar_geometry.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.hasRetainingSystem",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "rebar"
+    },
+    {
+      "id": "R08",
+      "enabled": true,
+      "sheetNo": "R-08",
+      "title": "钢筋搭接分区图",
+      "category": "rebar_detail",
+      "scope": "rebar",
+      "renderer": "splice_layout",
+      "file": "S-09_lap_splice_layout.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.hasRetainingSystem",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "rebar"
+    },
+    {
+      "id": "R09",
+      "enabled": true,
+      "sheetNo": "R-09",
+      "title": "钢筋笼分节与吊装图",
+      "category": "rebar_detail",
+      "scope": "rebar",
+      "renderer": "cage_lifting_plan",
+      "file": "S-10_cage_segment_lifting_plan.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.wallCount",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "rebar"
+    },
+    {
+      "id": "Q01",
+      "enabled": true,
+      "sheetNo": "Q-01",
+      "title": "保护层、弯折、搭接与签审检查图",
+      "category": "quality",
+      "scope": "rebar",
+      "renderer": "cover_conflict_check",
+      "file": "S-11_cover_bend_check.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.hasRetainingSystem",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "quality"
+    },
+    {
+      "id": "Q01B",
+      "enabled": true,
+      "sheetNo": "Q-01B",
+      "title": "钢筋施工图签审清单",
+      "category": "quality",
+      "scope": "rebar",
+      "renderer": "shop_signoff",
+      "file": "S-12_shop_drawing_signoff_checklist.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "all": [
+          {
+            "path": "parameters.includeLegacyCompatibilitySheets",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "facts.hasRetainingSystem",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "quality"
+    },
+    {
+      "id": "D00",
+      "enabled": true,
+      "sheetNo": "D-00",
+      "title": "典型节点大样索引与组合图",
+      "category": "detail_index",
+      "scope": "details",
+      "renderer": "detail_compilation",
+      "file": "40_details/D-00_typical_detail_compilation.dxf",
+      "fixedScale": "1:20/1:50",
+      "scalePolicy": {},
+      "trigger": {
+        "path": "facts.supportCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 95,
+      "required": true,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D01",
+      "enabled": true,
+      "sheetNo": "D-01",
+      "title": "支撑—围檩节点大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "support_wale_detail",
+      "file": "S-03_support_wale_node_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "path": "facts.supportNodeCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 90,
+      "required": false,
+      "legacy": true,
+      "module": "details"
+    },
+    {
+      "id": "D02",
+      "enabled": true,
+      "sheetNo": "D-02",
+      "title": "角撑节点与转角加强大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "corner_detail",
+      "file": "40_details/D-02_corner_brace_node_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "path": "facts.cornerBraceCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 80,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D03",
+      "enabled": true,
+      "sheetNo": "D-03",
+      "title": "支撑—立柱交叉节点大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "support_column_detail",
+      "file": "40_details/D-03_support_column_intersection_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "all": [
+          {
+            "path": "facts.supportCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "facts.columnCount",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 85,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D04",
+      "enabled": true,
+      "sheetNo": "D-04",
+      "title": "地连墙支撑区局部加强大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "wall_support_detail",
+      "file": "40_details/D-04_wall_support_zone_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "all": [
+          {
+            "path": "facts.wallCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "facts.supportCount",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 85,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D05",
+      "enabled": true,
+      "sheetNo": "D-05",
+      "title": "临时立柱与立柱桩详图",
+      "category": "pile_detail",
+      "scope": "details",
+      "renderer": "column_pile_detail",
+      "file": "S-05_column_pile_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 50
+      },
+      "trigger": {
+        "path": "facts.columnCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 50,
+      "required": false,
+      "legacy": true,
+      "module": "details"
+    },
+    {
+      "id": "D06",
+      "enabled": true,
+      "sheetNo": "D-06",
+      "title": "地下连续墙墙幅接头与钢筋笼连接大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "wall_joint_detail",
+      "file": "40_details/D-06_wall_panel_joint_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "path": "facts.wallCount",
+        "op": "gt",
+        "value": 1
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 85,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D07",
+      "enabled": true,
+      "sheetNo": "D-07",
+      "title": "钢筋混凝土支撑端部锚固与错开搭接大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "support_splice_detail",
+      "file": "40_details/D-07_support_anchorage_splice_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "path": "facts.rcSupportCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 85,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D08",
+      "enabled": true,
+      "sheetNo": "D-08",
+      "title": "主次支撑网格交叉节点与立柱连接大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "grid_node_detail",
+      "file": "40_details/D-08_bidirectional_grid_node_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "path": "facts.secondarySupportCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "main_strut",
+        "secondary_strut",
+        "columns"
+      ],
+      "priority": 90,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D09",
+      "enabled": true,
+      "sheetNo": "D-09",
+      "title": "异形凹角回墙局部支撑与围檩转折大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "concave_return_detail",
+      "file": "40_details/D-09_concave_return_wall_support_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "all": [
+          {
+            "path": "facts.concaveVertexCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "facts.secondarySupportCount",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "concave_vertices",
+        "secondary_strut",
+        "walls",
+        "wales",
+        "columns"
+      ],
+      "priority": 92,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "D10",
+      "enabled": true,
+      "sheetNo": "D-10",
+      "title": "节点承压板、加劲板、焊缝与锚筋深化大样",
+      "category": "node_detail",
+      "scope": "details",
+      "renderer": "node_hardware_detail",
+      "file": "40_details/D-10_node_hardware_detail.dxf",
+      "fixedScale": null,
+      "scalePolicy": {
+        "kind": "detail",
+        "preferred": 20
+      },
+      "trigger": {
+        "path": "facts.supportNodeCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "support_nodes",
+        "bearing_plates",
+        "stiffeners",
+        "welds",
+        "anchor_bars"
+      ],
+      "priority": 96,
+      "required": false,
+      "legacy": false,
+      "module": "details"
+    },
+    {
+      "id": "R10",
+      "enabled": true,
+      "sheetNo": "R-10",
+      "title": "钢筋笼吊装、运输与临时加强分析图",
+      "category": "rebar_detail",
+      "scope": "rebar",
+      "renderer": "cage_hoisting_analysis",
+      "file": "30_rebar/R-10_cage_hoisting_analysis.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "path": "facts.wallCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "wall_cages",
+        "lifting_points",
+        "transport_segments"
+      ],
+      "priority": 92,
+      "required": false,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "R11",
+      "enabled": true,
+      "sheetNo": "R-11",
+      "title": "机械连接套筒、丝头和接头错开详图",
+      "category": "rebar_detail",
+      "scope": "rebar",
+      "renderer": "coupler_schedule_detail",
+      "file": "30_rebar/R-11_coupler_splice_detail.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "path": "facts.hasRetainingSystem",
+        "op": "eq",
+        "value": true
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "rebar_couplers",
+        "splice_groups"
+      ],
+      "priority": 90,
+      "required": false,
+      "legacy": false,
+      "module": "rebar"
+    },
+    {
+      "id": "Q04",
+      "enabled": true,
+      "sheetNo": "Q-04",
+      "title": "预埋件、钢筋和施工净空碰撞检查图",
+      "category": "quality",
+      "scope": "details",
+      "renderer": "embedded_collision_quality",
+      "file": "50_quality/Q-04_embedded_item_collision_check.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "path": "facts.supportNodeCount",
+        "op": "gt",
+        "value": 0
+      },
+      "expansion": "single",
+      "modelBinding": [
+        "embedded_items",
+        "individual_rebar",
+        "clearance_checks"
+      ],
+      "priority": 88,
+      "required": false,
+      "legacy": false,
+      "module": "quality"
+    },
+    {
+      "id": "Q02",
+      "enabled": true,
+      "sheetNo": "Q-02",
+      "title": "长期效应与裂缝控制检查图",
+      "category": "quality",
+      "scope": "details",
+      "renderer": "serviceability_quality",
+      "file": "50_quality/Q-02_serviceability_crack_check.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "any": [
+          {
+            "path": "facts.hasCalculation",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "path": "parameters.includeEmptyQualitySheets",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 70,
+      "required": false,
+      "legacy": false,
+      "module": "quality"
+    },
+    {
+      "id": "Q03",
+      "enabled": true,
+      "sheetNo": "Q-03",
+      "title": "构件碰撞、净距与节点拥挤检查图",
+      "category": "quality",
+      "scope": "details",
+      "renderer": "collision_quality",
+      "file": "50_quality/Q-03_collision_clearance_check.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "any": [
+          {
+            "path": "facts.supportCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "parameters.includeEmptyQualitySheets",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 70,
+      "required": false,
+      "legacy": false,
+      "module": "quality"
+    },
+    {
+      "id": "N01",
+      "enabled": true,
+      "sheetNo": "N-01",
+      "title": "高利用率节点局部复核索引图",
+      "category": "node_analysis",
+      "scope": "details",
+      "renderer": "node_local_quality",
+      "file": "50_quality/N-01_node_local_analysis.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "any": [
+          {
+            "path": "facts.nodeWarningCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "parameters.includeEmptyQualitySheets",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 75,
+      "required": false,
+      "legacy": false,
+      "module": "quality"
+    },
+    {
+      "id": "M02",
+      "enabled": true,
+      "sheetNo": "M-02",
+      "title": "监测反演与参数校准记录图",
+      "category": "monitoring",
+      "scope": "details",
+      "renderer": "monitoring_calibration",
+      "file": "60_monitoring/M-02_monitoring_calibration.dxf",
+      "fixedScale": "NTS",
+      "scalePolicy": {},
+      "trigger": {
+        "any": [
+          {
+            "path": "facts.monitoringRecordCount",
+            "op": "gt",
+            "value": 0
+          },
+          {
+            "path": "parameters.includeMonitoringLayoutWithoutRecords",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "expansion": "single",
+      "modelBinding": [],
+      "priority": 65,
+      "required": false,
+      "legacy": false,
+      "module": "monitoring"
+    }
+  ],
+  "modules": {
+    "general": {
+      "enabled": true,
+      "required": true
+    },
+    "rebar": {
+      "enabled": true,
+      "required": true
+    },
+    "details": {
+      "enabled": true,
+      "required": false
+    },
+    "quality": {
+      "enabled": true,
+      "required": false
+    },
+    "monitoring": {
+      "enabled": true,
+      "required": false
+    }
+  }
+}

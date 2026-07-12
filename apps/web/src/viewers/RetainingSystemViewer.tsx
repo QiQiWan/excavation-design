@@ -1,5 +1,6 @@
 import type { Point2D, Project, QualityGateIssue } from '../types/domain';
 import Engineering3DViewer from './Engineering3DViewer';
+import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 
 function fmt(value: unknown, digits = 2) {
   if (typeof value !== 'number') return value === undefined || value === null ? '-' : String(value);
@@ -178,9 +179,9 @@ export default function RetainingSystemViewer({ project, highlightLocator }: { p
         </table>
         <h4>水平支撑分仓与围檩连续梁轴力分配</h4>
         <table className="table">
-          <thead><tr><th>编号</th><th>角色</th><th>类型</th><th>层号</th><th>标高</th><th>跨长</th><th>分仓</th><th>连接墙面</th><th>参考 tributary width</th><th>设计轴力</th><th>预加/温度/间隙</th><th>生命周期</th><th>分配模型</th><th>逻辑说明</th></tr></thead>
+          <thead><tr><th>编号</th><th>角色</th><th>类型</th><th>层号</th><th>{withUnitLabel('标高', 'elevation')}</th><th>{withUnitLabel('跨长', 'length')}</th><th>分仓</th><th>连接墙面</th><th>{withUnitLabel('参考分担宽度', 'length')}</th><th>{withUnitLabel('设计轴力', 'force')}</th><th>预加/温度/间隙</th><th>生命周期</th><th>分配模型</th><th>逻辑说明</th></tr></thead>
           <tbody>{retaining?.supports.map((s) => { const fb = supportFallback.get(s.id); const axial = s.designAxialForce ?? fb?.axial; return <tr key={s.id}>
-            <td>{s.code}</td><td>{roleText(s.supportRole)}</td><td>{supportMaterialLabel(s.sectionType, s.material?.grade)}</td><td>{s.levelIndex}</td><td>{s.elevation}</td>
+            <td>{s.code}</td><td>{roleText(s.supportRole)}</td><td>{supportMaterialLabel(s.sectionType, s.material?.grade)}</td><td>{s.levelIndex}</td><td>{formatEngineeringValue(s.elevation, 'elevation')}</td>
             <td>{fmt(s.spanLength)} m</td><td>{fmt(s.baySpacing)} m</td><td>{s.startFaceCode ?? '-'} / {s.endFaceCode ?? '-'}</td>
             <td>{fmt(s.startTributaryWidth)} / {fmt(s.endTributaryWidth)} m</td><td>{axial !== undefined && axial !== null ? fmt(axial, 1) + ' kN' : '-'}</td>
             <td className="small">{fmt(s.preload ?? fb?.preload)} / {fmt(s.thermalAxialForce ?? fb?.thermal)} / {fmt(s.gapClosureForce ?? fb?.gap)} kN</td>

@@ -52,7 +52,7 @@ export default function App() {
           <p>基坑围护结构设计 MVP · 结果需注册岩土/结构工程师复核</p>
         </div>
         <div className="apiStatusGroup">
-          <a className="topLink" href="/docs">操作文档</a>
+          <a className="topLink" href="/docs">设计与计算文档</a>
           <span className={health.startsWith('ok') ? 'badge ok' : 'badge warn'}>API {health}</span>
           <button className="secondary compactButton" onClick={checkApi}>重检后端</button>
         </div>

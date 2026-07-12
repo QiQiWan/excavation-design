@@ -26,6 +26,10 @@ run_isolated_nodes() {
 if [[ "$MODE" == "fast" ]]; then
   python -m compileall -q app tests
   FAST_NODES=(
+    "tests/test_v3_11_0_standards_rebar_docs.py"
+    "tests/test_v3_6_0_support_topology_scheme_ux.py"
+    "tests/test_v3_5_0_concave_recovery_drawing_intelligence.py"
+    "tests/test_v3_4_0_drawing_rule_engine.py"
     "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_advanced_suite_covers_eight_tracks"
     "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_monitoring_calibration_is_applied_to_next_calculation_inputs"
     "tests/test_v3_3_0_advanced_engineering.py::test_v3_3_review_enforces_separation_of_duties_and_reject_comment"

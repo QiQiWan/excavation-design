@@ -8,14 +8,15 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, excavation, export, geology, issues, projects, rebar, tasks, wall_optimization
+from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, export, geology, issues, projects, rebar, standards, tasks, wall_optimization
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
+from app.services.unit_registry import unit_registry
 
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3 integrated geometry, topology, calculation and delivery workflow.",
+    description="PitGuard V3.11 integrated P0-P2 engineering assurance, standards-process traceability, reinforced online documentation and deliverable packaging.",
 )
 
 app.add_middleware(
@@ -27,8 +28,10 @@ app.add_middleware(
 )
 
 app.include_router(projects.router)
+app.include_router(standards.router)
 app.include_router(benchmarks.router)
 app.include_router(cad_template.router)
+app.include_router(drawing_rules.router)
 app.include_router(tasks.router)
 app.include_router(assurance.router)
 app.include_router(boreholes.router)
@@ -88,6 +91,11 @@ def system_diagnostics() -> dict:
         "missingModules": [item["packageName"] for item in modules if not item["available"]],
         "modules": modules,
     }
+
+
+@app.get("/api/system/units")
+def system_units() -> dict:
+    return unit_registry()
 
 
 @app.get("/api/rules")
