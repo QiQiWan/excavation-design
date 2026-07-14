@@ -65,7 +65,12 @@ def test_optimizer_returns_three_whole_scheme_topologies(v36_project) -> None:
     candidates = response.json().get("candidates", [])[:3]
     assert len(candidates) >= 3
     families = {str(item.get("variableSummary", {}).get("topologyFamily")) for item in candidates}
-    assert {"hybrid_diagonal", "bidirectional_grid", "direct_grid"}.issubset(families)
+    # V3.22 keeps family diversity among structurally appropriate schemes.  An
+    # L-shaped strip must include direct and hybrid force paths; a bidirectional
+    # frame is reserved for near-square wide pits and is no longer injected only
+    # to satisfy visual A/B/C diversity.
+    assert {"hybrid_diagonal", "direct_grid"}.issubset(families)
+    assert all(int(item.get("crossingCount") or 0) == 0 for item in candidates)
     assert all(item.get("planGeometry", {}).get("supports") for item in candidates)
     assert all(item.get("planGeometry", {}).get("supportElevations") for item in candidates)
 

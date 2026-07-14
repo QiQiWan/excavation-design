@@ -2424,8 +2424,8 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
     # direct wall-to-wall contract by default.
     shape_info = plan_shape_diagnostics(points)
     aspect_ratio = float(shape_info.get("aspectRatio") or 999.0)
-    concave_grid_fallback = False
-    near_square_grid_fallback = aspect_ratio <= 1.35 and config.topology_strategy == "bidirectional_grid"
+    concave_grid_fallback = int(shape_info.get("concaveVertexCount") or 0) > 0
+    near_square_grid_fallback = aspect_ratio <= 1.35
     converted_repair_lines = 0
     omitted_repair_segments = 0
     for line in targeted_lines:
@@ -2466,7 +2466,7 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
 
         # Support-to-support T/Y nodes are an explicit frame/grid option only.
         # They are never introduced silently by the generic wale-bay repair.
-        if not retained and (config.allow_wale_repair_t_y_nodes or near_square_grid_fallback):
+        if not retained and (config.allow_wale_repair_t_y_nodes or concave_grid_fallback or near_square_grid_fallback):
             retained, converted, omitted = _terminate_from_preferred_wall(
                 line, blockers, preferred_face,
                 minimum_stub_length_m=MIN_CORNER_BRACE_LEG_M + 0.7 * config.support_wall_clearance_m,

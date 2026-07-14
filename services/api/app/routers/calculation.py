@@ -8,6 +8,8 @@ from app.storage.repository import ProjectRepository, get_repository
 from app.services.calculation_trace import build_calculation_trace
 from app.services.wall_length_optimizer import mark_wall_length_recalculated
 from app.services.calculation_state import mark_calculation_state_current
+from app.quality.formal_gate import build_formal_report_gate
+from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
 
 router = APIRouter(prefix="/api/projects/{project_id}/calculation", tags=["calculation"])
 
@@ -82,6 +84,12 @@ def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepos
             latest.support_layout_repair = project.retaining_system.support_layout_repair
         latest.report_diagram_data = dict(latest.report_diagram_data or {})
         latest.report_diagram_data["candidateFullCalculationComparison"] = comparison
+        latest.formal_report_gate = build_formal_report_gate(
+            project,
+            latest.support_layout_quality,
+            evaluate_ifc_model_compatibility(project),
+            latest_result=latest,
+        )
     repo.save(project)
     return comparison
 

@@ -67,6 +67,22 @@ def cancel_task(task_id: str) -> dict:
     return task.as_dict(include_logs=True)
 
 
+@router.post("/api/tasks/{task_id}/retry")
+def retry_task(task_id: str) -> dict:
+    try:
+        task = task_manager.retry(task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+    return task.as_dict(include_logs=True)
+
+
+@router.get("/api/task-metrics")
+def task_metrics() -> dict:
+    return task_manager.metrics()
+
+
 @router.get("/api/tasks/{task_id}/download")
 def download_task_result(task_id: str) -> FileResponse:
     task = task_manager.get(task_id)

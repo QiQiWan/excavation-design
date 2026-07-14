@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from app.schemas.domain import Project, ProjectSummary
 from app.storage.database import SQLiteProjectStore
@@ -69,16 +69,31 @@ def _utc_now() -> str:
 
 
 class ProjectRepository:
-    def __init__(self, store: SQLiteProjectStore | None = None) -> None:
+    def __init__(self, store: SQLiteProjectStore | None = None, *, default_actor: str = "system") -> None:
         self.store = store or SQLiteProjectStore()
+        self.default_actor = default_actor or "system"
 
-    def create(self, project: Project) -> Project:
-        self.save(project)
+    def create(self, project: Project, *, actor: str | None = None) -> Project:
+        self.save(project, actor=actor, action="project.create", summary="Project created")
         return project
 
-    def save(self, project: Project) -> Project:
+    def save(
+        self,
+        project: Project,
+        *,
+        expected_revision: int | None = None,
+        actor: str | None = None,
+        action: str = "project.save",
+        summary: str = "Project snapshot saved",
+    ) -> Project:
         project.updated_at = _utc_now()
-        self.store.upsert(project.model_dump(mode="json", by_alias=True))
+        try:
+            revision = self.store.upsert(
+                project.model_dump(mode="json", by_alias=True),
+                expected_revision=expected_revision, actor=actor or self.default_actor, action=action, summary=summary,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return project
 
     def list(self) -> list[Project]:
@@ -108,8 +123,31 @@ class ProjectRepository:
             raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
         return project
 
-    def delete(self, project_id: str) -> bool:
-        return self.store.delete(project_id)
+    def delete(self, project_id: str, *, actor: str | None = None) -> bool:
+        return self.store.delete(project_id, actor=actor or self.default_actor)
+
+    def revision(self, project_id: str) -> int | None:
+        return self.store.get_revision_number(project_id)
+
+    def revisions(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        self.require(project_id)
+        return self.store.list_revisions(project_id, limit=limit)
+
+    def audit_events(self, project_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        self.require(project_id)
+        return self.store.list_audit_events(project_id, limit=limit)
+
+    def restore_revision(self, project_id: str, revision: int, *, actor: str | None = None) -> Project:
+        self.require(project_id)
+        snapshot = self.store.get_revision(project_id, revision)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail=f"Project revision not found: {project_id}@{revision}")
+        project = Project.model_validate(snapshot)
+        project.calculation_results = []
+        project.advanced_engineering["requiresRecalculation"] = True
+        project.advanced_engineering["restoredFromRevision"] = revision
+        project.messages.append(f"已恢复项目版本 R{revision}；为防止旧结果误用，计算结果已失效并要求重新计算。")
+        return self.save(project, actor=actor or self.default_actor, action="project.restore_revision", summary=f"Restored revision R{revision}")
 
     def update_partial(self, project_id: str, patch: dict[str, Any]) -> Project:
         project = self.require(project_id)
@@ -121,5 +159,7 @@ class ProjectRepository:
         return self.save(updated)
 
 
-def get_repository() -> ProjectRepository:
-    return ProjectRepository()
+def get_repository(request: Request) -> ProjectRepository:
+    identity = getattr(request.state, "pitguard_identity", None)
+    actor = str(getattr(identity, "actor", None) or "system")
+    return ProjectRepository(default_actor=actor)

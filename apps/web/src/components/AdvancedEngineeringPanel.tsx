@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { AdvancedEngineeringSuite, MonitoringRecord, Project } from '../types/domain';
+import type { AdvancedEngineeringSuite, MonitoringControlResult, MonitoringRecord, Project } from '../types/domain';
 import DeepOptimizationPanel from './DeepOptimizationPanel';
 import { withUnitLabel } from '../utils/units';
 
@@ -12,6 +12,7 @@ function num(value: unknown, digits = 2) { const n = Number(value); return Numbe
 
 export default function AdvancedEngineeringPanel({ project, onChanged }: { project: Project; onChanged: () => void | Promise<void> }) {
   const [suite, setSuite] = useState<AdvancedEngineeringSuite>();
+  const [monitoringControl, setMonitoringControl] = useState<MonitoringControlResult>();
   const [group, setGroup] = useState<PanelGroup>('design');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string>();
@@ -32,7 +33,14 @@ export default function AdvancedEngineeringPanel({ project, onChanged }: { proje
 
   async function refresh() {
     setLoading(true); setError(undefined);
-    try { setSuite(await api.getAdvancedSuite(project.id)); }
+    try {
+      const [nextSuite, nextMonitoringControl] = await Promise.all([
+        api.getAdvancedSuite(project.id),
+        api.getMonitoringControl(project.id),
+      ]);
+      setSuite(nextSuite);
+      setMonitoringControl(nextMonitoringControl);
+    }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setLoading(false); }
   }
@@ -134,6 +142,15 @@ export default function AdvancedEngineeringPanel({ project, onChanged }: { proje
 
         {group === 'monitoring' ? <div className="advancedGroupGrid">
           <article className="summaryPanel"><h4>监测数据与参数反演</h4><p className="small">表单草稿自动保存在本机。应用反演参数会清空旧计算结果并要求重新计算。</p><div className="formGrid compactFormGrid"><label>类型<select value={monitorDraft.recordType} onChange={e => setMonitorDraft({ ...monitorDraft, recordType: e.target.value as MonitoringRecord['recordType'], unit: e.target.value === 'support_axial_force' ? 'kN' : e.target.value === 'groundwater' ? 'm' : 'mm' })}><option value="wall_displacement">墙体位移</option><option value="support_axial_force">支撑轴力</option><option value="groundwater">地下水位</option><option value="settlement">沉降</option></select></label><label>对象编号<input value={monitorDraft.objectCode ?? ''} onChange={e => setMonitorDraft({ ...monitorDraft, objectCode: e.target.value })} placeholder="可选，如 GS-L3-2" /></label><label>监测值<input type="number" value={monitorDraft.measuredValue} onChange={e => setMonitorDraft({ ...monitorDraft, measuredValue: Number(e.target.value) })} /></label><label>单位<input value={monitorDraft.unit} onChange={e => setMonitorDraft({ ...monitorDraft, unit: e.target.value })} /></label><label>标高（m）<input type="number" value={monitorDraft.elevation ?? ''} onChange={e => setMonitorDraft({ ...monitorDraft, elevation: e.target.value === '' ? undefined : Number(e.target.value) })} /></label><label>备注<input value={monitorDraft.note ?? ''} onChange={e => setMonitorDraft({ ...monitorDraft, note: e.target.value })} /></label></div><div className="monitorImportRow"><label>批量 CSV<input type="file" accept=".csv,text/csv" onChange={e => setMonitorFile(e.target.files?.[0])} /></label><button className="secondary" onClick={() => void importMonitoring()} disabled={Boolean(busy) || !monitorFile}>导入 CSV</button><span className="small">支持中英文字段；单文件不超过 5 MB，错误行会单独返回。<a href={api.monitoringTemplateUrl(project.id)}>下载模板</a></span></div><div className="buttonRow"><button onClick={() => void saveMonitoring()} disabled={Boolean(busy)}>保存记录</button><button className="secondary" onClick={() => void execute('预览监测反演', () => api.calibrateMonitoring(project.id, false), true)} disabled={Boolean(busy) || suite.monitoring.recordCount < 1}>预览反演</button><button className="secondary" onClick={() => void execute('应用监测反演参数', () => api.calibrateMonitoring(project.id, true), true)} disabled={Boolean(busy) || suite.monitoring.recordCount < 5}>应用并要求复算</button></div>{suite.monitoring.latestCalibration ? <div className="calibrationSummary"><strong>最近反演：{statusLabel[String(suite.monitoring.latestCalibration.status)] ?? String(suite.monitoring.latestCalibration.status)}</strong><span>土体 {num(suite.monitoring.latestCalibration.soilModulusFactor, 3)} · 墙体 {num(suite.monitoring.latestCalibration.wallStiffnessFactor, 3)} · 支撑 {num(suite.monitoring.latestCalibration.supportStiffnessFactor, 3)} · 置信度 {String(suite.monitoring.latestCalibration.confidence)}</span></div> : null}</article>
+          <article className="summaryPanel">
+            <h4>监测预警与数字孪生状态</h4>
+            {monitoringControl ? <>
+              <div className={`reviewState ${tone(monitoringControl.highestLevel === 'normal' ? 'pass' : monitoringControl.highestLevel === 'alarm' ? 'fail' : 'warning')}`}><strong>{monitoringControl.highestLevel === 'normal' ? '正常' : monitoringControl.highestLevel === 'alarm' ? '报警' : monitoringControl.highestLevel === 'warning' ? '预警' : monitoringControl.highestLevel === 'watch' ? '关注' : '人工复核'}</strong><span>监测对象：{String(monitoringControl.digitalTwin?.observedObjectCount ?? 0)}</span><span>有效告警：{monitoringControl.alertCount}</span><em>趋势外推：{String(monitoringControl.thresholdPolicy.projectionHours ?? 24)} h</em></div>
+              <p className="small boundaryNote">{monitoringControl.thresholdPolicy.message}</p>
+              <table className="table compactTable"><thead><tr><th>对象</th><th>类型</th><th>当前值</th><th>外推值</th><th>等级</th><th>预警/报警</th></tr></thead><tbody>{monitoringControl.series.slice(0, 12).map((x, i) => { const thresholds = (x.thresholds ?? {}) as Record<string, unknown>; return <tr key={String(x.objectKey ?? i)}><td>{String(x.objectCode ?? x.objectKey ?? '-')}</td><td>{String(x.recordType ?? '-')}</td><td>{num(x.latestValue, 3)} {String(x.unit ?? '')}</td><td>{num(x.projected24h, 3)} {String(x.unit ?? '')}</td><td>{String(x.governingLevel ?? '-')}</td><td>{num(thresholds.warning, 3)} / {num(thresholds.alarm, 3)} {String(x.unit ?? '')}</td></tr>; })}</tbody></table>
+              {monitoringControl.alerts.length ? <details><summary>查看处置建议（{monitoringControl.alerts.length}）</summary><ol className="reviewTimeline">{monitoringControl.alerts.slice(0, 10).map((x, i) => <li key={String(x.alertId ?? i)}><strong>{String(x.level ?? '-')}</strong><span>{String(x.objectKey ?? '-')}</span><em>{String(x.recommendedAction ?? '')}</em></li>)}</ol></details> : <p className="small">当前没有达到关注级以上的监测对象。</p>}
+            </> : <p className="small">正在读取监测控制快照…</p>}
+          </article>
           <article className="summaryPanel"><h4>设计—校核—审核—批准</h4><div className={`reviewState ${tone(suite.review.status)}`}><strong>{statusLabel[suite.review.status] ?? suite.review.status}</strong><span>当前角色：{suite.review.currentRole}</span><span>岗位分离：{suite.review.separationOfDutiesValid === false ? '不满足' : '满足'}</span><em>快照：{suite.review.currentSnapshotHash}</em></div>{suite.review.roleActors ? <div className="reviewActorGrid">{Object.entries(suite.review.roleActors).map(([role, name]) => <span key={role}>{role}：<strong>{name}</strong></span>)}</div> : null}<label>签审人员<input value={actor} onChange={e => setActor(e.target.value)} placeholder="请输入姓名" /></label><label>意见<textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} placeholder="可选；退回时建议填写原因" /></label><div className="buttonRow"><button onClick={() => void advanceReview()} disabled={Boolean(busy)}>{reviewAction.label}</button>{!['draft','rejected'].includes(suite.review.status) && suite.review.status !== 'approved' ? <button className="secondary" onClick={() => void execute('退回设计', () => api.transitionReview(project.id, { role: suite.review.currentRole, actor: actor || suite.review.currentRole, action: 'reject', comment: comment || '退回修改' }), true)}>退回修改</button> : null}</div><ol className="reviewTimeline">{suite.review.actions.slice().reverse().slice(0, 8).map((x, i) => <li key={String(x.id ?? i)}><strong>{String(x.actor)}</strong><span>{String(x.role)} · {String(x.action)}</span><em>{String(x.comment ?? '')}</em></li>)}</ol></article>
         </div> : null}
 

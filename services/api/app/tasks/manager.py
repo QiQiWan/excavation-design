@@ -17,6 +17,7 @@ from app.drawings.formal_issue import export_formal_drawing_package
 from app.drawing_rules import evaluate_drawing_issue_gate
 from app.ifc.exporter import export_simplified_ifc
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility, validate_ifc_file
+from app.quality.formal_gate import build_formal_report_gate
 from app.reports.docx_report import export_docx_report
 from app.storage.repository import ProjectRepository
 from app.storage.task_store import SQLiteTaskStore
@@ -32,6 +33,7 @@ from app.services.calculation_state import mark_calculation_state_current
 from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.review_workflow import review_status
 from app.services.delivery_package import export_coordinated_delivery_package
+from app.services.industrial_readiness import run_industrial_closure
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
 
@@ -58,6 +60,10 @@ class TaskRecord:
     updated_at: str = field(default_factory=_now)
     finished_at: str | None = None
     cancel_requested: bool = False
+    payload: dict[str, Any] = field(default_factory=dict)
+    attempt: int = 1
+    parent_task_id: str | None = None
+    heartbeat_at: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskRecord":
@@ -76,6 +82,10 @@ class TaskRecord:
             updated_at=str(data.get("updatedAt", data.get("updated_at", _now()))),
             finished_at=data.get("finishedAt", data.get("finished_at")),
             cancel_requested=bool(data.get("cancelRequested", data.get("cancel_requested", False))),
+            payload=dict(data.get("payload") or {}),
+            attempt=int(data.get("attempt", 1) or 1),
+            parent_task_id=data.get("parentTaskId", data.get("parent_task_id")),
+            heartbeat_at=data.get("heartbeatAt", data.get("heartbeat_at")),
         )
 
     def as_dict(self, include_logs: bool = False) -> dict[str, Any]:
@@ -93,6 +103,10 @@ class TaskRecord:
             "updatedAt": self.updated_at,
             "finishedAt": self.finished_at,
             "cancelRequested": self.cancel_requested,
+            "payload": dict(self.payload),
+            "attempt": self.attempt,
+            "parentTaskId": self.parent_task_id,
+            "heartbeatAt": self.heartbeat_at,
         }
         if include_logs:
             data["logs"] = list(self.logs)
@@ -119,13 +133,24 @@ class TaskManager:
                 self._store.upsert(task.as_dict(include_logs=True))
             self._tasks[task.id] = task
 
-    def submit(self, project_id: str, operation: str, payload: dict[str, Any] | None = None) -> TaskRecord:
-        payload = payload or {}
+    def submit(
+        self,
+        project_id: str,
+        operation: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        attempt: int = 1,
+        parent_task_id: str | None = None,
+    ) -> TaskRecord:
+        payload = dict(payload or {})
         task = TaskRecord(
             id=f"task-{uuid4().hex[:12]}",
             project_id=project_id,
             operation=operation,
             title=self._title_for(operation),
+            payload=payload,
+            attempt=max(1, int(attempt)),
+            parent_task_id=parent_task_id,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -147,6 +172,47 @@ class TaskManager:
                 "candidateId": candidate.id, "candidateIndex": index, "useCache": use_cache,
             }))
         return tasks
+
+    def retry(self, task_id: str) -> TaskRecord | None:
+        with self._lock:
+            original = self._tasks.get(task_id)
+            if original is None:
+                return None
+            if original.status in {"queued", "running"}:
+                raise ValueError("A queued or running task cannot be retried.")
+            payload = dict(original.payload)
+            project_id = original.project_id
+            operation = original.operation
+            attempt = original.attempt + 1
+        retried = self.submit(
+            project_id,
+            operation,
+            payload,
+            attempt=attempt,
+            parent_task_id=original.id,
+        )
+        self._append_log(retried, f"由任务 {original.id} 重试，当前为第 {attempt} 次尝试。")
+        return retried
+
+    def metrics(self) -> dict[str, Any]:
+        with self._lock:
+            records = list(self._tasks.values())
+        statuses = {status: sum(task.status == status for task in records) for status in (
+            "queued", "running", "success", "failed", "cancelled", "interrupted"
+        )}
+        completed = [task for task in records if task.finished_at]
+        success = statuses.get("success", 0)
+        terminal = sum(statuses.get(key, 0) for key in ("success", "failed", "cancelled", "interrupted"))
+        return {
+            "taskCount": len(records),
+            "statusCounts": statuses,
+            "terminalCount": terminal,
+            "successRate": round(success / terminal, 4) if terminal else None,
+            "retryCount": sum(task.attempt > 1 for task in records),
+            "activeProjectCount": len({task.project_id for task in records if task.status in {"queued", "running"}}),
+            "latestUpdatedAt": max((task.updated_at for task in records), default=None),
+            "completedCount": len(completed),
+        }
 
     def list(self, project_id: str | None = None) -> list[TaskRecord]:
         with self._lock:
@@ -273,6 +339,8 @@ class TaskManager:
             result = self._run_benchmark_export(task)
         elif task.operation == "full_delivery":
             result = self._run_full_delivery(task, payload)
+        elif task.operation == "industrial_closure":
+            result = self._run_industrial_closure(task, payload)
         else:
             raise ValueError(f"Unsupported task operation: {task.operation}")
         return result
@@ -307,6 +375,12 @@ class TaskManager:
             latest.report_diagram_data["candidateFullCalculationComparison"] = comparison
             if latest.support_layout_repair:
                 latest.support_layout_repair.candidate_full_calculations = comparison
+            latest.formal_report_gate = build_formal_report_gate(
+                project,
+                latest.support_layout_quality,
+                evaluate_ifc_model_compatibility(project),
+                latest_result=latest,
+            )
             repo.save(project)
         else:
             self._append_log(task, "未发现候选方案，跳过 A/B/C 完整比选。")
@@ -326,6 +400,12 @@ class TaskManager:
             latest.report_diagram_data["candidateFullCalculationComparison"] = comparison
             if latest.support_layout_repair:
                 latest.support_layout_repair.candidate_full_calculations = comparison
+            latest.formal_report_gate = build_formal_report_gate(
+                project,
+                latest.support_layout_quality,
+                evaluate_ifc_model_compatibility(project),
+                latest_result=latest,
+            )
         repo.save(project)
         return {"projectId": project.id, "candidateComparisonCount": len(comparison), "refreshProject": True}
 
@@ -535,6 +615,28 @@ class TaskManager:
         package["fullFlow"] = True
         return package
 
+    def _run_industrial_closure(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        repo = self._repo()
+        project = repo.require(task.project_id)
+        if not project.calculation_results:
+            self._append_log(task, "工业闭环缺少当前计算，先执行完整计算与候选比选。")
+            self._run_calculation_full(task, {"topN": int(payload.get("topN") or 3)})
+            project = repo.require(task.project_id)
+        repair = project.retaining_system.support_layout_repair if project.retaining_system else None
+        valid_rows = [row for row in (repair.candidate_full_calculations if repair else []) if row.get("status") not in {"failed", "error"}]
+        if repair and repair.candidates and len(valid_rows) < min(3, len(repair.candidates)):
+            self._stage(task, 78, "补齐 A/B/C 候选方案独立计算")
+            comparison = run_candidate_comparison_for_project(project, top_n=min(3, len(repair.candidates)))
+            repair.candidate_full_calculations = comparison
+        self._stage(task, 88, "执行 P0-P3 工业资格、深化与监测闭环评估")
+        readiness = run_industrial_closure(project)
+        repo.save(
+            project,
+            action="task.industrial_closure",
+            summary=f"P0-P3 industrial closure task completed: {readiness.get('status')}",
+        )
+        return {"projectId": project.id, "readiness": readiness, "refreshProject": True}
+
     def _file_result(self, path: Path, media_type: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         digest = None
         size = path.stat().st_size if path.exists() else 0
@@ -572,6 +674,7 @@ class TaskManager:
             "export_design_scheme_ledger": "导出方案快照与交付闸门台账",
             "export_benchmark_cases": "导出公开论文典型基坑回归算例包",
             "full_delivery": "全流程计算与成果生成",
+            "industrial_closure": "P0-P3 工业闭环计算与资格评估",
         }.get(operation, operation)
 
     def _stage(self, task: TaskRecord, progress: int, step: str) -> None:
@@ -591,6 +694,8 @@ class TaskManager:
             for key, value in patch.items():
                 setattr(task, key, value)
             task.updated_at = _now()
+            if task.status == "running":
+                task.heartbeat_at = task.updated_at
             self._persist(task)
 
     def _append_log(self, task: TaskRecord, message: str) -> None:
@@ -599,6 +704,8 @@ class TaskManager:
             if len(task.logs) > 500:
                 task.logs = task.logs[-500:]
             task.updated_at = _now()
+            if task.status == "running":
+                task.heartbeat_at = task.updated_at
             self._persist(task)
 
 

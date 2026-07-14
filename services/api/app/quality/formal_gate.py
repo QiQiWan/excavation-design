@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import math
+
+from app.services.support_topology_contract import support_topology_hash
 from app.schemas.domain import FormalReportGate, IfcCompatibilityCheckResult, Project, QualityGateIssue, SupportLayoutQualitySummary
+from app.version import ALGORITHM_VERSION, RULE_SET_VERSION
 
 
 def _issue(category: str, severity: str, message: str, object_id: str | None = None, object_type: str | None = None, recommendation: str | None = None) -> QualityGateIssue:
@@ -26,6 +30,42 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
     manual_count = int(check_summary.get("manualReview", check_summary.get("manual_review", 0)) or 0)
     if not latest:
         missing.append(_issue("formal_report", "manual_review", "尚未运行计算，不能形成正式计算书首页结论。", recommendation="先执行一键计算校核。"))
+    if latest:
+        iteration = dict(getattr(latest, "design_iteration_summary", {}) or {})
+        current_hash = support_topology_hash(project) if project.retaining_system else None
+        contract_current = bool(
+            current_hash
+            and getattr(latest, "support_topology_hash", None) == current_hash
+            and iteration.get("algorithmVersion") == ALGORITHM_VERSION
+            and iteration.get("ruleSetVersion") == RULE_SET_VERSION
+        )
+        if not contract_current:
+            blocking.append(_issue(
+                "calculation_contract",
+                "fail",
+                "当前计算结果与支撑拓扑、算法版本或规则集不一致。",
+                recommendation="按当前设计快照重新建立工况并执行完整计算。",
+            ))
+        governing_obj = getattr(latest, "governing_values", None)
+        governing = governing_obj.model_dump() if governing_obj is not None else {}
+        numeric_values = [float(value) for value in governing.values() if isinstance(value, (int, float))]
+        if not numeric_values or not all(math.isfinite(value) for value in numeric_values):
+            blocking.append(_issue(
+                "numerical_validity",
+                "fail",
+                "控制结果存在空值、无穷值或非数值状态。",
+                recommendation="检查输入量纲、工况激活、矩阵条件数和计算收敛性。",
+            ))
+        latest_repair = getattr(latest, "support_layout_repair", None)
+        candidate_rows = list(((latest_repair.candidate_full_calculations if latest_repair else []) or []))
+        valid_candidate_rows = [row for row in candidate_rows if row.get("status") not in {"failed", "error"}]
+        if project.retaining_system and project.retaining_system.support_layout_repair and project.retaining_system.support_layout_repair.candidates and len(valid_candidate_rows) < 3:
+            warnings.append(_issue(
+                "candidate_calculation",
+                "manual_review",
+                "A/B/C 候选方案尚未全部完成独立计算。",
+                recommendation="对前三个候选分别运行完整计算，比较轴力、位移、围檩内力、稳定性和施工复杂度。",
+            ))
     if fail_count > 0:
         blocking.append(_issue("calculation_check", "fail", f"当前计算结果存在 {fail_count} 个 fail 项。", recommendation="修复 fail 后重新计算。"))
     if warn_count > 0:
@@ -88,6 +128,7 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
             "ifcCompatibilityStatus": ifc_quality.status if ifc_quality else "missing",
             "ifcCompatibilityScore": ifc_quality.score if ifc_quality else None,
             "viewerProfileCount": len(ifc_quality.viewer_profiles) if ifc_quality else 0,
+            "calculationContractCurrent": bool(latest and getattr(latest, "support_topology_hash", None) and getattr(latest, "support_topology_hash", None) == (support_topology_hash(project) if project.retaining_system else None)),
             "blockingCount": len(blocking),
             "warningCount": len(warnings),
             "missingCount": len(missing),

@@ -29,6 +29,44 @@ def _issue_counts(issues: list[QualityGateIssue]) -> dict[str, int]:
     return counts
 
 
+def _repair_priority_score(quality: Any) -> float:
+    """Return a 0-100 score for topology-repair progress.
+
+    The general quality score intentionally gives every failed check the same
+    deduction.  Repair selection has a different contract: illegal same-level
+    member crossings are the primary topology objective, followed by members
+    leaving the excavation and other hard constructability failures.  Keeping
+    this score separate prevents a successful crossing removal from appearing
+    as a regression merely because the regenerated scheme exposes additional
+    lower-priority warnings.  The original quality score is retained alongside
+    this value for engineering review.
+    """
+    metrics = dict(getattr(quality, "metrics", {}) or {})
+    crossing_count = int(metrics.get("supportCrossingCount", 0) or 0)
+    outside_count = int(metrics.get("supportOutsideExcavationCount", 0) or 0)
+    internal_junction_count = int(metrics.get("internalJunctionCount", 0) or 0)
+    high_degree_junction_count = int(metrics.get("highDegreeJunctionCount", 0) or 0)
+
+    fail_issues = [issue for issue in quality.issues if issue.severity == "fail"]
+    warning_count = sum(issue.severity == "warning" for issue in quality.issues)
+    manual_count = sum(issue.severity == "manual_review" for issue in quality.issues)
+    excluded = {"support_crossing", "support_outside_excavation"}
+    other_hard_count = sum(issue.category not in excluded for issue in fail_issues)
+
+    # Lexicographic intent encoded in a bounded score: one illegal crossing
+    # outweighs the aggregate lower-priority deductions.  Junctions remain soft
+    # constructability penalties because valid T/Y nodes can be structurally
+    # necessary for concave and near-square excavations.
+    deduction = (
+        min(60.0, 60.0 * crossing_count)
+        + min(18.0, 18.0 * outside_count)
+        + min(14.0, 3.5 * other_hard_count)
+        + min(4.0, 0.5 * warning_count + 1.5 * manual_count)
+        + min(2.0, 0.10 * internal_junction_count + 0.25 * high_degree_junction_count)
+    )
+    return round(max(0.0, 100.0 - deduction), 1)
+
+
 def _current_lock_summary(project: Project) -> dict[str, Any]:
     ret = project.retaining_system
     supports = ret.supports if ret else []
@@ -182,7 +220,8 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
         # can spend minutes in deep copies during candidate search.  Reuse the
         # accepted/recent repair summary unless the user explicitly requests a new
         # optimization pass.
-        existing.score_after = before.score
+        existing.score_after = _repair_priority_score(before)
+        existing.raw_quality_score_after = before.score
         existing.status = before.status
         existing.unresolved_issues = before.issues
         existing.summary = before.summary
@@ -222,9 +261,11 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
     after_counts = _issue_counts(after.issues)
     unresolved = [i for i in after.issues if i.severity in {"fail", "warning", "manual_review"}]
     status = "pass" if not unresolved else "fail" if any(i.severity == "fail" for i in unresolved) else "warning"
+    repair_score_before = _repair_priority_score(before)
+    repair_score_after = _repair_priority_score(after)
     summary = (
-        f"支撑布置约束优化与候选方案比选：评分 {before.score:.1f} -> {after.score:.1f}；"
-        f"问题数 {len(before.issues)} -> {len(after.issues)}。"
+        f"支撑布置约束优化与候选方案比选：修复优先级评分 {repair_score_before:.1f} -> {repair_score_after:.1f}；"
+        f"原始质量评分 {before.score:.1f} -> {after.score:.1f}；问题数 {len(before.issues)} -> {len(after.issues)}。"
     )
     if candidates:
         pattern = candidates[0].variable_summary.get("positionPattern", "as_generated") if candidates[0].variable_summary else "as_generated"
@@ -266,13 +307,16 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
         lock_summary=final_lock_summary,
         candidates=candidates,
         status=status,
-        score_before=before.score,
-        score_after=after.score,
+        score_before=repair_score_before,
+        score_after=repair_score_after,
+        raw_quality_score_before=before.score,
+        raw_quality_score_after=after.score,
         actions=[
             *actions,
             {"action": "support_count_change", "oldSupportCount": old_support_count, "newSupportCount": len(project.retaining_system.supports) if project.retaining_system else 0, "oldColumnCount": old_column_count, "newColumnCount": len(project.retaining_system.columns) if project.retaining_system else 0},
             {"action": "issue_count_before", "counts": before_counts},
             {"action": "issue_count_after", "counts": after_counts},
+            {"action": "repair_priority_score", "before": repair_score_before, "after": repair_score_after, "rawQualityBefore": before.score, "rawQualityAfter": after.score},
             {"action": "local_lock_summary", "counts": final_lock_summary},
         ],
         unresolved_issues=unresolved[:30],
@@ -336,8 +380,10 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
         lock_summary=lock_summary,
         candidates=candidates[:5],
         status=quality.status,
-        score_before=quality.score,
-        score_after=quality.score,
+        score_before=_repair_priority_score(quality),
+        score_after=_repair_priority_score(quality),
+        raw_quality_score_before=quality.score,
+        raw_quality_score_after=quality.score,
         actions=[{
             "action": "adopt_support_optimization_candidate",
             "candidateId": selected.id,

@@ -31,7 +31,37 @@ def extract_representative_section(project: Project, segment_id: str) -> Geologi
             )
         warnings.append(f"MVP 代表性剖面采用最近钻孔 {nearest.code} 的一维土柱；后续应改为从三维地质模型查询。")
     else:
-        warnings.append("缺少钻孔数据，无法生成代表性剖面。")
+        # A geometry/topology draft must remain diagnosable before the site
+        # investigation is imported. Use one explicitly non-issuable screening
+        # layer so structural-quality checks can run; the geological design-domain
+        # gate remains a hard failure in the formal report.
+        bottom_candidates = [project.excavation.bottom_elevation - 10.0]
+        if project.retaining_system:
+            bottom_candidates.extend(float(wall.bottom_elevation) - 5.0 for wall in project.retaining_system.diaphragm_walls)
+        fallback_bottom = min(bottom_candidates)
+        parameters = project.strata[0].parameters if project.strata else SoilParameters(
+            unit_weight=18.5,
+            saturated_unit_weight=20.0,
+            effective_unit_weight=10.0,
+            cohesion=8.0,
+            friction_angle=25.0,
+            elastic_modulus=15000.0,
+            poisson_ratio=0.35,
+            k0=0.60,
+            horizontal_subgrade_modulus=10000.0,
+        )
+        layers.append(GeologicalLayer(
+            stratum_code="SCREENING-UNVERIFIED",
+            stratum_name="未验证初步筛查土层",
+            top_elevation=project.excavation.top_elevation,
+            bottom_elevation=fallback_bottom,
+            thickness=round(project.excavation.top_elevation - fallback_bottom, 6),
+            parameters=parameters,
+        ))
+        warnings.append(
+            "缺少钻孔和可用地质模型，采用未验证的保守单层土参数执行初步筛查；"
+            "该结果不得用于正式设计、施工图发行或监测控制值确定。"
+        )
 
     return GeologicalSection(
         segment_id=segment.id,

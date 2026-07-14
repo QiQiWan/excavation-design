@@ -47,6 +47,16 @@ export interface DesignSettings {
   temperatureRangeC?: number;
   seismicGrade?: string;
   monitoringCalibrationEnabled?: boolean;
+  monitoringThresholdSource?: 'auto_screening' | 'project_defined';
+  monitoringWallDisplacementWarningMm?: number;
+  monitoringWallDisplacementAlarmMm?: number;
+  monitoringSettlementWarningMm?: number;
+  monitoringSettlementAlarmMm?: number;
+  monitoringSupportForceWarningRatio?: number;
+  monitoringSupportForceAlarmRatio?: number;
+  monitoringGroundwaterWarningOffsetM?: number;
+  monitoringGroundwaterAlarmOffsetM?: number;
+  monitoringProjectionHours?: number;
   requireFormalApprovalForConstruction?: boolean;
   supportWallClearanceM?: number;
   maxDirectStrutSpanM?: number;
@@ -506,6 +516,55 @@ export interface AssuranceResult {
 }
 
 
+
+export interface IndustrialReadinessCheck {
+  code: string;
+  title: string;
+  status: 'pass' | 'warning' | 'fail' | string;
+  blocking: boolean;
+  evidence?: unknown;
+  requiredAction?: string;
+}
+
+export interface IndustrialReadinessPhase {
+  phaseId: 'P0' | 'P1' | 'P2' | 'P3' | string;
+  title: string;
+  status: 'pass' | 'warning' | 'fail' | string;
+  completion: number;
+  blockingCount: number;
+  warningCount: number;
+  checks: IndustrialReadinessCheck[];
+}
+
+export interface IndustrialReadinessResult {
+  projectId: string;
+  softwareVersion: string;
+  status: 'pass' | 'warning' | 'fail' | string;
+  industrialReadinessScore: number;
+  blockingCount: number;
+  warningCount: number;
+  phases: IndustrialReadinessPhase[];
+  officialIssueEligible: boolean;
+  evaluatedAt: string;
+  boundary: string;
+  monitoringControl?: MonitoringControlResult;
+  qualificationSuite?: Record<string, unknown>;
+}
+
+export interface MonitoringControlResult {
+  projectId: string;
+  recordCount: number;
+  verifiedRecordCount: number;
+  alertsEvaluated: boolean;
+  highestLevel: string;
+  alertCount: number;
+  summary: Record<string, unknown>;
+  alerts: Record<string, unknown>[];
+  series: Record<string, unknown>[];
+  digitalTwin: Record<string, unknown>;
+  thresholdPolicy: { type: string; statutory: boolean; projectionHours?: number; message: string };
+}
+
 export interface PitTask {
   id: string;
   projectId: string;
@@ -521,6 +580,10 @@ export interface PitTask {
   updatedAt: string;
   finishedAt?: string;
   cancelRequested?: boolean;
+  payload?: Record<string, unknown>;
+  attempt?: number;
+  parentTaskId?: string;
+  heartbeatAt?: string;
 }
 
 export interface IssueCenterItem {

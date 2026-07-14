@@ -1314,8 +1314,22 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         raise ValueError("Project has no retaining system")
     geology_extended = ensure_geological_model_covers_excavation(project)
     geology_audit = geological_coverage_audit(project)
+    geology_screening_fallback = False
     if not geology_audit.get("designDomainCovered", False):
-        raise ValueError("Geological model does not cover the retaining-system design domain")
+        has_surface_model = bool(project.geological_model and project.geological_model.surfaces)
+        if not project.boreholes and not has_surface_model:
+            geology_screening_fallback = True
+            geology_audit = dict(geology_audit)
+            geology_audit.update({
+                "status": "fail",
+                "coverageStatus": "fail",
+                "extrapolationStatus": "manual_review",
+                "designDomainCovered": False,
+                "screeningFallbackUsed": True,
+                "message": "缺少钻孔和可覆盖设计域的地质模型；本次仅使用未验证单层土参数进行初步筛查，正式发行被阻断。",
+            })
+        else:
+            raise ValueError("Geological model does not cover the retaining-system design domain")
     strength_auto_enabled = bool(getattr(project.design_settings, "auto_strength_design_enabled", True))
     requested_case = calculation_case or (project.calculation_cases[-1] if project.calculation_cases else None)
     wall_embedment_preflight = auto_design_wall_embedment(
@@ -1409,6 +1423,8 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     ]
     if geology_extended:
         warnings.append("计算前已自动外扩地质模型，使围护结构及施工影响区处于地质设计域内；外推区域按低置信度处理。")
+    if geology_screening_fallback:
+        warnings.append("当前计算采用未验证的单层土初步筛查参数；地质设计域硬闸门保持失败，成果不得正式发行。")
     if wall_embedment_preflight.get("changed"):
         warnings.append(str(wall_embedment_preflight.get("message") or "计算前已按嵌固稳定筛查自动加深围护墙墙趾。"))
     elif wall_embedment_preflight.get("status") == "fail":
@@ -2155,7 +2171,30 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     global_checks = _consolidate_global_checks(project, global_checks)
     result_summary = _summary(global_checks)
     design_review = _design_review_summary(global_checks, stage_results)
-    formal_gate = build_formal_report_gate(project, support_quality, ifc_quality, latest_result=type("TempLatest", (), {"check_summary": result_summary, "stability_detailed_result": stability_package, "drawing_sheets": drawing_sheets, "report_diagram_data": {"checkSummary": result_summary}})())
+    formal_gate_preview = type(
+        "TempLatest",
+        (),
+        {
+            "check_summary": result_summary,
+            "stability_detailed_result": stability_package,
+            "drawing_sheets": drawing_sheets,
+            "report_diagram_data": {"checkSummary": result_summary},
+            "support_topology_hash": _support_topology_hash(project),
+            "design_iteration_summary": {
+                "algorithmVersion": ALGORITHM_VERSION,
+                "ruleSetVersion": RULE_SET_VERSION,
+            },
+            "governing_values": GoverningValues(
+                max_total_pressure=round(max_pressure, 3),
+                max_support_axial_force=round(max_support_force, 3),
+                max_wall_moment=round(max_wall_moment, 3),
+                max_wall_shear=round(max_wall_shear, 3),
+                max_displacement=round(max_displacement, 3),
+            ),
+            "support_layout_repair": support_repair,
+        },
+    )()
+    formal_gate = build_formal_report_gate(project, support_quality, ifc_quality, latest_result=formal_gate_preview)
     calculation_diagnostics = build_calculation_diagnostics(
         project,
         case,

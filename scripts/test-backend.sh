@@ -26,6 +26,13 @@ run_isolated_nodes() {
 if [[ "$MODE" == "fast" ]]; then
   python -m compileall -q app tests
   FAST_NODES=(
+    "tests/test_v3_22_0_p0_p3_industrial_closure.py"
+    "tests/test_v3_21_0_clean_support_topology.py"
+    "tests/test_v3_20_0_design_workflow_cage_support.py"
+    "tests/test_v3_19_0_expert_wall_rebar.py"
+    "tests/test_v3_18_0_fengshou_embedment_recovery.py"
+    "tests/test_v3_17_0_project_delete_corner_geology.py"
+    "tests/test_v3_16_0_non_crossing_supports.py"
     "tests/test_v3_15_0_general_shape_state_geology.py"
     "tests/test_v3_14_0_strength_driven_recovery.py"
     "tests/test_v3_11_0_standards_rebar_docs.py"

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def to_camel(value: str) -> str:
@@ -64,6 +64,16 @@ class DesignSettings(DomainModel):
     temperature_range_c: float = 20.0
     seismic_grade: str = "non_seismic_temporary"
     monitoring_calibration_enabled: bool = True
+    monitoring_threshold_source: Literal["auto_screening", "project_defined"] = "auto_screening"
+    monitoring_wall_displacement_warning_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_wall_displacement_alarm_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_settlement_warning_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_settlement_alarm_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_support_force_warning_ratio: float = Field(default=0.85, ge=0.0, le=2.0)
+    monitoring_support_force_alarm_ratio: float = Field(default=1.0, ge=0.0, le=2.0)
+    monitoring_groundwater_warning_offset_m: float = Field(default=0.5, ge=0.0, le=20.0)
+    monitoring_groundwater_alarm_offset_m: float = Field(default=1.0, ge=0.0, le=20.0)
+    monitoring_projection_hours: float = Field(default=24.0, ge=1.0, le=168.0)
     require_formal_approval_for_construction: bool = False
     support_wall_clearance_m: float = 1.0
     max_direct_strut_span_m: float = 24.0
@@ -93,6 +103,26 @@ class DesignSettings(DomainModel):
     replacement_slab_elastic_modulus_mpa: float = 30000.0
     replacement_connection_reduction: float = 0.65
     default_workspace_mode: Literal["compact", "professional"] = "compact"
+
+    @model_validator(mode="after")
+    def validate_monitoring_threshold_order(self) -> "DesignSettings":
+        threshold_pairs = (
+            (self.monitoring_wall_displacement_warning_mm, self.monitoring_wall_displacement_alarm_mm, "wall displacement"),
+            (self.monitoring_settlement_warning_mm, self.monitoring_settlement_alarm_mm, "settlement"),
+            (self.monitoring_support_force_warning_ratio, self.monitoring_support_force_alarm_ratio, "support force ratio"),
+            (self.monitoring_groundwater_warning_offset_m, self.monitoring_groundwater_alarm_offset_m, "groundwater offset"),
+        )
+        for warning, alarm, label in threshold_pairs:
+            if warning is not None and alarm is not None and float(warning) > float(alarm):
+                raise ValueError(f"Monitoring {label} warning threshold cannot exceed alarm threshold")
+        if self.monitoring_threshold_source == "project_defined":
+            configured_pairs = (
+                (self.monitoring_wall_displacement_warning_mm, self.monitoring_wall_displacement_alarm_mm),
+                (self.monitoring_settlement_warning_mm, self.monitoring_settlement_alarm_mm),
+            )
+            if any((warning is None) ^ (alarm is None) for warning, alarm in configured_pairs):
+                raise ValueError("Project-defined displacement/settlement thresholds must provide warning and alarm together")
+        return self
     # Geological model domain control.  The design model must cover the retaining
     # wall and a surrounding influence buffer; values outside the borehole trust
     # domain are extrapolated conservatively and flagged for review.
@@ -904,6 +934,8 @@ class SupportLayoutRepairSummary(DomainModel):
     status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
     score_before: float | None = None
     score_after: float | None = None
+    raw_quality_score_before: float | None = None
+    raw_quality_score_after: float | None = None
     actions: list[dict[str, Any]] = Field(default_factory=list)
     unresolved_issues: list[QualityGateIssue] = Field(default_factory=list)
     summary: str = ""
@@ -1095,6 +1127,7 @@ class DrawingRevision(DomainModel):
 
 class ProjectSummary(DomainModel):
     id: str
+    revision: int = 0
     name: str
     location: str | None = None
     created_at: str | None = None

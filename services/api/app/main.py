@@ -2,21 +2,29 @@ from __future__ import annotations
 
 from importlib import metadata, util
 from pathlib import Path
+from time import perf_counter
 import os
+import sqlite3
 import sys
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, issues, projects, rebar, standards, tasks, wall_optimization
+from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, industrial, issues, projects, rebar, standards, tasks, wall_optimization
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
+from app.services.runtime_observability import runtime_observability
+from app.services.access_control import AccessIdentity, public_access_allowed, required_role, resolve_identity, role_allows, security_status
+from app.storage.database import DEFAULT_DB_PATH
+from app.storage.repository import ProjectRepository, get_repository
+from app.tasks.manager import task_manager
 
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.19 expert-coupled support topology, wall reinforcement and vertical wall-length optimization.",
+    description="PitGuard V3.22 P0-P3 industrial closure: qualified clean support topology, traceable calculation gates, immutable revisions, persistent tasks and monitoring feedback.",
 )
 
 app.add_middleware(
@@ -26,6 +34,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def enforce_access_control(request: Request, call_next):
+    identity = resolve_identity(request)
+    if identity is None and public_access_allowed(request.url.path):
+        identity = AccessIdentity(actor="anonymous-health", role="viewer", authenticated=False, key_id=None)
+    if identity is None:
+        return JSONResponse(status_code=401, content={"detail": "Missing or invalid PitGuard API key"})
+    required = required_role(request.method, request.url.path)
+    if not role_allows(identity.role, required):
+        return JSONResponse(status_code=403, content={"detail": f"Role {identity.role} cannot perform this operation; required role: {required}"})
+    request.state.pitguard_identity = identity
+    response = await call_next(request)
+    response.headers["X-PitGuard-Actor"] = identity.actor
+    response.headers["X-PitGuard-Role"] = identity.role
+    return response
+
+
+@app.middleware("http")
+async def observe_http_requests(request: Request, call_next):
+    started = perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        runtime_observability.record(request.url.path, status_code, (perf_counter() - started) * 1000.0)
 
 app.include_router(projects.router)
 app.include_router(standards.router)
@@ -45,6 +82,7 @@ app.include_router(rebar.router)
 app.include_router(wall_optimization.router)
 app.include_router(expert_design.router)
 app.include_router(advanced.router)
+app.include_router(industrial.router)
 
 
 @app.get("/health")
@@ -92,6 +130,57 @@ def system_diagnostics() -> dict:
         "missingModules": [item["packageName"] for item in modules if not item["available"]],
         "modules": modules,
     }
+
+
+@app.get("/api/system/metrics")
+def system_metrics() -> dict:
+    return {
+        "http": runtime_observability.snapshot(),
+        "tasks": task_manager.metrics(),
+        "version": version_manifest(),
+    }
+
+
+@app.get("/api/system/readiness")
+def system_readiness() -> dict:
+    db_path = Path(os.getenv("PITGUARD_DB_PATH", str(DEFAULT_DB_PATH))).expanduser()
+    db_ok = False
+    db_error = None
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(db_path, timeout=3.0) as conn:
+            conn.execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception as exc:
+        db_error = str(exc)
+    diagnostics = system_diagnostics()
+    missing = list(diagnostics.get("missingModules") or [])
+    ready = db_ok and not missing
+    return {
+        "status": "ready" if ready else "not_ready",
+        "ready": ready,
+        "database": {"path": str(db_path), "available": db_ok, "error": db_error},
+        "missingModules": missing,
+        "tasks": task_manager.metrics(),
+        "security": security_status(),
+        "backup": {"directory": str(Path(os.getenv("PITGUARD_BACKUP_DIR", db_path.parent / "backups"))), "retention": max(1, int(os.getenv("PITGUARD_BACKUP_RETENTION", "20")))},
+        "version": version_manifest(),
+    }
+
+
+@app.get("/api/system/security")
+def system_security() -> dict:
+    return security_status()
+
+
+@app.post("/api/system/backup")
+def create_system_backup(repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return repo.store.backup()
+
+
+@app.get("/api/system/backups")
+def list_system_backups(limit: int = 20, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return {"backups": repo.store.list_backups(limit=limit)}
 
 
 @app.get("/api/system/units")

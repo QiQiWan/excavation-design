@@ -90,7 +90,7 @@ def test_pipeline_exposes_ordered_design_institute_gates() -> None:
 
 
 def test_v320_version() -> None:
-    assert SOFTWARE_VERSION == "3.20.0"
+    assert tuple(int(part) for part in SOFTWARE_VERSION.split(".")) >= (3, 20, 0)
 
 
 def test_reference_support_csv_import_preserves_wall_to_wall_geometry() -> None:

@@ -30,7 +30,7 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+type BackendTaskOperation = 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
 
 function DeferredDetails({ summary, defaultOpen = false, children }: { summary: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -653,7 +653,7 @@ function StepBody({
   if (active === 'excavation') return <ExcavationEditor project={project} onSaved={onRefresh} />;
   if (active === 'retaining') return <RetainingStep project={project} runStep={runStep} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} />;
   if (active === 'calculation') return <CalculationStep project={project} runStep={runStep} runWorkflow={runWorkflow} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} />;
-  if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} onChanged={onRefresh} viewMode={viewMode} />;
+  if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} onChanged={onRefresh} runTask={runTask} viewMode={viewMode} />;
   return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} onRefresh={onRefresh} viewMode={viewMode} />;
 }
 
@@ -734,6 +734,16 @@ function SettingsStep({ project, onChanged, viewMode }: { project: Project; onCh
           <label>温度变化范围（°C）<input type="number" min="0" max="80" step="1" value={draft.temperatureRangeC ?? 20} onChange={(e) => numberValue('temperatureRangeC', e.target.value)} /></label>
           <label>抗震/临时结构等级<select value={draft.seismicGrade ?? 'non_seismic_temporary'} onChange={(e) => setDraft((v) => ({ ...v, seismicGrade: e.target.value }))}><option value="non_seismic_temporary">临时结构常规工况</option><option value="seismic_grade_3">三级抗震构造</option><option value="seismic_grade_2">二级抗震构造</option><option value="special_review">专项抗震复核</option></select></label>
           <label className="settingCheck"><input type="checkbox" checked={draft.monitoringCalibrationEnabled ?? true} onChange={(e) => setDraft((v) => ({ ...v, monitoringCalibrationEnabled: e.target.checked }))} /><span>启用监测反演与参数校准</span></label>
+          <label>监测阈值来源<select value={draft.monitoringThresholdSource ?? 'auto_screening'} onChange={(e) => setDraft((v) => ({ ...v, monitoringThresholdSource: e.target.value as 'auto_screening' | 'project_defined' }))}><option value="auto_screening">系统筛查阈值</option><option value="project_defined">项目监测方案阈值</option></select></label>
+          <label>趋势外推时长（h）<input type="number" min="1" max="168" step="1" value={draft.monitoringProjectionHours ?? 24} onChange={(e) => numberValue('monitoringProjectionHours', e.target.value)} /></label>
+          <label>墙位移预警值（mm）<input type="number" min="0" step="1" disabled={(draft.monitoringThresholdSource ?? 'auto_screening') !== 'project_defined'} value={draft.monitoringWallDisplacementWarningMm ?? ''} onChange={(e) => setDraft((v) => ({ ...v, monitoringWallDisplacementWarningMm: e.target.value === '' ? undefined : Number(e.target.value) }))} /></label>
+          <label>墙位移报警值（mm）<input type="number" min="0" step="1" disabled={(draft.monitoringThresholdSource ?? 'auto_screening') !== 'project_defined'} value={draft.monitoringWallDisplacementAlarmMm ?? ''} onChange={(e) => setDraft((v) => ({ ...v, monitoringWallDisplacementAlarmMm: e.target.value === '' ? undefined : Number(e.target.value) }))} /></label>
+          <label>沉降预警值（mm）<input type="number" min="0" step="1" disabled={(draft.monitoringThresholdSource ?? 'auto_screening') !== 'project_defined'} value={draft.monitoringSettlementWarningMm ?? ''} onChange={(e) => setDraft((v) => ({ ...v, monitoringSettlementWarningMm: e.target.value === '' ? undefined : Number(e.target.value) }))} /></label>
+          <label>沉降报警值（mm）<input type="number" min="0" step="1" disabled={(draft.monitoringThresholdSource ?? 'auto_screening') !== 'project_defined'} value={draft.monitoringSettlementAlarmMm ?? ''} onChange={(e) => setDraft((v) => ({ ...v, monitoringSettlementAlarmMm: e.target.value === '' ? undefined : Number(e.target.value) }))} /></label>
+          <label>支撑轴力预警比<input type="number" min="0" max="2" step="0.05" value={draft.monitoringSupportForceWarningRatio ?? 0.85} onChange={(e) => numberValue('monitoringSupportForceWarningRatio', e.target.value)} /></label>
+          <label>支撑轴力报警比<input type="number" min="0" max="2" step="0.05" value={draft.monitoringSupportForceAlarmRatio ?? 1.0} onChange={(e) => numberValue('monitoringSupportForceAlarmRatio', e.target.value)} /></label>
+          <label>水位预警偏移（m）<input type="number" min="0" step="0.1" value={draft.monitoringGroundwaterWarningOffsetM ?? 0.5} onChange={(e) => numberValue('monitoringGroundwaterWarningOffsetM', e.target.value)} /></label>
+          <label>水位报警偏移（m）<input type="number" min="0" step="0.1" value={draft.monitoringGroundwaterAlarmOffsetM ?? 1.0} onChange={(e) => numberValue('monitoringGroundwaterAlarmOffsetM', e.target.value)} /></label>
           <label className="settingCheck"><input type="checkbox" checked={draft.requireFormalApprovalForConstruction ?? false} onChange={(e) => setDraft((v) => ({ ...v, requireFormalApprovalForConstruction: e.target.checked }))} /><span>施工图包必须完成四级批准</span></label>
         </div>
         <p className="small boundaryNote">裂缝与长期效应当前属于透明工程筛查；正式施工图仍应结合项目实际龄期、暴露环境、温度场、施工缝和监测方案完成专业复核。</p>
@@ -1010,7 +1020,7 @@ function CalculationTracePanel({ project }: { project: Project }) {
     if (!project.calculationResults.length) return () => { alive = false; };
     api.getCalculationTrace(project.id).then((data) => { if (alive) setTrace(data); }).catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); });
     return () => { alive = false; };
-  }, [project.id, project.calculationResults.length]);
+  }, [project.id, project.updatedAt, project.calculationResults.length]);
   if (!project.calculationResults.length) return null;
   if (error) return <div className="error">计算追溯链读取失败：{error}</div>;
   if (!trace) return <div className="summaryPanel"><h3>计算追溯链</h3><p className="small">正在读取校验条文和控制值...</p></div>;
@@ -1061,12 +1071,26 @@ function ModuleCompletionReview({ assurance }: { assurance: AssuranceResult }) {
   </section>;
 }
 
-function AssurancePanel({ project, onLocateIssue, onChanged, viewMode }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void; onChanged: () => void | Promise<void>; viewMode: 'compact' | 'professional' }) {
+function IndustrialReadinessPanel({ data, onRun }: { data?: import('../types/domain').IndustrialReadinessResult; onRun: () => void }) {
+  if (!data) return <section className="summaryPanel"><h3>P0-P3 工业闭环</h3><p className="small">正在读取工业成熟度闸门...</p></section>;
+  return <section className="summaryPanel industrialReadinessPanel">
+    <div className="issueCenterHeader"><div><span className="sectionKicker">工业化闭环控制</span><h3>P0-P3 工业成熟度闸门</h3><p>{data.boundary}</p></div><strong>{data.industrialReadinessScore}%</strong></div>
+    <div className="maturityGrid compactMaturity">
+      {data.phases.map((phase) => <StatusCard key={phase.phaseId} title={`${phase.phaseId} · ${phase.title}`} value={`${phase.completion}%`} detail={`阻断 ${phase.blockingCount} · 警告 ${phase.warningCount}`} tone={statusTone(phase.status)} />)}
+    </div>
+    <div className="actionStrip"><button onClick={onRun}>运行 P0-P3 工业闭环</button><span className={`statusBadge ${statusTone(data.status)}`}>{statusLabel(data.status)} · 阻断 {data.blockingCount} · 警告 {data.warningCount}</span></div>
+    <details className="focusDetails"><summary>查看 P0-P3 检查项</summary><table className="dataTable"><thead><tr><th>阶段</th><th>检查项</th><th>状态</th><th>整改动作</th></tr></thead><tbody>{data.phases.flatMap((phase) => phase.checks.map((check) => <tr key={`${phase.phaseId}-${check.code}`} className={`check-${check.status}`}><td>{phase.phaseId}</td><td>{check.title}</td><td>{check.status}</td><td>{check.requiredAction || '已闭环'}</td></tr>))}</tbody></table></details>
+  </section>;
+}
+
+function AssurancePanel({ project, onLocateIssue, onChanged, runTask, viewMode }: { project: Project; onLocateIssue: (issue: IssueCenterItem) => void; onChanged: () => void | Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; viewMode: 'compact' | 'professional' }) {
   const [assurance, setAssurance] = useState<AssuranceResult | undefined>();
+  const [industrial, setIndustrial] = useState<import('../types/domain').IndustrialReadinessResult | undefined>();
   const [error, setError] = useState<string | undefined>();
   useEffect(() => {
     let alive = true;
     api.getAssurance(project.id).then((data) => { if (alive) setAssurance(data); }).catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); });
+    api.getIndustrialReadiness(project.id).then((data) => { if (alive) setIndustrial(data); }).catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); });
     return () => { alive = false; };
   }, [project.id, project.calculationResults.length]);
   if (error) return <div className="error">{error}</div>;
@@ -1087,6 +1111,7 @@ function AssurancePanel({ project, onLocateIssue, onChanged, viewMode }: { proje
   </>;
   const advancedEngineering = <Suspense fallback={<div className="summaryPanel"><h3>工程深化与发行闭环</h3><p className="small">正在按需加载深化分析模块…</p></div>}><AdvancedEngineeringPanel project={project} onChanged={onChanged} /></Suspense>;
   return <div>
+    <IndustrialReadinessPanel data={industrial} onRun={() => runTask('P0-P3 工业闭环计算与资格评估', 'industrial_closure', { topN: 3 })} />
     <div className="assuranceCards">
       <StatusCard title="功能完成度" value={`${capability}%`} detail="软件功能路径覆盖率" tone={capability >= 100 ? 'pass' : 'warn'} />
       <StatusCard title="软件流程" value={assurance.softwareFlowComplete ? '完整' : '未完整'} detail={assurance.softwareFlowComplete ? '资料—设计—计算—成果路径完整' : `仍缺 ${assurance.softwareFlowMissingItems?.length ?? 0} 个流程项`} tone={assurance.softwareFlowComplete ? 'pass' : 'warn'} />

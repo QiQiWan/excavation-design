@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.domain import MonitoringRecord
 from app.services.advanced_suite import build_advanced_engineering_suite
 from app.services.collision_service import evaluate_model_collisions
-from app.services.monitoring_calibration import calibrate_from_monitoring, monitoring_summary
+from app.services.monitoring_calibration import calibrate_from_monitoring, monitoring_control_summary, monitoring_summary
 from app.services.node_local_analysis import evaluate_node_local_response
 from app.services.review_workflow import review_status, transition_review
 from app.services.serviceability_service import evaluate_long_term_serviceability
@@ -179,6 +179,24 @@ def crane_logistics(
 @router.get("/monitoring")
 def monitoring(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
     return monitoring_summary(repo.require(project_id))
+
+
+@router.get("/monitoring/control")
+def monitoring_control(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return monitoring_control_summary(repo.require(project_id))
+
+
+@router.get("/monitoring/digital-twin")
+def monitoring_digital_twin(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    control = monitoring_control_summary(repo.require(project_id))
+    return {
+        "projectId": project_id,
+        "digitalTwin": control.get("digitalTwin"),
+        "highestLevel": control.get("highestLevel"),
+        "alerts": control.get("alerts"),
+        "series": control.get("series"),
+        "thresholdPolicy": control.get("thresholdPolicy"),
+    }
 
 
 @router.post("/monitoring/records")
