@@ -63,10 +63,15 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
     terminal, or unsupported internal endpoint.
     """
     shapes = {
-        "rotated_rectangle": [(-26, -11), (26, -11), (26, 11), (-26, 11)],
+        "long_strip_160x33": [(-80, -16.5), (80, -16.5), (80, 16.5), (-80, 16.5)],
+        "narrow_strip_90x18": [(-45, -9), (45, -9), (45, 9), (-45, 9)],
+        "rotated_rectangle": [(-18.172, -21.605), (28.160, 2.003), (18.172, 21.605), (-28.160, -2.003)],
         "trapezoid": [(-30, -12), (30, -9), (22, 14), (-24, 12)],
+        "convex_hexagon": [(-32, -8), (-18, -18), (20, -16), (34, -2), (22, 16), (-24, 14)],
         "l_shape": [(-30, -20), (30, -20), (30, -4), (6, -4), (6, 20), (-30, 20)],
+        "t_shape": [(-34, -20), (34, -20), (34, 0), (12, 0), (12, 24), (-12, 24), (-12, 0), (-34, 0)],
         "u_shape": [(-30, -20), (30, -20), (30, 20), (12, 20), (12, -2), (-12, -2), (-12, 20), (-30, 20)],
+        "general_concave": [(-32, -18), (28, -18), (34, 2), (12, 8), (18, 26), (-8, 20), (-14, 6), (-32, 12)],
         "near_square": [(-25, -25), (25, -25), (25, 25), (-25, 25)],
     }
     rows: list[dict[str, Any]] = []
@@ -139,7 +144,7 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
     ready_count = sum(bool(row["calculationReady"]) for row in rows)
     blocked_count = sum(bool(row["requiresAlternativeSupportSystem"]) for row in rows)
     return {
-        "suiteId": "PITGUARD-GEOMETRY-QUALIFICATION-V2",
+        "suiteId": "PITGUARD-GEOMETRY-QUALIFICATION-V3",
         "status": "pass" if passed_count == len(rows) else "fail",
         "caseCount": len(rows),
         "passedCount": passed_count,

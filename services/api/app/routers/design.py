@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,6 +48,18 @@ class LockSupportLinesPayload(BaseModel):
     reason: str | None = None
     replace: bool = False
 
+
+
+
+def _require_embedded_support_optimization() -> None:
+    if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "生产环境中的支撑候选优化由独立 pitguard-worker 进程执行。"
+                "请通过 /api/projects/{project_id}/tasks 提交 support_layout_optimization 任务。"
+            ),
+        )
 
 def _require_excavation(project_id: str, repo: ProjectRepository):
     project = repo.require(project_id)
@@ -95,6 +109,7 @@ async def import_support_layout(
 
 @router.post("/auto-repair-supports", response_model=SupportLayoutRepairSummary)
 def repair_supports(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> SupportLayoutRepairSummary:
+    _require_embedded_support_optimization()
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     result = auto_repair_support_layout(project)
@@ -106,6 +121,7 @@ def repair_supports(project_id: str, repo: ProjectRepository = Depends(get_repos
 
 @router.post("/optimize-supports", response_model=SupportLayoutRepairSummary)
 def optimize_supports(project_id: str, payload: OptimizeSupportsPayload | None = Body(default=None), repo: ProjectRepository = Depends(get_repository)) -> SupportLayoutRepairSummary:
+    _require_embedded_support_optimization()
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     result = auto_repair_support_layout(project, objective_weights=(payload.objective_weights if payload else None), preset=(payload.preset if payload else None))

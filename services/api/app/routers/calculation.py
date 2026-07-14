@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project
@@ -13,6 +15,17 @@ from app.quality.formal_gate import build_formal_report_gate
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
 
 router = APIRouter(prefix="/api/projects/{project_id}/calculation", tags=["calculation"])
+
+
+def _require_embedded_heavy_execution() -> None:
+    if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "生产环境中的完整计算由独立 pitguard-worker 进程执行。"
+                "请通过 /api/projects/{project_id}/tasks 提交 calculation_full 或 candidate_comparison 任务。"
+            ),
+        )
 
 
 @router.post("/build-cases", response_model=list[CalculationCase])
@@ -29,6 +42,7 @@ def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repositor
 
 @router.post("/run", response_model=CalculationResult)
 def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = Depends(get_repository)) -> CalculationResult:
+    _require_embedded_heavy_execution()
     project = repo.require(project_id)
     case = None
     if case_id:
@@ -48,6 +62,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
 
 @router.post("/diagnose-and-repair")
 def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    _require_embedded_heavy_execution()
     """Run topology preflight, synchronize construction stages and recalculate.
 
     The response is intentionally compact so the UI can explain the root cause
@@ -74,6 +89,7 @@ def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_r
 
 @router.post("/run-candidate-comparison")
 def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepository = Depends(get_repository)) -> list[dict]:
+    _require_embedded_heavy_execution()
     project = repo.require(project_id)
     try:
         comparison = run_candidate_comparison_for_project(project, top_n=top_n)

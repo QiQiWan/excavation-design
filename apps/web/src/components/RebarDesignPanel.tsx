@@ -85,7 +85,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       setApplying(true); setError(undefined); setNotice(undefined);
       const result = await api.applyRebarDesignScheme(project.id, mode, true);
       setScheme(result.scheme);
-      setNotice(result.recalculated ? '截面优化已应用并完成重新计算，配筋方案已按新内力更新。' : '配筋方案已应用到当前构件。');
+      setNotice(result.recalculated ? '截面优化已应用并完成重新计算，配筋方案已按新内力更新。' : result.recalculationQueued ? '配筋方案已应用，重新计算已交由独立计算进程。完成后请刷新配筋结果。' : '配筋方案已应用到当前构件。');
       await onApplied();
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setApplying(false); }

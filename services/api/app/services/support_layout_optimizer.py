@@ -120,6 +120,11 @@ def _available_topology_strategies(project: Project) -> list[str]:
     diag = layout_mod.plan_shape_diagnostics(list(project.excavation.outline.points))
     if bool(diag.get("circularShaftLike")):
         return ["direct_grid"]
+    if int(diag.get("concaveVertexCount") or 0) > 0 or bool(diag.get("nearSquarePlan")):
+        # The current solver has no in-plane bending frame node. Generating a
+        # cosmetic hybrid for these plans only creates repeated failed A/B/C
+        # cards and can trigger a large, useless candidate search.
+        return ["direct_grid"]
     return ["direct_grid", "hybrid_diagonal"]
 
 
@@ -792,8 +797,10 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     locked = _locked_supports(project)
     locked_ids = [s.id for s in locked]
     candidates: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
-    spacing_values = [4.0, 5.0, 6.0]
-    column_values = [12.0, 18.0]
+    shape = layout_mod.plan_shape_diagnostics(list(project.excavation.outline.points))
+    constrained_shape = int(shape.get("concaveVertexCount") or 0) > 0 or bool(shape.get("nearSquarePlan"))
+    spacing_values = [4.5, 5.5] if constrained_shape else [4.0, 5.0, 6.0]
+    column_values = [15.0, 18.0] if constrained_shape else [12.0, 18.0]
     available_strategies = _available_topology_strategies(project)
     for topology_strategy in available_strategies:
         for target_spacing in spacing_values:
@@ -955,6 +962,24 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
         if selected_system is None:
             selected_system = system.model_copy(deep=True)
         return True
+
+    feasible_pairs = [pair for pair in candidates if pair[0].hard_constraints.get("passed", False) and pair[0].score >= 1.0]
+    if not feasible_pairs and candidates:
+        diagnostic, diagnostic_system = candidates[0]
+        diagnostic.variable_summary = dict(diagnostic.variable_summary or {})
+        diagnostic.variable_summary["capabilityOutcome"] = "controlled_block"
+        diagnostic.variable_summary["shapeDiagnostics"] = shape
+        diagnostic.variable_summary["alternativeSystemRecommendations"] = [
+            "环梁/环撑体系",
+            "中心岛法或分区施工",
+            "具有平面内弯剪刚度和节点构造的显式双向框架",
+        ]
+        diagnostic.constructability_note = (
+            "当前轴压墙—墙构件模型无法在零非法交叉条件下闭合该平面的全部围檩跨。"
+            "系统只保留一个诊断方案，不再生成三个几何近似且均失败的候选；请切换结构体系后重新优化。"
+        )
+        add_candidate(diagnostic, diagnostic_system, force=True)
+        return selected_system, ranked
 
     # Select one feasible representative from each topology family first.  The
     # operator compares complete A/B/C schemes rather than confirming wall faces

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -9,6 +11,7 @@ from app.services.design_pipeline import evaluate_design_pipeline
 from app.services.wall_vertical_length_optimizer import apply_wall_vertical_length_candidate
 from app.services.integrated_retaining_optimizer import build_integrated_retaining_candidates, apply_integrated_retaining_candidate
 from app.storage.repository import ProjectRepository, get_repository
+from app.tasks.manager import task_manager
 
 router = APIRouter(prefix="/api/projects/{project_id}/expert-design", tags=["expert-design"])
 
@@ -68,23 +71,34 @@ def apply_integrated_candidate(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     calculation = None
+    queued_task = None
     if payload.recalculate:
-        if not project.calculation_cases:
-            project.calculation_cases = build_default_construction_cases(project)
-        calculation = run_calculation(
-            project,
-            project.calculation_cases[-1] if project.calculation_cases else None,
-            auto_repair=False,
-            include_candidate_comparison=False,
-        )
-        project.calculation_results.append(calculation)
-        if project.retaining_system:
-            item = project.retaining_system.layout_summary.get("integratedRetainingOptimization")
-            if isinstance(item, dict):
-                item["recomputeRequired"] = False
-                item["calculationResultId"] = calculation.id
+        if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
+            repo.save(project)
+            queued_task = task_manager.submit(project.id, "calculation_full", {"topN": 0})
+        else:
+            if not project.calculation_cases:
+                project.calculation_cases = build_default_construction_cases(project)
+            calculation = run_calculation(
+                project,
+                project.calculation_cases[-1] if project.calculation_cases else None,
+                auto_repair=False,
+                include_candidate_comparison=False,
+            )
+            project.calculation_results.append(calculation)
+            if project.retaining_system:
+                item = project.retaining_system.layout_summary.get("integratedRetainingOptimization")
+                if isinstance(item, dict):
+                    item["recomputeRequired"] = False
+                    item["calculationResultId"] = calculation.id
     repo.save(project)
-    return {**result, "recalculated": calculation is not None, "calculationResult": calculation}
+    return {
+        **result,
+        "recalculated": calculation is not None,
+        "recalculationQueued": queued_task is not None,
+        "calculationTask": queued_task.as_dict(include_logs=False) if queued_task else None,
+        "calculationResult": calculation,
+    }
 
 
 @router.post("/apply-vertical-wall-length")
@@ -99,25 +113,36 @@ def apply_vertical_wall_length(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     calculation = None
+    queued_task = None
     if payload.recalculate:
-        if not project.calculation_cases:
-            project.calculation_cases = build_default_construction_cases(project)
-        calculation = run_calculation(
-            project,
-            project.calculation_cases[-1] if project.calculation_cases else None,
-            auto_repair=False,
-            include_candidate_comparison=False,
-        )
-        project.calculation_results.append(calculation)
-        if project.retaining_system:
-            item = project.retaining_system.layout_summary.get("wallVerticalLengthOptimization")
-            if isinstance(item, dict):
-                item["recomputeRequired"] = False
-                item["calculationResultId"] = calculation.id
-        project.advanced_engineering = dict(project.advanced_engineering or {})
-        project.advanced_engineering["calculationState"] = {
-            "requiresRecalculation": False,
-            "reason": "围护墙竖向长度优化已重新计算",
-        }
+        if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
+            repo.save(project)
+            queued_task = task_manager.submit(project.id, "calculation_full", {"topN": 0})
+        else:
+            if not project.calculation_cases:
+                project.calculation_cases = build_default_construction_cases(project)
+            calculation = run_calculation(
+                project,
+                project.calculation_cases[-1] if project.calculation_cases else None,
+                auto_repair=False,
+                include_candidate_comparison=False,
+            )
+            project.calculation_results.append(calculation)
+            if project.retaining_system:
+                item = project.retaining_system.layout_summary.get("wallVerticalLengthOptimization")
+                if isinstance(item, dict):
+                    item["recomputeRequired"] = False
+                    item["calculationResultId"] = calculation.id
+            project.advanced_engineering = dict(project.advanced_engineering or {})
+            project.advanced_engineering["calculationState"] = {
+                "requiresRecalculation": False,
+                "reason": "围护墙竖向长度优化已重新计算",
+            }
     repo.save(project)
-    return {**result, "recalculated": calculation is not None, "calculationResult": calculation}
+    return {
+        **result,
+        "recalculated": calculation is not None,
+        "recalculationQueued": queued_task is not None,
+        "calculationTask": queued_task.as_dict(include_logs=False) if queued_task else None,
+        "calculationResult": calculation,
+    }

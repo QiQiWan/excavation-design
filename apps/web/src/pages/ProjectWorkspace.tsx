@@ -30,7 +30,7 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+type BackendTaskOperation = 'support_layout_optimization' | 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
 
 function DeferredDetails({ summary, defaultOpen = false, children }: { summary: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -154,7 +154,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
           logs: task.logs?.slice(-8),
           phases: [{ label: task.currentStep || title, status: task.status === 'running' || task.status === 'queued' ? 'running' : task.status === 'success' ? 'done' : 'error' }]
         });
-        if (Date.now() - started > 10 * 60 * 1000) throw new Error('任务轮询超时，请检查后端日志。');
+        if (Date.now() - started > 35 * 60 * 1000) throw new Error('任务轮询超时，请检查后端日志。');
       }
       if (task.status !== 'success') throw new Error(task.error || `任务状态：${task.status}`);
       if (autoDownload && task.result?.filePath) await downloadTaskFile(task);
@@ -714,7 +714,7 @@ function SettingsStep({ project, onChanged, viewMode }: { project: Project; onCh
           <label>支撑轴线距墙最小净距（m）<input type="number" min="0.35" max="3" step="0.1" value={draft.supportWallClearanceM ?? 1.0} onChange={(e) => numberValue('supportWallClearanceM', e.target.value)} /></label>
           <label>直对撑建议最大跨度（m）<input type="number" min="12" max="45" step="1" value={draft.maxDirectStrutSpanM ?? 24} onChange={(e) => numberValue('maxDirectStrutSpanM', e.target.value)} /></label>
           <label>长墙角撑优先阈值（m）<input type="number" min="8" max="40" step="1" value={draft.diagonalBraceMinWallLengthM ?? 18} onChange={(e) => numberValue('diagonalBraceMinWallLengthM', e.target.value)} /></label>
-          <label>每个转角平行角撑数<input type="number" min="1" max="3" step="1" value={draft.cornerDiagonalFamilyCount ?? 2} onChange={(e) => numberValue('cornerDiagonalFamilyCount', e.target.value)} /></label>
+          <label>每个转角平行角撑数<input type="number" min="1" max="6" step="1" value={draft.cornerDiagonalFamilyCount ?? 4} onChange={(e) => numberValue('cornerDiagonalFamilyCount', e.target.value)} /></label>
           <label>平行角撑墙节点间距（m）<input type="number" min="2.5" max="6" step="0.25" value={draft.cornerDiagonalFamilySpacingM ?? 3} onChange={(e) => numberValue('cornerDiagonalFamilySpacingM', e.target.value)} /></label>
           <label>角撑平行角度容差（°）<input type="number" min="2" max="12" step="1" value={draft.cornerDiagonalParallelToleranceDeg ?? 5} onChange={(e) => numberValue('cornerDiagonalParallelToleranceDeg', e.target.value)} /></label>
           <label className="settingCheck"><input type="checkbox" checked={draft.preferDiagonalBraces ?? true} onChange={(e) => setDraft((v) => ({ ...v, preferDiagonalBraces: e.target.checked }))} /><span>端部转角采用独立墙节点的平行角撑族，禁止V形扇撑</span></label>
@@ -867,7 +867,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
             {objectiveMeta.map(([key, label]) => <label key={key}><span>{label}</span><input type="range" min="0" max="80" value={weights[key] ?? 0} onChange={(event) => setWeights((prev) => ({ ...prev, [key]: Number(event.target.value) }))} /><strong>{weights[key] ?? 0}</strong></label>)}
           </div>
           {previewRows.length ? <table className="table compactTable"><thead><tr><th>实时预览排名</th><th>原排名</th><th>原评分</th><th>新评分</th><th>支撑/立柱</th></tr></thead><tbody>{previewRows.map((row, idx) => <tr key={row.id}><td>{idx + 1}</td><td>{row.rank}</td><td>{row.oldScore}</td><td>{row.previewScore.toFixed(1)}</td><td>{row.supportCount}/{row.columnCount}</td></tr>)}</tbody></table> : <p className="small">生成候选方案后，滑块会实时显示权重变化对候选排序的影响。</p>}
-          <button onClick={() => runStep('正在按约束优化器生成候选支撑方案', () => api.optimizeSupports(project.id, { preset: weightPreset, objectiveWeights: weights }))} disabled={!project.excavation}>按当前权重生成 3-5 个候选方案</button>
+          <button onClick={() => runTask('正在由独立进程按平面类型生成候选支撑方案', 'support_layout_optimization', { preset: weightPreset, objectiveWeights: weights })} disabled={!project.excavation}>按当前权重生成 3-5 个候选方案</button>
           <p className="small">优化器先剔除非法穿越、障碍冲突、端点失效、围檩支点超限和换撑中断方案，再优先减少内部 T/Y/X 汇交节点与高度拥挤节点。综合评分只用于区分同等整洁度的可行方案。</p>
         </div>
         <div className="drawerSection">
@@ -916,7 +916,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
       <SchemeComparisonPanel
         project={project}
         compact={viewMode === 'compact'}
-        onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))}
+        onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })}
         onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })}
         onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))}
         onRefresh={onRefresh}
@@ -936,8 +936,8 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, se
         <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
         
       </div>
-      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runStep('正在运行计算和规范子集校核', () => api.runCalculation(project.id))} disabled={!project.retainingSystem}>仅运行计算</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
-      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
+      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runTask('正在由独立计算进程运行当前方案', 'calculation_full', { topN: 0 })} disabled={!project.retainingSystem}>仅运行当前方案</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
+      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
       <CalculationRecoveryPanel project={project} runStep={runStep} />
       <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />
       {viewMode === 'professional' ? <CalculationTracePanel project={project} /> : <details className="focusDetails"><summary>查看完整计算追溯链、公式和规范条文</summary><CalculationTracePanel project={project} /></details>}

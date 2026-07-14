@@ -24,7 +24,7 @@ from app.tasks.manager import task_manager
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.26.0 industrial parallel-corner-brace layout, controlled delivery and protected application login routing.",
+    description="PitGuard V3.27.0 shape-aware retaining topology, isolated calculation worker and controlled delivery.",
 )
 
 app.add_middleware(

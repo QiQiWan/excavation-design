@@ -19,6 +19,7 @@ PYTHON_BIN="${PYTHON_BIN:-}"
 CERT_FILE="${PITGUARD_SSL_CERTIFICATE:-/usr/crt/fullchain.pem}"
 KEY_FILE="${PITGUARD_SSL_CERTIFICATE_KEY:-/usr/crt/privkey.pem}"
 SERVICE_NAME="${PITGUARD_SERVICE_NAME:-pitguard-api}"
+WORKER_SERVICE_NAME="${PITGUARD_WORKER_SERVICE_NAME:-pitguard-worker}"
 ENV_DIR="${PITGUARD_ENV_DIR:-/etc/pitguard}"
 ENV_FILE="$ENV_DIR/pitguard.env"
 API_KEY_FILE="$ENV_DIR/api-key"
@@ -26,16 +27,18 @@ WEB_CREDENTIAL_FILE="$ENV_DIR/web-credentials.txt"
 SESSION_SECRET_FILE="$ENV_DIR/session-secret"
 NGINX_CONF="${PITGUARD_NGINX_CONF:-/etc/nginx/conf.d/${DOMAIN}.conf}"
 SYSTEMD_UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
+WORKER_SYSTEMD_UNIT="/etc/systemd/system/${WORKER_SERVICE_NAME}.service"
 WEB_USER="${PITGUARD_WEB_USER:-pitguard}"
 WEB_PASSWORD="${PITGUARD_WEB_PASSWORD:-}"
 NUMERIC_THREADS="${PITGUARD_NUMERIC_THREADS:-1}"
 TASK_WORKERS="${PITGUARD_TASK_WORKERS:-2}"
 HEAVY_TASK_CONCURRENCY="${PITGUARD_HEAVY_TASK_CONCURRENCY:-1}"
-TASK_MEMORY_SOFT_LIMIT_MB="${PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB:-5600}"
+TASK_TIMEOUT_SECONDS="${PITGUARD_TASK_TIMEOUT_SECONDS:-1800}"
 CANDIDATE_WORKERS="${PITGUARD_CANDIDATE_WORKERS:-1}"
 CALC_RESULT_RETENTION="${PITGUARD_CALCULATION_RESULT_RETENTION:-1}"
-MEMORY_HIGH="${PITGUARD_MEMORY_HIGH:-5G}"
-MEMORY_MAX="${PITGUARD_MEMORY_MAX:-6500M}"
+API_MEMORY_HIGH="${PITGUARD_API_MEMORY_HIGH:-2G}"
+API_MEMORY_MAX="${PITGUARD_API_MEMORY_MAX:-4G}"
+WORKER_CPU_QUOTA="${PITGUARD_WORKER_CPU_QUOTA:-600%}"
 
 if [ -z "$PYTHON_BIN" ]; then
   if [ -x /root/anaconda3/envs/ifc/bin/python ]; then
@@ -64,7 +67,18 @@ if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
   exit 1
 fi
 
+TOTAL_MEMORY_MB="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 8192)"
+if [ -z "$TOTAL_MEMORY_MB" ] || [ "$TOTAL_MEMORY_MB" -lt 4096 ]; then TOTAL_MEMORY_MB=4096; fi
+DEFAULT_WORKER_MEMORY_MAX_MB=$((TOTAL_MEMORY_MB * 60 / 100))
+if [ "$DEFAULT_WORKER_MEMORY_MAX_MB" -gt 32768 ]; then DEFAULT_WORKER_MEMORY_MAX_MB=32768; fi
+if [ "$DEFAULT_WORKER_MEMORY_MAX_MB" -lt 3072 ]; then DEFAULT_WORKER_MEMORY_MAX_MB=3072; fi
+WORKER_MEMORY_MAX_MB="${PITGUARD_WORKER_MEMORY_MAX_MB:-$DEFAULT_WORKER_MEMORY_MAX_MB}"
+WORKER_MEMORY_HIGH_MB="${PITGUARD_WORKER_MEMORY_HIGH_MB:-$((WORKER_MEMORY_MAX_MB * 85 / 100))}"
+TASK_MEMORY_SOFT_LIMIT_MB="${PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB:-$((WORKER_MEMORY_HIGH_MB - 256))}"
+if [ "$TASK_MEMORY_SOFT_LIMIT_MB" -lt 2048 ]; then TASK_MEMORY_SOFT_LIMIT_MB=2048; fi
+
 mkdir -p "$RUNTIME_DIR/backups" "$RUNTIME_DIR/cache" "$RUNTIME_DIR/matplotlib" \
+  "$RUNTIME_DIR/cache-worker" "$RUNTIME_DIR/matplotlib-worker" \
   "$API_DIR/exports" "$API_DIR/runtime_cache" "$ENV_DIR"
 chmod 750 "$ENV_DIR"
 
@@ -129,6 +143,9 @@ MALLOC_ARENA_MAX=2
 PITGUARD_TASK_WORKERS=$TASK_WORKERS
 PITGUARD_HEAVY_TASK_CONCURRENCY=$HEAVY_TASK_CONCURRENCY
 PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB=$TASK_MEMORY_SOFT_LIMIT_MB
+PITGUARD_TASK_TIMEOUT_SECONDS=$TASK_TIMEOUT_SECONDS
+PITGUARD_WORKER_POLL_SECONDS=1.0
+PITGUARD_WORKER_EXIT_AFTER_TASK=true
 PITGUARD_CANDIDATE_WORKERS=$CANDIDATE_WORKERS
 PITGUARD_CALCULATION_RESULT_RETENTION=$CALC_RESULT_RETENTION
 PITGUARD_CORS_ORIGINS=https://$DOMAIN
@@ -157,6 +174,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MPLCONFIGDIR=$RUNTIME_DIR/matplotlib
 Environment=XDG_CACHE_HOME=$RUNTIME_DIR/cache
+Environment=PITGUARD_TASK_EXECUTION_MODE=external
 ExecStart=$PYTHON_BIN -m uvicorn app.main:app --host 127.0.0.1 --port $BACKEND_PORT --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=5s
@@ -165,9 +183,14 @@ TimeoutStopSec=45s
 KillSignal=SIGINT
 UMask=0027
 LimitNOFILE=65535
-MemoryHigh=$MEMORY_HIGH
-MemoryMax=$MEMORY_MAX
-OOMPolicy=stop
+MemoryHigh=$API_MEMORY_HIGH
+MemoryMax=$API_MEMORY_MAX
+CPUQuota=200%
+CPUWeight=100
+IOWeight=100
+TasksMax=256
+OOMScoreAdjust=-500
+OOMPolicy=continue
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
@@ -179,6 +202,53 @@ ReadWritePaths=$API_DIR/runtime_cache
 [Install]
 WantedBy=multi-user.target
 UNITEOF
+
+cat > "$WORKER_SYSTEMD_UNIT" <<WORKERUNITEOF
+[Unit]
+Description=PitGuard Isolated Calculation Worker
+Wants=network-online.target
+After=network-online.target ${SERVICE_NAME}.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=$API_DIR
+EnvironmentFile=$ENV_FILE
+Environment=PYTHONPATH=$API_DIR
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=MPLCONFIGDIR=$RUNTIME_DIR/matplotlib-worker
+Environment=XDG_CACHE_HOME=$RUNTIME_DIR/cache-worker
+Environment=PITGUARD_TASK_EXECUTION_MODE=worker
+ExecStart=$PYTHON_BIN -m app.tasks.worker_daemon
+Restart=always
+RestartSec=1s
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0027
+LimitNOFILE=65535
+MemoryHigh=${WORKER_MEMORY_HIGH_MB}M
+MemoryMax=${WORKER_MEMORY_MAX_MB}M
+CPUQuota=$WORKER_CPU_QUOTA
+CPUWeight=20
+IOWeight=20
+Nice=5
+OOMScoreAdjust=500
+TasksMax=256
+OOMPolicy=stop
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=$RUNTIME_DIR
+ReadWritePaths=$API_DIR/exports
+ReadWritePaths=$API_DIR/runtime_cache
+
+[Install]
+WantedBy=multi-user.target
+WORKERUNITEOF
 
 "$PYTHON_BIN" "$ROOT_DIR/scripts/cleanup-nginx-domain.py" --domain "$DOMAIN" --exclude "$NGINX_CONF"
 
@@ -300,8 +370,9 @@ server {
 NGINXEOF
 
 systemctl daemon-reload
-systemctl enable "$SERVICE_NAME" >/dev/null
+systemctl enable "$SERVICE_NAME" "$WORKER_SERVICE_NAME" >/dev/null
 systemctl restart "$SERVICE_NAME"
+systemctl restart "$WORKER_SERVICE_NAME"
 
 BACKEND_READY=0
 for _ in $(seq 1 45); do
@@ -314,6 +385,13 @@ done
 if [ "$BACKEND_READY" != "1" ]; then
   echo "[PitGuard] Backend health check failed." >&2
   journalctl -u "$SERVICE_NAME" -n 120 --no-pager >&2 || true
+  journalctl -u "$WORKER_SERVICE_NAME" -n 120 --no-pager >&2 || true
+  exit 1
+fi
+
+if ! systemctl is-active --quiet "$WORKER_SERVICE_NAME"; then
+  echo "[PitGuard] Isolated calculation worker failed to start." >&2
+  journalctl -u "$WORKER_SERVICE_NAME" -n 120 --no-pager >&2 || true
   exit 1
 fi
 
@@ -356,7 +434,8 @@ System URL    : https://$DOMAIN
 Login URL     : https://$DOMAIN/login ($LOGIN_ROUTE)
 Health        : https://$DOMAIN/health ($PUBLIC_HEALTH)
 API docs      : https://$DOMAIN/backend-docs
-Backend       : http://127.0.0.1:$BACKEND_PORT
+Backend       : http://127.0.0.1:$BACKEND_PORT (HTTP only)
+Calc worker    : $WORKER_SERVICE_NAME (isolated process, MemoryMax=${WORKER_MEMORY_MAX_MB}M, CPUQuota=$WORKER_CPU_QUOTA)
 Frontend dist : $WEB_DIR/dist
 Database      : $RUNTIME_DIR/pitguard.sqlite3
 Service       : $SERVICE_NAME.service

@@ -9,10 +9,13 @@ from typing import Any, Callable
 from uuid import uuid4
 import traceback
 import hashlib
+import json
 import shutil
 import os
 import gc
 import ctypes
+import time
+from threading import Timer
 try:
     import resource
 except ImportError:  # pragma: no cover - Windows compatibility
@@ -42,6 +45,9 @@ from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.review_workflow import review_status
 from app.services.delivery_package import export_coordinated_delivery_package
 from app.services.industrial_readiness import run_industrial_closure
+from app.services.support_layout_repair import auto_repair_support_layout
+from app.services.calculation_state import invalidate_calculation_state
+from app.geology.model_builder import ensure_geological_model_covers_excavation
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
 
@@ -104,6 +110,7 @@ class TaskRecord:
     attempt: int = 1
     parent_task_id: str | None = None
     heartbeat_at: str | None = None
+    deduplication_key: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskRecord":
@@ -126,6 +133,7 @@ class TaskRecord:
             attempt=int(data.get("attempt", 1) or 1),
             parent_task_id=data.get("parentTaskId", data.get("parent_task_id")),
             heartbeat_at=data.get("heartbeatAt", data.get("heartbeat_at")),
+            deduplication_key=data.get("deduplicationKey", data.get("deduplication_key")),
         )
 
     def as_dict(self, include_logs: bool = False) -> dict[str, Any]:
@@ -147,6 +155,7 @@ class TaskRecord:
             "attempt": self.attempt,
             "parentTaskId": self.parent_task_id,
             "heartbeatAt": self.heartbeat_at,
+            "deduplicationKey": self.deduplication_key,
         }
         if include_logs:
             data["logs"] = list(self.logs)
@@ -160,19 +169,29 @@ class TaskManager:
         self._lock = RLock()
         self._project_locks: dict[str, RLock] = {}
         self._store = SQLiteTaskStore()
+        self._execution_mode = str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded") or "embedded").strip().lower()
+        if self._execution_mode not in {"embedded", "external", "worker"}:
+            self._execution_mode = "embedded"
         self._worker_count = _env_int("PITGUARD_TASK_WORKERS", 2, 1, 8)
         self._heavy_concurrency = _env_int("PITGUARD_HEAVY_TASK_CONCURRENCY", 1, 1, 2)
-        self._memory_soft_limit_mb = _env_int("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB", 5600, 1024, 65536)
+        self._memory_soft_limit_mb = _env_int("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB", 5600, 1024, 131072)
+        self._task_timeout_seconds = _env_int("PITGUARD_TASK_TIMEOUT_SECONDS", 1800, 60, 86400)
         self._heavy_semaphore = BoundedSemaphore(self._heavy_concurrency)
-        self._executor = ThreadPoolExecutor(max_workers=self._worker_count, thread_name_prefix="pitguard-task")
+        self._executor = (
+            ThreadPoolExecutor(max_workers=self._worker_count, thread_name_prefix="pitguard-task")
+            if self._execution_mode == "embedded" else None
+        )
         self._heavy_operations = {
-            "calculation_full", "candidate_comparison", "candidate_scheme_calculation",
+            "calculation_full", "candidate_comparison", "candidate_scheme_calculation", "support_layout_optimization",
             "full_delivery", "industrial_closure", "export_rebar_detailing",
             "export_ifc_detailed", "export_ifc_construction_visual", "export_coordinated_delivery",
         }
         for raw in self._store.list(limit=500):
             task = TaskRecord.from_dict(raw)
-            if task.status in {"queued", "running"}:
+            # Embedded mode loses its executor on API restart.  In external mode
+            # queued records belong to the dedicated worker and must remain
+            # queued while the HTTP process is rebuilt.
+            if self._execution_mode == "embedded" and task.status in {"queued", "running"}:
                 task.status = "interrupted"
                 task.current_step = "服务重启导致任务中断，可重新提交"
                 task.error = task.error or "Task interrupted by service restart"
@@ -200,6 +219,20 @@ class TaskManager:
                 f"{self._memory_soft_limit_mb} MB）。请关闭并行候选计算、清理旧结果或提高实例内存。"
             )
 
+    @staticmethod
+    def _deduplication_key(project_id: str, operation: str, payload: dict[str, Any]) -> str:
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(f"{project_id}|{operation}|{canonical}".encode("utf-8")).hexdigest()
+
+    def _refresh_record(self, task_id: str) -> TaskRecord | None:
+        raw = self._store.get(task_id)
+        if raw is None:
+            return None
+        task = TaskRecord.from_dict(raw)
+        with self._lock:
+            self._tasks[task.id] = task
+        return task
+
     def submit(
         self,
         project_id: str,
@@ -210,6 +243,11 @@ class TaskManager:
         parent_task_id: str | None = None,
     ) -> TaskRecord:
         payload = dict(payload or {})
+        deduplication_key = self._deduplication_key(project_id, operation, payload)
+        # Double clicks and network retries must not start multiple dense solves.
+        for active in self.list(project_id=project_id):
+            if active.status in {"queued", "running"} and active.deduplication_key == deduplication_key:
+                return active
         task = TaskRecord(
             id=f"task-{uuid4().hex[:12]}",
             project_id=project_id,
@@ -218,13 +256,15 @@ class TaskManager:
             payload=payload,
             attempt=max(1, int(attempt)),
             parent_task_id=parent_task_id,
+            deduplication_key=deduplication_key,
         )
         with self._lock:
             self._tasks[task.id] = task
             self._append_log(task, f"任务已创建：{task.title}")
             self._persist(task)
-            future = self._executor.submit(self._run_task, task.id, payload)
-            self._futures[task.id] = future
+            if self._executor is not None:
+                future = self._executor.submit(self._run_task, task.id, payload)
+                self._futures[task.id] = future
         return task
 
     def submit_candidate_batch(self, project_id: str, top_n: int = 3, use_cache: bool = True) -> list[TaskRecord]:
@@ -241,10 +281,10 @@ class TaskManager:
         return tasks
 
     def retry(self, task_id: str) -> TaskRecord | None:
+        original = self.get(task_id)
+        if original is None:
+            return None
         with self._lock:
-            original = self._tasks.get(task_id)
-            if original is None:
-                return None
             if original.status in {"queued", "running"}:
                 raise ValueError("A queued or running task cannot be retried.")
             payload = dict(original.payload)
@@ -262,8 +302,7 @@ class TaskManager:
         return retried
 
     def metrics(self) -> dict[str, Any]:
-        with self._lock:
-            records = list(self._tasks.values())
+        records = self.list() if self._execution_mode in {"external", "worker"} else list(self._tasks.values())
         statuses = {status: sum(task.status == status for task in records) for status in (
             "queued", "running", "success", "failed", "cancelled", "interrupted"
         )}
@@ -279,23 +318,31 @@ class TaskManager:
             "activeProjectCount": len({task.project_id for task in records if task.status in {"queued", "running"}}),
             "processMemoryMb": _process_memory_mb(),
             "memorySoftLimitMb": self._memory_soft_limit_mb,
-            "workerCount": self._worker_count,
+            "taskExecutionMode": self._execution_mode,
+            "taskTimeoutSeconds": self._task_timeout_seconds,
+            "workerCount": self._worker_count if self._execution_mode == "embedded" else 0,
             "heavyTaskConcurrency": self._heavy_concurrency,
             "latestUpdatedAt": max((task.updated_at for task in records), default=None),
             "completedCount": len(completed),
-            "workerCount": self._worker_count,
-            "heavyTaskConcurrency": self._heavy_concurrency,
             "processResidentMemoryMB": _process_memory_mb(),
         }
 
     def list(self, project_id: str | None = None) -> list[TaskRecord]:
-        with self._lock:
-            records = list(self._tasks.values())
-        if project_id:
-            records = [task for task in records if task.project_id == project_id]
+        if self._execution_mode in {"external", "worker"}:
+            records = [TaskRecord.from_dict(raw) for raw in self._store.list(project_id=project_id, limit=500)]
+            with self._lock:
+                for task in records:
+                    self._tasks[task.id] = task
+        else:
+            with self._lock:
+                records = list(self._tasks.values())
+            if project_id:
+                records = [task for task in records if task.project_id == project_id]
         return sorted(records, key=lambda item: item.created_at, reverse=True)
 
     def get(self, task_id: str) -> TaskRecord | None:
+        if self._execution_mode in {"external", "worker"}:
+            return self._refresh_record(task_id)
         with self._lock:
             return self._tasks.get(task_id)
 
@@ -309,7 +356,7 @@ class TaskManager:
                 if task is None:
                     continue
                 task.cancel_requested = True
-                future = self._futures.pop(task_id, None)
+                future = self._futures.pop(task_id, None) if self._executor is not None else None
                 if future is not None:
                     future.cancel()
                 file_path = str((task.result or {}).get("filePath") or "")
@@ -343,7 +390,7 @@ class TaskManager:
                 return None
             task.cancel_requested = True
             self._append_log(task, "已请求取消。当前原型会在阶段边界检查取消状态。")
-            future = self._futures.get(task_id)
+            future = self._futures.get(task_id) if self._executor is not None else None
             if future and future.cancel():
                 task.status = "cancelled"
                 task.progress = max(task.progress, 1)
@@ -389,9 +436,59 @@ class TaskManager:
             memory_after = _process_memory_mb()
             self._append_log(task, f"任务结束内存 {memory_after:.2f} MB；已执行 Python GC 与 malloc_trim。")
 
+    def recover_external_worker(self) -> int:
+        if self._execution_mode != "worker":
+            return 0
+        return self._store.mark_running_interrupted("External calculation worker restarted before task completion")
+
+    def run_worker_forever(self, poll_seconds: float = 1.0) -> None:
+        if self._execution_mode != "worker":
+            raise RuntimeError("PITGUARD_TASK_EXECUTION_MODE must be 'worker' for the worker daemon")
+        self.recover_external_worker()
+        while True:
+            raw = self._store.claim_next()
+            if raw is None:
+                time.sleep(max(0.2, float(poll_seconds)))
+                continue
+            task = TaskRecord.from_dict(raw)
+            with self._lock:
+                self._tasks[task.id] = task
+            timed_out = {"value": False}
+
+            def terminate_worker() -> None:
+                timed_out["value"] = True
+                raw_task = self._store.get(task.id) or task.as_dict(include_logs=True)
+                raw_task["status"] = "interrupted"
+                raw_task["error"] = f"Task exceeded hard timeout of {self._task_timeout_seconds} seconds"
+                raw_task["currentStep"] = "任务超时，计算工作进程将重启"
+                raw_task["updatedAt"] = _now()
+                raw_task["finishedAt"] = raw_task["updatedAt"]
+                logs = list(raw_task.get("logs") or [])
+                logs.append(f"[{_now()}] 超过硬超时 {self._task_timeout_seconds}s，终止独立工作进程以保护API服务。")
+                raw_task["logs"] = logs[-500:]
+                self._store.upsert(raw_task)
+                os._exit(124)
+
+            timer = Timer(self._task_timeout_seconds, terminate_worker)
+            timer.daemon = True
+            timer.start()
+            try:
+                self._run_task(task.id, dict(task.payload))
+            finally:
+                if not timed_out["value"]:
+                    timer.cancel()
+            if str(os.getenv("PITGUARD_WORKER_EXIT_AFTER_TASK", "true")).strip().lower() in {"1", "true", "yes", "on"}:
+                # A fresh OS process for every engineering task is the strongest
+                # protection against NumPy/Matplotlib allocator retention and
+                # third-party native leaks. systemd restarts the worker and the
+                # API process remains continuously available.
+                return
+
     def _execute_operation(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         if task.operation == "calculation_full":
             result = self._run_calculation_full(task, payload)
+        elif task.operation == "support_layout_optimization":
+            result = self._run_support_layout_optimization(task, payload)
         elif task.operation == "candidate_comparison":
             result = self._run_candidate_comparison(task, payload)
         elif task.operation == "candidate_scheme_calculation":
@@ -432,6 +529,34 @@ class TaskManager:
 
     def _repo(self) -> ProjectRepository:
         return ProjectRepository()
+
+    def _run_support_layout_optimization(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        repo = self._repo()
+        project = repo.require(task.project_id)
+        if project.excavation is None:
+            raise ValueError("Project has no excavation")
+        self._stage(task, 10, "检查地质模型覆盖与平面类型")
+        ensure_geological_model_covers_excavation(project)
+        self._stage(task, 28, "按平面类型生成受力可闭合的支撑候选")
+        result = auto_repair_support_layout(
+            project,
+            objective_weights=dict(payload.get("objectiveWeights") or payload.get("objective_weights") or {}),
+            preset=str(payload.get("preset") or "balanced"),
+        )
+        self._stage(task, 82, "执行零非法交叉、墙—墙传力与围檩跨审查")
+        invalidate_calculation_state(
+            project,
+            reason="support optimization candidate set regenerated by isolated worker",
+            rebuild_cases=True,
+        )
+        repo.save(project)
+        return {
+            "projectId": project.id,
+            "candidateCount": len(result.candidates or []),
+            "status": result.status,
+            "selectedCandidateId": result.selected_candidate_id,
+            "refreshProject": True,
+        }
 
     def _run_calculation_full(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         repo = self._repo()
@@ -739,6 +864,7 @@ class TaskManager:
     def _title_for(self, operation: str) -> str:
         return {
             "calculation_full": "一键计算校核",
+            "support_layout_optimization": "按平面类型优化水平支撑候选",
             "candidate_comparison": "候选方案 A/B/C 完整比选",
             "candidate_scheme_calculation": "单个候选方案完整计算",
             "export_ifc_light": "导出 IFC 轻量协调版",
@@ -768,6 +894,10 @@ class TaskManager:
         self._append_log(task, step)
 
     def _check_cancel(self, task: TaskRecord) -> None:
+        if self._execution_mode in {"external", "worker"}:
+            raw = self._store.get(task.id)
+            if raw is not None and bool(raw.get("cancelRequested")):
+                task.cancel_requested = True
         if task.cancel_requested:
             raise RuntimeError("Task cancellation requested")
 

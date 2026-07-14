@@ -44,9 +44,9 @@ class SupportLayoutConfig:
     hard_max_wale_support_bay_m: float = 9.0
     diagonal_brace_min_wall_length_m: float = 18.0
     corner_diagonal_min_offset_m: float = 3.5
-    corner_diagonal_max_offset_m: float = 8.0
-    corner_diagonal_max_wall_fraction: float = 0.40
-    corner_diagonal_family_count: int = 2
+    corner_diagonal_max_offset_m: float = 18.0
+    corner_diagonal_max_wall_fraction: float = 0.55
+    corner_diagonal_family_count: int = 4
     corner_diagonal_family_spacing_m: float = 3.0
     corner_diagonal_parallel_tolerance_deg: float = 5.0
     prefer_diagonal_braces: bool = True
@@ -75,10 +75,10 @@ class SupportLayoutConfig:
             corner_diagonal_min_offset_m=max(2.5, min(8.0, float(self.corner_diagonal_min_offset_m))),
             corner_diagonal_max_offset_m=max(
                 max(3.0, min(8.0, float(self.corner_diagonal_min_offset_m))),
-                min(12.0, float(self.corner_diagonal_max_offset_m)),
+                min(20.0, float(self.corner_diagonal_max_offset_m)),
             ),
-            corner_diagonal_max_wall_fraction=max(0.15, min(0.50, float(self.corner_diagonal_max_wall_fraction))),
-            corner_diagonal_family_count=max(1, min(3, int(self.corner_diagonal_family_count))),
+            corner_diagonal_max_wall_fraction=max(0.15, min(0.65, float(self.corner_diagonal_max_wall_fraction))),
+            corner_diagonal_family_count=max(1, min(6, int(self.corner_diagonal_family_count))),
             corner_diagonal_family_spacing_m=max(2.5, min(6.0, float(self.corner_diagonal_family_spacing_m))),
             corner_diagonal_parallel_tolerance_deg=max(2.0, min(12.0, float(self.corner_diagonal_parallel_tolerance_deg))),
             prefer_diagonal_braces=bool(self.prefer_diagonal_braces),
@@ -263,14 +263,53 @@ def plan_shape_diagnostics(points: list[Point2D]) -> dict[str, object]:
     radial_cv = (math.sqrt(sum((r - mean(radii)) ** 2 for r in radii) / len(radii)) / max(mean(radii), EPS)) if len(radii) > 1 else 1.0
     aspect = axes.long_span / max(axes.short_span, EPS)
     circular_shaft_like = len(pts) >= 6 and concave_count == 0 and aspect <= 1.25 and circularity >= 0.72 and radial_cv <= 0.20
+    # Measure whether the boundary follows the two local principal axes.  This
+    # separates orthogonal L/T/U corridors from a generic concave polygon; the
+    # latter must not be repaired with arbitrary fan-shaped diagonals.
+    aligned_length = 0.0
+    total_edge_length = 0.0
+    boundary_edges = [(a, b, _distance(a, b)) for a, b in zip(pts, pts[1:] + pts[:1])]
+    reference_edge = max(boundary_edges, key=lambda row: row[2]) if boundary_edges else None
+    reference_axis = _unit_vector(reference_edge[0], reference_edge[1]) if reference_edge else axes.long_axis
+    reference_normal = (-reference_axis[1], reference_axis[0])
+    for a, b in zip(pts, pts[1:] + pts[:1]):
+        ex, ey = _unit_vector(a, b)
+        length = _distance(a, b)
+        total_edge_length += length
+        alignment = max(
+            abs(ex * reference_axis[0] + ey * reference_axis[1]),
+            abs(ex * reference_normal[0] + ey * reference_normal[1]),
+        )
+        if alignment >= math.cos(math.radians(8.0)):
+            aligned_length += length
+    orthogonal_edge_ratio = aligned_length / max(total_edge_length, EPS)
+    orthogonal_plan = orthogonal_edge_ratio >= 0.90
+    slender = aspect >= 2.20
+    near_square = aspect <= 1.35
     if circular_shaft_like:
         classification = "circular_or_multisided_shaft"
+        recommended = "ring_or_radial"
+    elif concave_count and orthogonal_plan:
+        classification = "orthogonal_concave_corridor"
+        recommended = "corridor_wall_to_wall_or_controlled_block"
     elif concave_count:
-        classification = "concave_or_stepped_polygon"
+        classification = "general_concave_polygon"
+        recommended = "visibility_wall_pair_or_controlled_block"
+    elif len(pts) == 4 and slender:
+        classification = "slender_quadrilateral"
+        recommended = "short_span_direct_grid_with_terminal_parallel_braces"
+    elif len(pts) == 4 and near_square:
+        classification = "near_square_quadrilateral"
+        recommended = "two_direction_frame_or_ring_subject_to_solver_capability"
     elif len(pts) == 4:
         classification = "rotated_or_orthogonal_quadrilateral"
+        recommended = "principal_axis_direct_grid"
+    elif slender:
+        classification = "slender_convex_polygon"
+        recommended = "principal_axis_direct_grid"
     else:
         classification = "general_convex_polygon"
+        recommended = "visibility_wall_pair_grid"
     return {
         "classification": classification,
         "vertexCount": len(pts),
@@ -283,6 +322,11 @@ def plan_shape_diagnostics(points: list[Point2D]) -> dict[str, object]:
         "circularity": round(circularity, 4),
         "radialCoefficientOfVariation": round(radial_cv, 4),
         "circularShaftLike": circular_shaft_like,
+        "orthogonalEdgeRatio": round(orthogonal_edge_ratio, 4),
+        "orthogonalPlan": orthogonal_plan,
+        "slenderPlan": slender,
+        "nearSquarePlan": near_square,
+        "recommendedTopology": recommended,
     }
 
 
@@ -1264,18 +1308,27 @@ def _corner_family_offsets(min_leg: float, config: SupportLayoutConfig, target_b
     for any corner angle.  This matches conventional end-bay detailing: each
     diagonal has its own bearing node and no V/fan convergence is introduced.
     """
+    spacing = float(config.corner_diagonal_family_spacing_m)
+    # Two mirrored corner families must leave no more than the hard wale bay in
+    # the middle of a terminal face.  V3.26 capped the family at three members
+    # and 12 m, so a 30--35 m end wall failed once per support level even though
+    # the longitudinal direct grid was otherwise valid.
+    required_outer = max(
+        0.60 * target_bay,
+        0.5 * max(0.0, min_leg - float(config.hard_max_wale_support_bay_m)),
+    )
     max_offset = min(
         float(config.corner_diagonal_max_offset_m),
         float(config.corner_diagonal_max_wall_fraction) * min_leg,
-        max(1.15 * target_bay, float(config.corner_diagonal_min_offset_m)),
+        max(required_outer + 0.25 * spacing, 1.15 * target_bay, float(config.corner_diagonal_min_offset_m)),
     )
     min_offset = min(float(config.corner_diagonal_min_offset_m), max_offset)
     if max_offset < MIN_CORNER_BRACE_LEG_M:
         return []
-    spacing = float(config.corner_diagonal_family_spacing_m)
     requested = int(config.corner_diagonal_family_count)
+    needed = 1 + int(math.ceil(max(0.0, required_outer - min_offset) / max(spacing, EPS)))
     available = 1 + int(max(0.0, max_offset - min_offset) // spacing)
-    count = max(1, min(requested, available))
+    count = max(1, min(max(requested, needed), available))
     if count == 1:
         return [round(max(min_offset, min(0.60 * target_bay, max_offset)), 3)]
     first = max(min_offset, min(0.55 * target_bay, max_offset - spacing * (count - 1)))
@@ -1297,12 +1350,25 @@ def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[Constru
     config = (config or SupportLayoutConfig()).normalized()
     if len(points) < 4 or not config.prefer_diagonal_braces:
         return []
-    _, _, _, _, span_x, span_y = _bounds(points)
-    short_span, long_span = min(span_x, span_y), max(span_x, span_y)
+    # A generic corner-family pass over a concave outline creates visually neat
+    # but structurally unrelated braces in returns and recesses.  Concave plans
+    # are handled only by visible wall-pair direct members; unresolved branches
+    # become a controlled block instead of an arbitrary diagonal fan.
+    if _concave_vertex_indices(points):
+        return []
+    axes = _plan_axes(points)
+    short_span, long_span = axes.short_span, axes.long_span
     if short_span < 12.0:
         return []
     orientation = 1.0 if _signed_area(points) >= 0 else -1.0
-    elongated = (long_span / max(short_span, EPS) >= 1.35) or long_span >= 36.0
+    aspect_ratio = long_span / max(short_span, EPS)
+    elongated = (aspect_ratio >= 1.35) or long_span >= 36.0
+    # A near-square plan needs a genuine two-direction frame or ring system.
+    # Filling all four corners with diagonal families around a one-direction
+    # axial grid produces the visually erratic layout reported by users and is
+    # not supported by the current axial-member solver.
+    if aspect_ratio <= 1.35:
+        return []
     if not elongated and config.topology_strategy not in {"hybrid_diagonal", "balanced_grid"}:
         return []
 
@@ -1759,14 +1825,23 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
                 bool(return_line.start_face_code) and bool(return_line.end_face_code)
                 and not any(_proper_layout_intersection(return_line, blocker) is not None for blocker in return_blockers if blocker.role != "ring_strut")
             )
-            retained = return_line if direct else _direct_terminal_wall_to_wall_repair(
-                return_line,
-                preferred_face_code=str(return_line.start_face_code or return_line.end_face_code or ""),
-                excavation=excavation,
-                obstacles=obstacles,
-                blockers=return_blockers,
-                config=config,
-            )
+            if direct:
+                retained = return_line
+            elif int(shape.get("concaveVertexCount") or 0) > 0:
+                # Never rotate a failed return-wall member through a list of
+                # arbitrary angles.  If the wall-normal line crosses an existing
+                # axial strut, the current topology cannot be represented by the
+                # solver and must remain a controlled design block.
+                retained = None
+            else:
+                retained = _direct_terminal_wall_to_wall_repair(
+                    return_line,
+                    preferred_face_code=str(return_line.start_face_code or return_line.end_face_code or ""),
+                    excavation=excavation,
+                    obstacles=obstacles,
+                    blockers=return_blockers,
+                    config=config,
+                )
             if retained is None:
                 omitted_returns += 1
                 continue
@@ -1781,6 +1856,11 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
             return_wall_warnings.append(f"有 {omitted_returns} 条回墙候选无法形成无交叉墙—墙传力路径，已阻断并要求调整支撑分仓。")
         warnings.extend(return_wall_warnings)
         diagonal_lines = _corner_diagonal_layout(points, obstacles, config)
+        if int(shape.get("concaveVertexCount") or 0) > 0:
+            warnings.append(
+                "凹形/分叉平面已停用任意角度角撑补齐：仅接受两端落墙、全线可见且无交叉的直接支撑；"
+                "无法闭合的支撑分区进入受控阻断，建议采用环撑、中心岛或显式空间框架。"
+            )
         if diagonal_lines:
             warnings.append(
                 "已在凸角局部影响区生成墙—墙角撑；角撑两端直接支承于相邻围檩/围护墙，"
@@ -2110,6 +2190,45 @@ def wale_support_bay_audit(
     }
 
 
+def _faces_form_opposed_pair(first, second, *, tangent_tolerance_deg: float = 15.0) -> bool:
+    """Return True for two approximately parallel faces with opposite outward normals.
+
+    A wall-to-wall axial strut should arrive approximately normal to two facing
+    perimeter segments.  Merely hitting any boundary edge is insufficient: a
+    tangent hit on a return wall creates a pseudo-support with negligible normal
+    reaction and was the main source of the odd diagonals seen in L/U plans.
+    """
+    t1 = _unit_vector(first.start, first.end)
+    t2 = _unit_vector(second.start, second.end)
+    tangent_alignment = abs(t1[0] * t2[0] + t1[1] * t2[1])
+    if tangent_alignment < math.cos(math.radians(tangent_tolerance_deg)):
+        return False
+    n1 = getattr(first, "outward_normal", None)
+    n2 = getattr(second, "outward_normal", None)
+    if n1 is None or n2 is None:
+        return True
+    dot = float(n1.x) * float(n2.x) + float(n1.y) * float(n2.y)
+    length = max(math.hypot(float(n1.x), float(n1.y)) * math.hypot(float(n2.x), float(n2.y)), EPS)
+    return dot / length <= -math.cos(math.radians(30.0))
+
+
+def _member_has_two_normal_bearings(first, second, direction: tuple[float, float], *, max_deviation_deg: float = 38.0) -> bool:
+    """Check that an axial member has a meaningful normal reaction at both walls."""
+    dx, dy = direction
+    norm = max(math.hypot(dx, dy), EPS)
+    dx, dy = dx / norm, dy / norm
+    n1 = getattr(first, "outward_normal", None)
+    n2 = getattr(second, "outward_normal", None)
+    if n1 is None or n2 is None:
+        return _faces_form_opposed_pair(first, second, tangent_tolerance_deg=max_deviation_deg)
+    n1_len = max(math.hypot(float(n1.x), float(n1.y)), EPS)
+    n2_len = max(math.hypot(float(n2.x), float(n2.y)), EPS)
+    start_inward_dot = dx * (-float(n1.x) / n1_len) + dy * (-float(n1.y) / n1_len)
+    end_outward_dot = dx * (float(n2.x) / n2_len) + dy * (float(n2.y) / n2_len)
+    threshold = math.cos(math.radians(max_deviation_deg))
+    return start_inward_dot >= threshold and end_outward_dot >= threshold
+
+
 def _targeted_wale_bay_repair_lines(
     excavation,
     audit: dict[str, object],
@@ -2125,6 +2244,8 @@ def _targeted_wale_bay_repair_lines(
     """
     segments = {str(item.name): item for item in getattr(excavation, "segments", []) or []}
     points = _dedup_points(list(excavation.outline.points))
+    shape = plan_shape_diagnostics(points)
+    strict_parallel_pairs = int(shape.get("concaveVertexCount") or 0) > 0
     rows = [row for row in audit.get("rows", []) if row.get("status") in {"warning", "fail"}]
     targets: list[tuple[str, float]] = []
     for row in rows:
@@ -2171,7 +2292,7 @@ def _targeted_wale_bay_repair_lines(
         norm = max(math.hypot(inward_x, inward_y), EPS)
         inward_x, inward_y = inward_x / norm, inward_y / norm
         origin = Point2D(x=start_wall.x + inward_x * 0.08, y=start_wall.y + inward_y * 0.08)
-        candidates: list[tuple[float, float, Point2D]] = []
+        candidates: list[tuple[float, float, Point2D, str]] = []
         for angle_deg in (0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75):
             angle = math.radians(angle_deg)
             dx = inward_x * math.cos(angle) - inward_y * math.sin(angle)
@@ -2186,7 +2307,18 @@ def _targeted_wale_bay_repair_lines(
                     hits.append((hit[0], hit[1], edge_index))
             if not hits:
                 continue
-            ray_t, end_wall, _ = min(hits, key=lambda item: item[0])
+            ray_t, end_wall, end_edge_index = min(hits, key=lambda item: item[0])
+            end_face = str(getattr(excavation.segments[end_edge_index], "name", "")) if end_edge_index < len(excavation.segments) else ""
+            if end_edge_index >= len(excavation.segments):
+                continue
+            end_segment = excavation.segments[end_edge_index]
+            valid_bearing = (
+                _faces_form_opposed_pair(segment, end_segment)
+                if strict_parallel_pairs
+                else _member_has_two_normal_bearings(segment, end_segment, (dx, dy))
+            )
+            if not valid_bearing:
+                continue
             span = _distance(start_wall, end_wall)
             if span < MIN_MAIN_STRUT_SPAN_M or span > min(45.0, config.max_direct_strut_span_m * 1.35):
                 continue
@@ -2194,7 +2326,7 @@ def _targeted_wale_bay_repair_lines(
                 continue
             if not _line_avoids_obstacles(origin, Point2D(x=end_wall.x - dx * 0.08, y=end_wall.y - dy * 0.08), obstacles):
                 continue
-            candidates.append((span, abs(angle_deg), end_wall))
+            candidates.append((span, abs(angle_deg), end_wall, end_face))
         if not candidates:
             continue
         # Prefer a member close to the wall normal.  Selecting the geometrically
@@ -2202,7 +2334,7 @@ def _targeted_wale_bay_repair_lines(
         # applying the required wall clearance those ties collapsed into 1--2 m
         # pseudo-members.  Normality is the primary structural criterion, with
         # span used only as the secondary tie-breaker.
-        span, angle_abs, end_wall = min(candidates, key=lambda item: (item[1], item[0]))
+        span, angle_abs, end_wall, end_face = min(candidates, key=lambda item: (item[1], item[0]))
         # This member is generated from a wale-bay station, rather than from a
         # convex-corner brace rule.  Keep it as a secondary strut even when the
         # shortest valid ray is oblique to the local wall normal.  This
@@ -2215,8 +2347,17 @@ def _targeted_wale_bay_repair_lines(
             end=end_wall,
             span_length=span,
             bay_spacing=None,
-            layout_note=f"围檩超限跨中增补：墙面 {face_code} 里程 {chainage:.2f}m，角度偏转 {angle_abs:.0f}°。",
-            topology_family="hybrid_diagonal",
+            layout_note=(
+                f"围檩超限跨中增补：墙面 {face_code} 里程 {chainage:.2f}m，连接至相对平行墙面 {end_face}，"
+                f"相对墙法线偏转 {angle_abs:.0f}°；禁止切向命中回墙。"
+            ),
+            start_face_code=face_code,
+            end_face_code=end_face,
+            start_wall_connection=start_wall,
+            end_wall_connection=end_wall,
+            topology_family="direct_grid",
+            placement_reason="wale_bay_opposed_wall_pair",
+            load_path_class="wall_to_wall",
         ))
     _attach_faces(lines, excavation)
     return lines
@@ -2299,6 +2440,8 @@ def _direct_terminal_wall_to_wall_repair(
         _, end_wall, edge_index = min(hits, key=lambda row: row[0])
         end_face = str(getattr(segments[edge_index], "name", ""))
         if not end_face or end_face == str(preferred_face_code):
+            continue
+        if edge_index >= len(segments) or not _member_has_two_normal_bearings(segment, segments[edge_index], (dx, dy), max_deviation_deg=40.0):
             continue
         span = _distance(wall_point, end_wall)
         if span < max(MIN_MAIN_STRUT_SPAN_M, 3.0) or span > min(45.0, float(config.max_direct_strut_span_m) * 1.5):
@@ -2491,9 +2634,9 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
             hard_max_wale_support_bay_m=float(getattr(settings, "hard_max_wale_support_bay_m", 9.0)),
             diagonal_brace_min_wall_length_m=float(getattr(settings, "diagonal_brace_min_wall_length_m", 18.0)),
             corner_diagonal_min_offset_m=float(getattr(settings, "corner_diagonal_min_offset_m", 3.5)),
-            corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 8.0)),
-            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.40)),
-            corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 2)),
+            corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 18.0)),
+            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.55)),
+            corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 4)),
             corner_diagonal_family_spacing_m=float(getattr(settings, "corner_diagonal_family_spacing_m", 3.0)),
             corner_diagonal_parallel_tolerance_deg=float(getattr(settings, "corner_diagonal_parallel_tolerance_deg", 5.0)),
             prefer_diagonal_braces=bool(getattr(settings, "prefer_diagonal_braces", True)),
@@ -2547,6 +2690,11 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
 
     points = _dedup_points(list(excavation.outline.points))
     obstacles = _active_obstacle_polygons(getattr(excavation, "obstacles", []))
+    shape = plan_shape_diagnostics(points)
+    allow_oblique_terminal_repair = (
+        int(shape.get("concaveVertexCount") or 0) == 0
+        and float(shape.get("aspectRatio") or 0.0) > 1.35
+    )
     targeted_lines = _targeted_wale_bay_repair_lines(excavation, before, obstacles, config)
     _attach_faces(targeted_lines, excavation)
     covered_faces = {
@@ -2630,7 +2778,7 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
         # First seek a long terminal wall-to-wall diagonal that preserves the
         # failing wall station. It may connect to an adjacent/perimeter wall but
         # must not terminate on the mid-span of an axial main strut.
-        if not retained:
+        if not retained and allow_oblique_terminal_repair:
             terminal_brace = _direct_terminal_wall_to_wall_repair(
                 line,
                 preferred_face_code=preferred_face,
@@ -2644,7 +2792,7 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
 
         # If the terminal station cannot be retained, create an independent
         # member of a parallel wall-to-wall corner family.
-        if not retained:
+        if not retained and allow_oblique_terminal_repair:
             parallel_brace = _direct_adjacent_wall_parallel_repair(
                 line,
                 preferred_face_code=preferred_face,
@@ -2896,9 +3044,9 @@ def repair_concave_return_supports(project, config: SupportLayoutConfig | None =
             max_direct_strut_span_m=float(getattr(settings, "max_direct_strut_span_m", 24.0)),
             diagonal_brace_min_wall_length_m=float(getattr(settings, "diagonal_brace_min_wall_length_m", 18.0)),
             corner_diagonal_min_offset_m=float(getattr(settings, "corner_diagonal_min_offset_m", 3.5)),
-            corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 8.0)),
-            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.40)),
-            corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 2)),
+            corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 18.0)),
+            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.55)),
+            corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 4)),
             corner_diagonal_family_spacing_m=float(getattr(settings, "corner_diagonal_family_spacing_m", 3.0)),
             corner_diagonal_parallel_tolerance_deg=float(getattr(settings, "corner_diagonal_parallel_tolerance_deg", 5.0)),
             prefer_diagonal_braces=bool(getattr(settings, "prefer_diagonal_braces", True)),

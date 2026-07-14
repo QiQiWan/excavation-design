@@ -162,7 +162,7 @@ async function waitForTask(task: PitTask, onUpdate: (task: PitTask) => void): Pr
     await new Promise((resolve) => window.setTimeout(resolve, 700));
     current = await api.getTask(current.id);
     onUpdate(current);
-    if (Date.now() - started > 12 * 60 * 1000) throw new Error(`方案任务 ${current.title} 超时。`);
+    if (Date.now() - started > 35 * 60 * 1000) throw new Error(`方案任务 ${current.title} 超时。`);
   }
   return current;
 }
@@ -203,6 +203,9 @@ export default function SchemeComparisonPanel({
   const [batchError, setBatchError] = useState<string>();
   const [batchBusy, setBatchBusy] = useState(false);
   const selected = candidates.find((candidate) => String(candidate.id) === selectedId) ?? candidates[0];
+  const controlledCandidate = candidates.find((candidate) => String(candidate.variableSummary?.capabilityOutcome ?? '') === 'controlled_block');
+  const controlledAlternatives = (controlledCandidate?.variableSummary?.alternativeSystemRecommendations ?? []) as string[];
+  const shapeDiagnostics = toRecord(controlledCandidate?.variableSummary?.shapeDiagnostics);
 
   useEffect(() => {
     if (!selectedId && candidates[0]?.id) setSelectedId(String(candidates[0].id));
@@ -251,6 +254,12 @@ export default function SchemeComparisonPanel({
         {candidates.length ? <button className="secondary" disabled={batchBusy} onClick={() => void runParallelComparison()}>{batchBusy ? 'A/B/C 完整计算中…' : '完整计算 A/B/C'}</button> : null}
       </div>
     </div>
+
+    {controlledCandidate ? <div className="warning schemeStateWarning controlledTopologyWarning" role="alert">
+      <strong>当前平面未形成可计算的墙—墙轴压支撑闭环。</strong>
+      <span>平面类型：{String(shapeDiagnostics.classification ?? '复杂平面')}；系统已停止生成重复失败的 A/B/C 方案，并禁止通过任意斜撑或支撑中部 T/Y 节点强行补齐。</span>
+      {controlledAlternatives.length ? <span>建议结构体系：{controlledAlternatives.join('、')}。</span> : null}
+    </div> : null}
 
     {batchTasks.length ? <div className="schemeBatchProgress" aria-live="polite">
       {batchTasks.map((task, index) => <div key={task.id} className={`schemeTaskRow task-${task.status}`}>

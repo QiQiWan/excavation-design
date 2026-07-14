@@ -407,7 +407,11 @@ function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Pro
   const applyAndRecompute = (candidateId: string) => {
     const action = async () => {
       await api.applyWallLengthCandidate(project.id, candidateId, mode);
-      await api.runCalculation(project.id);
+      if (runTask) {
+        await runTask('正在由独立计算进程重新计算墙长方案', 'calculation_full', { topN: 0 });
+      } else {
+        await api.runCalculation(project.id);
+      }
       await load();
     };
     return runStep ? runStep('正在采纳设计长度建议并重新计算', action) : action();

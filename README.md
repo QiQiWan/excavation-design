@@ -1,4 +1,4 @@
-# PitGuard BIM Designer V3.26.0
+# PitGuard BIM Designer V3.27.0
 
 面向基坑围护结构方案设计、分阶段计算、规范审查、配筋与构造深化、三维复核以及 IFC/CAD/PDF 交付的工程设计辅助系统。
 
@@ -15,7 +15,7 @@ sudo bash start-linux.sh
 - 使用当前 Python 环境安装后端依赖；
 - 执行 `npm ci` 并构建生产前端；
 - 将前端构建到 `apps/web/dist`；
-- 创建并启动 `pitguard-api.service`；
+- 创建并启动 `pitguard-api.service` 与隔离计算服务 `pitguard-worker.service`；
 - 写入 `designer.eatrice.cn` 的 Nginx HTTPS 配置；
 - 自动生成自动化 API 密钥、应用登录账号、密码和会话密钥；
 - 执行后端健康检查、`nginx -t` 和 Nginx 重载。
@@ -30,7 +30,7 @@ sudo bash start-linux.sh
 私钥        /usr/crt/privkey.pem
 后端        127.0.0.1:8002
 数据库      runtime/pitguard.sqlite3
-服务        pitguard-api.service
+服务        pitguard-api.service / pitguard-worker.service
 ```
 
 常用覆盖方式：
@@ -49,6 +49,7 @@ sudo PITGUARD_DOMAIN=designer.eatrice.cn \
 bash status-production.sh
 sudo bash restart-production.sh
 sudo journalctl -u pitguard-api -f
+sudo journalctl -u pitguard-worker -f
 ```
 
 仅构建、不安装系统服务：
@@ -69,6 +70,18 @@ bash start-linux-dev.sh
 全部说明集中在 [`docs/README.md`](docs/README.md)。根目录只保留启动脚本、源码目录和本文件。
 
 
+
+
+## V3.27.0 多平面拓扑与隔离计算进程
+
+- 长条形端墙按围檩硬限值反算平行角撑族数量，160m×33m资格算例不再出现每层两端墙各一次的“拓扑 Fail 6”。
+- 支撑扫描线和角撑判定统一使用局部主轴，旋转长方形不再受全局X/Y包围盒影响。
+- L/T/U形、一般凹多边形和近方形不再用任意角度斜撑或支撑中部T/Y节点强行补齐；当前轴压杆模型无法闭合时仅返回一个受控阻断方案。
+- 支撑候选优化、完整计算和重型导出从Uvicorn API进程迁移到 `pitguard-worker.service`。计算进程超时、OOM或原生库崩溃时，登录、项目和健康检查仍由API服务提供。
+- 任务增加载荷哈希去重、SQLite原子领取、单重任务并发、CPU/内存cgroup限制和一次一进程内存回收。
+- 首次升级必须执行 `sudo bash start-linux.sh` 以安装新worker服务。
+
+详细说明见 [`docs/releases/V3_27_0_SHAPE_TOPOLOGY_ISOLATED_WORKER.md`](docs/releases/V3_27_0_SHAPE_TOPOLOGY_ISOLATED_WORKER.md)。
 
 ## V3.26.0 平行角撑与登录弹窗修复
 
