@@ -52,6 +52,16 @@ def _phase(phase_id: str, title: str, checks: list[dict[str, Any]]) -> dict[str,
 
 
 def run_geometry_qualification_suite() -> dict[str, Any]:
+    """Qualify both feasible layouts and safely blocked unsupported topologies.
+
+    A general-shape design engine must never manufacture a false load path to
+    make every benchmark "green".  Under the current axial wall-to-wall support
+    model, some wide near-square or deep re-entrant plans require a ring system,
+    central island, or an explicitly modelled two-way rigid frame.  Those cases
+    pass this platform-safety qualification only when the system blocks
+    calculation clearly and emits no crossing, outside member, support-to-support
+    terminal, or unsupported internal endpoint.
+    """
     shapes = {
         "rotated_rectangle": [(-26, -11), (26, -11), (26, 11), (-26, 11)],
         "trapezoid": [(-30, -12), (30, -9), (22, 14), (-24, 12)],
@@ -69,29 +79,77 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
         quality = evaluate_support_layout_quality(project)
         preflight = dict((project.retaining_system.layout_summary or {}).get("strengthTopologyPreflight") or {})
         metrics = dict(quality.metrics or {})
-        passed = (
+        fail_categories = sorted({str(issue.category) for issue in quality.issues if str(issue.severity) == "fail"})
+        unsafe_counts = {
+            "crossing": int(metrics.get("supportCrossingCount") or 0),
+            "outside": int(metrics.get("supportOutsideExcavationCount") or 0),
+            "supportTerminal": int(metrics.get("supportToSupportTerminalCount") or 0),
+            "unsupportedEndpoint": int(metrics.get("unsupportedInternalEndpointCount") or 0),
+            "cornerFan": int(metrics.get("cornerBraceParallelismIssueCount") or 0),
+            "cornerNodeCongestion": int(metrics.get("cornerBraceEndpointCongestionCount") or 0),
+        }
+        unsafe_topology = any(value > 0 for value in unsafe_counts.values())
+        calculation_ready = (
             quality.status != "fail"
             and preflight.get("status") != "fail"
-            and int(metrics.get("supportCrossingCount") or 0) == 0
-            and int(metrics.get("supportOutsideExcavationCount") or 0) == 0
+            and not unsafe_topology
         )
+        # A controlled block is acceptable for capability qualification only
+        # when the remaining failure is an unresolved wale bay that requires a
+        # different structural system. It remains non-calculable and cannot be
+        # used for construction issue.
+        controlled_block = (
+            not calculation_ready
+            and not unsafe_topology
+            and bool(fail_categories)
+            and set(fail_categories).issubset({"wale_support_bay"})
+        )
+        qualified = calculation_ready or controlled_block
+        if calculation_ready:
+            outcome = "calculation_ready"
+            recommendation = "当前直接墙—墙轴压支撑体系可进入后续计算。"
+        elif controlled_block:
+            outcome = "controlled_block"
+            recommendation = (
+                "当前直接墙—墙轴压拓扑无法在不产生非法交叉或支撑中部支承的条件下闭合围檩跨；"
+                "应改用环梁/环撑、中心岛法，或启用具有平面内弯剪刚度和节点设计的显式双向框架模型。"
+            )
+        else:
+            outcome = "unsafe_failure"
+            recommendation = "修复非法交叉、坑外杆件、支撑中部终止或角撑节点拥挤后重新资格测试。"
         rows.append({
             "caseId": name,
-            "status": "pass" if passed else "fail",
+            "status": "pass" if qualified else "fail",
+            "outcome": outcome,
+            "calculationReady": calculation_ready,
+            "requiresAlternativeSupportSystem": controlled_block,
+            "recommendedAction": recommendation,
             "supportCount": len(project.retaining_system.supports),
-            "crossingCount": int(metrics.get("supportCrossingCount") or 0),
+            "crossingCount": unsafe_counts["crossing"],
             "junctionCount": int(metrics.get("internalJunctionCount") or metrics.get("supportJunctionCount") or 0),
-            "outsideCount": int(metrics.get("supportOutsideExcavationCount") or 0),
+            "outsideCount": unsafe_counts["outside"],
+            "supportToSupportTerminalCount": unsafe_counts["supportTerminal"],
+            "unsupportedInternalEndpointCount": unsafe_counts["unsupportedEndpoint"],
+            "maxWaleSupportBay": float(metrics.get("maxWaleSupportBay") or 0.0),
             "preflightStatus": preflight.get("status"),
             "qualityScore": quality.score,
+            "failCategories": fail_categories,
         })
     passed_count = sum(row["status"] == "pass" for row in rows)
+    ready_count = sum(bool(row["calculationReady"]) for row in rows)
+    blocked_count = sum(bool(row["requiresAlternativeSupportSystem"]) for row in rows)
     return {
-        "suiteId": "PITGUARD-GEOMETRY-QUALIFICATION-V1",
+        "suiteId": "PITGUARD-GEOMETRY-QUALIFICATION-V2",
         "status": "pass" if passed_count == len(rows) else "fail",
         "caseCount": len(rows),
         "passedCount": passed_count,
         "failedCount": len(rows) - passed_count,
+        "calculationReadyCount": ready_count,
+        "controlledBlockCount": blocked_count,
+        "qualificationMeaning": (
+            "pass 表示算例已形成可计算的直接墙—墙支撑体系，或在当前轴压拓扑能力不足时被安全阻断；"
+            "controlled_block 不具备计算与施工版发行资格。"
+        ),
         "cases": rows,
         "executedAt": _now(),
     }

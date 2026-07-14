@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import gc
 from typing import Any
 
 from app.calculation.earth_pressure import calculate_lateral_pressure_profile
@@ -1268,13 +1270,19 @@ def _compare_top_support_candidates(project: Project, support_repair, top_n: int
     # than three serial solves. Keep true parallelism for compact projects and use
     # deterministic serial evaluation for large/irregular retaining systems.
     complexity = len(project.retaining_system.supports) + 8 * len(project.retaining_system.diaphragm_walls)
-    max_workers = max(1, min(top_n, len(candidates))) if complexity <= 160 else 1
+    configured_workers = max(1, min(3, int(os.getenv("PITGUARD_CANDIDATE_WORKERS", "1"))))
+    max_workers = max(1, min(configured_workers, top_n, len(candidates))) if complexity <= 160 else 1
     if max_workers == 1:
         for item in enumerate(candidates):
             try:
                 outputs.append(worker(item))
             except Exception as exc:
                 outputs.append({"schemeLabel": _candidate_label(item[0]), "error": str(exc)})
+            finally:
+                # Each candidate builds a deep project copy and dense NumPy
+                # matrices. Release the unreachable graph before starting the
+                # next scheme on small-memory production instances.
+                gc.collect()
     else:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {executor.submit(worker, item): item[0] for item in enumerate(candidates)}
@@ -1351,7 +1359,13 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         current_quality = evaluate_support_layout_quality(project)
         hard_geometry_failure = any(
             issue.severity == "fail"
-            and issue.category in {"support_spacing", "support_span", "wale_support_bay", "support_crossing", "support_outside_excavation", "obstacle_clearance", "temporary_column", "replacement_path"}
+            and issue.category in {
+                "support_spacing", "support_span", "wale_support_bay", "support_crossing",
+                "support_outside_excavation", "obstacle_clearance", "temporary_column",
+                "replacement_path", "support_to_support_terminal",
+                "unsupported_internal_endpoint", "corner_brace_fan_geometry",
+                "corner_brace_wall_node_congestion",
+            }
             for issue in current_quality.issues
         )
         if hard_geometry_failure or not project.retaining_system.supports:
@@ -1393,6 +1407,30 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             project.retaining_system.support_layout_repair = support_repair
     else:
         support_repair = project.retaining_system.support_layout_repair if project.retaining_system else None
+
+    # The current global solver treats ordinary struts as axial wall-to-wall
+    # members. A branch ending at another strut midspan has no compatible
+    # in-plane transverse stiffness or reaction in that model, even when a
+    # temporary column exists at the plan node. Refuse to calculate such a
+    # topology instead of assigning it a fictitious axial support.
+    load_path_quality = evaluate_support_layout_quality(project)
+    invalid_load_path = [
+        issue for issue in load_path_quality.issues
+        if issue.severity == "fail"
+        and issue.category in {
+            "support_to_support_terminal",
+            "unsupported_internal_endpoint",
+            "support_crossing",
+            "support_outside_excavation",
+        }
+    ]
+    if invalid_load_path:
+        categories = sorted({issue.category for issue in invalid_load_path})
+        raise ValueError(
+            "水平支撑传力路径不成立，已阻断计算：" + "、".join(categories)
+            + "。普通轴压支撑必须两端落在围护墙/围檩/环梁节点；端墙应采用直接对撑或墙—墙长斜撑。"
+        )
+
     case, support_case_sync = synchronize_calculation_case_supports(project, requested_case)
     if support_case_sync.get("synchronized"):
         replaced = False

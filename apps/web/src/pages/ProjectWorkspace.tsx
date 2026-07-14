@@ -917,7 +917,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
         project={project}
         compact={viewMode === 'compact'}
         onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))}
-        onRunComparison={() => runTask('正在并行计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })}
+        onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })}
         onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))}
         onRefresh={onRefresh}
       />
@@ -928,7 +928,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
 
 function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
   const [open, setOpen] = useState(false);
-  const runAll = () => runTask('一键计算校核', 'calculation_full', { topN: 3 });
+  const runAll = () => runTask('一键计算校核', 'calculation_full', { topN: 0 });
   return (
     <div>
       <div className="actionStrip simplifiedActions">
@@ -936,8 +936,8 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, se
         <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
         
       </div>
-      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runStep('正在运行计算和规范子集校核', () => api.runCalculation(project.id))} disabled={!project.retainingSystem}>仅运行计算</button><button onClick={() => runTask('正在并行计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
-      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))} onRunComparison={() => runTask('正在并行计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
+      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runStep('正在运行计算和规范子集校核', () => api.runCalculation(project.id))} disabled={!project.retainingSystem}>仅运行计算</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
+      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runStep('正在生成 A/B/C 整体候选方案', () => api.optimizeSupports(project.id, { preset: 'balanced' }))} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
       <CalculationRecoveryPanel project={project} runStep={runStep} />
       <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />
       {viewMode === 'professional' ? <CalculationTracePanel project={project} /> : <details className="focusDetails"><summary>查看完整计算追溯链、公式和规范条文</summary><CalculationTracePanel project={project} /></details>}

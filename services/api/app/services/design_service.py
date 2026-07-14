@@ -486,18 +486,39 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
     system.layout_summary["planShapeDiagnostics"] = plan_shape_diagnostics(list(excavation.outline.points))
     system.layout_summary["designNotes"] = list(dict.fromkeys(design_notes))
     system.layout_summary["warningPolicy"] = "仅保留无法由当前算法闭环处理的工程风险；已自动修复动作进入设计证据。"
+    preflight_status = (
+        "fail"
+        if str(wale_preflight.get("status")) == "fail" or bool(concave_preflight.get("missingFacesAfter"))
+        else "warning"
+        if str(wale_preflight.get("status")) == "warning"
+        else "pass"
+    )
+    requires_alternative_system = (
+        preflight_status == "fail"
+        and str(wale_preflight.get("status")) == "fail"
+        and not bool(concave_preflight.get("missingFacesAfter"))
+    )
     system.layout_summary["strengthTopologyPreflight"] = {
         "executed": True,
         "concaveReturnSupport": concave_preflight,
         "waleSupportBay": wale_preflight,
-        "status": (
-            "fail"
-            if str(wale_preflight.get("status")) == "fail" or bool(concave_preflight.get("missingFacesAfter"))
-            else "warning"
-            if str(wale_preflight.get("status")) == "warning"
-            else "pass"
+        "status": preflight_status,
+        "calculationReady": preflight_status != "fail",
+        "requiresAlternativeSupportSystem": requires_alternative_system,
+        "alternativeSupportSystemReason": (
+            "直接墙—墙轴压支撑在当前几何中无法同时满足围檩支点间距和零非法交叉；系统已阻断以避免生成支撑中部 T/Y 伪支座。"
+            if requires_alternative_system else None
+        ),
+        "recommendedSupportSystems": (
+            ["ring_strut", "central_island", "explicit_two_way_frame"]
+            if requires_alternative_system else []
         ),
     }
+    if requires_alternative_system:
+        system.warnings = list(dict.fromkeys([
+            *system.warnings,
+            "当前轴压墙—墙支撑拓扑无法闭合全部围檩跨，已安全阻断自动计算；请采用环撑/中心岛，或建立可承担平面内弯剪的显式双向框架模型。",
+        ]))
     system.replacement_path = [
         {"step": 1, "name": "底板形成后保留全部内支撑", "action": "bottom_slab_cast", "activeSupportLevels": sorted({s.level_index for s in system.supports})},
         {"step": 2, "name": "地下室结构达到强度后自下而上换撑", "action": "replace_from_lowest_level", "removeOrder": sorted({s.level_index for s in system.supports}, reverse=True)},

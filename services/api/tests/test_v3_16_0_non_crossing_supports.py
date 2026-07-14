@@ -97,7 +97,7 @@ def test_non_ring_crossing_is_hard_failure_and_diagnostics_identify_it() -> None
     assert "NON_RING_SUPPORT_CROSSING" in codes
 
 
-def test_ty_node_with_column_is_valid_for_quality_and_optimizer_hard_constraints() -> None:
+def test_ty_node_with_column_is_rejected_without_explicit_frame_transfer_model() -> None:
     project = _square_project()
     main = _member("SP-M", (0.0, 10.0), (20.0, 10.0), start_face="S4", end_face="S2")
     branch = _member(
@@ -114,8 +114,12 @@ def test_ty_node_with_column_is_valid_for_quality_and_optimizer_hard_constraints
     quality = evaluate_support_layout_quality(project)
     assert not [issue for issue in quality.issues if issue.category == "support_crossing" and issue.severity == "fail"]
     hard = _hard_constraints(project, quality.metrics, project.retaining_system)
-    assert hard["endpointsOnWaleOrRingNodes"] is True
-    assert hard["missingEndpointRatio"] == 0.0
+    assert quality.metrics["supportToSupportTerminalCount"] == 1
+    assert any(issue.category == "support_to_support_terminal" and issue.severity == "fail" for issue in quality.issues)
+    assert hard["endpointsOnWaleOrRingNodes"] is False
+    assert hard["supportNoSupportToSupportTerminal"] is False
+    assert hard["missingEndpointRatio"] > 0.0
+    assert hard["passed"] is False
 
 
 def test_generated_non_ring_system_has_no_proper_crossings() -> None:

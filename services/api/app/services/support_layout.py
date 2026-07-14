@@ -82,7 +82,7 @@ class SupportLayoutConfig:
             corner_diagonal_family_spacing_m=max(2.5, min(6.0, float(self.corner_diagonal_family_spacing_m))),
             corner_diagonal_parallel_tolerance_deg=max(2.0, min(12.0, float(self.corner_diagonal_parallel_tolerance_deg))),
             prefer_diagonal_braces=bool(self.prefer_diagonal_braces),
-            allow_wale_repair_t_y_nodes=bool(self.allow_wale_repair_t_y_nodes),
+            allow_wale_repair_t_y_nodes=False,
             topology_strategy=strategy,
             transition_zone_spacing_factor=max(0.55, min(1.0, float(self.transition_zone_spacing_factor))),
             transition_zone_influence_m=max(3.0, min(15.0, float(self.transition_zone_influence_m))),
@@ -889,7 +889,9 @@ def _finalize_retained_support_endpoints(
             setattr(line, f"{side}_wall_connection", wall_point)
             setattr(line, f"{side}_wall_clearance_m", round(float(distance), 4))
         line.centerline_offset_m = target
-        line.topology_family = config.topology_strategy
+        if not line.topology_family:
+            line.topology_family = "hybrid_diagonal" if line.role == "corner_diagonal" else "direct_grid"
+        line.load_path_class = "wall_to_wall" if line.role != "ring_strut" else "wall_to_ring"
         line.span_length = round(_distance(line.start, line.end), 3)
     messages: list[str] = []
     if recovered:
@@ -933,8 +935,11 @@ def _prune_dangling_non_ring_supports(
         for line in retained:
             if line.role == "ring_strut":
                 continue
-            start_ok = bool(line.start_face_code) or _endpoint_connected_to_retained_support(line.start, line, retained)
-            end_ok = bool(line.end_face_code) or _endpoint_connected_to_retained_support(line.end, line, retained)
+            # The active solver treats non-ring supports as axial members.
+            # Both ends therefore require a real wall/wale bearing; an endpoint
+            # on another support is not an admissible reaction point.
+            start_ok = bool(line.start_face_code)
+            end_ok = bool(line.end_face_code)
             if not (start_ok and end_ok):
                 invalid.append(line)
         if not invalid:
@@ -949,8 +954,8 @@ def _prune_dangling_non_ring_supports(
             roles[line.role] = roles.get(line.role, 0) + 1
         role_text = "、".join(f"{role} {count} 条" for role, count in sorted(roles.items()))
         messages.append(
-            f"已删除 {len(removed)} 条无有效墙端或T/Y节点的悬空非环形支撑（{role_text}），"
-            "避免凹角切线端点进入计算模型。"
+            f"已删除 {len(removed)} 条未形成双墙端支承的非环形支撑（{role_text}），"
+            "水平支撑不得以另一根轴向支撑中部作为反力点。"
         )
     return retained, messages
 
@@ -1727,33 +1732,14 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
         lines, warnings = _ring_layout(points, obstacles)
     else:
         main_lines, warnings = _main_strut_layout(points, obstacles, config.target_main_support_spacing_m, config=config)
-        balanced_near_square = (
-            config.topology_strategy == "balanced_grid"
-            and float(shape.get("aspectRatio") or 999.0) <= 1.35
-            and float(shape.get("shortSpanM") or 0.0) >= 24.0
-        )
-        force_secondary = config.topology_strategy == "bidirectional_grid" or balanced_near_square
-        secondary_lines, secondary_warnings = _secondary_grid_layout(points, obstacles, excavation, force=force_secondary)
-        if balanced_near_square and secondary_lines:
+        # Automatic bidirectional T/Y grids are disabled because the current
+        # solver models supports as axial members. A member ending on another
+        # strut would require an explicit in-plane frame/transfer-beam model.
+        secondary_lines: list[SupportLayoutLine] = []
+        secondary_warnings: list[str] = []
+        if config.topology_strategy == "bidirectional_grid":
             secondary_warnings.append(
-                "近方形大平面已采用非交叉双向T/Y网格：正交支撑在首个主支撑节点终止，不允许平面穿越。"
-            )
-        if config.topology_strategy == "direct_grid":
-            secondary_lines = []
-            secondary_warnings = []
-        # Orthogonal wall-to-wall lines are converted into terminal short struts
-        # that stop at a main-strut node.  This preserves return-wall restraint
-        # without allowing a support to pass through another support in plan.
-        secondary_lines, converted_secondary, omitted_secondary = _terminate_at_existing_support_nodes(
-            secondary_lines, main_lines
-        )
-        if converted_secondary:
-            secondary_warnings.append(
-                f"已将 {converted_secondary} 条正交次对撑转换为墙端至主对撑节点的非交叉短撑。"
-            )
-        if omitted_secondary:
-            secondary_warnings.append(
-                f"有 {omitted_secondary} 个交叉后残余短段小于可施工长度，已不纳入结构方案。"
+                "双向T/Y网格候选已停用：当前求解器不支持水平支撑中部横向受力；已改用墙—墙直撑/斜撑体系。"
             )
         warnings.extend(secondary_warnings)
         return_wall_lines, return_wall_warnings = _concave_return_wall_layout(
@@ -1763,15 +1749,36 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
             [*main_lines, *secondary_lines],
             config.target_main_support_spacing_m,
         )
-        return_wall_lines, converted_returns, omitted_returns = _terminate_at_existing_support_nodes(
-            return_wall_lines, [*main_lines, *secondary_lines]
-        )
-        if converted_returns:
-            return_wall_warnings.append(
-                f"已将 {converted_returns} 条回墙法向支撑转换为止于既有支撑节点的非交叉短撑。"
+        _attach_faces(return_wall_lines, excavation)
+        direct_returns: list[SupportLayoutLine] = []
+        return_blockers = [*main_lines, *secondary_lines]
+        omitted_returns = 0
+        repaired_returns = 0
+        for return_line in return_wall_lines:
+            direct = (
+                bool(return_line.start_face_code) and bool(return_line.end_face_code)
+                and not any(_proper_layout_intersection(return_line, blocker) is not None for blocker in return_blockers if blocker.role != "ring_strut")
             )
+            retained = return_line if direct else _direct_terminal_wall_to_wall_repair(
+                return_line,
+                preferred_face_code=str(return_line.start_face_code or return_line.end_face_code or ""),
+                excavation=excavation,
+                obstacles=obstacles,
+                blockers=return_blockers,
+                config=config,
+            )
+            if retained is None:
+                omitted_returns += 1
+                continue
+            if retained is not return_line:
+                repaired_returns += 1
+            direct_returns.append(retained)
+            return_blockers.append(retained)
+        return_wall_lines = direct_returns
+        if repaired_returns:
+            return_wall_warnings.append(f"已将 {repaired_returns} 条回墙支撑改为两端落墙的端部长斜撑。")
         if omitted_returns:
-            return_wall_warnings.append(f"已删除 {omitted_returns} 个过短回墙支撑残段。")
+            return_wall_warnings.append(f"有 {omitted_returns} 条回墙候选无法形成无交叉墙—墙传力路径，已阻断并要求调整支撑分仓。")
         warnings.extend(return_wall_warnings)
         diagonal_lines = _corner_diagonal_layout(points, obstacles, config)
         if diagonal_lines:
@@ -2215,6 +2222,128 @@ def _targeted_wale_bay_repair_lines(
     return lines
 
 
+def _direct_terminal_wall_to_wall_repair(
+    line: SupportLayoutLine,
+    *,
+    preferred_face_code: str,
+    excavation,
+    obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
+    blockers: list[SupportLayoutLine],
+    config: SupportLayoutConfig,
+) -> SupportLayoutLine | None:
+    """Replace a wall-to-strut stub with an independent wall-to-wall diagonal.
+
+    The preferred endpoint remains on the unsupported terminal wall. Candidate
+    rays are cast toward surrounding walls at oblique angles. Only members with
+    two real wall/wale bearings, no proper same-level crossing, sufficient wall
+    node separation, and an entirely in-pit centreline are accepted.
+    """
+    segments = list(getattr(excavation, "segments", []) or [])
+    points = _dedup_points(list(excavation.outline.points))
+    index_by_code = {str(segment.name): index for index, segment in enumerate(segments)}
+    face_index = index_by_code.get(str(preferred_face_code or ""))
+    if face_index is None or not points:
+        return None
+    segment = segments[face_index]
+    if str(line.start_face_code or "") == str(preferred_face_code):
+        wall_point = line.start_wall_connection or line.start
+    elif str(line.end_face_code or "") == str(preferred_face_code):
+        wall_point = line.end_wall_connection or line.end
+    else:
+        wall_point = line.start_wall_connection or line.start
+    station, distance_to_face = _point_segment_projection(wall_point, segment.start, segment.end)
+    if distance_to_face > 1.5:
+        return None
+    wall_point = _point_at(segment.start, segment.end, max(0.05, min(float(segment.length) - 0.05, station)))
+    outward = getattr(segment, "outward_normal", None)
+    if outward is not None:
+        inward_x, inward_y = -float(outward.x), -float(outward.y)
+    else:
+        tx, ty = _unit_vector(segment.start, segment.end)
+        orientation = 1.0 if _signed_area(points) > 0 else -1.0
+        inward_x, inward_y = -orientation * ty, orientation * tx
+    norm = max(math.hypot(inward_x, inward_y), EPS)
+    inward_x, inward_y = inward_x / norm, inward_y / norm
+    origin = Point2D(x=wall_point.x + inward_x * 0.08, y=wall_point.y + inward_y * 0.08)
+    minimum_gap = max(1.8, float(config.support_min_station_separation_m) * 0.80)
+
+    def wall_endpoint_rows() -> list[tuple[str, Point2D]]:
+        rows: list[tuple[str, Point2D]] = []
+        for item in blockers:
+            start_connection = item.start_wall_connection if isinstance(item.start_wall_connection, Point2D) else item.start
+            end_connection = item.end_wall_connection if isinstance(item.end_wall_connection, Point2D) else item.end
+            for code, point in ((item.start_face_code, start_connection), (item.end_face_code, end_connection)):
+                if code:
+                    rows.append((str(code), point))
+        return rows
+
+    existing_wall_nodes = wall_endpoint_rows()
+    candidates: list[tuple[float, float, float, SupportLayoutLine]] = []
+    # Steep oblique rays are intentionally tried before the wall-normal ray:
+    # they can reach the adjacent perimeter before crossing the first main strut
+    # and form a direct axial load path for a terminal wall.
+    for angle_deg in (-75, 75, -70, 70, -65, 65, -60, 60, -55, 55, -50, 50, -45, 45, -35, 35):
+        angle = math.radians(angle_deg)
+        dx = inward_x * math.cos(angle) - inward_y * math.sin(angle)
+        dy = inward_x * math.sin(angle) + inward_y * math.cos(angle)
+        hits: list[tuple[float, Point2D, int]] = []
+        for edge_index, (edge_a, edge_b) in enumerate(zip(points, points[1:] + points[:1])):
+            other_face = str(getattr(segments[edge_index], "name", "")) if edge_index < len(segments) else ""
+            if other_face == str(preferred_face_code):
+                continue
+            hit = _ray_segment_intersection(origin, (dx, dy), edge_a, edge_b)
+            if hit and hit[0] > 0.25:
+                hits.append((hit[0], hit[1], edge_index))
+        if not hits:
+            continue
+        _, end_wall, edge_index = min(hits, key=lambda row: row[0])
+        end_face = str(getattr(segments[edge_index], "name", ""))
+        if not end_face or end_face == str(preferred_face_code):
+            continue
+        span = _distance(wall_point, end_wall)
+        if span < max(MIN_MAIN_STRUT_SPAN_M, 3.0) or span > min(45.0, float(config.max_direct_strut_span_m) * 1.5):
+            continue
+        end_inside = Point2D(x=end_wall.x - dx * 0.08, y=end_wall.y - dy * 0.08)
+        if not _line_segment_samples_inside(origin, end_inside, points):
+            continue
+        if not _line_avoids_obstacles(origin, end_inside, obstacles):
+            continue
+        candidate = SupportLayoutLine(
+            role="secondary_strut",
+            start=Point2D(x=round(wall_point.x, 4), y=round(wall_point.y, 4)),
+            end=Point2D(x=round(end_wall.x, 4), y=round(end_wall.y, 4)),
+            span_length=round(span, 3),
+            bay_spacing=None,
+            layout_note=(
+                f"端墙直接墙—墙斜撑修复：墙面 {preferred_face_code} 的控制支点通过长斜撑连接至墙面 {end_face}；"
+                "两端均落在围护墙/围檩节点，不向既有水平支撑中部施加横向集中力，且不得截断至另一水平支撑。"
+            ),
+            start_face_code=str(preferred_face_code),
+            end_face_code=end_face,
+            start_wall_connection=Point2D(x=round(wall_point.x, 4), y=round(wall_point.y, 4)),
+            end_wall_connection=Point2D(x=round(end_wall.x, 4), y=round(end_wall.y, 4)),
+            topology_family="hybrid_diagonal",
+            design_zone="terminal-face",
+            station_chainage_m=round(float(station), 3),
+            local_clear_span_m=round(span, 3),
+            placement_reason="terminal_face_wall_to_wall_diagonal",
+            load_path_class="wall_to_wall",
+        )
+        if any(_proper_layout_intersection(candidate, blocker) is not None for blocker in blockers if blocker.role != "ring_strut"):
+            continue
+        if any(code == end_face and _distance(point, end_wall) < minimum_gap for code, point in existing_wall_nodes):
+            continue
+        if any(code == str(preferred_face_code) and _distance(point, wall_point) < minimum_gap * 0.55 for code, point in existing_wall_nodes):
+            continue
+        # Prefer a shorter member with a meaningful normal component and avoid
+        # extremely shallow braces that create large local wale forces.
+        normal_component = abs(dx * inward_x + dy * inward_y)
+        candidates.append((span, -normal_component, abs(abs(angle_deg) - 60.0), candidate))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda row: (row[0], row[1], row[2]))[3]
+
+
 def _direct_adjacent_wall_parallel_repair(
     line: SupportLayoutLine,
     *,
@@ -2475,14 +2604,7 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
             topology_family=item.topology_family,
         ))
     lines: list[SupportLayoutLine] = []
-    # Concave plans can require an explicit bidirectional grid/return-wall node
-    # where a direct wall-to-wall brace cannot remain inside the polygon.  This
-    # fallback is limited to non-convex geometry; convex end bays keep the
-    # direct wall-to-wall contract by default.
-    shape_info = plan_shape_diagnostics(points)
-    aspect_ratio = float(shape_info.get("aspectRatio") or 999.0)
-    concave_grid_fallback = int(shape_info.get("concaveVertexCount") or 0) > 0
-    near_square_grid_fallback = aspect_ratio <= 1.35
+    # All automatically generated repair members must retain a direct wall-to-wall load path.
     converted_repair_lines = 0
     omitted_repair_segments = 0
     for line in targeted_lines:
@@ -2505,10 +2627,23 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
         if original_direct:
             retained = [line]
 
-        # If the direct cross-pit line conflicts with the local topology, create
-        # an independent member of a parallel wall-to-wall corner family.
-        # This avoids applying a transverse point load to a main strut that is
-        # otherwise designed as an axial compression member.
+        # First seek a long terminal wall-to-wall diagonal that preserves the
+        # failing wall station. It may connect to an adjacent/perimeter wall but
+        # must not terminate on the mid-span of an axial main strut.
+        if not retained:
+            terminal_brace = _direct_terminal_wall_to_wall_repair(
+                line,
+                preferred_face_code=preferred_face,
+                excavation=excavation,
+                obstacles=obstacles,
+                blockers=blockers,
+                config=config,
+            )
+            if terminal_brace is not None:
+                retained = [terminal_brace]
+
+        # If the terminal station cannot be retained, create an independent
+        # member of a parallel wall-to-wall corner family.
         if not retained:
             parallel_brace = _direct_adjacent_wall_parallel_repair(
                 line,
@@ -2521,14 +2656,8 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
             if parallel_brace is not None:
                 retained = [parallel_brace]
 
-        # Support-to-support T/Y nodes are an explicit frame/grid option only.
-        # They are never introduced silently by the generic wale-bay repair.
-        if not retained and (config.allow_wale_repair_t_y_nodes or concave_grid_fallback or near_square_grid_fallback):
-            retained, converted, omitted = _terminate_from_preferred_wall(
-                line, blockers, preferred_face,
-                minimum_stub_length_m=MIN_CORNER_BRACE_LEG_M + 0.7 * config.support_wall_clearance_m,
-                excavation=excavation,
-            )
+        # No automatic T/Y fallback is permitted. A temporary column does not
+        # provide the in-plane transverse load path required at a strut midspan.
         if not retained:
             omitted += 1
 
@@ -2563,15 +2692,21 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
         trim_warnings.append(f"围檩跨修复中删除 {omitted_repair_segments} 个过短交叉残段。")
     if not lines:
         return {
-            "changed": False,
+            "changed": bool(removed_legacy_t_y),
             "addedSupportCount": 0,
+            "removedLegacyTYSupportCount": removed_legacy_t_y,
             "status": str(before.get("status") or "manual_review"),
             "failingFaces": sorted(failing_faces),
             "auditBefore": before,
             "auditAfter": before,
             "warnings": trim_warnings,
             "iterationCount": _iteration + 1,
-            "action": "围檩跨仍需专业复核；当前几何约束下未生成新的可施工非交叉支撑。",
+            "action": (
+                f"已移除 {removed_legacy_t_y} 根旧版墙—支撑 T/Y 短撑；"
+                "围檩跨仍需专业复核，当前几何约束下未生成新的可施工非交叉墙—墙支撑。"
+                if removed_legacy_t_y
+                else "围檩跨仍需专业复核；当前几何约束下未生成新的可施工非交叉支撑。"
+            ),
         }
 
     level_elevations = {int(item.level_index): float(item.elevation) for item in system.supports}
@@ -2637,19 +2772,19 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
                 centerline_offset_m=line.centerline_offset_m,
                 start_wall_clearance_m=line.start_wall_clearance_m,
                 end_wall_clearance_m=line.end_wall_clearance_m,
-                topology_family=(
-                    "hybrid_diagonal"
-                    if line.start_face_code and line.end_face_code
-                    else "bidirectional_grid" if line.role == "secondary_strut"
-                    else "hybrid_diagonal"
-                ),
+                topology_family="hybrid_diagonal" if line.role != "main_strut" else "direct_grid",
+                design_zone=line.design_zone,
+                station_chainage_m=line.station_chainage_m,
+                local_clear_span_m=line.local_clear_span_m or line.span_length,
+                placement_reason=line.placement_reason,
+                load_path_class="wall_to_wall",
                 force_distribution_note=(
                     "角部墙—墙斜撑按围檩连续梁节点反力与全局联立矩阵共同设计。"
                     if line.role == "corner_diagonal"
                     else (
-                        "端部平行角撑两端分别支承于围护墙/围檩的独立节点，按轴压构件及全局联立矩阵共同设计。"
-                        if line.start_face_code and line.end_face_code
-                        else "墙面法向短撑止于显式 T/Y 节点；按围檩节点反力与全局联立矩阵共同设计。"
+                        "端墙长斜撑两端分别支承于围护墙/围檩独立节点，按直接轴压传力路径和全局联立矩阵共同设计；不得以既有支撑中部作为平面内支座。"
+                        if line.placement_reason == "terminal_face_wall_to_wall_diagonal"
+                        else "次支撑两端分别支承于围护墙/围檩的独立节点，按轴压构件及全局联立矩阵共同设计。"
                     )
                 ),
                 section_type="rc_rectangular",
@@ -2671,7 +2806,7 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
     )
     action = (
         f"围檩支点间距诊断在 {len(failing_faces)} 个墙面发现超限，移除 {removed_legacy_t_y} 根旧版墙—支撑短撑，"
-        f"自动增补 {len(added)} 根独立平行墙—墙角撑；最大支点间距由 "
+        f"自动增补 {len(added)} 根独立墙—墙直撑/斜撑；最大支点间距由 "
         f"{before.get('maxBayM', 0)}m 降至 {after.get('maxBayM', 0)}m。"
     )
     system.layout_summary = dict(system.layout_summary or {})
@@ -2806,23 +2941,34 @@ def repair_concave_return_supports(project, config: SupportLayoutConfig | None =
     )
     _attach_faces(generated_lines, excavation)
     retained_returns: list[SupportLayoutLine] = []
-    converted_returns = 0
+    repaired_returns = 0
     omitted_returns = 0
+    blockers = list(existing_lines)
     for line in generated_lines:
         preferred_face = str(line.start_face_code or line.end_face_code or "")
-        retained, converted, omitted = _terminate_from_preferred_wall(
-            line, existing_lines, preferred_face,
-            minimum_stub_length_m=MIN_CORNER_BRACE_LEG_M + 0.7 * config.support_wall_clearance_m,
-            excavation=excavation,
+        direct = (
+            bool(line.start_face_code) and bool(line.end_face_code)
+            and not any(_proper_layout_intersection(line, blocker) is not None for blocker in blockers if blocker.role != "ring_strut")
         )
-        retained_returns.extend(retained)
-        converted_returns += converted
-        omitted_returns += omitted
+        retained = line if direct else _direct_terminal_wall_to_wall_repair(
+            line,
+            preferred_face_code=preferred_face,
+            excavation=excavation,
+            obstacles=obstacles,
+            blockers=blockers,
+            config=config,
+        )
+        if retained is None:
+            omitted_returns += 1
+            continue
+        repaired_returns += int(retained is not line)
+        retained_returns.append(retained)
+        blockers.append(retained)
     generated_lines, residual_crossing_warnings = _remove_crossing_lines(retained_returns)
-    if converted_returns:
-        warnings.append(f"凹形回墙修复中有 {converted_returns} 条支撑改为止于既有支撑节点的非交叉短撑。")
+    if repaired_returns:
+        warnings.append(f"凹形回墙修复中有 {repaired_returns} 条支撑改为两端落墙的端部斜撑。")
     if omitted_returns:
-        warnings.append(f"凹形回墙修复中删除 {omitted_returns} 个过短交叉残段。")
+        warnings.append(f"凹形回墙修复中有 {omitted_returns} 条候选无法形成无交叉墙—墙路径，保留为专业复核阻断项。")
     warnings.extend(residual_crossing_warnings)
     _attach_faces(generated_lines, excavation)
     warnings.extend(_orthogonalize_wall_to_node_secondary(generated_lines, excavation, reference_lines=existing_lines))
@@ -2874,8 +3020,9 @@ def repair_concave_return_supports(project, config: SupportLayoutConfig | None =
                     centerline_offset_m=line.centerline_offset_m,
                     start_wall_clearance_m=line.start_wall_clearance_m,
                     end_wall_clearance_m=line.end_wall_clearance_m,
-                    topology_family="bidirectional_grid",
-                    force_distribution_note="凹形回墙局部法向短撑止于显式 T/Y 节点；按围檩连续梁节点反力和全局矩阵复核。",
+                    topology_family="hybrid_diagonal",
+                    load_path_class="wall_to_wall",
+                    force_distribution_note="凹形回墙支撑两端直接支承于围护墙/围檩，按轴压构件、围檩节点反力和全局矩阵复核。",
                     section_type="rc_rectangular",
                     section=SectionDefinition(width=1.8, height=1.8, name="1800x1800 RC"),
                     material=MaterialDefinition(name="Concrete", grade="C40"),

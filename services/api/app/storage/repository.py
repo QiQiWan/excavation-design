@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import os
 
 from fastapi import HTTPException, Request
 
@@ -68,6 +69,33 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _calculation_result_retention() -> int:
+    try:
+        return max(1, min(10, int(os.getenv("PITGUARD_CALCULATION_RESULT_RETENTION", "1"))))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _compact_calculation_history(project: Project) -> None:
+    limit = _calculation_result_retention()
+    if len(project.calculation_results) <= limit:
+        return
+    removed = project.calculation_results[:-limit]
+    archive = list(project.advanced_engineering.get("calculationResultArchive", []) or [])
+    for item in removed:
+        archive.append({
+            "id": item.id,
+            "createdAt": getattr(item, "calculated_at", None),
+            "calculationCaseId": getattr(item, "case_id", None),
+            "resultHash": getattr(item, "result_hash", None),
+            "supportTopologyHash": getattr(item, "support_topology_hash", None),
+            "governingValues": item.governing_values.model_dump(mode="json", by_alias=True) if getattr(item, "governing_values", None) else {},
+            "checkSummary": dict(getattr(item, "check_summary", {}) or {}),
+        })
+    project.advanced_engineering["calculationResultArchive"] = archive[-50:]
+    project.calculation_results = project.calculation_results[-limit:]
+
+
 class ProjectRepository:
     def __init__(self, store: SQLiteProjectStore | None = None, *, default_actor: str = "system") -> None:
         self.store = store or SQLiteProjectStore()
@@ -87,6 +115,7 @@ class ProjectRepository:
         summary: str = "Project snapshot saved",
     ) -> Project:
         project.updated_at = _utc_now()
+        _compact_calculation_history(project)
         try:
             revision = self.store.upsert(
                 project.model_dump(mode="json", by_alias=True),
@@ -113,8 +142,16 @@ class ProjectRepository:
         if not data:
             return None
         project = Project.model_validate(data)
-        if _migrate_loaded_project(project):
-            self.store.upsert(project.model_dump(mode="json", by_alias=True))
+        migrated = _migrate_loaded_project(project)
+        history_before = len(project.calculation_results)
+        _compact_calculation_history(project)
+        if migrated or len(project.calculation_results) != history_before:
+            self.store.upsert(
+                project.model_dump(mode="json", by_alias=True),
+                actor="system",
+                action="project.compact_calculation_history",
+                summary=f"Calculation result retention compacted to {len(project.calculation_results)} full records",
+            )
         return project
 
     def require(self, project_id: str) -> Project:

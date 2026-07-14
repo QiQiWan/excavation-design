@@ -4,12 +4,20 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import RLock
+from threading import RLock, BoundedSemaphore
 from typing import Any, Callable
 from uuid import uuid4
 import traceback
 import hashlib
 import shutil
+import os
+import gc
+import ctypes
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows compatibility
+    resource = None  # type: ignore[assignment]
+from contextlib import nullcontext
 
 from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project, run_single_candidate_calculation
 from app.drawings.cad_export import export_construction_cad_package, export_construction_svg_package
@@ -42,6 +50,38 @@ TaskStatus = str
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 32) -> int:
+    try:
+        return max(minimum, min(maximum, int(os.getenv(name, str(default)))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _process_memory_mb() -> float:
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as stream:
+            for line in stream:
+                if line.startswith("VmRSS:"):
+                    return round(float(line.split()[1]) / 1024.0, 2)
+    except OSError:
+        pass
+    if resource is not None:
+        value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return round(float(value) / 1024.0, 2)
+    return 0.0
+
+
+def _release_process_memory() -> None:
+    gc.collect()
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        trim = getattr(libc, "malloc_trim", None)
+        if trim is not None:
+            trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 @dataclass
@@ -120,7 +160,16 @@ class TaskManager:
         self._lock = RLock()
         self._project_locks: dict[str, RLock] = {}
         self._store = SQLiteTaskStore()
-        self._executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="pitguard-task")
+        self._worker_count = _env_int("PITGUARD_TASK_WORKERS", 2, 1, 8)
+        self._heavy_concurrency = _env_int("PITGUARD_HEAVY_TASK_CONCURRENCY", 1, 1, 2)
+        self._memory_soft_limit_mb = _env_int("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB", 5600, 1024, 65536)
+        self._heavy_semaphore = BoundedSemaphore(self._heavy_concurrency)
+        self._executor = ThreadPoolExecutor(max_workers=self._worker_count, thread_name_prefix="pitguard-task")
+        self._heavy_operations = {
+            "calculation_full", "candidate_comparison", "candidate_scheme_calculation",
+            "full_delivery", "industrial_closure", "export_rebar_detailing",
+            "export_ifc_detailed", "export_ifc_construction_visual", "export_coordinated_delivery",
+        }
         for raw in self._store.list(limit=500):
             task = TaskRecord.from_dict(raw)
             if task.status in {"queued", "running"}:
@@ -132,6 +181,24 @@ class TaskManager:
                 task.logs.append(f"[{_now()}] 服务启动时检测到未完成任务，已标记为 interrupted。")
                 self._store.upsert(task.as_dict(include_logs=True))
             self._tasks[task.id] = task
+
+
+    def _enforce_memory_budget(self, task: TaskRecord, stage: str) -> None:
+        """Fail a heavy task cleanly before the operating system OOM-kills the API."""
+        rss = _process_memory_mb()
+        if rss <= self._memory_soft_limit_mb:
+            return
+        _release_process_memory()
+        rss_after = _process_memory_mb()
+        self._append_log(
+            task,
+            f"{stage}检测到内存压力：RSS {rss_after:.2f} MB，软上限 {self._memory_soft_limit_mb} MB。",
+        )
+        if rss_after > self._memory_soft_limit_mb:
+            raise RuntimeError(
+                f"服务器内存不足，已在{stage}前受控终止任务（RSS {rss_after:.0f} MB > "
+                f"{self._memory_soft_limit_mb} MB）。请关闭并行候选计算、清理旧结果或提高实例内存。"
+            )
 
     def submit(
         self,
@@ -210,8 +277,15 @@ class TaskManager:
             "successRate": round(success / terminal, 4) if terminal else None,
             "retryCount": sum(task.attempt > 1 for task in records),
             "activeProjectCount": len({task.project_id for task in records if task.status in {"queued", "running"}}),
+            "processMemoryMb": _process_memory_mb(),
+            "memorySoftLimitMb": self._memory_soft_limit_mb,
+            "workerCount": self._worker_count,
+            "heavyTaskConcurrency": self._heavy_concurrency,
             "latestUpdatedAt": max((task.updated_at for task in records), default=None),
             "completedCount": len(completed),
+            "workerCount": self._worker_count,
+            "heavyTaskConcurrency": self._heavy_concurrency,
+            "processResidentMemoryMB": _process_memory_mb(),
         }
 
     def list(self, project_id: str | None = None) -> list[TaskRecord]:
@@ -285,15 +359,22 @@ class TaskManager:
             return
         with self._lock:
             project_lock = self._project_locks.setdefault(task.project_id, RLock())
+        heavy_guard = self._heavy_semaphore if task.operation in self._heavy_operations else nullcontext()
+        memory_before = _process_memory_mb()
         try:
             self._set(task, status="running", progress=2, current_step="启动任务")
-            if task.operation == "candidate_scheme_calculation":
-                self._append_log(task, "候选方案采用只读项目快照并行计算；写回结果时使用短时项目锁。")
-                result = self._execute_operation(task, payload)
-            else:
-                with project_lock:
-                    self._append_log(task, "已获得项目级执行锁，同一项目写任务将串行执行。")
+            self._append_log(task, f"任务内存基线 {memory_before:.2f} MB；重任务并发上限 {self._heavy_concurrency}。")
+            with heavy_guard:
+                if task.operation in self._heavy_operations:
+                    self._append_log(task, "已进入重计算内存闸门，避免多个完整计算/导出同时占用内存。")
+                    self._enforce_memory_budget(task, "重任务启动")
+                if task.operation == "candidate_scheme_calculation":
+                    self._append_log(task, "候选方案采用只读项目快照计算；写回结果时使用短时项目锁。")
                     result = self._execute_operation(task, payload)
+                else:
+                    with project_lock:
+                        self._append_log(task, "已获得项目级执行锁，同一项目写任务将串行执行。")
+                        result = self._execute_operation(task, payload)
             if task.cancel_requested:
                 self._set(task, status="cancelled", progress=task.progress, current_step="任务已取消", finished_at=_now())
                 return
@@ -303,6 +384,10 @@ class TaskManager:
             status = "cancelled" if task.cancel_requested else "failed"
             self._set(task, status=status, error=str(exc), current_step="任务已取消" if status == "cancelled" else "任务失败", finished_at=_now())
             self._append_log(task, traceback.format_exc(limit=8))
+        finally:
+            _release_process_memory()
+            memory_after = _process_memory_mb()
+            self._append_log(task, f"任务结束内存 {memory_after:.2f} MB；已执行 Python GC 与 malloc_trim。")
 
     def _execute_operation(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         if task.operation == "calculation_full":
@@ -366,8 +451,8 @@ class TaskManager:
         self._check_cancel(task)
 
         comparison: list[dict[str, Any]] = []
-        top_n = int(payload.get("topN") or payload.get("top_n") or 3)
-        if project.retaining_system and project.retaining_system.support_layout_repair and project.retaining_system.support_layout_repair.candidates:
+        top_n = max(0, min(3, int(payload.get("topN") if payload.get("topN") is not None else payload.get("top_n") or 0)))
+        if top_n > 0 and project.retaining_system and project.retaining_system.support_layout_repair and project.retaining_system.support_layout_repair.candidates:
             self._stage(task, 76, f"执行前 {top_n} 个候选方案完整比选")
             comparison = run_candidate_comparison_for_project(project, top_n=top_n)
             latest = project.calculation_results[-1]
@@ -620,7 +705,7 @@ class TaskManager:
         project = repo.require(task.project_id)
         if not project.calculation_results:
             self._append_log(task, "工业闭环缺少当前计算，先执行完整计算与候选比选。")
-            self._run_calculation_full(task, {"topN": int(payload.get("topN") or 3)})
+            self._run_calculation_full(task, {"topN": int(payload.get("topN") or 0)})
             project = repo.require(task.project_id)
         repair = project.retaining_system.support_layout_repair if project.retaining_system else None
         valid_rows = [row for row in (repair.candidate_full_calculations if repair else []) if row.get("status") not in {"failed", "error"}]

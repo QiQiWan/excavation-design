@@ -26,6 +26,10 @@ run_isolated_nodes() {
 if [[ "$MODE" == "fast" ]]; then
   python -m compileall -q app tests
   FAST_NODES=(
+    "tests/test_v3_26_0_wall_to_wall_memory_stability.py"
+    "tests/test_v3_25_0_parallel_corner_brace_login_nginx.py"
+    "tests/test_v3_24_0_industrial_calculation_delivery.py"
+    "tests/test_v3_23_0_joint_clean_ifc_login.py"
     "tests/test_v3_22_0_p0_p3_industrial_closure.py"
     "tests/test_v3_21_0_clean_support_topology.py"
     "tests/test_v3_20_0_design_workflow_cage_support.py"

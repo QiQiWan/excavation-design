@@ -75,7 +75,8 @@ def preset_objective_weights(preset: str | None, overrides: dict[str, float] | N
 HARD_CONSTRAINT_LABELS = [
     "support_no_crossing",
     "support_no_muck_ramp_protected_crossing",
-    "support_endpoints_on_wale_ring_or_supported_ty_nodes",
+    "support_endpoints_on_wale_or_ring",
+    "support_no_support_to_support_terminal",
     "temporary_columns_outside_obstacles",
     "replacement_path_continuity",
 ]
@@ -92,7 +93,7 @@ SOFT_OBJECTIVE_LABELS = [
 
 TARGET_SPACING_VALUES = [3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 COLUMN_MAX_SPAN_VALUES = [12.0, 15.0, 18.0]
-TOPOLOGY_STRATEGIES = ["direct_grid", "hybrid_diagonal", "bidirectional_grid"]
+TOPOLOGY_STRATEGIES = ["direct_grid", "hybrid_diagonal"]
 POSITION_PATTERNS: list[tuple[str, float]] = [
     ("as_generated", 0.0),
     ("global_shift_plus_1p0", 1.0),
@@ -105,24 +106,21 @@ POSITION_PATTERNS: list[tuple[str, float]] = [
 
 
 def _available_topology_strategies(project: Project) -> list[str]:
-    """Return support families that are structurally appropriate for the plan.
+    """Return only topologies supported by the current axial-member solver.
 
-    A bidirectional T/Y frame is not offered for a long strip merely to create
-    visual diversity.  It is reserved for near-square wide pits where a second
-    direction is genuinely required and its frame nodes will be analysed.
+    The current global model treats struts as axial members connected to wall,
+    wale, or ring nodes. A secondary member ending at the mid-span of another
+    strut would introduce a transverse point load and requires an explicit
+    frame/transfer-beam bending model. Until that solver is available, automatic
+    candidates are limited to direct wall-to-wall grids and wall-to-wall
+    diagonal hybrids.
     """
     if not project.excavation or not project.excavation.outline.points:
         return ["direct_grid"]
     diag = layout_mod.plan_shape_diagnostics(list(project.excavation.outline.points))
-    aspect = float(diag.get("aspectRatio") or 999.0)
-    short_span = float(diag.get("shortSpanM") or 0.0)
-    circular = bool(diag.get("circularShaftLike"))
-    if circular:
+    if bool(diag.get("circularShaftLike")):
         return ["direct_grid"]
-    strategies = ["direct_grid", "hybrid_diagonal"]
-    if aspect <= 1.35 and short_span >= 28.0:
-        strategies.append("bidirectional_grid")
-    return strategies
+    return ["direct_grid", "hybrid_diagonal"]
 
 
 def _status_rank(status: str) -> int:
@@ -358,9 +356,11 @@ def _endpoint_is_supported_ty_node(system: RetainingSystem, support: SupportElem
 
 
 def _endpoint_is_valid(system: RetainingSystem, support: SupportElement, endpoint: Point2D, face_code: str | None) -> bool:
-    if face_code:
-        return True
-    return _endpoint_is_supported_ty_node(system, support, endpoint)
+    # Non-ring supports in the current analysis model must terminate on a wall
+    # or wale face. A temporary column supplies vertical/out-of-plane restraint;
+    # it does not turn an axial strut into an in-plane transfer beam capable of
+    # receiving a transverse force at mid-span.
+    return bool(face_code)
 
 
 def _endpoint_validity_penalty(system: RetainingSystem) -> float:
@@ -403,6 +403,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
     wale_fail_count = int(quality_metrics.get("waleSupportBayFailCount", 0) or 0)
     corner_parallelism_issues = int(quality_metrics.get("cornerBraceParallelismIssueCount", 0) or 0)
     corner_endpoint_congestion = int(quality_metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
+    support_to_support_terminals = int(quality_metrics.get("supportToSupportTerminalCount", 0) or 0)
+    unsupported_internal_endpoints = int(quality_metrics.get("unsupportedInternalEndpointCount", 0) or 0)
     repl_penalty = _replacement_path_penalty(project)
     col_obstacle_hits = 0
     obstacles = layout_mod._active_obstacle_polygons(getattr(project.excavation, "obstacles", []) if project.excavation else [])
@@ -416,6 +418,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         and wale_fail_count == 0
         and corner_parallelism_issues == 0
         and corner_endpoint_congestion == 0
+        and support_to_support_terminals == 0
+        and unsupported_internal_endpoints == 0
         and endpoint_missing == 0
         and col_obstacle_hits == 0
         and repl_penalty < 0.75
@@ -428,8 +432,10 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "waleSupportBayWithinHardLimit": wale_fail_count == 0,
         "cornerBracesAreParallelFamilies": corner_parallelism_issues == 0,
         "cornerBraceWallNodesAreIndependent": corner_endpoint_congestion == 0,
-        "endpointsOnWaleOrRingNodes": endpoint_missing == 0,  # backward-compatible key
-        "endpointsOnWaleRingOrSupportedTYNodes": endpoint_missing == 0,
+        "endpointsOnWaleOrRingNodes": endpoint_missing == 0,
+        "endpointsOnWaleRingOrSupportedTYNodes": endpoint_missing == 0,  # compatibility alias; T/Y is no longer accepted
+        "supportNoSupportToSupportTerminal": support_to_support_terminals == 0,
+        "supportNoUnsupportedInternalEndpoint": unsupported_internal_endpoints == 0,
         "temporaryColumnsOutsideObstacles": col_obstacle_hits == 0,
         "replacementPathContinuity": repl_penalty < 0.75,
         "supportCrossingCount": crossing_count,
@@ -438,6 +444,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "waleSupportBayFailCount": wale_fail_count,
         "cornerBraceParallelismIssueCount": corner_parallelism_issues,
         "cornerBraceEndpointCongestionCount": corner_endpoint_congestion,
+        "supportToSupportTerminalCount": support_to_support_terminals,
+        "unsupportedInternalEndpointCount": unsupported_internal_endpoints,
         "missingEndpointRatio": round(endpoint_missing, 4),
         "columnObstacleHitCount": col_obstacle_hits,
         "replacementPathPenalty": round(repl_penalty, 4),
@@ -499,6 +507,8 @@ def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tupl
     metrics = candidate.metrics or {}
     auxiliary_count = int(metrics.get("secondaryGridSupportCount", 0) or 0) + int(metrics.get("cornerDiagonalCount", 0) or 0)
     return (
+        int(metrics.get("supportToSupportTerminalCount", 0) or 0),
+        int(metrics.get("unsupportedInternalEndpointCount", 0) or 0),
         float(metrics.get("supportCrossingCount", candidate.crossing_count) or 0.0),
         int(metrics.get("cornerBraceParallelismIssueCount", 0) or 0),
         int(metrics.get("cornerBraceEndpointCongestionCount", 0) or 0),

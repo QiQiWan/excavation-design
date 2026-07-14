@@ -242,6 +242,64 @@ def _point_is_wall_endpoint(support: SupportElement, point: Point2D, tolerance: 
     )
 
 
+def _load_path_endpoint_metrics(supports: list[SupportElement], tolerance: float = 0.02) -> dict:
+    """Identify endpoints that rely on another horizontal support.
+
+    Non-ring supports must have two wall/wale bearings in the current axial-only
+    global model. A temporary column at a T/Y node controls vertical stability,
+    but does not equilibrate the in-plane transverse point load on the receiving
+    strut.
+    """
+    terminal_rows: list[dict] = []
+    unsupported_rows: list[dict] = []
+    valid_count = 0
+    endpoint_count = 0
+    for support in supports:
+        if support.support_role == "ring_strut":
+            continue
+        valid_support = True
+        for endpoint_name, point, face_code in (
+            ("start", support.start, support.start_face_code),
+            ("end", support.end, support.end_face_code),
+        ):
+            endpoint_count += 1
+            if face_code:
+                continue
+            valid_support = False
+            connected = [
+                other.code
+                for other in supports
+                if other.code != support.code
+                and int(other.level_index) == int(support.level_index)
+                and other.support_role != "ring_strut"
+                and _distance_to_segment(point, other.start, other.end) <= tolerance
+            ]
+            row = {
+                "supportCode": support.code,
+                "supportId": support.id,
+                "levelIndex": int(support.level_index),
+                "endpoint": endpoint_name,
+                "point": {"x": round(float(point.x), 4), "y": round(float(point.y), 4)},
+                "connectedSupportCodes": sorted(connected),
+                "loadPathClass": str(getattr(support, "load_path_class", "") or ""),
+            }
+            if connected:
+                terminal_rows.append(row)
+            else:
+                unsupported_rows.append(row)
+        valid_count += int(valid_support)
+    non_ring_count = sum(item.support_role != "ring_strut" for item in supports)
+    return {
+        "supportToSupportTerminalCount": len(terminal_rows),
+        "unsupportedInternalEndpointCount": len(unsupported_rows),
+        "directWallToWallSupportCount": valid_count,
+        "directWallToWallSupportRatio": round(valid_count / max(non_ring_count, 1), 4),
+        "nonRingEndpointCount": endpoint_count,
+        "supportToSupportTerminals": terminal_rows,
+        "unsupportedInternalEndpoints": unsupported_rows,
+    }
+
+
 def _topology_intersection_metrics(project: Project, supports: list[SupportElement]) -> dict:
     """Measure support-plan cleanliness including convergence on retaining walls.
 
@@ -400,13 +458,41 @@ def _topology_intersection_metrics(project: Project, supports: list[SupportEleme
 
 
 def _corner_brace_family_diagnostics(project: Project, corners: list[SupportElement]) -> tuple[dict, list[QualityGateIssue]]:
-    """Check that corner braces form independent parallel families, not fans."""
-    groups: dict[tuple[int, tuple[str, str]], list[SupportElement]] = defaultdict(list)
+    """Check declared parallel corner-brace families and all wall-node spacing.
+
+    A long terminal wall-to-wall diagonal and a geometric corner-brace family can
+    share the same pair of wall faces while serving different wale stations.
+    Grouping every member by face pair alone therefore produced false "fan"
+    failures on trapezoidal and irregular pits.  Parallelism is checked only for
+    members that explicitly belong to the same generated corner family; wall
+    endpoint congestion remains a global per-level/per-face check.
+    """
+    groups: dict[tuple[int, str, tuple[str, str]], list[SupportElement]] = defaultdict(list)
+    endpoints_by_level_face: dict[tuple[int, str], list[tuple[Point2D, SupportElement]]] = defaultdict(list)
     for support in corners:
+        level = int(support.level_index)
+        if support.start_face_code:
+            endpoints_by_level_face[(level, str(support.start_face_code))].append(
+                (support.start_wall_connection or support.start, support)
+            )
+        if support.end_face_code:
+            endpoints_by_level_face[(level, str(support.end_face_code))].append(
+                (support.end_wall_connection or support.end, support)
+            )
         if not support.start_face_code or not support.end_face_code:
             continue
+        placement = str(support.placement_reason or "")
+        zone = str(support.design_zone or "")
+        declared_parallel_family = (
+            placement in {"parallel_corner_brace_family", "parallel_corner_brace_repair"}
+            or zone.startswith("corner-")
+        )
+        if not declared_parallel_family:
+            continue
         pair = tuple(sorted((str(support.start_face_code), str(support.end_face_code))))
-        groups[(int(support.level_index), pair)].append(support)
+        family_id = zone or placement or "parallel-corner-family"
+        groups[(level, family_id, pair)].append(support)
+
     tolerance = float(getattr(project.design_settings, "corner_diagonal_parallel_tolerance_deg", 5.0) or 5.0)
     minimum_gap = float(getattr(project.design_settings, "corner_diagonal_family_spacing_m", 3.0) or 3.0) * 0.80
     parallelism_issue_count = 0
@@ -423,7 +509,7 @@ def _corner_brace_family_diagnostics(project: Project, corners: list[SupportElem
         raw = abs(a - b) % 180.0
         return min(raw, 180.0 - raw)
 
-    for (level, face_pair), members in groups.items():
+    for (level, family_id, face_pair), members in groups.items():
         if len(members) < 2:
             continue
         family_count += 1
@@ -434,32 +520,36 @@ def _corner_brace_family_diagnostics(project: Project, corners: list[SupportElem
             issues.append(_issue(
                 "corner_brace_fan_geometry",
                 "fail",
-                f"第 {level} 道墙面 {face_pair[0]}/{face_pair[1]} 的角撑角度离散 {spread:.1f}°，形成扇形/V形传力。",
+                f"第 {level} 道角撑族 {family_id}（墙面 {face_pair[0]}/{face_pair[1]}）角度离散 {spread:.1f}°，形成扇形/V形传力。",
                 object_type="SupportFamily",
                 recommendation="按共同转角等链距生成独立平行角撑；每根角撑两端均设置独立围檩节点。",
                 hint="corner_brace_parallel_family",
             ))
-        endpoints_by_face: dict[str, list[Point2D]] = defaultdict(list)
-        for item in members:
-            if item.start_face_code:
-                endpoints_by_face[str(item.start_face_code)].append(item.start_wall_connection or item.start)
-            if item.end_face_code:
-                endpoints_by_face[str(item.end_face_code)].append(item.end_wall_connection or item.end)
-        for face_code, points in endpoints_by_face.items():
-            for index, first in enumerate(points):
-                for second in points[index + 1:]:
-                    gap = math.hypot(first.x - second.x, first.y - second.y)
-                    if gap + 1.0e-6 >= minimum_gap:
-                        continue
-                    endpoint_congestion_count += 1
-                    issues.append(_issue(
-                        "corner_brace_wall_node_congestion",
-                        "fail",
-                        f"第 {level} 道墙面 {face_code} 的两个角撑支承点间距仅 {gap:.2f}m，小于独立节点控制值 {minimum_gap:.2f}m。",
-                        object_type="SupportFamily",
-                        recommendation="沿围檩错开角撑支承点，禁止多根角撑共用或近距离挤占同一承压节点。",
-                        hint="corner_brace_independent_wall_nodes",
-                    ))
+
+    # Independent wall bearings are mandatory across all corner and terminal
+    # diagonals, even when they do not belong to the same parallel family.
+    seen_pairs: set[tuple[str, str, str]] = set()
+    for (level, face_code), rows in endpoints_by_level_face.items():
+        for index, (first, first_support) in enumerate(rows):
+            for second, second_support in rows[index + 1:]:
+                if first_support.id == second_support.id:
+                    continue
+                pair_key = (str(level), min(first_support.id, second_support.id), max(first_support.id, second_support.id))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                gap = math.hypot(first.x - second.x, first.y - second.y)
+                if gap + 1.0e-6 >= minimum_gap:
+                    continue
+                endpoint_congestion_count += 1
+                issues.append(_issue(
+                    "corner_brace_wall_node_congestion",
+                    "fail",
+                    f"第 {level} 道墙面 {face_code} 的角撑 {first_support.code}/{second_support.code} 支承点间距仅 {gap:.2f}m，小于独立节点控制值 {minimum_gap:.2f}m。",
+                    object_type="SupportFamily",
+                    recommendation="沿围檩错开角撑支承点，禁止多根角撑共用或近距离挤占同一承压节点。",
+                    hint="corner_brace_independent_wall_nodes",
+                ))
     return {
         "cornerBraceParallelFamilyCount": family_count,
         "cornerBraceParallelismIssueCount": parallelism_issue_count,
@@ -595,12 +685,36 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
             message,
             object_id=face_code,
             object_type="WaleSupportBay",
-            recommendation="优先增设角部扇形斜撑、局部短对撑或双向网格支点，再进行围檩截面与配筋设计。",
+            recommendation="优先增设两端落墙的平行角撑、端部长斜撑或直接对撑，再进行围檩截面与配筋设计；禁止支撑止于另一轴向支撑中部。",
             geometry={"kind": "wall_face", "faceCode": face_code, "levelIndex": level_index, "stationsM": row.get("stationsM", []), "bayLengthsM": row.get("bayLengthsM", [])},
             hint="wale_support_bay",
         ))
 
     topology_intersections = _topology_intersection_metrics(project, supports)
+    load_path_metrics = _load_path_endpoint_metrics(supports)
+    for row in load_path_metrics["supportToSupportTerminals"]:
+        issues.append(_issue(
+            "support_to_support_terminal",
+            "fail",
+            f"支撑 {row['supportCode']} 的 {row['endpoint']} 端终止于另一水平支撑中部，当前轴向杆件模型无法传递该横向集中力。",
+            row["supportId"],
+            "SupportElement",
+            "改为两端落在围护墙/围檩的长斜撑或直撑；只有建立显式刚接框架、受弯传力梁和节点设计后才可采用T/Y节点。",
+            geometry={"kind": "support_terminal", "point": row["point"], "supportCode": row["supportCode"], "connectedSupportCodes": row["connectedSupportCodes"]},
+            related=list(row["connectedSupportCodes"]),
+            hint="support_to_support_terminal",
+        ))
+    for row in load_path_metrics["unsupportedInternalEndpoints"]:
+        issues.append(_issue(
+            "unsupported_internal_endpoint",
+            "fail",
+            f"支撑 {row['supportCode']} 的 {row['endpoint']} 端没有围护墙/围檩或有效环梁支承。",
+            row["supportId"],
+            "SupportElement",
+            "重新生成支撑，使两端均具有明确边界支承和可计算的轴向传力路径。",
+            geometry={"kind": "support_terminal", "point": row["point"], "supportCode": row["supportCode"]},
+            hint="unsupported_internal_endpoint",
+        ))
 
     # Crossings: any same-level crossing without shared endpoints is a layout hard issue.
     for i, a in enumerate(supports):
@@ -681,6 +795,7 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         "supportCrossingCount": len(crossing_pairs),
         "nonRingCrossingCount": len(crossing_pairs),
         **topology_intersections,
+        **load_path_metrics,
         "supportOutsideExcavationCount": support_outside_count,
         "planShapeDiagnostics": shape_diagnostics,
         "highlightCount": len(highlights),
@@ -701,7 +816,9 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         f"支撑布置评分 {score:.1f}；主对撑 {len(main)} 根，次对撑 {len(secondary)} 根，角撑 {len(corners)} 根，"
         f"立柱 {len(columns)} 根，非法平面穿越 {len(crossing_pairs)} 处，内部 T/Y/X 汇交节点 "
         f"{int(topology_intersections.get('internalJunctionCount', 0))} 处，墙上多杆汇交节点 "
-        f"{int(topology_intersections.get('wallJunctionCount', 0))} 处，总高度汇交节点 "
+        f"{int(topology_intersections.get('wallJunctionCount', 0))} 处，支撑中部终止点 "
+        f"{int(load_path_metrics.get('supportToSupportTerminalCount', 0))} 处，无边界支承端点 "
+        f"{int(load_path_metrics.get('unsupportedInternalEndpointCount', 0))} 处，总高度汇交节点 "
         f"{int(topology_intersections.get('totalHighDegreeJunctionCount', 0))} 处，角撑平行族异常 "
         f"{int(corner_family_metrics.get('cornerBraceParallelismIssueCount', 0))} 组，角撑墙节点拥挤 "
         f"{int(corner_family_metrics.get('cornerBraceEndpointCongestionCount', 0))} 处，越界支撑 {support_outside_count} 根，"
