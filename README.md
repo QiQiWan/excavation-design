@@ -1,16 +1,68 @@
-# PitGuard BIM Designer V3.21.0
+# PitGuard BIM Designer V3.22.0
 
 面向基坑围护结构方案设计、分阶段计算、规范审查、配筋与构造深化、三维复核以及 IFC/CAD/PDF 交付的工程设计辅助系统。
 
-## 启动
+## 服务器一键构建与启动（推荐）
 
-- Windows：运行 `start-windows.bat`
-- Linux/macOS：运行 `bash start-linux.sh`
-- 前端默认地址：`http://127.0.0.1:5173`
-- API 文档：`http://127.0.0.1:8002/docs`
-- 后端默认端口：`8002`；可通过 `PITGUARD_BACKEND_PORT` 覆盖
+在代码根目录执行：
 
-系统使用当前 Python 环境，不自动创建额外虚拟环境。启动脚本会检查缺失或损坏的 Python 包；安装失败退出时会打印可直接复制的安装命令。前端依赖已锁定，建议使用 `npm ci`。
+```bash
+sudo bash start-linux.sh
+```
+
+该命令会自动完成：
+
+- 使用当前 Python 环境安装后端依赖；
+- 执行 `npm ci` 并构建生产前端；
+- 将前端构建到 `apps/web/dist`；
+- 创建并启动 `pitguard-api.service`；
+- 写入 `designer.eatrice.cn` 的 Nginx HTTPS 配置；
+- 自动生成 API 网关密钥和网页登录密码；
+- 执行后端健康检查、`nginx -t` 和 Nginx 重载。
+
+生产环境不启动 Vite，不使用也不检查 5173/5174 端口。前端由 Nginx 直接通过 443 端口提供，后端仅监听 `127.0.0.1:8002`。
+
+默认参数：
+
+```text
+域名        designer.eatrice.cn
+证书        /usr/crt/fullchain.pem
+私钥        /usr/crt/privkey.pem
+后端        127.0.0.1:8002
+数据库      runtime/pitguard.sqlite3
+服务        pitguard-api.service
+```
+
+常用覆盖方式：
+
+```bash
+sudo PITGUARD_DOMAIN=designer.eatrice.cn \
+  PYTHON_BIN=/root/anaconda3/envs/ifc/bin/python \
+  PITGUARD_WEB_USER=pitguard \
+  PITGUARD_WEB_PASSWORD='设置强密码' \
+  bash start-linux.sh
+```
+
+常用运维命令：
+
+```bash
+bash status-production.sh
+sudo bash restart-production.sh
+sudo journalctl -u pitguard-api -f
+```
+
+仅构建、不安装系统服务：
+
+```bash
+PYTHON_BIN=/root/anaconda3/envs/ifc/bin/python \
+  bash scripts/build-production.sh
+```
+
+本地开发模式保留为：
+
+```bash
+bash start-linux-dev.sh
+```
 
 ## 文档入口
 

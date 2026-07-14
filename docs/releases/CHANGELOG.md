@@ -1,3 +1,10 @@
+# V3.22.0 Server One-Click Deployment Patch
+
+- Linux 根启动脚本调整为生产一键构建与启动入口。
+- 前端改为 Nginx 静态托管，不启动 Vite，不使用或检查 5173/5174。
+- 自动创建 systemd、Nginx、API 网关密钥和 Basic Auth 凭据。
+- 增加生产构建、重启和状态检查脚本。
+
 # V3.22.0
 
 - 增加 P0-P3 工业成熟度评估、通用多边形资格测试和同步/后台工业闭环执行。
