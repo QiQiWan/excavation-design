@@ -1,4 +1,4 @@
-# PitGuard BIM Designer V3.24.1
+# PitGuard BIM Designer V3.25.0
 
 面向基坑围护结构方案设计、分阶段计算、规范审查、配筋与构造深化、三维复核以及 IFC/CAD/PDF 交付的工程设计辅助系统。
 
@@ -69,6 +69,13 @@ bash start-linux-dev.sh
 全部说明集中在 [`docs/README.md`](docs/README.md)。根目录只保留启动脚本、源码目录和本文件。
 
 
+
+## V3.25.0 平行角撑与登录弹窗修复
+
+- 角部斜撑按施工图逻辑生成独立平行角撑族：每根角撑在两侧围檩上使用独立节点，禁止 V 形/扇形汇交。
+- 围檩超限修复不再从固定墙点向相邻墙发散，改为共同转角等链距的平行角撑修复。
+- 角撑平行度、墙节点最小间距进入硬约束和方案排序。
+- 生产脚本自动移除同域名旧 Nginx server 块，显式设置 `auth_basic off`，并检测 `WWW-Authenticate`，避免旧 Basic Auth 弹窗覆盖应用登录页。
 
 ## V3.24.1 独立登录路由
 

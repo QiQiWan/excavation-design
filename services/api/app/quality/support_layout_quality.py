@@ -398,6 +398,74 @@ def _topology_intersection_metrics(project: Project, supports: list[SupportEleme
     }
 
 
+
+def _corner_brace_family_diagnostics(project: Project, corners: list[SupportElement]) -> tuple[dict, list[QualityGateIssue]]:
+    """Check that corner braces form independent parallel families, not fans."""
+    groups: dict[tuple[int, tuple[str, str]], list[SupportElement]] = defaultdict(list)
+    for support in corners:
+        if not support.start_face_code or not support.end_face_code:
+            continue
+        pair = tuple(sorted((str(support.start_face_code), str(support.end_face_code))))
+        groups[(int(support.level_index), pair)].append(support)
+    tolerance = float(getattr(project.design_settings, "corner_diagonal_parallel_tolerance_deg", 5.0) or 5.0)
+    minimum_gap = float(getattr(project.design_settings, "corner_diagonal_family_spacing_m", 3.0) or 3.0) * 0.80
+    parallelism_issue_count = 0
+    endpoint_congestion_count = 0
+    family_count = 0
+    issues: list[QualityGateIssue] = []
+
+    def angle_deg(item: SupportElement) -> float:
+        a = item.start_wall_connection or item.start
+        b = item.end_wall_connection or item.end
+        return math.degrees(math.atan2(b.y - a.y, b.x - a.x)) % 180.0
+
+    def angular_difference(a: float, b: float) -> float:
+        raw = abs(a - b) % 180.0
+        return min(raw, 180.0 - raw)
+
+    for (level, face_pair), members in groups.items():
+        if len(members) < 2:
+            continue
+        family_count += 1
+        angles = [angle_deg(item) for item in members]
+        spread = max(angular_difference(a, b) for i, a in enumerate(angles) for b in angles[i + 1:])
+        if spread > tolerance:
+            parallelism_issue_count += 1
+            issues.append(_issue(
+                "corner_brace_fan_geometry",
+                "fail",
+                f"第 {level} 道墙面 {face_pair[0]}/{face_pair[1]} 的角撑角度离散 {spread:.1f}°，形成扇形/V形传力。",
+                object_type="SupportFamily",
+                recommendation="按共同转角等链距生成独立平行角撑；每根角撑两端均设置独立围檩节点。",
+                hint="corner_brace_parallel_family",
+            ))
+        endpoints_by_face: dict[str, list[Point2D]] = defaultdict(list)
+        for item in members:
+            if item.start_face_code:
+                endpoints_by_face[str(item.start_face_code)].append(item.start_wall_connection or item.start)
+            if item.end_face_code:
+                endpoints_by_face[str(item.end_face_code)].append(item.end_wall_connection or item.end)
+        for face_code, points in endpoints_by_face.items():
+            for index, first in enumerate(points):
+                for second in points[index + 1:]:
+                    gap = math.hypot(first.x - second.x, first.y - second.y)
+                    if gap + 1.0e-6 >= minimum_gap:
+                        continue
+                    endpoint_congestion_count += 1
+                    issues.append(_issue(
+                        "corner_brace_wall_node_congestion",
+                        "fail",
+                        f"第 {level} 道墙面 {face_code} 的两个角撑支承点间距仅 {gap:.2f}m，小于独立节点控制值 {minimum_gap:.2f}m。",
+                        object_type="SupportFamily",
+                        recommendation="沿围檩错开角撑支承点，禁止多根角撑共用或近距离挤占同一承压节点。",
+                        hint="corner_brace_independent_wall_nodes",
+                    ))
+    return {
+        "cornerBraceParallelFamilyCount": family_count,
+        "cornerBraceParallelismIssueCount": parallelism_issue_count,
+        "cornerBraceEndpointCongestionCount": endpoint_congestion_count,
+    }, issues
+
 def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySummary:
     ret = project.retaining_system
     if not ret or not ret.supports:
@@ -407,12 +475,13 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
     main = [s for s in supports if s.support_role == "main_strut"]
     secondary = [s for s in supports if s.support_role == "secondary_strut"]
     corners = [s for s in supports if s.support_role == "corner_diagonal"]
+    corner_family_metrics, corner_family_issues = _corner_brace_family_diagnostics(project, corners)
     shape_diagnostics = plan_shape_diagnostics(list(project.excavation.outline.points)) if project.excavation else {}
     by_level: dict[int, list[SupportElement]] = defaultdict(list)
     for s in main:
         by_level[s.level_index].append(s)
 
-    issues: list[QualityGateIssue] = []
+    issues: list[QualityGateIssue] = list(corner_family_issues)
     highlights: list[dict] = []
     crossing_pairs: list[dict] = []
     bay_spacings: list[float] = []
@@ -598,6 +667,7 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         "mainSupportCount": len(main),
         "secondaryGridSupportCount": len(secondary),
         "cornerDiagonalCount": len(corners),
+        **corner_family_metrics,
         "supportCount": len(supports),
         "columnCount": len(columns),
         "obstacleCount": obstacle_count,
@@ -632,7 +702,9 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         f"立柱 {len(columns)} 根，非法平面穿越 {len(crossing_pairs)} 处，内部 T/Y/X 汇交节点 "
         f"{int(topology_intersections.get('internalJunctionCount', 0))} 处，墙上多杆汇交节点 "
         f"{int(topology_intersections.get('wallJunctionCount', 0))} 处，总高度汇交节点 "
-        f"{int(topology_intersections.get('totalHighDegreeJunctionCount', 0))} 处，越界支撑 {support_outside_count} 根，"
+        f"{int(topology_intersections.get('totalHighDegreeJunctionCount', 0))} 处，角撑平行族异常 "
+        f"{int(corner_family_metrics.get('cornerBraceParallelismIssueCount', 0))} 组，角撑墙节点拥挤 "
+        f"{int(corner_family_metrics.get('cornerBraceEndpointCongestionCount', 0))} 处，越界支撑 {support_outside_count} 根，"
         f"最大无支承长度 {max_unbraced_span:.2f}m{min_clearance_text}。"
     )
     return SupportLayoutQualitySummary(score=score, status=status, summary=summary, metrics=metrics, issues=issues, highlights=highlights, crossing_pairs=crossing_pairs)

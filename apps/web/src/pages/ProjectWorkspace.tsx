@@ -713,8 +713,11 @@ function SettingsStep({ project, onChanged, viewMode }: { project: Project; onCh
         <div className="settingsFormGrid advancedSettingsGrid">
           <label>支撑轴线距墙最小净距（m）<input type="number" min="0.35" max="3" step="0.1" value={draft.supportWallClearanceM ?? 1.0} onChange={(e) => numberValue('supportWallClearanceM', e.target.value)} /></label>
           <label>直对撑建议最大跨度（m）<input type="number" min="12" max="45" step="1" value={draft.maxDirectStrutSpanM ?? 24} onChange={(e) => numberValue('maxDirectStrutSpanM', e.target.value)} /></label>
-          <label>长墙斜撑优先阈值（m）<input type="number" min="8" max="40" step="1" value={draft.diagonalBraceMinWallLengthM ?? 18} onChange={(e) => numberValue('diagonalBraceMinWallLengthM', e.target.value)} /></label>
-          <label className="settingCheck"><input type="checkbox" checked={draft.preferDiagonalBraces ?? true} onChange={(e) => setDraft((v) => ({ ...v, preferDiagonalBraces: e.target.checked }))} /><span>长墙转角优先生成斜撑/短撑混合候选</span></label>
+          <label>长墙角撑优先阈值（m）<input type="number" min="8" max="40" step="1" value={draft.diagonalBraceMinWallLengthM ?? 18} onChange={(e) => numberValue('diagonalBraceMinWallLengthM', e.target.value)} /></label>
+          <label>每个转角平行角撑数<input type="number" min="1" max="3" step="1" value={draft.cornerDiagonalFamilyCount ?? 2} onChange={(e) => numberValue('cornerDiagonalFamilyCount', e.target.value)} /></label>
+          <label>平行角撑墙节点间距（m）<input type="number" min="2.5" max="6" step="0.25" value={draft.cornerDiagonalFamilySpacingM ?? 3} onChange={(e) => numberValue('cornerDiagonalFamilySpacingM', e.target.value)} /></label>
+          <label>角撑平行角度容差（°）<input type="number" min="2" max="12" step="1" value={draft.cornerDiagonalParallelToleranceDeg ?? 5} onChange={(e) => numberValue('cornerDiagonalParallelToleranceDeg', e.target.value)} /></label>
+          <label className="settingCheck"><input type="checkbox" checked={draft.preferDiagonalBraces ?? true} onChange={(e) => setDraft((v) => ({ ...v, preferDiagonalBraces: e.target.checked }))} /><span>端部转角采用独立墙节点的平行角撑族，禁止V形扇撑</span></label>
           <label>换撑楼板有效宽度（m）<input type="number" min="0.5" max="30" step="0.5" value={draft.replacementSlabEffectiveWidthM ?? 6} onChange={(e) => numberValue('replacementSlabEffectiveWidthM', e.target.value)} /></label>
           <label>换撑楼板厚度（m）<input type="number" min="0.1" max="2" step="0.05" value={draft.replacementSlabThicknessM ?? 0.25} onChange={(e) => numberValue('replacementSlabThicknessM', e.target.value)} /></label>
           <label>换撑弹性模量（MPa）<input type="number" min="1000" max="60000" step="500" value={draft.replacementSlabElasticModulusMpa ?? 30000} onChange={(e) => numberValue('replacementSlabElasticModulusMpa', e.target.value)} /></label>

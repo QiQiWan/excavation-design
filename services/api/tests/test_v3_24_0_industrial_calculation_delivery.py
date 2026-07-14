@@ -23,7 +23,7 @@ def test_calculation_contract_freezes_inputs_and_adopted_design(calculated_proje
     result = calculated_project.calculation_results[-1]
     assurance = result.calculation_assurance
 
-    assert SOFTWARE_VERSION == "3.24.1"
+    assert tuple(map(int, SOFTWARE_VERSION.split("."))) >= (3, 25, 0)
     assert result.calculation_contract_id.startswith("calc-contract-")
     assert len(result.input_snapshot_hash or "") == 64
     assert len(result.adopted_design_snapshot_hash or "") == 64

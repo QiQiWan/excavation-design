@@ -83,7 +83,11 @@ def build_construction_issue_gate(
     illegal_crossings = int(support_metrics.get("supportCrossingCount", 0) or 0)
     wall_junctions = int(support_metrics.get("wallJunctionCount", 0) or 0)
     high_wall_junctions = int(support_metrics.get("highDegreeWallJunctionCount", 0) or 0)
+    corner_parallelism_issues = int(support_metrics.get("cornerBraceParallelismIssueCount", 0) or 0)
+    corner_endpoint_congestion = int(support_metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
     add("SUPPORT_NO_ILLEGAL_CROSSING", illegal_crossings == 0, f"水平支撑非法穿越数量={illegal_crossings}")
+    add("CORNER_BRACE_PARALLEL_FAMILY", corner_parallelism_issues == 0, f"角撑扇形/V形异常族={corner_parallelism_issues}")
+    add("CORNER_BRACE_INDEPENDENT_WALL_NODES", corner_endpoint_congestion == 0, f"角撑墙节点拥挤={corner_endpoint_congestion}")
     add(
         "SUPPORT_WALL_JUNCTION_REVIEW",
         high_wall_junctions == 0,

@@ -401,6 +401,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
     crossing_count = int(quality_metrics.get("supportCrossingCount", 0) or 0)
     outside_count = int(quality_metrics.get("supportOutsideExcavationCount", 0) or 0)
     wale_fail_count = int(quality_metrics.get("waleSupportBayFailCount", 0) or 0)
+    corner_parallelism_issues = int(quality_metrics.get("cornerBraceParallelismIssueCount", 0) or 0)
+    corner_endpoint_congestion = int(quality_metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
     repl_penalty = _replacement_path_penalty(project)
     col_obstacle_hits = 0
     obstacles = layout_mod._active_obstacle_polygons(getattr(project.excavation, "obstacles", []) if project.excavation else [])
@@ -412,6 +414,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         and obstacle_count == 0
         and outside_count == 0
         and wale_fail_count == 0
+        and corner_parallelism_issues == 0
+        and corner_endpoint_congestion == 0
         and endpoint_missing == 0
         and col_obstacle_hits == 0
         and repl_penalty < 0.75
@@ -422,6 +426,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "supportNoObstacleConflict": obstacle_count == 0,
         "supportInsideExcavation": outside_count == 0,
         "waleSupportBayWithinHardLimit": wale_fail_count == 0,
+        "cornerBracesAreParallelFamilies": corner_parallelism_issues == 0,
+        "cornerBraceWallNodesAreIndependent": corner_endpoint_congestion == 0,
         "endpointsOnWaleOrRingNodes": endpoint_missing == 0,  # backward-compatible key
         "endpointsOnWaleRingOrSupportedTYNodes": endpoint_missing == 0,
         "temporaryColumnsOutsideObstacles": col_obstacle_hits == 0,
@@ -430,6 +436,8 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "obstacleConflictCount": obstacle_count,
         "supportOutsideExcavationCount": outside_count,
         "waleSupportBayFailCount": wale_fail_count,
+        "cornerBraceParallelismIssueCount": corner_parallelism_issues,
+        "cornerBraceEndpointCongestionCount": corner_endpoint_congestion,
         "missingEndpointRatio": round(endpoint_missing, 4),
         "columnObstacleHitCount": col_obstacle_hits,
         "replacementPathPenalty": round(repl_penalty, 4),
@@ -456,7 +464,8 @@ def _objective_terms(project: Project, system: RetainingSystem, target_spacing: 
         + 1.5 * high_degree_junctions
         + 0.20 * projected_crossings
     ) / support_count
-    wall_junction_complexity = (wall_junctions + 2.0 * high_degree_wall_junctions) / support_count
+    corner_family_issues = float(issue_metrics.get("cornerBraceParallelismIssueCount", 0) or 0) + float(issue_metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
+    wall_junction_complexity = (wall_junctions + 2.0 * high_degree_wall_junctions + 3.0 * corner_family_issues) / support_count
     return {
         "spacingDeviation": round(max(0.0, spacing_deviation + bay_cv * 0.5), 4),
         "spanLength": round(max(0.0, span_penalty), 4),
@@ -485,12 +494,14 @@ def _candidate_score(quality_score: float, terms: dict[str, float], hard: dict[s
     return round(max(0.0, min(100.0, score)), 2)
 
 
-def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tuple[float, int, int, int, int, float, int, int]:
+def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tuple:
     """Lexicographic plan-cleanliness priority used before aggregate score."""
     metrics = candidate.metrics or {}
     auxiliary_count = int(metrics.get("secondaryGridSupportCount", 0) or 0) + int(metrics.get("cornerDiagonalCount", 0) or 0)
     return (
         float(metrics.get("supportCrossingCount", candidate.crossing_count) or 0.0),
+        int(metrics.get("cornerBraceParallelismIssueCount", 0) or 0),
+        int(metrics.get("cornerBraceEndpointCongestionCount", 0) or 0),
         int(metrics.get("highDegreeWallJunctionCount", 0) or 0),
         int(metrics.get("wallJunctionCount", 0) or 0),
         int(metrics.get("totalHighDegreeJunctionCount", metrics.get("highDegreeJunctionCount", 0)) or 0),

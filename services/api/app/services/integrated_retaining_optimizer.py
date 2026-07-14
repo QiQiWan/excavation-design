@@ -115,6 +115,8 @@ def _joint_score(support: Any, plan: dict[str, Any], vertical: dict[str, Any]) -
     toe_penalty = 4.0 * max(0, int(vertical.get("zoneCount", 1) or 1) - 1)
     congestion_penalty = 3.0 * int(metrics.get("wallJunctionCount", 0) or 0)
     congestion_penalty += 5.0 * int(metrics.get("highDegreeWallJunctionCount", 0) or 0)
+    congestion_penalty += 12.0 * int(metrics.get("cornerBraceParallelismIssueCount", 0) or 0)
+    congestion_penalty += 10.0 * int(metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
     score = 0.58 * support_score + 0.18 * plan_score + 0.24 * vertical_score
     return round(max(0.0, min(100.0, score - segmentation_penalty - toe_penalty - congestion_penalty)), 2)
 
@@ -145,6 +147,8 @@ def build_integrated_retaining_candidates(project: Project, mode: str = "balance
                 "wallJunctionCount": int(metrics.get("wallJunctionCount", 0) or 0),
                 "highDegreeWallJunctionCount": int(metrics.get("highDegreeWallJunctionCount", 0) or 0),
                 "internalJunctionCount": int(metrics.get("internalJunctionCount", 0) or 0),
+                "cornerBraceParallelismIssueCount": int(metrics.get("cornerBraceParallelismIssueCount", 0) or 0),
+                "cornerBraceEndpointCongestionCount": int(metrics.get("cornerBraceEndpointCongestionCount", 0) or 0),
                 "totalJunctionCount": int(metrics.get("totalJunctionCount", 0) or 0),
                 "planIntersectionComplexity": float(metrics.get("planIntersectionComplexity", 0.0) or 0.0),
             },
@@ -173,13 +177,15 @@ def build_integrated_retaining_candidates(project: Project, mode: str = "balance
             "supportCandidate": support.model_dump(mode="json", by_alias=True),
             "wallPlanScheme": plan,
             "wallVerticalScheme": vertical,
-            "engineeringBoundary": "先满足安全与几何硬约束，再最小化非法穿越、墙上汇交和内部汇交；墙体平面控制设计段与竖向墙趾均作为变量，但槽段连续性、防水、吊装和规范复核保持硬边界。",
+            "engineeringBoundary": "先满足安全与几何硬约束，再最小化非法穿越、角撑扇形/节点拥挤、墙上汇交和内部汇交；墙体平面控制设计段与竖向墙趾均作为变量，但槽段连续性、防水、吊装和规范复核保持硬边界。",
         })
     def cleanliness_key(item: dict[str, Any]) -> tuple:
         metrics = item["primaryCleanlinessMetrics"]
         return (
             item["status"] != "candidate",
             metrics["illegalCrossingCount"],
+            metrics["cornerBraceParallelismIssueCount"],
+            metrics["cornerBraceEndpointCongestionCount"],
             metrics["highDegreeWallJunctionCount"],
             metrics["wallJunctionCount"],
             metrics["totalJunctionCount"],

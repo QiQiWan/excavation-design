@@ -2,7 +2,8 @@
 
 现行文档按产品工作流、计算原理、深化设计、成果交付和版本记录组织。发生冲突时，优先级依次为：当前版本源码与自动化测试、V3.24 现行文档、历史版本文档。
 
-## 当前版本 V3.24.1
+## 当前版本 V3.25.0
+- [V3.25.0 平行角撑体系与登录入口修复](releases/V3_25_0_PARALLEL_CORNER_BRACE_LOGIN_FIX.md)
 
 - [V3.24.1 独立登录页面与受保护路由](releases/V3_24_1_INDEPENDENT_LOGIN_ROUTE.md)
 - [V3.24 工业级计算基线与受控交付](releases/V3_24_0_INDUSTRIAL_CALCULATION_CONTROLLED_DELIVERY.md)

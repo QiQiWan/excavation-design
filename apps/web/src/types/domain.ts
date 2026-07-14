@@ -65,6 +65,12 @@ export interface DesignSettings {
   autoStrengthDesignEnabled?: boolean;
   maxDesignIterations?: number;
   diagonalBraceMinWallLengthM?: number;
+  cornerDiagonalMinOffsetM?: number;
+  cornerDiagonalMaxOffsetM?: number;
+  cornerDiagonalMaxWallFraction?: number;
+  cornerDiagonalFamilyCount?: number;
+  cornerDiagonalFamilySpacingM?: number;
+  cornerDiagonalParallelToleranceDeg?: number;
   preferDiagonalBraces?: boolean;
   replacementSlabEffectiveWidthM?: number;
   replacementSlabThicknessM?: number;

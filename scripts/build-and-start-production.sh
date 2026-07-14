@@ -164,6 +164,8 @@ ReadWritePaths=$API_DIR/runtime_cache
 WantedBy=multi-user.target
 UNITEOF
 
+"$PYTHON_BIN" "$ROOT_DIR/scripts/cleanup-nginx-domain.py" --domain "$DOMAIN" --exclude "$NGINX_CONF"
+
 cat > "$NGINX_CONF" <<NGINXEOF
 upstream pitguard_api {
     server 127.0.0.1:$BACKEND_PORT;
@@ -181,6 +183,7 @@ server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name $DOMAIN;
+    auth_basic off;
 
     root $WEB_DIR/dist;
     index index.html;
@@ -217,6 +220,7 @@ server {
     }
 
     location /api/ {
+        auth_basic off;
         proxy_pass http://pitguard_api;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -260,6 +264,7 @@ server {
     }
 
     location = /login {
+        auth_basic off;
         expires -1;
         add_header Cache-Control "no-store, no-cache, must-revalidate";
         try_files /index.html =404;
@@ -272,6 +277,7 @@ server {
     }
 
     location / {
+        auth_basic off;
         try_files \$uri \$uri/ /index.html;
     }
 }
@@ -301,8 +307,22 @@ if [ "$AUTH_LOGIN_REQUIRED" != "true" ]; then
   exit 1
 fi
 
+rm -f /etc/nginx/.htpasswd-pitguard 2>/dev/null || true
 nginx -t
 systemctl reload nginx
+
+
+ROOT_HEADERS="$(curl -kIsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/" || true)"
+if printf '%s\n' "$ROOT_HEADERS" | grep -qi '^WWW-Authenticate:'; then
+  echo "[PitGuard] Legacy HTTP Basic Auth is still active for the local Nginx virtual host https://$DOMAIN/." >&2
+  echo "[PitGuard] Inspect: nginx -T | grep -n -C 4 -E 'server_name.*$DOMAIN|auth_basic'" >&2
+  exit 1
+fi
+PUBLIC_ROOT_HEADERS="$(curl -kIsS --connect-timeout 8 "https://$DOMAIN/" || true)"
+if printf '%s\n' "$PUBLIC_ROOT_HEADERS" | grep -qi '^WWW-Authenticate:'; then
+  echo "[PitGuard] The public domain still returns a Basic Auth challenge. Check an upstream proxy/CDN or stale Nginx node." >&2
+  exit 1
+fi
 
 PUBLIC_HEALTH="unverified"
 LOGIN_ROUTE="unverified"

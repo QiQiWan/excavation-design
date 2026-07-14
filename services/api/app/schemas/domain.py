@@ -92,7 +92,10 @@ class DesignSettings(DomainModel):
     # corner influence zone. They must not terminate on another horizontal strut.
     corner_diagonal_min_offset_m: float = 3.5
     corner_diagonal_max_offset_m: float = 8.0
-    corner_diagonal_max_wall_fraction: float = 0.30
+    corner_diagonal_max_wall_fraction: float = Field(default=0.40, ge=0.15, le=0.50)
+    corner_diagonal_family_count: int = Field(default=2, ge=1, le=3)
+    corner_diagonal_family_spacing_m: float = Field(default=3.0, ge=2.5, le=6.0)
+    corner_diagonal_parallel_tolerance_deg: float = Field(default=5.0, ge=2.0, le=12.0)
     prefer_diagonal_braces: bool = True
     # Wale-bay repair normally uses direct wall-to-wall V/corner braces.
     # Support-to-support T/Y repair nodes are disabled unless the engineer

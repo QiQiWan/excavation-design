@@ -354,14 +354,16 @@ def _corner_diagonal_lines(points: list[Point2D]) -> list[tuple[Point2D, Point2D
     long_span = max(span_x, span_y)
     if short_span <= 1e-9 or long_span / short_span < DIAGONAL_BRACE_ASPECT_RATIO or short_span < 12:
         return []
-    offset_long = max(3.0, min(8.0, long_span * 0.12))
-    offset_short = max(3.0, min(8.0, short_span * 0.28))
-    return [
-        (Point2D(x=min_x + offset_long, y=min_y), Point2D(x=min_x, y=min_y + offset_short)),
-        (Point2D(x=max_x - offset_long, y=min_y), Point2D(x=max_x, y=min_y + offset_short)),
-        (Point2D(x=max_x - offset_long, y=max_y), Point2D(x=max_x, y=max_y - offset_short)),
-        (Point2D(x=min_x + offset_long, y=max_y), Point2D(x=min_x, y=max_y - offset_short)),
-    ]
+    offsets = [max(3.5, min(5.0, short_span * 0.22)), max(6.5, min(8.0, short_span * 0.38))]
+    lines: list[tuple[Point2D, Point2D]] = []
+    for offset in sorted(set(round(value, 3) for value in offsets)):
+        lines.extend([
+            (Point2D(x=min_x + offset, y=min_y), Point2D(x=min_x, y=min_y + offset)),
+            (Point2D(x=max_x - offset, y=min_y), Point2D(x=max_x, y=min_y + offset)),
+            (Point2D(x=max_x - offset, y=max_y), Point2D(x=max_x, y=max_y - offset)),
+            (Point2D(x=min_x + offset, y=max_y), Point2D(x=min_x, y=max_y - offset)),
+        ])
+    return lines
 
 
 def _support_line_for_level(points: list[Point2D], level_idx: int, elevation: float) -> list[tuple[str, Point2D, Point2D]]:
@@ -385,7 +387,10 @@ def support_layout_config_from_settings(settings, *, topology_strategy: str = "b
         diagonal_brace_min_wall_length_m=float(getattr(settings, "diagonal_brace_min_wall_length_m", 18.0)),
         corner_diagonal_min_offset_m=float(getattr(settings, "corner_diagonal_min_offset_m", 3.5)),
         corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 8.0)),
-        corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.30)),
+        corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.40)),
+        corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 2)),
+        corner_diagonal_family_spacing_m=float(getattr(settings, "corner_diagonal_family_spacing_m", 3.0)),
+        corner_diagonal_parallel_tolerance_deg=float(getattr(settings, "corner_diagonal_parallel_tolerance_deg", 5.0)),
         prefer_diagonal_braces=bool(getattr(settings, "prefer_diagonal_braces", True)),
         allow_wale_repair_t_y_nodes=bool(getattr(settings, "allow_wale_repair_t_y_nodes", False)),
         topology_strategy=topology_strategy,

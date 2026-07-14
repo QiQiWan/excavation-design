@@ -275,6 +275,7 @@ export default function SchemeComparisonPanel({
             <div className="schemeKeyMetrics">
               <span><small>支撑 / 立柱</small><strong>{candidate.supportCount} / {candidate.columnCount}</strong></span>
               <span><small>非法穿越 / 墙上汇交 / 内部汇交</small><strong>{candidate.crossingCount ?? 0} / {candidate.wallJunctionCount ?? Number(candidate.metrics?.wallJunctionCount ?? 0)} / {Number(candidate.metrics?.internalJunctionCount ?? candidate.junctionCount ?? 0)}</strong></span>
+              <span><small>角撑扇形异常 / 墙节点拥挤</small><strong>{Number(candidate.metrics?.cornerBraceParallelismIssueCount ?? 0)} / {Number(candidate.metrics?.cornerBraceEndpointCongestionCount ?? 0)}</strong></span>
               <span><small>{withUnitLabel('最长跨度', 'length')}</small><strong>{formatEngineeringValue(candidate.maxSpanLength, 'length')}</strong></span>
               <span><small>{hasFullCalculation ? withUnitLabel('最大轴力', 'force') : '完整计算状态'}</small><strong>{hasFullCalculation ? formatEngineeringValue(full.maxSupportAxialForce, 'force') : '待计算'}</strong></span>
               <span><small>{hasFullCalculation ? withUnitLabel('最大位移', 'displacement') : '几何拓扑评分'}</small><strong>{hasFullCalculation ? formatEngineeringValue(full.maxDisplacement, 'displacement') : String(candidate.score ?? '—')}</strong></span>

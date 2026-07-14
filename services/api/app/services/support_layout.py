@@ -45,7 +45,10 @@ class SupportLayoutConfig:
     diagonal_brace_min_wall_length_m: float = 18.0
     corner_diagonal_min_offset_m: float = 3.5
     corner_diagonal_max_offset_m: float = 8.0
-    corner_diagonal_max_wall_fraction: float = 0.30
+    corner_diagonal_max_wall_fraction: float = 0.40
+    corner_diagonal_family_count: int = 2
+    corner_diagonal_family_spacing_m: float = 3.0
+    corner_diagonal_parallel_tolerance_deg: float = 5.0
     prefer_diagonal_braces: bool = True
     allow_wale_repair_t_y_nodes: bool = False
     topology_strategy: str = "balanced_grid"
@@ -74,7 +77,10 @@ class SupportLayoutConfig:
                 max(3.0, min(8.0, float(self.corner_diagonal_min_offset_m))),
                 min(12.0, float(self.corner_diagonal_max_offset_m)),
             ),
-            corner_diagonal_max_wall_fraction=max(0.15, min(0.40, float(self.corner_diagonal_max_wall_fraction))),
+            corner_diagonal_max_wall_fraction=max(0.15, min(0.50, float(self.corner_diagonal_max_wall_fraction))),
+            corner_diagonal_family_count=max(1, min(3, int(self.corner_diagonal_family_count))),
+            corner_diagonal_family_spacing_m=max(2.5, min(6.0, float(self.corner_diagonal_family_spacing_m))),
+            corner_diagonal_parallel_tolerance_deg=max(2.0, min(12.0, float(self.corner_diagonal_parallel_tolerance_deg))),
             prefer_diagonal_braces=bool(self.prefer_diagonal_braces),
             allow_wale_repair_t_y_nodes=bool(self.allow_wale_repair_t_y_nodes),
             topology_strategy=strategy,
@@ -860,12 +866,20 @@ def _finalize_retained_support_endpoints(
             station, distance = _point_segment_projection(point, segment.start, segment.end)
             length = max(float(getattr(segment, "length", 0.0) or _distance(segment.start, segment.end)), EPS)
             ratio = max(0.0, min(1.0, station / length))
-            wall_point = Point2D(
+            projected_wall_point = Point2D(
                 x=round(segment.start.x + (segment.end.x - segment.start.x) * ratio, 4),
                 y=round(segment.start.y + (segment.end.y - segment.start.y) * ratio, 4),
             )
             previous_connection = getattr(line, f"{side}_wall_connection")
-            if previous_connection is None:
+            # Preserve the original wale bearing station created before the
+            # support centreline was trimmed inward. Re-projecting the trimmed
+            # endpoint moves the connection along the wall and can falsely open
+            # a wale bay, triggering an unnecessary third/fan brace.
+            if previous_connection is not None:
+                _old_station, old_distance = _point_segment_projection(previous_connection, segment.start, segment.end)
+                wall_point = previous_connection if old_distance <= 0.10 else projected_wall_point
+            else:
+                wall_point = projected_wall_point
                 recovered += 1
             if distance + 1e-6 < target * 0.90:
                 adjusted, actual = _trim_endpoint_from_wall(wall_point, other, segment, target)
@@ -1238,15 +1252,42 @@ def _secondary_grid_layout(
         warnings.append(f"有 {skipped} 条次对撑因障碍或轮廓限制未生成，需人工复核回墙传力。")
     return lines, warnings
 
-def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]], config: SupportLayoutConfig | None = None) -> list[SupportLayoutLine]:
-    """Generate direct wall-to-wall corner braces inside the local corner zone.
+def _corner_family_offsets(min_leg: float, config: SupportLayoutConfig, target_bay: float) -> list[float]:
+    """Return staggered offsets for a parallel corner-brace family.
 
-    A conventional horizontal corner brace bears on the wale/retaining wall at
-    both ends.  It is not a branch that terminates on another horizontal strut.
-    The endpoint distance from the corner is bounded by both an absolute limit
-    and a fraction of the adjacent wall length, keeping the brace recognisably
-    local to the corner and avoiding the unrealistic long diagonals previously
-    produced by the candidate generator.
+    Equal chainages on the two adjacent walls generate a set of parallel members
+    for any corner angle.  This matches conventional end-bay detailing: each
+    diagonal has its own bearing node and no V/fan convergence is introduced.
+    """
+    max_offset = min(
+        float(config.corner_diagonal_max_offset_m),
+        float(config.corner_diagonal_max_wall_fraction) * min_leg,
+        max(1.15 * target_bay, float(config.corner_diagonal_min_offset_m)),
+    )
+    min_offset = min(float(config.corner_diagonal_min_offset_m), max_offset)
+    if max_offset < MIN_CORNER_BRACE_LEG_M:
+        return []
+    spacing = float(config.corner_diagonal_family_spacing_m)
+    requested = int(config.corner_diagonal_family_count)
+    available = 1 + int(max(0.0, max_offset - min_offset) // spacing)
+    count = max(1, min(requested, available))
+    if count == 1:
+        return [round(max(min_offset, min(0.60 * target_bay, max_offset)), 3)]
+    first = max(min_offset, min(0.55 * target_bay, max_offset - spacing * (count - 1)))
+    values = [first + idx * spacing for idx in range(count)]
+    if values[-1] > max_offset + EPS:
+        values = [max_offset - spacing * (count - 1) + idx * spacing for idx in range(count)]
+    return [round(value, 3) for value in values if min_offset - EPS <= value <= max_offset + EPS]
+
+
+def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]], config: SupportLayoutConfig | None = None) -> list[SupportLayoutLine]:
+    """Generate independent parallel wall-to-wall braces in eligible corner bays.
+
+    A valid corner family is composed of one or more parallel compression
+    members.  Every member has a distinct bearing point on each adjacent wale.
+    Fan-shaped braces sharing a wall node are prohibited because they create a
+    concentrated wale reaction, congested bearing hardware and an unclear axial
+    load path.
     """
     config = (config or SupportLayoutConfig()).normalized()
     if len(points) < 4 or not config.prefer_diagonal_braces:
@@ -1256,9 +1297,6 @@ def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[Constru
     if short_span < 12.0:
         return []
     orientation = 1.0 if _signed_area(points) >= 0 else -1.0
-    # Corner braces are useful for elongated pits and for local return-wall
-    # restraint.  Near-square plans are handled by the balanced/TY grid unless
-    # the explicit hybrid strategy is selected.
     elongated = (long_span / max(short_span, EPS) >= 1.35) or long_span >= 36.0
     if not elongated and config.topology_strategy not in {"hybrid_diagonal", "balanced_grid"}:
         return []
@@ -1282,29 +1320,16 @@ def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[Constru
         if min_leg < max(config.diagonal_brace_min_wall_length_m * 0.45, 2.0 * MIN_CORNER_BRACE_LEG_M):
             continue
 
-        max_offset = min(
-            float(config.corner_diagonal_max_offset_m),
-            float(config.corner_diagonal_max_wall_fraction) * min_leg,
-            max(target_bay, float(config.corner_diagonal_min_offset_m)),
-        )
-        min_offset = min(float(config.corner_diagonal_min_offset_m), max_offset)
-        if max_offset < MIN_CORNER_BRACE_LEG_M:
-            continue
-
-        # One primary brace is the default.  A second nested brace is permitted
-        # only for long corner legs and remains inside the configured corner zone.
-        offsets = [max(min_offset, min(0.75 * target_bay, max_offset))]
-        if min_leg >= 3.0 * target_bay and max_offset - offsets[0] >= 2.5:
-            offsets.append(max_offset)
-
-        for fan_index, offset in enumerate(sorted(set(round(v, 3) for v in offsets)), start=1):
+        offsets = _corner_family_offsets(min_leg, config, target_bay)
+        for family_index, offset in enumerate(offsets, start=1):
             p1 = _point_at(curr, prev, offset)
             p2 = _point_at(curr, nxt, offset)
             if not (_line_segment_samples_inside(p1, p2, points) and _line_avoids_obstacles(p1, p2, obstacles)):
                 continue
             note = (
-                f"凸角墙—墙角撑第 {fan_index} 道：两端直接支承于相邻围檩/围护墙，"
-                f"端点距转角约 {offset:.2f}m；不得截断至另一水平支撑。"
+                f"凸角平行角撑组第 {family_index}/{len(offsets)} 道：两端分别支承于相邻围檩/围护墙，"
+                f"两侧端点距转角均约 {offset:.2f}m；各道角撑不得共用墙上节点、不得形成V形扇撑、"
+                "不得截断至另一水平支撑。"
             )
             lines.append(
                 SupportLayoutLine(
@@ -1312,9 +1337,11 @@ def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[Constru
                     Point2D(x=round(p1.x, 3), y=round(p1.y, 3)),
                     Point2D(x=round(p2.x, 3), y=round(p2.y, 3)),
                     round(_distance(p1, p2), 3),
-                    None,
+                    round(float(config.corner_diagonal_family_spacing_m), 3) if len(offsets) > 1 else None,
                     note,
                     topology_family="hybrid_diagonal",
+                    design_zone=f"corner-{idx + 1}",
+                    placement_reason="parallel_corner_brace_family",
                 )
             )
     return lines
@@ -2188,7 +2215,7 @@ def _targeted_wale_bay_repair_lines(
     return lines
 
 
-def _direct_adjacent_wall_v_repair(
+def _direct_adjacent_wall_parallel_repair(
     line: SupportLayoutLine,
     *,
     preferred_face_code: str,
@@ -2197,15 +2224,12 @@ def _direct_adjacent_wall_v_repair(
     blockers: list[SupportLayoutLine],
     config: SupportLayoutConfig,
 ) -> SupportLayoutLine | None:
-    """Return a direct wall-to-wall V/corner repair member.
+    """Return one independent member of a parallel corner-brace family.
 
-    A failing end-wall wale bay should normally be closed by a triangular
-    wall--wall load path.  Earlier implementations cast a wall-normal tie and
-    terminated it on the nearest main strut.  That reduced the numerical wale
-    span but introduced a support-to-support T/Y node and transverse bending in
-    a member otherwise modelled as an axial strut.  This helper keeps the target
-    station on the failing wall and searches the two adjacent wall faces for a
-    crossing-free bearing point inside the local corner pocket.
+    The target wale bay only selects the nearest corner and preferred family
+    station.  Both brace endpoints are then moved to equal chainage from that
+    corner.  This avoids the historical fan/V repair in which several diagonals
+    converged on one point of the failing wall.
     """
     segments = list(getattr(excavation, "segments", []) or [])
     if not segments:
@@ -2216,87 +2240,110 @@ def _direct_adjacent_wall_v_repair(
         return None
     segment = segments[face_index]
     if str(line.start_face_code or "") == str(preferred_face_code):
-        wall_point = line.start_wall_connection or line.start
+        target_wall_point = line.start_wall_connection or line.start
     elif str(line.end_face_code or "") == str(preferred_face_code):
-        wall_point = line.end_wall_connection or line.end
+        target_wall_point = line.end_wall_connection or line.end
     else:
-        wall_point = line.start_wall_connection or line.start
+        target_wall_point = line.start_wall_connection or line.start
 
-    station, distance_to_face = _point_segment_projection(wall_point, segment.start, segment.end)
+    station, distance_to_face = _point_segment_projection(target_wall_point, segment.start, segment.end)
     if distance_to_face > 1.5:
         return None
     segment_length = max(float(segment.length), EPS)
     station = max(0.0, min(segment_length, float(station)))
     corner_options = [
-        (station, segment.start, segments[(face_index - 1) % len(segments)]),
-        (segment_length - station, segment.end, segments[(face_index + 1) % len(segments)]),
+        (station, segment.start, segment.end, segments[(face_index - 1) % len(segments)]),
+        (segment_length - station, segment.end, segment.start, segments[(face_index + 1) % len(segments)]),
     ]
     points = _dedup_points(list(excavation.outline.points))
-    candidates: list[tuple[float, float, SupportLayoutLine]] = []
-    for target_corner_distance, corner, adjacent in sorted(corner_options, key=lambda item: item[0]):
-        # The adjacent segment must share the selected corner.  Its opposite end
-        # defines the direction along which the brace bearing point is moved.
+    candidates: list[tuple[float, float, float, SupportLayoutLine]] = []
+    minimum_node_spacing = float(config.corner_diagonal_family_spacing_m) * 0.85
+
+    def endpoint_for_face(item: SupportLayoutLine, face_code: str) -> Point2D | None:
+        if str(item.start_face_code or "") == face_code:
+            return item.start_wall_connection or item.start
+        if str(item.end_face_code or "") == face_code:
+            return item.end_wall_connection or item.end
+        return None
+
+    for target_corner_distance, corner, preferred_other, adjacent in sorted(corner_options, key=lambda item: item[0]):
         if _distance(adjacent.start, corner) <= 0.05:
-            other = adjacent.end
+            adjacent_other = adjacent.end
         elif _distance(adjacent.end, corner) <= 0.05:
-            other = adjacent.start
+            adjacent_other = adjacent.start
         else:
             continue
-        adjacent_length = _distance(corner, other)
-        if adjacent_length < MIN_CORNER_BRACE_LEG_M * 1.5:
+        preferred_leg = _distance(corner, preferred_other)
+        adjacent_leg = _distance(corner, adjacent_other)
+        min_leg = min(preferred_leg, adjacent_leg)
+        if min_leg < MIN_CORNER_BRACE_LEG_M * 1.5:
             continue
-        max_offset = min(
-            float(config.corner_diagonal_max_offset_m),
-            max(float(config.corner_diagonal_min_offset_m), float(config.corner_diagonal_max_wall_fraction) * adjacent_length),
-            max(adjacent_length - 0.25, float(config.corner_diagonal_min_offset_m)),
+        family_offsets = _corner_family_offsets(min_leg, config, float(config.max_wale_support_bay_m))
+        desired = max(float(config.corner_diagonal_min_offset_m), min(float(target_corner_distance), max(family_offsets or [float(config.corner_diagonal_max_offset_m)])))
+        offset_trials = sorted(
+            set(family_offsets + [
+                round(desired, 3),
+                round(desired - float(config.corner_diagonal_family_spacing_m), 3),
+                round(desired + float(config.corner_diagonal_family_spacing_m), 3),
+            ]),
+            key=lambda value: abs(value - desired),
         )
-        min_offset = min(float(config.corner_diagonal_min_offset_m), max_offset)
-        offset_trials = sorted({
-            round(min_offset, 3),
-            round(min(max_offset, max(min_offset, 0.55 * config.max_wale_support_bay_m)), 3),
-            round(min(max_offset, max(min_offset, 0.80 * config.max_wale_support_bay_m)), 3),
-            round(max_offset, 3),
-        })
         for offset in offset_trials:
-            if offset <= 0.0 or offset >= adjacent_length - 0.05:
+            if offset < float(config.corner_diagonal_min_offset_m) - EPS or offset >= min_leg - 0.10:
                 continue
-            adjacent_point = _point_at(corner, other, offset)
-            span = _distance(wall_point, adjacent_point)
+            preferred_point = _point_at(corner, preferred_other, offset)
+            adjacent_point = _point_at(corner, adjacent_other, offset)
+            span = _distance(preferred_point, adjacent_point)
             if span < MIN_MAIN_STRUT_SPAN_M or span > min(45.0, config.max_direct_strut_span_m * 1.50):
                 continue
-            if not _line_segment_samples_inside(wall_point, adjacent_point, points):
+            if not _line_segment_samples_inside(preferred_point, adjacent_point, points):
                 continue
-            if not _line_avoids_obstacles(wall_point, adjacent_point, obstacles):
+            if not _line_avoids_obstacles(preferred_point, adjacent_point, obstacles):
+                continue
+            face_a = str(preferred_face_code)
+            face_b = str(adjacent.name)
+            crowded = False
+            for blocker in blockers:
+                if blocker.role != "corner_diagonal":
+                    continue
+                for face_code, candidate_point in ((face_a, preferred_point), (face_b, adjacent_point)):
+                    existing_point = endpoint_for_face(blocker, face_code)
+                    if existing_point is not None and _distance(existing_point, candidate_point) < minimum_node_spacing:
+                        crowded = True
+                        break
+                if crowded:
+                    break
+            if crowded:
                 continue
             candidate = SupportLayoutLine(
-                role="secondary_strut",
-                start=Point2D(x=round(wall_point.x, 4), y=round(wall_point.y, 4)),
+                role="corner_diagonal",
+                start=Point2D(x=round(preferred_point.x, 4), y=round(preferred_point.y, 4)),
                 end=Point2D(x=round(adjacent_point.x, 4), y=round(adjacent_point.y, 4)),
                 span_length=round(span, 3),
-                bay_spacing=None,
+                bay_spacing=round(float(config.corner_diagonal_family_spacing_m), 3),
                 layout_note=(
-                    f"围檩超限跨墙—墙 V 形修复：目标墙 {preferred_face_code} 的支点直接连接"
-                    f"相邻墙 {adjacent.name}，相邻墙端点距转角约 {offset:.2f}m；不得截断至另一水平支撑。"
+                    f"围檩超限跨平行角撑修复：墙面 {preferred_face_code} 与相邻墙 {adjacent.name} "
+                    f"在距共同转角约 {offset:.2f}m 处分别设置独立支承节点；"
+                    "与同组角撑保持平行且不得共用墙上节点，不得截断至另一水平支撑。"
                 ),
-                start_face_code=str(preferred_face_code),
-                end_face_code=str(adjacent.name),
-                start_wall_connection=Point2D(x=round(wall_point.x, 4), y=round(wall_point.y, 4)),
+                start_face_code=face_a,
+                end_face_code=face_b,
+                start_wall_connection=Point2D(x=round(preferred_point.x, 4), y=round(preferred_point.y, 4)),
                 end_wall_connection=Point2D(x=round(adjacent_point.x, 4), y=round(adjacent_point.y, 4)),
                 topology_family="hybrid_diagonal",
+                placement_reason="parallel_corner_brace_repair",
             )
             if any(_proper_layout_intersection(candidate, blocker) is not None for blocker in blockers if blocker.role != "ring_strut"):
                 continue
-            # Prefer the nearest corner load path and then the shorter member.
-            candidates.append((float(target_corner_distance), span, candidate))
+            candidates.append((abs(offset - desired), float(target_corner_distance), span, candidate))
     if not candidates:
         return None
-    return min(candidates, key=lambda item: (item[0], item[1]))[2]
-
+    return min(candidates, key=lambda item: (item[0], item[1], item[2]))[3]
 
 def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None, *, _iteration: int = 0) -> dict[str, object]:
-    """Add missing corner-fan braces before calculation when wale bays are excessive.
+    """Add missing parallel corner-brace families before calculation when wale bays are excessive.
 
-    Existing supports are preserved.  The repair adds only diagonal fan members
+    Existing supports are preserved.  The repair adds only independent parallel diagonal members
     touching faces that fail the direct wale-bay audit, then rebuilds tributary
     widths, temporary columns and support-wale nodes.
     """
@@ -2316,7 +2363,10 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
             diagonal_brace_min_wall_length_m=float(getattr(settings, "diagonal_brace_min_wall_length_m", 18.0)),
             corner_diagonal_min_offset_m=float(getattr(settings, "corner_diagonal_min_offset_m", 3.5)),
             corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 8.0)),
-            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.30)),
+            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.40)),
+            corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 2)),
+            corner_diagonal_family_spacing_m=float(getattr(settings, "corner_diagonal_family_spacing_m", 3.0)),
+            corner_diagonal_parallel_tolerance_deg=float(getattr(settings, "corner_diagonal_parallel_tolerance_deg", 5.0)),
             prefer_diagonal_braces=bool(getattr(settings, "prefer_diagonal_braces", True)),
             allow_wale_repair_t_y_nodes=bool(getattr(settings, "allow_wale_repair_t_y_nodes", False)),
             topology_strategy="hybrid_diagonal",
@@ -2409,13 +2459,20 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
             continue
         blocker_keys.add(key)
         blockers.append(SupportLayoutLine(
-            item.support_role, item.start, item.end,
-            float(item.span_length or _distance(item.start, item.end)),
-            item.bay_spacing, item.layout_note or "existing support",
-            item.start_face_code, item.end_face_code,
-            item.start_wall_connection, item.end_wall_connection,
-            item.centerline_offset_m, item.start_wall_clearance_m, item.end_wall_clearance_m,
-            item.topology_family,
+            role=item.support_role,
+            start=item.start,
+            end=item.end,
+            span_length=float(item.span_length or _distance(item.start, item.end)),
+            bay_spacing=item.bay_spacing,
+            layout_note=item.layout_note or "existing support",
+            start_face_code=item.start_face_code,
+            end_face_code=item.end_face_code,
+            start_wall_connection=item.start_wall_connection,
+            end_wall_connection=item.end_wall_connection,
+            centerline_offset_m=item.centerline_offset_m,
+            start_wall_clearance_m=item.start_wall_clearance_m,
+            end_wall_clearance_m=item.end_wall_clearance_m,
+            topology_family=item.topology_family,
         ))
     lines: list[SupportLayoutLine] = []
     # Concave plans can require an explicit bidirectional grid/return-wall node
@@ -2449,11 +2506,11 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
             retained = [line]
 
         # If the direct cross-pit line conflicts with the local topology, create
-        # a direct wall-to-wall triangular path near the controlling corner.
+        # an independent member of a parallel wall-to-wall corner family.
         # This avoids applying a transverse point load to a main strut that is
         # otherwise designed as an axial compression member.
         if not retained:
-            direct_v = _direct_adjacent_wall_v_repair(
+            parallel_brace = _direct_adjacent_wall_parallel_repair(
                 line,
                 preferred_face_code=preferred_face,
                 excavation=excavation,
@@ -2461,8 +2518,8 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
                 blockers=blockers,
                 config=config,
             )
-            if direct_v is not None:
-                retained = [direct_v]
+            if parallel_brace is not None:
+                retained = [parallel_brace]
 
         # Support-to-support T/Y nodes are an explicit frame/grid option only.
         # They are never introduced silently by the generic wale-bay repair.
@@ -2590,13 +2647,13 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
                     "角部墙—墙斜撑按围檩连续梁节点反力与全局联立矩阵共同设计。"
                     if line.role == "corner_diagonal"
                     else (
-                        "端墙 V 形次支撑两端直接支承于围护墙/围檩，按轴压构件及全局联立矩阵共同设计。"
+                        "端部平行角撑两端分别支承于围护墙/围檩的独立节点，按轴压构件及全局联立矩阵共同设计。"
                         if line.start_face_code and line.end_face_code
                         else "墙面法向短撑止于显式 T/Y 节点；按围檩节点反力与全局联立矩阵共同设计。"
                     )
                 ),
                 section_type="rc_rectangular",
-                section=SectionDefinition(width=1.6, height=1.6, name="1600x1600 RC corner fan brace"),
+                section=SectionDefinition(width=1.6, height=1.6, name="1600x1600 RC parallel corner brace"),
                 material=MaterialDefinition(name="Concrete", grade="C40"),
                 reinforcement=_support_reinforcement(level_index, "rc_rectangular"),
             ))
@@ -2614,7 +2671,7 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
     )
     action = (
         f"围檩支点间距诊断在 {len(failing_faces)} 个墙面发现超限，移除 {removed_legacy_t_y} 根旧版墙—支撑短撑，"
-        f"自动增补 {len(added)} 根直接墙—墙 V 形/角撑；最大支点间距由 "
+        f"自动增补 {len(added)} 根独立平行墙—墙角撑；最大支点间距由 "
         f"{before.get('maxBayM', 0)}m 降至 {after.get('maxBayM', 0)}m。"
     )
     system.layout_summary = dict(system.layout_summary or {})
@@ -2705,7 +2762,10 @@ def repair_concave_return_supports(project, config: SupportLayoutConfig | None =
             diagonal_brace_min_wall_length_m=float(getattr(settings, "diagonal_brace_min_wall_length_m", 18.0)),
             corner_diagonal_min_offset_m=float(getattr(settings, "corner_diagonal_min_offset_m", 3.5)),
             corner_diagonal_max_offset_m=float(getattr(settings, "corner_diagonal_max_offset_m", 8.0)),
-            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.30)),
+            corner_diagonal_max_wall_fraction=float(getattr(settings, "corner_diagonal_max_wall_fraction", 0.40)),
+            corner_diagonal_family_count=int(getattr(settings, "corner_diagonal_family_count", 2)),
+            corner_diagonal_family_spacing_m=float(getattr(settings, "corner_diagonal_family_spacing_m", 3.0)),
+            corner_diagonal_parallel_tolerance_deg=float(getattr(settings, "corner_diagonal_parallel_tolerance_deg", 5.0)),
             prefer_diagonal_braces=bool(getattr(settings, "prefer_diagonal_braces", True)),
             target_main_support_spacing_m=float(getattr(settings, "default_support_spacing", TARGET_MAIN_SUPPORT_SPACING_M)),
             column_max_unbraced_span_m=COLUMN_MAX_UNBRACED_SPAN_M,
