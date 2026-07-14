@@ -7,9 +7,17 @@ from app.calculation.engine import build_default_construction_cases, run_calcula
 from app.services.design_expert import build_expert_design_review
 from app.services.design_pipeline import evaluate_design_pipeline
 from app.services.wall_vertical_length_optimizer import apply_wall_vertical_length_candidate
+from app.services.integrated_retaining_optimizer import build_integrated_retaining_candidates, apply_integrated_retaining_candidate
 from app.storage.repository import ProjectRepository, get_repository
 
 router = APIRouter(prefix="/api/projects/{project_id}/expert-design", tags=["expert-design"])
+
+
+class ApplyIntegratedRetainingPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    candidate_id: str = Field(alias="candidateId")
+    mode: str = Field(default="balanced", pattern="^(conservative|balanced|economic)$")
+    recalculate: bool = True
 
 
 class ApplyVerticalWallLengthPayload(BaseModel):
@@ -34,6 +42,49 @@ def design_pipeline(
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     return evaluate_design_pipeline(repo.require(project_id))
+
+
+
+
+@router.get("/integrated-candidates")
+def integrated_candidates(
+    project_id: str,
+    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
+    max_candidates: int = Query(8, ge=1, le=20, alias="maxCandidates"),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    return build_integrated_retaining_candidates(repo.require(project_id), mode=mode, max_candidates=max_candidates)
+
+
+@router.post("/apply-integrated-candidate")
+def apply_integrated_candidate(
+    project_id: str,
+    payload: ApplyIntegratedRetainingPayload = Body(...),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = repo.require(project_id)
+    try:
+        result = apply_integrated_retaining_candidate(project, payload.candidate_id, mode=payload.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    calculation = None
+    if payload.recalculate:
+        if not project.calculation_cases:
+            project.calculation_cases = build_default_construction_cases(project)
+        calculation = run_calculation(
+            project,
+            project.calculation_cases[-1] if project.calculation_cases else None,
+            auto_repair=False,
+            include_candidate_comparison=False,
+        )
+        project.calculation_results.append(calculation)
+        if project.retaining_system:
+            item = project.retaining_system.layout_summary.get("integratedRetainingOptimization")
+            if isinstance(item, dict):
+                item["recomputeRequired"] = False
+                item["calculationResultId"] = calculation.id
+    repo.save(project)
+    return {**result, "recalculated": calculation is not None, "calculationResult": calculation}
 
 
 @router.post("/apply-vertical-wall-length")

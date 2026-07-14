@@ -1,6 +1,9 @@
 import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult } from '../types/domain';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8002';
+const CONFIGURED_API_BASE = import.meta.env.VITE_API_BASE_URL;
+const API_BASE = CONFIGURED_API_BASE !== undefined
+  ? CONFIGURED_API_BASE
+  : (import.meta.env.DEV ? 'http://127.0.0.1:8002' : '');
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -14,7 +17,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const signal = controller.signal;
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, { ...init, signal });
+    response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...init, signal });
   } catch (error) {
     if (controller.signal.aborted) throw new Error('请求超过 120 秒，已取消。请检查后台任务或网络状态。');
     throw error;
@@ -23,6 +26,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     externalSignal?.removeEventListener('abort', abortFromExternal);
   }
   if (!response.ok) {
+    if (response.status === 401 && path !== '/api/auth/login') window.dispatchEvent(new CustomEvent('pitguard:unauthorized'));
     let message = `${response.status} ${response.statusText}`;
     try {
       const data = await response.json();
@@ -35,7 +39,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type AuthIdentity = { actor: string; role: string; authenticated: boolean; keyId?: string; username?: string; authMode?: string };
+
 export const api = {
+  authStatus: () => request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status'),
+  login: (username: string, password: string) => request<{ authenticated: boolean; identity: AuthIdentity; expiresInSeconds: number }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }),
+  me: () => request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me'),
+  logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST' }),
   health: () => request<{ status: string; service: string }>('/health'),
   systemMetrics: () => request<Record<string, unknown>>('/api/system/metrics'),
   systemReadiness: () => request<Record<string, unknown>>('/api/system/readiness'),
@@ -58,6 +68,8 @@ export const api = {
   getGeometryConsistency: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/geometry-consistency`),
   getProjectDashboard: (id: string, mode = 'balanced') => request<Record<string, unknown>>(`/api/projects/${id}/dashboard?mode=${mode}`),
   getDesignSchemeLedger: (id: string, mode = 'balanced') => request<Record<string, unknown>>(`/api/projects/${id}/design-scheme-ledger?mode=${mode}`),
+  getIntegratedRetainingCandidates: (id: string, mode = 'balanced', maxCandidates = 8) => request<Record<string, any>>(`/api/projects/${id}/expert-design/integrated-candidates?mode=${mode}&maxCandidates=${maxCandidates}`),
+  applyIntegratedRetainingCandidate: (id: string, candidateId: string, mode = 'balanced', recalculate = true) => request<Record<string, any>>(`/api/projects/${id}/expert-design/apply-integrated-candidate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId, mode, recalculate }) }),
   importBoreholes: (projectId: string, file: File) => {
     const form = new FormData();
     form.append('file', file);

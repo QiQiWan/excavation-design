@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, type AuthIdentity } from '../api/client';
 import ProjectsPage from '../pages/ProjectsPage';
 const ProjectWorkspace = lazy(() => import('../pages/ProjectWorkspace'));
 const DocsPage = lazy(() => import('../pages/DocsPage'));
 import type { Project } from '../types/domain';
+import LoginPage from '../pages/LoginPage';
 
 type Diagnostics = {
   version: string;
@@ -21,6 +22,8 @@ export default function App() {
   const [health, setHealth] = useState('checking');
   const [diagnostics, setDiagnostics] = useState<Diagnostics | undefined>();
   const [selected, setSelected] = useState<Project | undefined>();
+  const [authChecking, setAuthChecking] = useState(true);
+  const [identity, setIdentity] = useState<AuthIdentity | undefined>();
 
   const checkApi = () => {
     setHealth('checking');
@@ -36,7 +39,26 @@ export default function App() {
       });
   };
 
-  useEffect(() => { checkApi(); }, []);
+  useEffect(() => {
+    let active = true;
+    api.authStatus().then(async (status) => {
+      if (!active) return;
+      if (!status.loginRequired) { setIdentity({ actor: 'local-development', role: 'admin', authenticated: false, authMode: 'local' }); return; }
+      try { const current = await api.me(); if (active) setIdentity(current.identity); } catch { if (active) setIdentity(undefined); }
+    }).finally(() => { if (active) setAuthChecking(false); });
+    const unauthorized = () => setIdentity(undefined);
+    window.addEventListener('pitguard:unauthorized', unauthorized);
+    return () => { active = false; window.removeEventListener('pitguard:unauthorized', unauthorized); };
+  }, []);
+
+  useEffect(() => { if (identity) checkApi(); }, [identity]);
+
+  async function logout() {
+    try { await api.logout(); } finally { setSelected(undefined); setIdentity(undefined); }
+  }
+
+  if (authChecking) return <main className="loginLoading"><div className="loginBrandMark">PG</div><p>正在检查登录状态…</p></main>;
+  if (!identity) return <LoginPage onAuthenticated={(value) => setIdentity(value)} />;
 
   const offline = !health.startsWith('ok');
   const missingModules = diagnostics?.missingModules ?? [];
@@ -54,7 +76,9 @@ export default function App() {
         <div className="apiStatusGroup">
           <a className="topLink" href="/docs">设计与计算文档</a>
           <span className={health.startsWith('ok') ? 'badge ok' : 'badge warn'}>API {health}</span>
+          <span className="userBadge">{identity.username ?? identity.actor} · {identity.role}</span>
           <button className="secondary compactButton" onClick={checkApi}>重检后端</button>
+          <button className="secondary compactButton" onClick={() => void logout()}>退出登录</button>
         </div>
       </header>
 

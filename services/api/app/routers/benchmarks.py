@@ -24,7 +24,8 @@ def run_cases(case_id: str | None = Query(default=None, alias="caseId"), persist
     return run_all_benchmarks(repo=repo, persist=persist)
 
 
-@router.api_route("/export-package", methods=["GET", "POST"])
+@router.post("/export-package")
+@router.get("/export-package", include_in_schema=False)
 def export_package(persist: bool = False, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     path = export_benchmark_package(EXPORT_DIR, repo=repo, persist=persist)
     return FileResponse(path=path, filename=path.name, media_type="application/zip")

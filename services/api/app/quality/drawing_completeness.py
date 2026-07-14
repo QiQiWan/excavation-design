@@ -83,6 +83,9 @@ def evaluate_drawing_completeness(
         "cage_hoisting_analysis.csv",
         "construction_sequence.csv",
         "embedded_item_collision_checks.csv",
+        "support_junction_schedule.csv",
+        "wall_panel_cage_traceability.csv",
+        "cross_artifact_traceability.json",
     ]
     for filename in mandatory_schedules:
         add(

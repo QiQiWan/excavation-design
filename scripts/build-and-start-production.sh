@@ -23,13 +23,11 @@ ENV_DIR="${PITGUARD_ENV_DIR:-/etc/pitguard}"
 ENV_FILE="$ENV_DIR/pitguard.env"
 API_KEY_FILE="$ENV_DIR/api-key"
 WEB_CREDENTIAL_FILE="$ENV_DIR/web-credentials.txt"
-HTPASSWD_FILE="$ENV_DIR/.htpasswd"
+SESSION_SECRET_FILE="$ENV_DIR/session-secret"
 NGINX_CONF="${PITGUARD_NGINX_CONF:-/etc/nginx/conf.d/${DOMAIN}.conf}"
-NGINX_SECRET="${PITGUARD_NGINX_SECRET:-/etc/nginx/snippets/pitguard-api-key.conf}"
 SYSTEMD_UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
 WEB_USER="${PITGUARD_WEB_USER:-pitguard}"
 WEB_PASSWORD="${PITGUARD_WEB_PASSWORD:-}"
-ENABLE_BASIC_AUTH="${PITGUARD_ENABLE_BASIC_AUTH:-1}"
 NUMERIC_THREADS="${PITGUARD_NUMERIC_THREADS:-1}"
 
 if [ -z "$PYTHON_BIN" ]; then
@@ -60,7 +58,7 @@ if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
 fi
 
 mkdir -p "$RUNTIME_DIR/backups" "$RUNTIME_DIR/cache" "$RUNTIME_DIR/matplotlib" \
-  "$API_DIR/exports" "$API_DIR/runtime_cache" "$ENV_DIR" /etc/nginx/snippets
+  "$API_DIR/exports" "$API_DIR/runtime_cache" "$ENV_DIR"
 chmod 750 "$ENV_DIR"
 
 PYTHON_BIN="$PYTHON_BIN" PITGUARD_INSTALL_DEPS="${PITGUARD_INSTALL_DEPS:-1}" \
@@ -71,6 +69,43 @@ if [ ! -s "$API_KEY_FILE" ]; then
 fi
 API_KEY="$(tr -d '\r\n' < "$API_KEY_FILE")"
 chmod 600 "$API_KEY_FILE"
+
+if [ ! -s "$SESSION_SECRET_FILE" ]; then
+  openssl rand -hex 48 > "$SESSION_SECRET_FILE"
+fi
+SESSION_SECRET="$(tr -d '\r\n' < "$SESSION_SECRET_FILE")"
+chmod 600 "$SESSION_SECRET_FILE"
+
+if [ -z "$WEB_PASSWORD" ]; then
+  if [ -s "$WEB_CREDENTIAL_FILE" ]; then
+    WEB_PASSWORD="$(awk -F= '$1=="password" {print substr($0, index($0,"=")+1)}' "$WEB_CREDENTIAL_FILE")"
+  else
+    WEB_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+  fi
+fi
+PASSWORD_HASH="$($PYTHON_BIN - "$WEB_PASSWORD" <<'PYHASH'
+import base64, hashlib, os, sys
+password = sys.argv[1].encode('utf-8')
+salt = os.urandom(18)
+iterations = 240000
+digest = hashlib.pbkdf2_hmac('sha256', password, salt, iterations)
+b64 = lambda value: base64.urlsafe_b64encode(value).decode('ascii').rstrip('=')
+print(f"pbkdf2_sha256${iterations}${b64(salt)}${b64(digest)}")
+PYHASH
+)"
+PITGUARD_USERS_JSON="$($PYTHON_BIN - "$WEB_USER" "$PASSWORD_HASH" <<'PYUSERS'
+import json, sys
+username, password_hash = sys.argv[1], sys.argv[2]
+print(json.dumps({username: {"passwordHash": password_hash, "role": "admin", "actor": username, "userId": "primary-admin"}}, separators=(',', ':')))
+PYUSERS
+)"
+cat > "$WEB_CREDENTIAL_FILE" <<CREDEOF
+url=https://$DOMAIN
+username=$WEB_USER
+password=$WEB_PASSWORD
+auth_mode=application_login_page
+CREDEOF
+chmod 600 "$WEB_CREDENTIAL_FILE"
 
 cat > "$ENV_FILE" <<ENVEOF
 PITGUARD_DB_PATH=$RUNTIME_DIR/pitguard.sqlite3
@@ -84,39 +119,13 @@ MKL_NUM_THREADS=$NUMERIC_THREADS
 NUMEXPR_NUM_THREADS=$NUMERIC_THREADS
 VECLIB_MAXIMUM_THREADS=$NUMERIC_THREADS
 PITGUARD_CORS_ORIGINS=https://$DOMAIN
-PITGUARD_API_KEYS='{"$API_KEY":{"role":"admin","actor":"nginx-web-gateway","keyId":"web-gateway-1"}}'
+PITGUARD_USERS='$PITGUARD_USERS_JSON'
+PITGUARD_SESSION_SECRET=$SESSION_SECRET
+PITGUARD_SESSION_TTL_SECONDS=${PITGUARD_SESSION_TTL_SECONDS:-28800}
+PITGUARD_COOKIE_SECURE=true
+PITGUARD_API_KEYS='{"$API_KEY":{"role":"admin","actor":"automation-api","keyId":"automation-1"}}'
 ENVEOF
 chmod 600 "$ENV_FILE"
-
-cat > "$NGINX_SECRET" <<NGINXSECRETEOF
-proxy_set_header X-PitGuard-Key "$API_KEY";
-NGINXSECRETEOF
-chmod 600 "$NGINX_SECRET"
-
-AUTH_DIRECTIVE=""
-if [ "$ENABLE_BASIC_AUTH" = "1" ]; then
-  if [ -z "$WEB_PASSWORD" ]; then
-    if [ -s "$WEB_CREDENTIAL_FILE" ]; then
-      WEB_PASSWORD="$(awk -F= '$1=="password" {print substr($0, index($0,"=")+1)}' "$WEB_CREDENTIAL_FILE")"
-    else
-      WEB_PASSWORD="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
-    fi
-  fi
-  PASSWORD_HASH="$(openssl passwd -apr1 "$WEB_PASSWORD")"
-  printf '%s:%s\n' "$WEB_USER" "$PASSWORD_HASH" > "$HTPASSWD_FILE"
-  chmod 600 "$HTPASSWD_FILE"
-  cat > "$WEB_CREDENTIAL_FILE" <<CREDEOF
-url=https://$DOMAIN
-username=$WEB_USER
-password=$WEB_PASSWORD
-CREDEOF
-  chmod 600 "$WEB_CREDENTIAL_FILE"
-  AUTH_DIRECTIVE=$(cat <<AUTHEOF
-    auth_basic "PitGuard Engineering System";
-    auth_basic_user_file $HTPASSWD_FILE;
-AUTHEOF
-)
-fi
 
 cat > "$SYSTEMD_UNIT" <<UNITEOF
 [Unit]
@@ -192,13 +201,11 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
-$AUTH_DIRECTIVE
 
     access_log /var/log/nginx/pitguard_access.log;
     error_log /var/log/nginx/pitguard_error.log warn;
 
     location = /health {
-        auth_basic off;
         proxy_pass http://pitguard_api/health;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -210,7 +217,6 @@ $AUTH_DIRECTIVE
     }
 
     location /api/ {
-        include $NGINX_SECRET;
         proxy_pass http://pitguard_api;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -226,7 +232,6 @@ $AUTH_DIRECTIVE
     }
 
     location = /backend-docs {
-        include $NGINX_SECRET;
         proxy_pass http://pitguard_api/docs;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -234,7 +239,6 @@ $AUTH_DIRECTIVE
     }
 
     location = /openapi.json {
-        include $NGINX_SECRET;
         proxy_pass http://pitguard_api/openapi.json;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -242,7 +246,6 @@ $AUTH_DIRECTIVE
     }
 
     location = /redoc {
-        include $NGINX_SECRET;
         proxy_pass http://pitguard_api/redoc;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -309,12 +312,10 @@ Nginx log     : /var/log/nginx/pitguard_error.log
 Port 5173     : not used and not checked
 OUTEOF
 
-if [ "$ENABLE_BASIC_AUTH" = "1" ]; then
-  cat <<OUTEOF
+cat <<OUTEOF
+Login mode    : application login page
 Web username  : $WEB_USER
 Web password  : $WEB_PASSWORD
 Credentials   : $WEB_CREDENTIAL_FILE
+Automation key: $API_KEY_FILE
 OUTEOF
-else
-  echo "Web auth      : disabled"
-fi

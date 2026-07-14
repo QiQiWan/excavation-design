@@ -36,7 +36,8 @@ def _export_ifc_with_check(project, mode: str) -> tuple[Path, object]:
     return path, file_check
 
 
-@router.api_route("/ifc", methods=["GET", "POST"])
+@router.post("/ifc")
+@router.get("/ifc", include_in_schema=False)
 def export_ifc(
     project_id: str,
     mode: Literal["coordination_light", "analysis_model", "design_detailed", "construction_visual"] = Query("design_detailed", description="IFC export mode: coordination_light, analysis_model, construction_visual or design_detailed"),
@@ -47,7 +48,8 @@ def export_ifc(
     return FileResponse(path=path, filename=path.name, media_type="application/octet-stream")
 
 
-@router.api_route("/ifc-light", methods=["GET", "POST"])
+@router.post("/ifc-light")
+@router.get("/ifc-light", include_in_schema=False)
 def export_ifc_light(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path, _ = _export_ifc_with_check(project, "coordination_light")
@@ -56,28 +58,32 @@ def export_ifc_light(project_id: str, repo: ProjectRepository = Depends(get_repo
 
 
 
-@router.api_route("/ifc-analysis", methods=["GET", "POST"])
+@router.post("/ifc-analysis")
+@router.get("/ifc-analysis", include_in_schema=False)
 def export_ifc_analysis(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path, _ = _export_ifc_with_check(project, "analysis_model")
     return FileResponse(path=path, filename=path.name, media_type="application/octet-stream")
 
 
-@router.api_route("/ifc-construction-visual", methods=["GET", "POST"])
+@router.post("/ifc-construction-visual")
+@router.get("/ifc-construction-visual", include_in_schema=False)
 def export_ifc_construction_visual(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path, _ = _export_ifc_with_check(project, "construction_visual")
     return FileResponse(path=path, filename=path.name, media_type="application/octet-stream")
 
 
-@router.api_route("/ifc-detailed", methods=["GET", "POST"])
+@router.post("/ifc-detailed")
+@router.get("/ifc-detailed", include_in_schema=False)
 def export_ifc_detailed(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path, _ = _export_ifc_with_check(project, "design_detailed")
     return FileResponse(path=path, filename=path.name, media_type="application/octet-stream")
 
 
-@router.api_route("/ifc-check", methods=["GET", "POST"])
+@router.post("/ifc-check")
+@router.get("/ifc-check", include_in_schema=False)
 def export_ifc_check(
     project_id: str,
     mode: Literal["coordination_light", "analysis_model", "design_detailed", "construction_visual"] = Query("design_detailed"),
@@ -88,7 +94,8 @@ def export_ifc_check(
     return result.model_dump(mode="json", by_alias=True)
 
 
-@router.api_route("/ifc-rebar-visualization", methods=["GET", "POST"])
+@router.post("/ifc-rebar-visualization")
+@router.get("/ifc-rebar-visualization", include_in_schema=False)
 def export_ifc_rebar_visualization(
     project_id: str,
     max_bars: int = Query(2400, ge=50, le=5000, description="Maximum sampled bars returned for browser visualization"),
@@ -98,7 +105,8 @@ def export_ifc_rebar_visualization(
     return build_rebar_ifc_visualization(project, max_bars=max_bars)
 
 
-@router.api_route("/drawings-cad", methods=["GET", "POST"])
+@router.post("/drawings-cad")
+@router.get("/drawings-cad", include_in_schema=False)
 def export_drawings_cad(
     project_id: str,
     scope: Literal["full", "general", "rebar", "details"] = Query("full"),
@@ -133,7 +141,8 @@ def get_drawings_manifest(project_id: str, repo: ProjectRepository = Depends(get
     return build_drawing_set_manifest(repo.require(project_id))
 
 
-@router.api_route("/drawings-svg", methods=["GET", "POST"])
+@router.post("/drawings-svg")
+@router.get("/drawings-svg", include_in_schema=False)
 def export_drawings_svg(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path = export_construction_svg_package(project, EXPORT_DIR)
@@ -142,7 +151,8 @@ def export_drawings_svg(project_id: str, repo: ProjectRepository = Depends(get_r
 
 
 
-@router.api_route("/rebar-detailing-package", methods=["GET", "POST"])
+@router.post("/rebar-detailing-package")
+@router.get("/rebar-detailing-package", include_in_schema=False)
 def export_rebar_detailing_zip(
     project_id: str,
     mode: Literal["conservative", "balanced", "economic"] = Query("balanced"),
@@ -153,14 +163,16 @@ def export_rebar_detailing_zip(
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
 
 
-@router.api_route("/report", methods=["GET", "POST"])
+@router.post("/report")
+@router.get("/report", include_in_schema=False)
 def export_report(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path = export_docx_report(project, EXPORT_DIR)
     return FileResponse(path=path, filename=path.name, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
-@router.api_route("/json", methods=["GET", "POST"])
+@router.post("/json")
+@router.get("/json", include_in_schema=False)
 def export_json(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -168,14 +180,16 @@ def export_json(project_id: str, repo: ProjectRepository = Depends(get_repositor
     path.write_text(json.dumps(project.model_dump(mode="json", by_alias=True), ensure_ascii=False, indent=2), encoding="utf-8")
     return FileResponse(path=path, filename=path.name, media_type="application/json")
 
-@router.api_route("/design-scheme-ledger", methods=["GET", "POST"])
+@router.post("/design-scheme-ledger")
+@router.get("/design-scheme-ledger", include_in_schema=False)
 def export_design_scheme(project_id: str, mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"), repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path = export_design_scheme_ledger(project, EXPORT_DIR, mode=mode)
     return FileResponse(path=path, filename=path.name, media_type="application/json")
 
 
-@router.api_route("/wall-length-redundancy", methods=["GET", "POST"])
+@router.post("/wall-length-redundancy")
+@router.get("/wall-length-redundancy", include_in_schema=False)
 def export_wall_length_redundancy(project_id: str, mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"), repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path = export_wall_length_redundancy_report(project, EXPORT_DIR, mode=mode)
@@ -183,7 +197,8 @@ def export_wall_length_redundancy(project_id: str, mode: str = Query("balanced",
 
 
 
-@router.api_route("/formal-drawing-package", methods=["GET", "POST"])
+@router.post("/formal-drawing-package")
+@router.get("/formal-drawing-package", include_in_schema=False)
 def export_formal_drawings(
     project_id: str,
     issue_mode: Literal["review", "construction"] = Query("review"),
@@ -211,7 +226,8 @@ def export_formal_drawings(
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
 
 
-@router.api_route("/coordinated-delivery-package", methods=["GET", "POST"])
+@router.post("/coordinated-delivery-package")
+@router.get("/coordinated-delivery-package", include_in_schema=False)
 def export_coordinated_delivery(
     project_id: str,
     issue_mode: Literal["review", "construction"] = Query("review"),

@@ -25,6 +25,7 @@ from app.version import SOFTWARE_VERSION
 from app.quality.construction_issue_gate import build_construction_issue_gate, validate_dxf_package, write_sha256_manifest
 from app.quality.drawing_completeness import evaluate_drawing_completeness
 from app.quality.drawing_sheet_quality import evaluate_drawing_sheet_quality, write_drawing_sheet_quality_files
+from app.quality.support_layout_quality import evaluate_support_layout_quality
 
 
 _ACTIVE_DRAWING_SHEET: ContextVar[dict[str, Any] | None] = ContextVar("active_drawing_sheet", default=None)
@@ -640,6 +641,149 @@ def _write_rebar_bending_schedule_csv(project: Project, path: Path, detailing: d
         for item in detailing.get("entries", []):
             writer.writerow([item.get("barMark"), item.get("hostType"), item.get("hostCode"), item.get("groupName"), item.get("barType"), item.get("diameterMm"), item.get("spacingMm"), item.get("shapeCode"), item.get("shapeDescription"), item.get("quantity"), item.get("singleLengthM"), item.get("totalLengthM"), item.get("totalWeightKg"), item.get("anchorageStatus"), item.get("lapStatus"), item.get("hookStatus"), item.get("note")])
 
+
+
+def _support_wall_connection_rows(project: Project) -> list[dict[str, Any]]:
+    rows: dict[tuple[int, int, int], dict[str, Any]] = {}
+    retaining = project.retaining_system
+    if not retaining:
+        return []
+    for support in retaining.supports:
+        for endpoint, point, face_code in (
+            ("start", support.start, support.start_face_code),
+            ("end", support.end, support.end_face_code),
+        ):
+            if not face_code:
+                continue
+            key = (int(support.level_index), int(round(float(point.x) * 50)), int(round(float(point.y) * 50)))
+            row = rows.setdefault(key, {
+                "levelIndex": int(support.level_index),
+                "x": round(float(point.x), 4),
+                "y": round(float(point.y), 4),
+                "faceCodes": set(),
+                "supportCodes": set(),
+                "endpoints": [],
+            })
+            row["faceCodes"].add(str(face_code))
+            row["supportCodes"].add(str(support.code))
+            row["endpoints"].append(f"{support.code}:{endpoint}")
+    output = []
+    for index, row in enumerate(sorted(rows.values(), key=lambda x: (x["levelIndex"], x["x"], x["y"])), start=1):
+        member_count = len(row["supportCodes"])
+        output.append({
+            "connectionId": f"WCN-{row['levelIndex']:02d}-{index:03d}",
+            "levelIndex": row["levelIndex"],
+            "x": row["x"], "y": row["y"],
+            "faceCodes": sorted(row["faceCodes"]),
+            "supportCodes": sorted(row["supportCodes"]),
+            "endpoints": sorted(row["endpoints"]),
+            "memberCount": member_count,
+            "connectionType": "wall_junction" if member_count >= 2 else "single_wall_bearing",
+            "highDegree": member_count >= 3,
+            "optimizationPenaltyApplied": member_count >= 2,
+        })
+    return output
+
+
+def _write_support_junction_schedule_csv(project: Project, path: Path) -> None:
+    quality = evaluate_support_layout_quality(project)
+    metrics = dict(quality.metrics or {})
+    rows: list[dict[str, Any]] = []
+    rows.extend(_support_wall_connection_rows(project))
+    for index, node in enumerate(metrics.get("junctionPoints") or [], start=1):
+        if node.get("nodeType") != "internal":
+            continue
+        point = node.get("point") or {}
+        rows.append({
+            "connectionId": f"ICN-{int(node.get('levelIndex', 0)):02d}-{index:03d}",
+            "levelIndex": int(node.get("levelIndex", 0) or 0),
+            "x": point.get("x"), "y": point.get("y"),
+            "faceCodes": [], "supportCodes": node.get("supportCodes") or [], "endpoints": [],
+            "memberCount": node.get("memberCount"), "connectionType": "internal_junction",
+            "highDegree": bool(node.get("highDegree")), "optimizationPenaltyApplied": True,
+        })
+    with path.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["connection_id", "level", "node_type", "x_m", "y_m", "face_codes", "support_codes", "member_count", "high_degree", "optimization_penalty", "endpoint_trace"])
+        for row in rows:
+            writer.writerow([
+                row["connectionId"], row["levelIndex"], row["connectionType"], row["x"], row["y"],
+                ";".join(row["faceCodes"]), ";".join(row["supportCodes"]), row["memberCount"],
+                row["highDegree"], row["optimizationPenaltyApplied"], ";".join(row["endpoints"]),
+            ])
+
+
+def _write_wall_panel_cage_traceability_csv(project: Project, path: Path) -> None:
+    with path.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.writer(stream)
+        writer.writerow([
+            "calculation_wall_id", "calculation_wall_code", "design_face_code", "design_length_m",
+            "wall_bottom_elevation_m", "toe_zone_id", "construction_panel_code", "panel_index",
+            "start_chainage_m", "end_chainage_m", "panel_length_m", "cage_count", "joint_type",
+            "lifting_review_required", "reinforcement_groups", "drawing_refs", "ifc_host_key",
+        ])
+        retaining = project.retaining_system
+        if not retaining:
+            return
+        for wall in retaining.diaphragm_walls:
+            panels = list(getattr(wall, "construction_panels", []) or [])
+            if not panels:
+                panels = [{"panelCode": f"{wall.panel_code}-P01", "panelIndex": 1, "startChainageM": 0.0, "endChainageM": wall.design_length or 0.0, "lengthM": wall.design_length or 0.0, "cageCount": 1, "jointType": "project_specific", "liftingReviewRequired": True}]
+            groups = "; ".join(_group_token(group) for group in wall.reinforcement)
+            for index, panel in enumerate(panels, start=1):
+                panel_code = str(panel.get("panelCode") or f"{wall.panel_code}-P{index:02d}")
+                writer.writerow([
+                    wall.id, wall.panel_code, wall.design_face_code, wall.design_length, wall.bottom_elevation, wall.toe_zone_id,
+                    panel_code, panel.get("panelIndex") or index, panel.get("startChainageM"), panel.get("endChainageM"),
+                    panel.get("lengthM"), panel.get("cageCount", 1), panel.get("jointType", "project_specific"),
+                    panel.get("liftingReviewRequired", True), groups, "S-01;R-01;R-02;R-03;D-06",
+                    f"{wall.id}::{panel_code}",
+                ])
+
+
+def _write_cross_artifact_traceability_json(project: Project, path: Path, manifest: dict[str, Any], detailing: dict[str, Any]) -> None:
+    quality = evaluate_support_layout_quality(project)
+    retaining = project.retaining_system
+    wall_count = len(retaining.diaphragm_walls) if retaining else 0
+    panel_codes = [
+        str(panel.get("panelCode"))
+        for wall in (retaining.diaphragm_walls if retaining else [])
+        for panel in (getattr(wall, "construction_panels", []) or [])
+        if panel.get("panelCode")
+    ]
+    cage_codes = [str(item.get("constructionPanelCode")) for item in detailing.get("cageSegments", []) if item.get("constructionPanelCode")]
+    payload = {
+        "projectId": project.id,
+        "softwareVersion": SOFTWARE_VERSION,
+        "optimizationObjectives": {
+            "illegalSupportCrossingsPrimary": True,
+            "wallEndpointJunctionsIncluded": True,
+            "wallPlanDesignLengthVariable": True,
+            "wallVerticalLengthVariable": True,
+        },
+        "supportTopology": {
+            "status": quality.status, "score": quality.score, "metrics": quality.metrics,
+            "wallConnectionSchedule": "90_schedules/support_junction_schedule.csv",
+        },
+        "wallPanelCageTraceability": {
+            "calculationWallCount": wall_count, "constructionPanelCount": len(panel_codes),
+            "uniqueConstructionPanelCount": len(set(panel_codes)),
+            "fabricationCageSegmentCount": len(cage_codes),
+            "constructionPanelWithCageCount": len(set(cage_codes)),
+            "panelCodesMissingFromCageVisualization": sorted(set(panel_codes) - set(cage_codes)),
+            "cageCodesMissingFromPanelSchedule": sorted(set(cage_codes) - set(panel_codes)),
+            "schedule": "90_schedules/wall_panel_cage_traceability.csv",
+            "ifcSidecarPattern": "*_design_detailed.ifc_manifest.json",
+        },
+        "drawingTraceability": {
+            "sheetCount": manifest.get("sheetCount"), "planHash": manifest.get("planHash"),
+            "drawingRuleSetHash": manifest.get("drawingRuleSetHash"),
+            "matrix": "90_schedules/drawing_model_calculation_standard_matrix.csv",
+        },
+        "status": "pass" if len(panel_codes) == len(set(panel_codes)) and set(panel_codes) == set(cage_codes) else "manual_review",
+        "professionalReviewRequired": True,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def _write_enterprise_template_manifest(project: Project, path: Path) -> None:
     import json
@@ -2049,6 +2193,14 @@ def export_construction_cad_package(project: Project, output_dir: str | Path, sc
     _write_rows(schedule_files[30], ["sequence","phase","activity","drawing_refs","hold_point"], [[x.get("sequence"),x.get("phase"),x.get("activity"),x.get("drawingRefs"),x.get("holdPoint")] for x in deep.get("constructionSequence", [])])
     _write_rows(schedule_files[31], ["check_id","embedded_item_id","embedded_type","bar_id","bar_mark","host_code","status","intended_connection","message","recommended_action","drawing_ref"], [[x.get("checkId"),x.get("embeddedItemId"),x.get("embeddedType"),x.get("barId"),x.get("barMark"),x.get("hostCode"),x.get("status"),x.get("intendedConnection"),x.get("message"),x.get("recommendedAction"),x.get("drawingRef")] for x in deep.get("embeddedItemCollisionChecks", [])])
     schedule_files[32].write_text(json.dumps(deep, ensure_ascii=False, indent=2), encoding="utf-8")
+    traceability_files = [
+        package_dir / "90_schedules/support_junction_schedule.csv",
+        package_dir / "90_schedules/wall_panel_cage_traceability.csv",
+        package_dir / "90_schedules/cross_artifact_traceability.json",
+    ]
+    _write_support_junction_schedule_csv(project, traceability_files[0])
+    _write_wall_panel_cage_traceability_csv(project, traceability_files[1])
+    _write_cross_artifact_traceability_json(project, traceability_files[2], manifest, detailing)
     coordination_optimization = build_coordination_optimization(project, mode=rebar_mode, detailing=detailing)
     node_submodels = build_node_submodels(project, top_n=12, local_result=advanced_suite.get("nodeLocal"))
     crane_logistics = optimize_cage_crane_logistics(project, mode=rebar_mode, detailing=detailing)
@@ -2093,6 +2245,7 @@ def export_construction_cad_package(project: Project, output_dir: str | Path, sc
     ] for x in crane_logistics.get("cases", [])])
     v39_files[6].write_text(json.dumps(units, ensure_ascii=False, indent=2), encoding="utf-8")
     generated.extend(schedule_files)
+    generated.extend(traceability_files)
     generated.extend(v39_files)
     generated.extend(node_deck_files)
     # Preserve V2.x flat-package schedule names for downstream scripts while the

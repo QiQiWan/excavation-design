@@ -1,8 +1,11 @@
 # PitGuard 文档中心
 
-现行文档按产品工作流、计算原理、深化设计、成果交付和版本记录组织。发生冲突时，优先级依次为：当前版本源码与自动化测试、V3.21 现行文档、历史版本文档。
+现行文档按产品工作流、计算原理、深化设计、成果交付和版本记录组织。发生冲突时，优先级依次为：当前版本源码与自动化测试、V3.23 现行文档、历史版本文档。
 
-## 当前版本 V3.21
+## 当前版本 V3.23
+
+- [V3.23 支撑交点、墙长联合变量、IFC/配筋/图纸与登录优化](releases/V3_23_0_JOINT_CLEAN_IFC_REBAR_DRAWING_LOGIN.md)
+- [V3.22 P0-P3 工业闭环实施报告](../docs/PitGuard_V3.22.0_P0-P3工业闭环实施报告.md)
 
 - [工业化成熟度审查与整洁支撑拓扑优化](engineering/24_INDUSTRIAL_MATURITY_AND_CLEAN_SUPPORT_OPTIMIZATION.md)
 - [V3.21.0 版本说明](releases/V3_21_0_CLEAN_SUPPORT_TOPOLOGY_AND_INDUSTRIAL_MATURITY.md)
@@ -35,11 +38,11 @@
 ## 版本记录
 
 - [版本变更记录](releases/CHANGELOG.md)
-- `releases/`：V3.0—V3.21 正式版本说明和验证记录；
+- `releases/`：V3.0—V3.23 正式版本说明和验证记录；
 - `reference/`：标准矩阵、在线文档快照、数据格式、IFC 映射和监测模板；
 - `archive/root-notes/`：V1.x—V2.9 历史材料，仅用于追溯。
 
-## V3.21 在线文档逻辑
+## V3.23 在线文档逻辑
 
 在线文档和接口统一采用八阶段流程：
 

@@ -121,8 +121,43 @@ function addCageGrid(scene: Scene, cage: RebarVisualizationCage, clippingPlanes:
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   const material = new LineBasicMaterial({ color: 0x1d4ed8, transparent: true, opacity: 0.72, clippingPlanes });
   const lines = new LineSegments(geometry, material);
-  lines.userData.info = { type: 'RebarCage', hostId: cage.hostId, hostCode: cage.hostCode, panelCode: cage.panelCode, panelLengthM: cage.panelLengthM, topElevation: cage.topElevation, bottomElevation: cage.bottomElevation, verticalBars: cage.faces.map((row) => `${row.face}:D${row.diameterMm}@${row.spacingMm}`).join('; '), horizontalBars: `D${cage.horizontal.diameterMm}@${cage.horizontal.spacingMm}`, ties: `D${cage.ties.diameterMm}@${cage.ties.spacingMm}`, zoneIds: cage.zoneIds };
+  lines.userData.info = { type: 'RebarCage', hostId: cage.hostId, hostCode: cage.hostCode, panelCode: cage.panelCode, panelLengthM: cage.panelLengthM, topElevation: cage.topElevation, bottomElevation: cage.bottomElevation, verticalBars: cage.faces.map((row) => `${row.face}:D${row.diameterMm}@${row.spacingMm}`).join('; '), horizontalBars: `D${cage.horizontal.diameterMm}@${cage.horizontal.spacingMm}`, ties: `D${cage.ties.diameterMm}@${cage.ties.spacingMm}`, zoneIds: cage.zoneIds, segmentCount: cage.segmentCount, cageStatus: cage.cageStatus };
   scene.add(lines);
+
+  const jointPositions: number[] = [];
+  (cage.jointMarkers ?? []).forEach((marker) => {
+    const p = pointToVector(marker.point);
+    jointPositions.push(p.x, bottomY, p.z, p.x, topY, p.z);
+  });
+  if (jointPositions.length) {
+    const jointGeometry = new BufferGeometry();
+    jointGeometry.setAttribute('position', new Float32BufferAttribute(jointPositions, 3));
+    const jointLines = new LineSegments(jointGeometry, new LineBasicMaterial({ color: 0xea580c, transparent: true, opacity: 0.92, clippingPlanes }));
+    jointLines.userData.info = { type: 'ConstructionJoint', hostCode: cage.hostCode, panelCode: cage.panelCode, jointType: cage.jointType };
+    scene.add(jointLines);
+  }
+
+  const liftingGeometry = new SphereGeometry(Math.max(0.08, Math.min(cage.thicknessM * 0.18, 0.18)), 10, 10);
+  (cage.liftingPoints ?? []).forEach((lifting) => {
+    const marker = new Mesh(liftingGeometry, new MeshStandardMaterial({ color: lifting.reviewRequired ? 0xf59e0b : 0x16a34a, metalness: 0.15, roughness: 0.45, clippingPlanes }));
+    marker.position.copy(pointToVector(lifting.point));
+    marker.userData.info = { type: 'CageLiftingPoint', hostCode: cage.hostCode, panelCode: cage.panelCode, liftingPointId: lifting.id, ratio: lifting.ratio, reviewRequired: lifting.reviewRequired };
+    scene.add(marker);
+  });
+
+  const splicePositions: number[] = [];
+  (cage.spliceZones ?? []).forEach((zone) => {
+    const a = start.clone(); const b = end.clone();
+    a.y = zone.elevation; b.y = zone.elevation;
+    splicePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  });
+  if (splicePositions.length) {
+    const spliceGeometry = new BufferGeometry();
+    spliceGeometry.setAttribute('position', new Float32BufferAttribute(splicePositions, 3));
+    const spliceLines = new LineSegments(spliceGeometry, new LineBasicMaterial({ color: 0x9333ea, transparent: true, opacity: 0.88, clippingPlanes }));
+    spliceLines.userData.info = { type: 'CageSpliceZone', hostCode: cage.hostCode, panelCode: cage.panelCode, spliceZones: cage.spliceZones };
+    scene.add(spliceLines);
+  }
 }
 
 function makeTextSprite(text: string, color = '#0f172a') {
@@ -424,7 +459,7 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
           <button className="secondary" onClick={() => api.getRebarIfcVisualization(project.id, 1600).then(setData).catch((err) => setError(err instanceof Error ? err.message : String(err)))}>刷新钢筋数据</button>
         </div>
         {highlightId && <div className="locatorHint">当前定位对象：{highlightId}；匹配宿主构件或钢筋组时会以金色加粗显示。</div>}
-        <div className="rebarLegend"><span className="rbMain">纵筋</span><span className="rbDist">分布筋</span><span className="rbStirrup">箍筋/节点加密</span><span>拉结/架立</span><span className="rbAdd">搭接加强</span><span className="rbFail">Fail</span></div>
+        <div className="rebarLegend"><span className="rbMain">纵筋</span><span className="rbDist">分布筋</span><span className="rbStirrup">箍筋/节点加密</span><span>拉结/架立</span><span className="rbAdd">搭接加强</span><span className="rbJoint">槽段接头</span><span className="rbLift">吊点</span><span className="rbFail">Fail</span></div>
         <div className="rebarViewport" ref={mountRef} />
         <div className="stepGrid rebarBottomGrid">
           <div className="propertyPanel"><strong>钢筋属性</strong>{selected ? <><table className="table compactTable"><tbody>{humanInfo(selected).map(([key, value]) => <tr key={key}><td>{key}</td><td>{String(value ?? '-')}</td></tr>)}</tbody></table><div className="selectedRebarActions"><span className="small">关联图纸：{drawingRefsFor(selected).join('、') || '—'}</span><button className="secondary" onClick={() => setIsolatedHost(String(selected.hostId ?? selected.hostCode ?? ''))} disabled={!selected.hostId && !selected.hostCode}>隔离该宿主</button></div></> : <span className="small">点击任意钢筋查看 IFC 类、宿主构件、钢筋组、间距、校核状态和关联图纸。</span>}</div>

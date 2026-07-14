@@ -206,6 +206,9 @@ def export_coordinated_delivery_package(
                 "drawing_completeness.json": "10_drawings/quick_review/drawing_completeness.json",
                 "construction_issue_gate.json": "10_drawings/quick_review/construction_issue_gate.json",
                 "drawing_model_calculation_standard_matrix.csv": "10_drawings/quick_review/drawing_model_calculation_standard_matrix.csv",
+                "support_junction_schedule.csv": "10_drawings/quick_review/support_junction_schedule.csv",
+                "wall_panel_cage_traceability.csv": "10_drawings/quick_review/wall_panel_cage_traceability.csv",
+                "cross_artifact_traceability.json": "10_drawings/quick_review/cross_artifact_traceability.json",
             },
             artifacts,
         )
@@ -240,6 +243,9 @@ def export_coordinated_delivery_package(
                 source_sidecar = out / f"{project.id}_{mode}.ifc_check.json"
                 if source_sidecar.exists():
                     _copy_artifact(root, source_sidecar, f"20_bim/{filename}.check.json", "IFC兼容性检查", "BIM/审查", "audit", artifacts)
+                source_manifest = out / f"{project.id}_{mode}.ifc_manifest.json"
+                if source_manifest.exists():
+                    _copy_artifact(root, source_manifest, f"20_bim/{filename}.manifest.json", "IFC对象与优化追溯清单", "BIM/设计/审查", "audit", artifacts)
 
     generate("design_scheme_ledger", "方案与交付台账", "设计/校核/项目管理", "audit", "50_data/design_scheme_ledger.json", lambda: export_design_scheme_ledger(project, out, mode=rebar_mode))
     generate("wall_length_redundancy", "围护墙长度优化报告", "设计/校核", "audit", "50_data/wall_length_redundancy.json", lambda: export_wall_length_redundancy_report(project, out, mode=rebar_mode))
@@ -264,6 +270,8 @@ def export_coordinated_delivery_package(
         {"category": "BIM", "check": "IFC多配置及兼容性", "status": "generated" if include_ifc_profiles else "skipped", "evidence": "20_bim", "responsibleRole": "BIM协调", "action": "在目标软件中执行导入回归"},
         {"category": "现场", "check": "周边环境、施工组织和监测条件", "status": "manual_review", "evidence": "项目输入/专项方案", "responsibleRole": "项目总工/施工单位", "action": "核实坡道、出土口、管线、邻建、吊装和监测"},
         {"category": "追溯", "check": "图纸—模型—计算—规范映射", "status": "generated" if formal else "fail", "evidence": "10_drawings/quick_review/drawing_model_calculation_standard_matrix.csv", "responsibleRole": "设计/校核", "action": "抽查控制构件和图纸索引是否引用同一快照"},
+        {"category": "拓扑", "check": "支撑交点与墙上汇交节点追溯", "status": "generated" if formal else "fail", "evidence": "10_drawings/quick_review/support_junction_schedule.csv", "responsibleRole": "设计/校核", "action": "确认非法穿越为零，并复核墙上多杆汇交节点的承压和施工空间"},
+        {"category": "围护墙", "check": "计算墙—施工槽段—钢筋笼一致性", "status": "generated" if formal else "fail", "evidence": "10_drawings/quick_review/wall_panel_cage_traceability.csv", "responsibleRole": "结构/BIM/翻样", "action": "核对设计长度、槽段分幅、墙趾分区、钢筋笼和IFC对象ID"},
         {"category": "完整性", "check": "交付文件哈希与离线校验", "status": "generated", "evidence": "90_audit/SHA256SUMS.txt + verify_delivery_package.py", "responsibleRole": "项目管理/归档", "action": "移交后运行校验脚本确认文件未被修改"},
     ]
     if failures:

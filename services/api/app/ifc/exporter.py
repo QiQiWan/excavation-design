@@ -6,6 +6,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.schemas.domain import BeamElement, ColumnElement, DiaphragmWallPanel, Point2D, Project, SupportElement
+from app.quality.support_layout_quality import evaluate_support_layout_quality
+from app.version import SOFTWARE_VERSION
 
 
 def _ifc_text(value: str) -> str:
@@ -254,6 +256,109 @@ def _add_reinforcing_bar(
     return element
 
 
+
+def _wall_construction_spans(wall: DiaphragmWallPanel) -> list[dict]:
+    """Return construction-panel geometry with stable calculation-wall traceability."""
+    if len(wall.axis.points) < 2:
+        return []
+    a, b = wall.axis.points[0], wall.axis.points[-1]
+    _, _, total_length, _ = _line_direction(a, b)
+    if total_length <= 1.0e-9:
+        return []
+    ux = (b.x - a.x) / total_length
+    uy = (b.y - a.y) / total_length
+    panels = list(getattr(wall, "construction_panels", []) or [])
+    if not panels:
+        panels = [{
+            "panelIndex": 1,
+            "panelCode": f"{wall.panel_code}-P01",
+            "startChainageM": 0.0,
+            "endChainageM": total_length,
+            "lengthM": total_length,
+            "cageCount": 1,
+            "jointType": "project_specific",
+            "liftingReviewRequired": True,
+        }]
+    rows: list[dict] = []
+    for index, panel in enumerate(panels, start=1):
+        c0 = max(0.0, min(total_length, float(panel.get("startChainageM") or 0.0)))
+        c1 = max(c0, min(total_length, float(panel.get("endChainageM") or (c0 + float(panel.get("lengthM") or total_length)))))
+        if c1 - c0 <= 1.0e-6:
+            continue
+        start_data = panel.get("start") or {}
+        end_data = panel.get("end") or {}
+        start = Point2D(
+            x=float(start_data.get("x", a.x + ux * c0)),
+            y=float(start_data.get("y", a.y + uy * c0)),
+        )
+        end = Point2D(
+            x=float(end_data.get("x", a.x + ux * c1)),
+            y=float(end_data.get("y", a.y + uy * c1)),
+        )
+        rows.append({
+            "panelIndex": int(panel.get("panelIndex") or index),
+            "panelCode": str(panel.get("panelCode") or f"{wall.panel_code}-P{index:02d}"),
+            "startChainageM": round(c0, 4),
+            "endChainageM": round(c1, 4),
+            "lengthM": round(c1 - c0, 4),
+            "start": start,
+            "end": end,
+            "cageCount": int(panel.get("cageCount") or 1),
+            "jointType": str(panel.get("jointType") or "project_specific"),
+            "liftingReviewRequired": bool(panel.get("liftingReviewRequired", True)),
+        })
+    return rows
+
+
+def _wall_design_properties(project: Project, wall: DiaphragmWallPanel, *, panel: dict | None = None) -> dict:
+    result = wall.design_results
+    embedment = (project.excavation.bottom_elevation - wall.bottom_elevation) if project.excavation else None
+    properties = {
+        "WallType": "diaphragm_wall",
+        "CalculationWallId": wall.id,
+        "CalculationWallCode": wall.panel_code,
+        "DesignFaceCode": wall.design_face_code,
+        "DesignLength_m": wall.design_length,
+        "DesignLengthIsOptimizationVariable": True,
+        "FaceSegmentIds": ";".join(wall.face_segment_ids),
+        "Thickness": wall.thickness,
+        "TopElevation": wall.top_elevation,
+        "BottomElevation": wall.bottom_elevation,
+        "BottomElevationSource": wall.bottom_elevation_source,
+        "ToeZoneId": wall.toe_zone_id,
+        "ToeProfileStatus": wall.toe_profile_status,
+        "EmbedmentDepth": round(embedment, 3) if embedment is not None else None,
+        "ConcreteGrade": wall.concrete_grade,
+        "RebarGrade": wall.rebar_grade,
+        "MaxMoment_kNm_per_m": result.max_moment if result else None,
+        "MaxShear_kN_per_m": result.max_shear if result else None,
+        "MaxDisplacement_mm": result.max_displacement if result else None,
+        "MomentDesign_kNm_per_m": result.max_moment_design if result else None,
+        "ShearDesign_kN_per_m": result.max_shear_design if result else None,
+        "RequiredAs_mm2_per_m": result.required_reinforcement_area if result else None,
+        "ProvidedAs_mm2_per_m": result.provided_reinforcement_area if result else None,
+        "MomentCapacity_kNm_per_m": result.moment_capacity if result else None,
+        "ShearCapacity_kN_per_m": result.shear_capacity if result else None,
+        "RebarDiameter_mm": result.rebar_diameter if result else None,
+        "RebarSpacing_mm": result.rebar_spacing if result else None,
+        "GoverningRuleIds": ";".join(result.governing_rule_ids) if result else None,
+        "FormulaTrace": "; ".join(result.formula_trace) if result else None,
+        "CheckStatus": result.check_status if result else "manual_review",
+        "ProfessionalReviewRequired": wall.professional_review_required,
+    }
+    if panel:
+        properties.update({
+            "ConstructionPanelIndex": panel["panelIndex"],
+            "ConstructionPanelCode": panel["panelCode"],
+            "StartChainage_m": panel["startChainageM"],
+            "EndChainage_m": panel["endChainageM"],
+            "ConstructionPanelLength_m": panel["lengthM"],
+            "CageCount": panel["cageCount"],
+            "JointType": panel["jointType"],
+            "LiftingReviewRequired": panel["liftingReviewRequired"],
+        })
+    return properties
+
 def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode: str = "design_detailed") -> Path:
     """Write an IFC4 STEP model with geometry and property sets.
 
@@ -281,7 +386,7 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
     person = w.entity("IFCPERSON($,$,'PitGuard',$,$,$,$,$)")
     org = w.entity("IFCORGANIZATION($,'PitGuard BIM Designer',$,$,$)")
     person_org = w.entity(f"IFCPERSONANDORGANIZATION(#{person},#{org},$)")
-    app = w.entity(f"IFCAPPLICATION(#{org},'1.0','PitGuard BIM Designer','PITGUARD')")
+    app = w.entity(f"IFCAPPLICATION(#{org},{_step_string(SOFTWARE_VERSION)},'PitGuard BIM Designer','PITGUARD')")
     owner = w.entity(f"IFCOWNERHISTORY(#{person_org},#{app},$,.ADDED.,$,$,$,0)")
 
     unit_length = w.entity("IFCSIUNIT($,.LENGTHUNIT.,$,.METRE.)")
@@ -312,88 +417,184 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
     steel_product_ids: list[int] = []
     rebar_product_ids: list[int] = []
 
+    support_quality = evaluate_support_layout_quality(project) if project.retaining_system else None
+    support_metrics = dict(support_quality.metrics or {}) if support_quality else {}
+    w.property_set(owner, project_entity, "Pset_PitGuardExportControl", {
+        "SoftwareVersion": SOFTWARE_VERSION,
+        "ExportMode": mode,
+        "ProjectId": project.id,
+        "WallPlanDesignLengthIsVariable": True,
+        "WallVerticalLengthIsVariable": True,
+        "WallEndpointJunctionIncludedInObjective": True,
+        "IllegalSupportCrossingCount": support_metrics.get("supportCrossingCount"),
+        "WallConnectionPointCount": support_metrics.get("wallConnectionPointCount"),
+        "WallJunctionCount": support_metrics.get("wallJunctionCount"),
+        "HighDegreeWallJunctionCount": support_metrics.get("highDegreeWallJunctionCount"),
+        "InternalJunctionCount": support_metrics.get("internalJunctionCount"),
+        "PlanIntersectionComplexity": support_metrics.get("planIntersectionComplexity"),
+        "ProfessionalReviewRequired": True,
+    })
+
+    object_manifest: dict = {
+        "projectId": project.id,
+        "projectName": project.name,
+        "softwareVersion": SOFTWARE_VERSION,
+        "exportMode": mode,
+        "optimizationTrace": {
+            "wallPlanDesignLengthIsVariable": True,
+            "wallVerticalLengthIsVariable": True,
+            "wallEndpointJunctionIncludedInObjective": True,
+            "supportLayoutMetrics": support_metrics,
+        },
+        "calculationWalls": [],
+        "constructionPanels": [],
+        "constructionJoints": [],
+        "rebarCageGroups": [],
+        "reinforcementGroups": [],
+        "supports": [],
+        "supportWallConnections": support_metrics.get("wallConnectionPoints", []),
+        "supportWallJunctions": support_metrics.get("wallJunctionPoints", []),
+    }
+
     if project.retaining_system:
         for wall in project.retaining_system.diaphragm_walls:
             if len(wall.axis.points) < 2:
                 continue
-            start, end = wall.axis.points[0], wall.axis.points[-1]
-            ux, uy, length, _ = _line_direction(start, end)
-            mx, my = _midpoint(start, end)
-            height = wall.top_elevation - wall.bottom_elevation
-            placement = w.local_placement(storey_place, mx, my, wall.bottom_elevation, refdir=(ux, uy, 0))
-            shape = w.rect_swept_shape(context, length, wall.thickness, height)
-            element = w.entity(f"IFCWALL({_step_string(_guid())},#{owner},{_step_string(wall.panel_code)},'Diaphragm wall solid generated by PitGuard',$,#{placement},#{shape},$,.STANDARD.)")
-            product_ids.append(element)
-            concrete_product_ids.append(element)
-            result = wall.design_results
-            embedment = (project.excavation.bottom_elevation - wall.bottom_elevation) if project.excavation else None
-            w.property_set(owner, element, "Pset_RetainingWallDesign", {
-                "WallType": "diaphragm_wall",
-                "DesignFaceCode": wall.design_face_code,
-                "DesignLength_m": wall.design_length,
-                "FaceSegmentIds": ";".join(wall.face_segment_ids),
-                "Thickness": wall.thickness,
-                "TopElevation": wall.top_elevation,
-                "BottomElevation": wall.bottom_elevation,
-                "EmbedmentDepth": round(embedment, 3) if embedment is not None else None,
-                "ConcreteGrade": wall.concrete_grade,
-                "RebarGrade": wall.rebar_grade,
-                "MaxMoment_kNm_per_m": result.max_moment if result else None,
-                "MaxShear_kN_per_m": result.max_shear if result else None,
-                "MaxDisplacement_mm": result.max_displacement if result else None,
-                "MomentDesign_kNm_per_m": result.max_moment_design if result else None,
-                "ShearDesign_kN_per_m": result.max_shear_design if result else None,
-                "RequiredAs_mm2_per_m": result.required_reinforcement_area if result else None,
-                "ProvidedAs_mm2_per_m": result.provided_reinforcement_area if result else None,
-                "MomentCapacity_kNm_per_m": result.moment_capacity if result else None,
-                "ShearCapacity_kN_per_m": result.shear_capacity if result else None,
-                "RebarDiameter_mm": result.rebar_diameter if result else None,
-                "RebarSpacing_mm": result.rebar_spacing if result else None,
-                "GoverningRuleIds": ";".join(result.governing_rule_ids) if result else None,
-                "FormulaTrace": "; ".join(result.formula_trace) if result else None,
-                "CheckStatus": result.check_status if result else "manual_review",
-                "ProfessionalReviewRequired": wall.professional_review_required,
+            spans = _wall_construction_spans(wall)
+            object_manifest["calculationWalls"].append({
+                "id": wall.id, "code": wall.panel_code, "designFaceCode": wall.design_face_code,
+                "designLengthM": wall.design_length, "constructionPanelCount": len(spans),
+                "bottomElevation": wall.bottom_elevation, "toeZoneId": wall.toe_zone_id,
             })
-            w.property_set(owner, element, "Pset_ParameterizedReinforcement", {
-                "Strategy": "parameterized_only" if not detailed_mode else ("visual_proxy_groups_plus_parameterized_rebar" if construction_visual_mode else "parameterized_groups_plus_representative_ifc_rebars"),
-                "Groups": _rebar_summary(wall.reinforcement),
-                "DetailedIfcReinforcingBar": "omitted_for_coordination_light" if not detailed_mode else ("visual_proxy_entities_generated" if construction_visual_mode else "representative_group_entities_generated"),
-                "ExportMode": mode,
-            })
+            assembly = None
+            child_elements: list[int] = []
+            panel_element_rows: list[dict] = []
             if detailed_mode:
-                for idx, group in enumerate(wall.reinforcement, start=1):
-                    offset = (idx - 2) * max(wall.thickness / 3.0, 0.08)
-                    bar = _add_reinforcing_bar(
-                        w,
-                        owner=owner,
-                        context=context,
-                        storey_place=storey_place,
-                        name=f"RB-{wall.panel_code}-{idx}",
-                        description=f"Representative reinforcement group: {group.name}",
-                        x=mx - uy * offset,
-                        y=my + ux * offset,
-                        z=wall.bottom_elevation,
-                        refdir=(0, 0, 1),
-                        length=height,
-                        diameter_mm=group.diameter,
-                        grade=group.grade,
-                        properties={
-                            "HostElement": wall.panel_code,
-                            "GroupName": group.name,
-                            "BarType": group.bar_type,
-                            "Diameter_mm": group.diameter,
-                            "Spacing_mm": group.spacing,
-                            "Count": group.count,
-                            "AreaPerMeter_mm2_per_m": group.area_per_meter,
-                            "RequiredAreaPerMeter_mm2_per_m": group.required_area_per_meter,
-                            "LocationDescription": group.location_description,
-                            "RepresentationLevel": "representative_group_bar",
-                        },
-                        vertical=True,
-                        as_proxy=construction_visual_mode,
+                assembly_place = w.local_placement(storey_place, 0, 0, 0)
+                assembly = w.entity(
+                    f"IFCELEMENTASSEMBLY({_step_string(_guid())},#{owner},{_step_string(wall.panel_code + '-ASSEMBLY')},"
+                    f"'Calculation wall and construction panel assembly generated by PitGuard',$,#{assembly_place},$,$,.SITE.,.USERDEFINED.)"
+                )
+                product_ids.append(assembly)
+                w.property_set(owner, assembly, "Pset_CalculationWallAssembly", {
+                    **_wall_design_properties(project, wall),
+                    "ConstructionPanelCount": len(spans),
+                    "AssemblySemantics": "calculation_wall_parent_with_constructible_panel_children",
+                })
+            export_spans = spans if detailed_mode else [{
+                "panelIndex": 1, "panelCode": wall.panel_code, "startChainageM": 0.0,
+                "endChainageM": _line_direction(wall.axis.points[0], wall.axis.points[-1])[2],
+                "lengthM": _line_direction(wall.axis.points[0], wall.axis.points[-1])[2],
+                "start": wall.axis.points[0], "end": wall.axis.points[-1], "cageCount": 1,
+                "jointType": "calculation_wall", "liftingReviewRequired": True,
+            }]
+            for panel in export_spans:
+                start_point, end_point = panel["start"], panel["end"]
+                ux, uy, panel_length, _ = _line_direction(start_point, end_point)
+                mx, my = _midpoint(start_point, end_point)
+                height = wall.top_elevation - wall.bottom_elevation
+                placement = w.local_placement(storey_place, mx, my, wall.bottom_elevation, refdir=(ux, uy, 0))
+                shape = w.rect_swept_shape(context, panel_length, wall.thickness, height)
+                element = w.entity(
+                    f"IFCWALL({_step_string(_guid())},#{owner},{_step_string(panel['panelCode'])},"
+                    f"'Diaphragm wall construction panel generated by PitGuard',$,#{placement},#{shape},$,.STANDARD.)"
+                )
+                product_ids.append(element)
+                concrete_product_ids.append(element)
+                child_elements.append(element)
+                panel_element_rows.append({"elementId": element, "panel": panel})
+                w.property_set(owner, element, "Pset_RetainingWallDesign", _wall_design_properties(project, wall, panel=panel if detailed_mode else None))
+                w.property_set(owner, element, "Pset_ParameterizedReinforcement", {
+                    "Strategy": "parameterized_only" if not detailed_mode else ("visual_proxy_groups_plus_parameterized_rebar" if construction_visual_mode else "parameterized_groups_plus_representative_ifc_rebars"),
+                    "Groups": _rebar_summary(wall.reinforcement),
+                    "DetailedIfcReinforcingBar": "omitted_for_coordination_light" if not detailed_mode else ("visual_proxy_entities_generated" if construction_visual_mode else "representative_group_entities_generated_per_construction_panel"),
+                    "ExportMode": mode,
+                    "ConstructionPanelCode": panel["panelCode"],
+                    "CalculationWallCode": wall.panel_code,
+                })
+                object_manifest["constructionPanels"].append({
+                    "calculationWallId": wall.id, "calculationWallCode": wall.panel_code,
+                    "panelCode": panel["panelCode"], "panelIndex": panel["panelIndex"],
+                    "startChainageM": panel["startChainageM"], "endChainageM": panel["endChainageM"],
+                    "lengthM": panel["lengthM"], "cageCount": panel["cageCount"],
+                    "jointType": panel["jointType"], "liftingReviewRequired": panel["liftingReviewRequired"],
+                    "ifcEntityId": element,
+                })
+                if detailed_mode:
+                    panel_rebar_ids: list[int] = []
+                    for idx, group in enumerate(wall.reinforcement, start=1):
+                        offset = (idx - (len(wall.reinforcement) + 1) / 2.0) * max(wall.thickness / max(len(wall.reinforcement), 2), 0.05)
+                        bar = _add_reinforcing_bar(
+                            w, owner=owner, context=context, storey_place=storey_place,
+                            name=f"RB-{panel['panelCode']}-{idx}",
+                            description=f"Representative reinforcement group for construction panel: {group.name}",
+                            x=mx - uy * offset, y=my + ux * offset, z=wall.bottom_elevation,
+                            refdir=(0, 0, 1), length=height, diameter_mm=group.diameter, grade=group.grade,
+                            properties={
+                                "HostElement": panel["panelCode"], "CalculationWallCode": wall.panel_code,
+                                "ConstructionPanelCode": panel["panelCode"], "GroupName": group.name,
+                                "BarType": group.bar_type, "Diameter_mm": group.diameter,
+                                "Spacing_mm": group.spacing, "Count": group.count,
+                                "AreaPerMeter_mm2_per_m": group.area_per_meter,
+                                "RequiredAreaPerMeter_mm2_per_m": group.required_area_per_meter,
+                                "LocationDescription": group.location_description,
+                                "RepresentationLevel": "representative_group_bar_per_construction_panel",
+                            }, vertical=True, as_proxy=construction_visual_mode,
+                        )
+                        product_ids.append(bar)
+                        rebar_product_ids.append(bar)
+                        panel_rebar_ids.append(bar)
+                        object_manifest["reinforcementGroups"].append({
+                            "hostPanelCode": panel["panelCode"], "calculationWallCode": wall.panel_code,
+                            "groupId": group.id, "groupName": group.name, "barType": group.bar_type,
+                            "diameterMm": group.diameter, "spacingMm": group.spacing,
+                            "ifcEntityId": bar,
+                        })
+                    if panel_rebar_ids:
+                        cage_group = w.entity(
+                            f"IFCGROUP({_step_string(_guid())},#{owner},{_step_string('CAGE-' + str(panel['panelCode']))},"
+                            f"'Reinforcement cage group for construction panel { _ifc_text(str(panel['panelCode'])) }','REBAR_CAGE')"
+                        )
+                        w.property_set(owner, cage_group, "Pset_RebarCageTraceability", {
+                            "CalculationWallCode": wall.panel_code,
+                            "ConstructionPanelCode": panel["panelCode"],
+                            "PanelIndex": panel["panelIndex"],
+                            "RepresentativeBarEntityCount": len(panel_rebar_ids),
+                            "JointType": panel["jointType"],
+                            "LiftingReviewRequired": panel["liftingReviewRequired"],
+                            "RepresentationBoundary": "Representative IFC bars; fabrication quantities remain in BBS/detailing package",
+                        })
+                        w.entity(
+                            f"IFCRELASSIGNSTOGROUP({_step_string(_guid())},#{owner},'Representative bars assigned to cage',$,("
+                            + ",".join(f"#{eid}" for eid in panel_rebar_ids) + f"),$ ,#{cage_group})"
+                        )
+                        object_manifest["rebarCageGroups"].append({
+                            "calculationWallCode": wall.panel_code,
+                            "constructionPanelCode": panel["panelCode"],
+                            "ifcGroupEntityId": cage_group,
+                            "representativeBarEntityIds": panel_rebar_ids,
+                        })
+            if assembly and child_elements:
+                w.entity(
+                    f"IFCRELAGGREGATES({_step_string(_guid())},#{owner},'Construction panels of calculation wall',$,#{assembly},("
+                    + ",".join(f"#{eid}" for eid in child_elements) + "))"
+                )
+                for left, right in zip(panel_element_rows[:-1], panel_element_rows[1:]):
+                    left_panel, right_panel = left["panel"], right["panel"]
+                    relation = w.entity(
+                        f"IFCRELCONNECTSELEMENTS({_step_string(_guid())},#{owner},"
+                        f"{_step_string('JOINT-' + str(left_panel['panelCode']) + '-' + str(right_panel['panelCode']))},"
+                        f"{_step_string('Construction joint between adjacent diaphragm-wall panels')},$,"
+                        f"#{left['elementId']},#{right['elementId']})"
                     )
-                    product_ids.append(bar)
-                    rebar_product_ids.append(bar)
+                    object_manifest["constructionJoints"].append({
+                        "calculationWallCode": wall.panel_code,
+                        "leftPanelCode": left_panel["panelCode"],
+                        "rightPanelCode": right_panel["panelCode"],
+                        "jointType": right_panel.get("jointType") or left_panel.get("jointType"),
+                        "chainageM": right_panel.get("startChainageM"),
+                        "ifcRelationEntityId": relation,
+                    })
         for beam in [*project.retaining_system.crown_beams, *project.retaining_system.wale_beams, *getattr(project.retaining_system, "ring_beams", [])]:
             axis = _axis_from_polyline(beam)
             if not axis:
@@ -469,6 +670,12 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
                 "ConstructionEffectNote": getattr(support, "construction_effect_note", None),
                 "CheckStatus": "calculated_pass_pending_professional_signoff",
                 "ReinforcementGroups": _rebar_summary(support.reinforcement),
+            })
+            object_manifest["supports"].append({
+                "id": support.id, "code": support.code, "levelIndex": support.level_index,
+                "role": support.support_role, "startFaceCode": support.start_face_code,
+                "endFaceCode": support.end_face_code, "spanLengthM": support.span_length,
+                "ifcEntityId": element,
             })
             if detailed_mode:
                 for idx, group in enumerate(support.reinforcement[:2], start=1):
@@ -695,11 +902,24 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
         "ISO-10303-21;",
         "HEADER;",
         f"FILE_DESCRIPTION(('PitGuard BIM Designer {mode} IFC4 export with viewer-safe STEP text, swept solids and design property sets'),'2;1');",
-        f"FILE_NAME({_step_string(path.name)},{_step_string(timestamp)},('PitGuard'),('OpenAI'), 'PitGuard BIM Designer 2.0', 'PitGuard IFC exporter', '');",
+        f"FILE_NAME({_step_string(path.name)},{_step_string(timestamp)},('PitGuard'),('PitGuard'), {_step_string('PitGuard BIM Designer ' + SOFTWARE_VERSION)}, {_step_string('PitGuard IFC exporter ' + SOFTWARE_VERSION)}, '');",
         "FILE_SCHEMA(('IFC4'));",
         "ENDSEC;",
         "DATA;",
     ]
     footer = ["ENDSEC;", "END-ISO-10303-21;"]
     path.write_text("\n".join(header + w.lines + footer), encoding="utf-8")
+    object_manifest.update({
+        "ifcFile": path.name,
+        "entityCount": len(w.lines),
+        "calculationWallCount": len(object_manifest["calculationWalls"]),
+        "constructionPanelCount": len(object_manifest["constructionPanels"]),
+        "constructionJointCount": len(object_manifest["constructionJoints"]),
+        "rebarCageGroupCount": len(object_manifest["rebarCageGroups"]),
+        "reinforcementGroupEntityCount": len(object_manifest["reinforcementGroups"]),
+        "supportCount": len(object_manifest["supports"]),
+    })
+    path.with_suffix(".ifc_manifest.json").write_text(
+        __import__("json").dumps(object_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return path

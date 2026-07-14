@@ -910,6 +910,7 @@ class SupportLayoutOptimizationCandidate(DomainModel):
     crossing_count: int = 0
     junction_count: int = 0
     high_degree_junction_count: int = 0
+    wall_junction_count: int = 0
     plan_intersection_complexity: float = 0.0
     obstacle_conflict_count: int = 0
     axial_peak_proxy: float | None = None

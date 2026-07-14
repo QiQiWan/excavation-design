@@ -51,6 +51,22 @@ function schemeGeometry(candidate: SupportLayoutOptimizationCandidate): SchemeGe
   };
 }
 
+function JunctionMarkers({ candidate }: { candidate: SupportLayoutOptimizationCandidate }) {
+  const metrics = toRecord(candidate.metrics);
+  const wallNodes = (metrics.wallJunctionPoints ?? []) as Record<string, any>[];
+  const internalNodes = ((metrics.junctionPoints ?? []) as Record<string, any>[]).filter((node) => String(node.nodeType ?? '') === 'internal');
+  return <>
+    {wallNodes.map((node, index) => <g key={`wall-junction-${index}`} className="schemeWallJunction">
+      <circle cx={Number(node.point?.x ?? 0)} cy={-Number(node.point?.y ?? 0)} r={Number(node.highDegree) ? 0.72 : 0.54} vectorEffect="non-scaling-stroke" />
+      <title>{`墙上汇交：${String((node.supportCodes ?? []).join(' / '))}`}</title>
+    </g>)}
+    {internalNodes.map((node, index) => <g key={`internal-junction-${index}`} className="schemeInternalJunction">
+      <rect x={Number(node.point?.x ?? 0) - 0.42} y={-Number(node.point?.y ?? 0) - 0.42} width="0.84" height="0.84" vectorEffect="non-scaling-stroke" />
+      <title>{`内部汇交：${String((node.supportCodes ?? []).join(' / '))}`}</title>
+    </g>)}
+  </>;
+}
+
 function SchemeSvgContent({ geometry, showLabels = false }: { geometry: SchemeGeometry; showLabels?: boolean }) {
   const outlinePoints = geometry.outline.map((p) => `${p.x},${-p.y}`).join(' ');
   return <>
@@ -79,6 +95,7 @@ function SchemePreview({ candidate }: { candidate: SupportLayoutOptimizationCand
   const b = geometry.bounds;
   return <svg className="schemeOverviewSvg" viewBox={`${b.x} ${b.y} ${b.width} ${b.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`方案 ${letter(candidate.rank)} 支撑平面预览`}>
     <SchemeSvgContent geometry={geometry} />
+    <JunctionMarkers candidate={candidate} />
   </svg>;
 }
 
@@ -132,6 +149,7 @@ function InteractiveSchemeViewer({ candidate }: { candidate: SupportLayoutOptimi
       aria-label={`方案 ${letter(candidate.rank)} 可缩放平移支撑总平面`}
     >
       <SchemeSvgContent geometry={geometry} showLabels={labels} />
+      <JunctionMarkers candidate={candidate} />
     </svg>
     <p className="schemeViewerHint">滚轮缩放，按住拖动平移；模型已按实际外包范围自动居中并最大化利用视口。</p>
   </div>;
@@ -256,7 +274,7 @@ export default function SchemeComparisonPanel({
             <SchemePreview candidate={candidate} />
             <div className="schemeKeyMetrics">
               <span><small>支撑 / 立柱</small><strong>{candidate.supportCount} / {candidate.columnCount}</strong></span>
-              <span><small>非法穿越 / 内部汇交</small><strong>{candidate.crossingCount ?? 0} / {candidate.junctionCount ?? Number(candidate.metrics?.internalJunctionCount ?? 0)}</strong></span>
+              <span><small>非法穿越 / 墙上汇交 / 内部汇交</small><strong>{candidate.crossingCount ?? 0} / {candidate.wallJunctionCount ?? Number(candidate.metrics?.wallJunctionCount ?? 0)} / {Number(candidate.metrics?.internalJunctionCount ?? candidate.junctionCount ?? 0)}</strong></span>
               <span><small>{withUnitLabel('最长跨度', 'length')}</small><strong>{formatEngineeringValue(candidate.maxSpanLength, 'length')}</strong></span>
               <span><small>{hasFullCalculation ? withUnitLabel('最大轴力', 'force') : '完整计算状态'}</small><strong>{hasFullCalculation ? formatEngineeringValue(full.maxSupportAxialForce, 'force') : '待计算'}</strong></span>
               <span><small>{hasFullCalculation ? withUnitLabel('最大位移', 'displacement') : '几何拓扑评分'}</small><strong>{hasFullCalculation ? formatEngineeringValue(full.maxDisplacement, 'displacement') : String(candidate.score ?? '—')}</strong></span>

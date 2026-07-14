@@ -243,16 +243,41 @@ def _point_is_wall_endpoint(support: SupportElement, point: Point2D, tolerance: 
 
 
 def _topology_intersection_metrics(project: Project, supports: list[SupportElement]) -> dict:
-    """Measure plan cleanliness independently from structural validity.
+    """Measure support-plan cleanliness including convergence on retaining walls.
 
-    ``supportCrossingCount`` remains the hard safety/geometry gate for proper
-    mid-span crossings.  This companion audit also counts valid internal T/Y/X
-    nodes because a scheme with many legal junctions can still be visually
-    congested, difficult to fabricate, and awkward to sequence on site.
+    A proper same-level mid-span crossing remains a hard geometry failure.  Legal
+    internal T/Y/X nodes and multiple members converging to the same wall/wale
+    connection are counted separately.  A normal one-member wall bearing point is
+    recorded for traceability but is not treated as a junction penalty.
     """
     same_level_nodes: dict[tuple[int, int, int], dict] = {}
+    wall_nodes: dict[tuple[int, int, int], dict] = {}
     illegal_keys: set[tuple[int, int, int]] = set()
     projected_cross_level_pairs = 0
+
+    # Register every wall endpoint first.  This avoids relying on pairwise line
+    # intersections and captures coincident brace/strut bearings on the wale.
+    for support in supports:
+        for endpoint_name, point, face_code in (
+            ("start", support.start, support.start_face_code),
+            ("end", support.end, support.end_face_code),
+        ):
+            if not face_code:
+                continue
+            key = _point_key(int(support.level_index), point)
+            node = wall_nodes.setdefault(
+                key,
+                {
+                    "levelIndex": int(support.level_index),
+                    "point": {"x": round(float(point.x), 4), "y": round(float(point.y), 4)},
+                    "members": {},
+                    "faceCodes": set(),
+                    "endpoints": [],
+                },
+            )
+            node["members"][support.code] = support
+            node["faceCodes"].add(str(face_code))
+            node["endpoints"].append({"supportCode": support.code, "endpoint": endpoint_name, "faceCode": str(face_code)})
 
     for index, first in enumerate(supports):
         for second in supports[index + 1:]:
@@ -260,8 +285,6 @@ def _topology_intersection_metrics(project: Project, supports: list[SupportEleme
             if not ok or point is None:
                 continue
             if int(first.level_index) != int(second.level_index):
-                # Cross-level projection overlap is not a structural crossing,
-                # but it increases drawing and installation coordination burden.
                 if not touching:
                     projected_cross_level_pairs += 1
                 continue
@@ -269,9 +292,9 @@ def _topology_intersection_metrics(project: Project, supports: list[SupportEleme
             proper_crossing, _ = _supports_cross(first, second)
             if proper_crossing and not _allowed_ring_crossing(project, first, second, point):
                 illegal_keys.add(key)
-            # Wall-end convergence belongs to the wale/support connection and is
-            # not counted as an internal plan intersection.
             if _point_is_wall_endpoint(first, point) or _point_is_wall_endpoint(second, point):
+                # Already represented by wall_nodes.  Do not duplicate it as an
+                # internal node, but retain it in the overall cleanliness index.
                 continue
             node = same_level_nodes.setdefault(
                 key,
@@ -294,42 +317,84 @@ def _topology_intersection_metrics(project: Project, supports: list[SupportEleme
         members: dict[str, SupportElement] = node["members"]
         point = Point2D(**node["point"])
         branch_degree = sum(1 if _point_is_member_endpoint(member, point) else 2 for member in members.values())
-        # Two members meeting end-to-end form a simple continuous joint.  T/Y/X
-        # nodes start at three geometric branches and are the main cleanliness
-        # concern addressed by the optimizer.
         if branch_degree < 3:
             continue
         internal_junction_count += 1
         high_degree = branch_degree >= 4
         high_degree_junction_count += int(high_degree)
         max_branch_degree = max(max_branch_degree, branch_degree)
-        junction_rows.append(
-            {
-                "levelIndex": node["levelIndex"],
-                "point": node["point"],
-                "supportCodes": sorted(members),
-                "memberCount": len(members),
-                "branchDegree": branch_degree,
-                "highDegree": high_degree,
-            }
-        )
+        junction_rows.append({
+            "nodeType": "internal",
+            "levelIndex": node["levelIndex"],
+            "point": node["point"],
+            "supportCodes": sorted(members),
+            "memberCount": len(members),
+            "branchDegree": branch_degree,
+            "highDegree": high_degree,
+        })
 
-    # Illegal crossings dominate the index.  Legal internal nodes and projected
-    # cross-level overlaps then distinguish otherwise feasible alternatives.
+    wall_connection_rows: list[dict] = []
+    wall_junction_rows: list[dict] = []
+    wall_connection_point_count = len(wall_nodes)
+    wall_junction_count = 0
+    high_degree_wall_junction_count = 0
+    max_wall_branch_degree = 0
+    for node in sorted(wall_nodes.values(), key=lambda item: (item["levelIndex"], item["point"]["x"], item["point"]["y"])):
+        members: dict[str, SupportElement] = node["members"]
+        branch_degree = len(members)
+        is_junction = branch_degree >= 2
+        high_degree = branch_degree >= 3
+        row = {
+            "nodeType": "wall",
+            "connectionType": "wall_junction" if is_junction else "single_wall_bearing",
+            "levelIndex": node["levelIndex"],
+            "point": node["point"],
+            "supportCodes": sorted(members),
+            "memberCount": len(members),
+            "branchDegree": branch_degree,
+            "highDegree": high_degree,
+            "faceCodes": sorted(node["faceCodes"]),
+            "endpoints": node["endpoints"],
+            "optimizationPenaltyApplied": is_junction,
+        }
+        wall_connection_rows.append(row)
+        if not is_junction:
+            continue
+        wall_junction_count += 1
+        high_degree_wall_junction_count += int(high_degree)
+        max_wall_branch_degree = max(max_wall_branch_degree, branch_degree)
+        wall_junction_rows.append(row)
+        junction_rows.append(row)
+
+    total_junction_count = internal_junction_count + wall_junction_count
+    total_high_degree_junction_count = high_degree_junction_count + high_degree_wall_junction_count
+    # Wall convergence is weighted slightly higher than an internal T/Y node
+    # because it concentrates reactions, bearing plates and local wale/rebar
+    # detailing at one retaining-wall location.
     intersection_complexity = (
         100.0 * len(illegal_keys)
         + 1.0 * internal_junction_count
         + 2.0 * high_degree_junction_count
+        + 1.5 * wall_junction_count
+        + 3.0 * high_degree_wall_junction_count
         + 0.20 * projected_cross_level_pairs
     )
     return {
-        "sameLevelPlanIntersectionPointCount": len(illegal_keys) + internal_junction_count,
+        "sameLevelPlanIntersectionPointCount": len(illegal_keys) + total_junction_count,
         "internalJunctionCount": internal_junction_count,
+        "wallConnectionPointCount": wall_connection_point_count,
+        "wallJunctionCount": wall_junction_count,
+        "highDegreeWallJunctionCount": high_degree_wall_junction_count,
+        "totalJunctionCount": total_junction_count,
         "highDegreeJunctionCount": high_degree_junction_count,
-        "maxJunctionBranchDegree": max_branch_degree,
+        "totalHighDegreeJunctionCount": total_high_degree_junction_count,
+        "maxJunctionBranchDegree": max(max_branch_degree, max_wall_branch_degree),
+        "maxWallJunctionBranchDegree": max_wall_branch_degree,
         "projectedCrossLevelIntersectionCount": projected_cross_level_pairs,
         "planIntersectionComplexity": round(intersection_complexity, 4),
         "junctionPoints": junction_rows,
+        "wallConnectionPoints": wall_connection_rows,
+        "wallJunctionPoints": wall_junction_rows,
     }
 
 
@@ -565,8 +630,9 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
     summary = (
         f"支撑布置评分 {score:.1f}；主对撑 {len(main)} 根，次对撑 {len(secondary)} 根，角撑 {len(corners)} 根，"
         f"立柱 {len(columns)} 根，非法平面穿越 {len(crossing_pairs)} 处，内部 T/Y/X 汇交节点 "
-        f"{int(topology_intersections.get('internalJunctionCount', 0))} 处，高度汇交节点 "
-        f"{int(topology_intersections.get('highDegreeJunctionCount', 0))} 处，越界支撑 {support_outside_count} 根，"
+        f"{int(topology_intersections.get('internalJunctionCount', 0))} 处，墙上多杆汇交节点 "
+        f"{int(topology_intersections.get('wallJunctionCount', 0))} 处，总高度汇交节点 "
+        f"{int(topology_intersections.get('totalHighDegreeJunctionCount', 0))} 处，越界支撑 {support_outside_count} 根，"
         f"最大无支承长度 {max_unbraced_span:.2f}m{min_clearance_text}。"
     )
     return SupportLayoutQualitySummary(score=score, status=status, summary=summary, metrics=metrics, issues=issues, highlights=highlights, crossing_pairs=crossing_pairs)

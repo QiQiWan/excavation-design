@@ -20,6 +20,10 @@ OBJECTIVE_WEIGHTS: dict[str, float] = {
     # Legal T/Y/X nodes are sometimes unavoidable, but fewer internal junctions
     # produce a clearer load path, simpler nodes, and cleaner construction plans.
     "junctionComplexity": 64.0,
+    # Multiple braces/struts converging to the same retaining-wall or wale node
+    # are explicitly minimized because they create congested bearing plates,
+    # local wale force peaks and difficult reinforcement detailing.
+    "wallJunctionComplexity": 72.0,
     "columnCount": 7.0,
     "muckPathContinuity": 8.0,
     "axialPeakProxy": 11.0,
@@ -61,6 +65,7 @@ def preset_objective_weights(preset: str | None, overrides: dict[str, float] | N
     elif preset == "clean_support_layout":
         weights["supportCrossing"] = 80.0
         weights["junctionComplexity"] = 80.0
+        weights["wallJunctionComplexity"] = 80.0
         weights["symmetry"] = max(weights["symmetry"], 18.0)
         weights["spanLength"] = max(weights["spanLength"], 18.0)
     elif preset == "balanced":
@@ -76,6 +81,7 @@ HARD_CONSTRAINT_LABELS = [
 ]
 SOFT_OBJECTIVE_LABELS = [
     "minimum_plan_intersection_and_junction_count",
+    "minimum_wall_connection_convergence_count",
     "spacing_close_to_3_6m",
     "short_span_length",
     "reasonable_column_count",
@@ -442,18 +448,22 @@ def _objective_terms(project: Project, system: RetainingSystem, target_spacing: 
     support_count = max(len(system.supports), 1)
     internal_junctions = float(issue_metrics.get("internalJunctionCount", 0) or 0)
     high_degree_junctions = float(issue_metrics.get("highDegreeJunctionCount", 0) or 0)
+    wall_junctions = float(issue_metrics.get("wallJunctionCount", 0) or 0)
+    high_degree_wall_junctions = float(issue_metrics.get("highDegreeWallJunctionCount", 0) or 0)
     projected_crossings = float(issue_metrics.get("projectedCrossLevelIntersectionCount", 0) or 0)
     junction_complexity = (
         internal_junctions
         + 1.5 * high_degree_junctions
         + 0.20 * projected_crossings
     ) / support_count
+    wall_junction_complexity = (wall_junctions + 2.0 * high_degree_wall_junctions) / support_count
     return {
         "spacingDeviation": round(max(0.0, spacing_deviation + bay_cv * 0.5), 4),
         "spanLength": round(max(0.0, span_penalty), 4),
         "obstacleConflict": round(float(issue_metrics.get("obstacleConflictCount", 0) or 0), 4),
         "supportCrossing": round(float(issue_metrics.get("supportCrossingCount", 0) or 0), 4),
         "junctionComplexity": round(max(0.0, junction_complexity), 4),
+        "wallJunctionComplexity": round(max(0.0, wall_junction_complexity), 4),
         "columnCount": round(max(0.0, _column_count_penalty(system)), 4),
         "muckPathContinuity": round(max(0.0, 1.0 - muck_score), 4),
         "axialPeakProxy": round(max(0.0, axial_proxy), 4),
@@ -475,15 +485,17 @@ def _candidate_score(quality_score: float, terms: dict[str, float], hard: dict[s
     return round(max(0.0, min(100.0, score)), 2)
 
 
-def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tuple[float, float, int, int, int, int]:
+def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tuple[float, int, int, int, int, float, int, int]:
     """Lexicographic plan-cleanliness priority used before aggregate score."""
     metrics = candidate.metrics or {}
     auxiliary_count = int(metrics.get("secondaryGridSupportCount", 0) or 0) + int(metrics.get("cornerDiagonalCount", 0) or 0)
     return (
         float(metrics.get("supportCrossingCount", candidate.crossing_count) or 0.0),
+        int(metrics.get("highDegreeWallJunctionCount", 0) or 0),
+        int(metrics.get("wallJunctionCount", 0) or 0),
+        int(metrics.get("totalHighDegreeJunctionCount", metrics.get("highDegreeJunctionCount", 0)) or 0),
+        int(metrics.get("totalJunctionCount", metrics.get("internalJunctionCount", 0)) or 0),
         float(metrics.get("planIntersectionComplexity", 0.0) or 0.0),
-        int(metrics.get("highDegreeJunctionCount", 0) or 0),
-        int(metrics.get("internalJunctionCount", 0) or 0),
         auxiliary_count,
         int(candidate.support_count or 0),
     )
@@ -748,7 +760,7 @@ def _candidate_note(target_spacing: float, column_max_span: float, pattern: str,
     hard_text = "硬约束满足" if hard.get("passed") else "硬约束未完全满足"
     return (
         f"目标分仓 {target_spacing:.1f}m，立柱最大服务跨 {column_max_span:.1f}m，支撑线变量策略 {pattern}；"
-        f"{hard_text}。优化首先压低非法穿越和内部 T/Y/X 汇交节点数量，再比较间距偏差、跨长、障碍冲突、立柱数量、出土路径、轴力峰值代理和对称性。"
+        f"{hard_text}。优化首先压低非法穿越、墙上多杆汇交和内部 T/Y/X 汇交节点数量，再比较间距偏差、跨长、障碍冲突、立柱数量、出土路径、轴力峰值代理和对称性。"
     )
 
 
@@ -816,6 +828,7 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         objective_terms=terms,
                         soft_objectives={
                             "minimumPlanIntersectionCount": 1.0 - min(1.0, terms.get("junctionComplexity", 1.0)),
+                            "minimumWallJunctionCount": 1.0 - min(1.0, terms.get("wallJunctionComplexity", 1.0)),
                             "spacingCloseTo3To6m": 1.0 - min(1.0, terms.get("spacingDeviation", 1.0)),
                             "shortSpanLength": 1.0 - min(1.0, terms.get("spanLength", 1.0) / 2.0),
                             "reasonableColumnCount": 1.0 - min(1.0, terms.get("columnCount", 1.0)),
@@ -858,8 +871,9 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         max_span_length=round(max(spans), 3) if spans else None,
                         max_bay_spacing=round(max(bay), 3) if bay else None,
                         crossing_count=int(metrics.get("supportCrossingCount", 0) or 0),
-                        junction_count=int(metrics.get("internalJunctionCount", 0) or 0),
-                        high_degree_junction_count=int(metrics.get("highDegreeJunctionCount", 0) or 0),
+                        junction_count=int(metrics.get("totalJunctionCount", metrics.get("internalJunctionCount", 0)) or 0),
+                        high_degree_junction_count=int(metrics.get("totalHighDegreeJunctionCount", metrics.get("highDegreeJunctionCount", 0)) or 0),
+                        wall_junction_count=int(metrics.get("wallJunctionCount", 0) or 0),
                         plan_intersection_complexity=round(float(metrics.get("planIntersectionComplexity", 0.0) or 0.0), 4),
                         obstacle_conflict_count=int(metrics.get("obstacleConflictCount", 0) or 0),
                         axial_peak_proxy=round(_axial_peak_proxy(trial_project.retaining_system, bay, spans, target_spacing), 3) if spans else None,

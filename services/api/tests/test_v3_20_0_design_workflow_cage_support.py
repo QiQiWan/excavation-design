@@ -75,7 +75,7 @@ def test_rebar_visualization_contains_construction_panel_cages() -> None:
     cage = payload["cages"][0]
     assert len(cage["faces"]) == 2
     assert float(cage["horizontal"]["spacingMm"]) > 0
-    assert cage["representation"] == "construction_panel_rebar_cage_grid_lod"
+    assert cage["representation"] == "construction_panel_rebar_cage_grid_with_joints_lifting_and_splice_zones"
 
 
 def test_pipeline_exposes_ordered_design_institute_gates() -> None:

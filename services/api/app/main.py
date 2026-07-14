@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, industrial, issues, projects, rebar, standards, tasks, wall_optimization
+from app.routers import advanced, assurance, auth, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, industrial, issues, projects, rebar, standards, tasks, wall_optimization
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
@@ -24,7 +24,7 @@ from app.tasks.manager import task_manager
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.22 P0-P3 industrial closure: qualified clean support topology, traceable calculation gates, immutable revisions, persistent tasks and monitoring feedback.",
+    description="PitGuard V3.23 joint clean retaining-system optimization, construction-panel IFC, rebar-cage traceability, coordinated drawings and application login.",
 )
 
 app.add_middleware(
@@ -42,7 +42,7 @@ async def enforce_access_control(request: Request, call_next):
     if identity is None and public_access_allowed(request.url.path):
         identity = AccessIdentity(actor="anonymous-health", role="viewer", authenticated=False, key_id=None)
     if identity is None:
-        return JSONResponse(status_code=401, content={"detail": "Missing or invalid PitGuard API key"})
+        return JSONResponse(status_code=401, content={"detail": "未登录、会话已过期或 API 密钥无效"})
     required = required_role(request.method, request.url.path)
     if not role_allows(identity.role, required):
         return JSONResponse(status_code=403, content={"detail": f"Role {identity.role} cannot perform this operation; required role: {required}"})
@@ -64,6 +64,7 @@ async def observe_http_requests(request: Request, call_next):
     finally:
         runtime_observability.record(request.url.path, status_code, (perf_counter() - started) * 1000.0)
 
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(standards.router)
 app.include_router(benchmarks.router)

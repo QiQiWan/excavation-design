@@ -409,21 +409,46 @@ def build_rebar_mark_entries(project: Project) -> list[dict[str, Any]]:
 
 
 def _wall_cage_segments(project: Project) -> list[dict[str, Any]]:
+    """Build fabrication cages from the same construction-panel schedule used by IFC/CAD.
+
+    Vertical segmentation remains a fabrication variable, while plan segmentation is
+    inherited from ``wall.construction_panels`` so the wall panel, IFC element, cage
+    mark and drawing schedule keep one stable identity.
+    """
     ret = project.retaining_system
     if not ret:
         return []
     segments: list[dict[str, Any]] = []
     max_vertical_segment_len = 12.0
-    max_panel_width = 6.0
     overlap_m = 0.75
     for wall in ret.diaphragm_walls:
         host_height = _host_height(wall)
         host_length = max(float(wall.design_length or _host_length(wall)), 0.5)
-        panel_count = max(1, int(math.ceil(host_length / max_panel_width)))
-        panel_width = host_length / panel_count
+        construction_panels = list(getattr(wall, "construction_panels", []) or [])
+        if not construction_panels:
+            panel_count = max(1, int(math.ceil(host_length / 6.0)))
+            panel_width = host_length / panel_count
+            construction_panels = [
+                {
+                    "panelCode": f"{wall.panel_code}-P{idx + 1:02d}",
+                    "panelIndex": idx + 1,
+                    "startChainageM": idx * panel_width,
+                    "endChainageM": (idx + 1) * panel_width,
+                    "lengthM": panel_width,
+                    "cageCount": 1,
+                    "jointType": "project_specific",
+                    "liftingReviewRequired": True,
+                }
+                for idx in range(panel_count)
+            ]
+        panel_count = len(construction_panels)
         vertical_count = max(1, int(math.ceil(host_height / max_vertical_segment_len)))
         vertical_height = host_height / vertical_count
-        for panel_idx in range(panel_count):
+        for panel_idx, panel in enumerate(construction_panels, start=1):
+            panel_code = str(panel.get("panelCode") or f"{wall.panel_code}-P{panel_idx:02d}")
+            panel_start = float(panel.get("startChainageM") or 0.0)
+            panel_end = float(panel.get("endChainageM") or (panel_start + float(panel.get("lengthM") or host_length / max(panel_count, 1))))
+            panel_width = max(float(panel.get("lengthM") or (panel_end - panel_start)), 0.1)
             for vertical_idx in range(vertical_count):
                 bottom = float(wall.bottom_elevation) + vertical_idx * vertical_height
                 top = float(wall.bottom_elevation) + (vertical_idx + 1) * vertical_height
@@ -432,19 +457,21 @@ def _wall_cage_segments(project: Project) -> list[dict[str, Any]]:
                 if vertical_idx < vertical_count - 1:
                     top += overlap_m / 2.0
                 length = abs(top - bottom)
-                # The cage is fabricated by wall panel width, not by the full face length.
                 est_weight = max(0.1, panel_width * length * 0.035)
                 lifting_points = 4 if est_weight <= 12 else 6 if est_weight <= 25 else 8
                 segments.append({
-                    "segmentId": f"{wall.panel_code}-CAGE-P{panel_idx+1:02d}-V{vertical_idx+1:02d}",
+                    "segmentId": f"{panel_code}-CAGE-V{vertical_idx+1:02d}",
                     "hostId": wall.id,
                     "hostCode": wall.panel_code,
                     "hostType": "diaphragm_wall",
-                    "panelIndex": panel_idx + 1,
+                    "constructionPanelCode": panel_code,
+                    "panelIndex": int(panel.get("panelIndex") or panel_idx),
                     "panelCount": panel_count,
-                    "panelStartM": round(panel_idx * panel_width, 3),
-                    "panelEndM": round((panel_idx + 1) * panel_width, 3),
+                    "panelStartM": round(panel_start, 3),
+                    "panelEndM": round(panel_end, 3),
                     "panelWidthM": round(panel_width, 3),
+                    "jointType": str(panel.get("jointType") or "project_specific"),
+                    "liftingReviewRequired": bool(panel.get("liftingReviewRequired", True)),
                     "verticalSegmentIndex": vertical_idx + 1,
                     "verticalSegmentCount": vertical_count,
                     "bottomElevation": round(bottom, 3),

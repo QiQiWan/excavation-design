@@ -11,6 +11,7 @@ function statusText(status?: string) {
 }
 
 export default function DeepOptimizationPanel({ project, onChanged }: { project: Project; onChanged: () => void | Promise<void> }) {
+  const [integrated, setIntegrated] = useState<Record<string, any>>();
   const [coordination, setCoordination] = useState<Record<string, any>>();
   const [submodels, setSubmodels] = useState<Record<string, any>>();
   const [logistics, setLogistics] = useState<Record<string, any>>();
@@ -21,6 +22,16 @@ export default function DeepOptimizationPanel({ project, onChanged }: { project:
     setBusy(label); setError(undefined);
     try { setter(await action()); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(undefined); }
+  }
+
+  async function applyIntegrated(candidateId: string) {
+    setBusy('应用围护结构联合候选'); setError(undefined);
+    try {
+      await api.applyIntegratedRetainingCandidate(project.id, candidateId, 'balanced', true);
+      setIntegrated(await api.getIntegratedRetainingCandidates(project.id, 'balanced', 8));
+      await onChanged();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(undefined); }
   }
 
@@ -40,6 +51,19 @@ export default function DeepOptimizationPanel({ project, onChanged }: { project:
     </div>
     {error ? <div className="error">{error}</div> : null}
     <div className="deepOptimizationGrid">
+      <article className="summaryPanel fullSpanCard">
+        <div className="panelTitleRow"><div><h4>支撑—墙长联合优化</h4><p className="small">将非法穿越、墙上汇交、内部汇交、支撑间距、墙体平面控制设计段和竖向墙趾放入同一候选排序。</p></div><button className="secondary" onClick={() => void execute('生成围护结构联合候选', () => api.getIntegratedRetainingCandidates(project.id, 'balanced', 8), setIntegrated)}>生成候选</button></div>
+        {integrated ? <>
+          <div className="metricLine"><span>墙长已作为设计变量</span><strong>{integrated.summary?.wallDesignLengthIncludedAsVariable ? '是' : '否'}</strong></div>
+          <div className="metricLine"><span>墙上汇交已计入目标</span><strong>{integrated.summary?.wallEndpointJunctionIncludedInObjective ? '是' : '否'}</strong></div>
+          <div className="integratedCandidateGrid">{(integrated.candidates ?? []).slice(0, 4).map((row: Record<string, any>) => <div className="integratedCandidateCard" key={String(row.candidateId)}>
+            <div className="panelTitleRow"><strong>方案 {String(row.rank)} · {Number(row.score ?? 0).toFixed(1)} 分</strong><span className={`schemeState ${row.status === 'candidate' ? 'ready' : 'blocked'}`}>{row.status === 'candidate' ? '可采用' : '阻断'}</span></div>
+            <div className="miniMetricGrid"><span>非法穿越 <b>{String(row.primaryCleanlinessMetrics?.illegalCrossingCount ?? 0)}</b></span><span>墙上汇交 <b>{String(row.primaryCleanlinessMetrics?.wallJunctionCount ?? 0)}</b></span><span>内部汇交 <b>{String(row.primaryCleanlinessMetrics?.internalJunctionCount ?? 0)}</b></span><span>墙趾分区 <b>{String(row.quantities?.wallToeZoneCount ?? 1)}</b></span></div>
+            <p className="small">{String(row.designVariables?.supportTopologyFamily ?? '—')} · 支撑间距 {formatEngineeringValue(row.designVariables?.supportTargetSpacingM, 'length')} · 调整墙面 {String(row.quantities?.wallPlanModifiedFaceCount ?? 0)}</p>
+            <button className="tiny" disabled={row.status !== 'candidate'} onClick={() => void applyIntegrated(String(row.candidateId))}>采用并复算</button>
+          </div>)}</div>
+        </> : <p className="small">候选按安全硬约束、非法穿越、墙上高分支汇交、墙上汇交、总汇交复杂度和综合工程性能依次排序。</p>}
+      </article>
       <article className="summaryPanel">
         <div className="panelTitleRow"><div><h4>构造协调候选</h4><p className="small">绕筋、预埋件移位、开孔和局部加筋四类候选。</p></div><button className="secondary" onClick={() => void execute('分析构造协调候选', () => api.getCoordinationOptimization(project.id), setCoordination)}>分析</button></div>
         {coordination ? <>

@@ -726,13 +726,33 @@ def _wall_cage_descriptors(wall: Any, zones: list[dict[str, Any]], line_cap: int
                 "estimatedVerticalBarCount": max(2, int(math.floor(panel_length / spacing_m)) + 1),
             })
         h_spacing_m = max(float(reinforcement["horizontal"].get("spacingMm") or 200.0) / 1000.0, 0.05)
+        panel_code = str(panel.get("panelCode") or f"{wall.panel_code}-P{idx:02d}")
+        start_point = _pt(float(start.get("x", a.x)), float(start.get("y", a.y)), float(wall.top_elevation))
+        end_point = _pt(float(end.get("x", b.x)), float(end.get("y", b.y)), float(wall.top_elevation))
+        segment_count = max(1, int(math.ceil(height / 12.0)))
+        splice_elevations = [
+            round(float(wall.bottom_elevation) + height * segment / segment_count, 3)
+            for segment in range(1, segment_count)
+        ]
+        lifting_points = []
+        for lifting_index, ratio in enumerate((0.25, 0.75), start=1):
+            lifting_points.append({
+                "id": f"LP-{panel_code}-{lifting_index}",
+                "ratio": ratio,
+                "point": _pt(
+                    float(start.get("x", a.x)) + (float(end.get("x", b.x)) - float(start.get("x", a.x))) * ratio,
+                    float(start.get("y", a.y)) + (float(end.get("y", b.y)) - float(start.get("y", a.y))) * ratio,
+                    float(wall.top_elevation) - 0.35,
+                ),
+                "reviewRequired": bool(panel.get("liftingReviewRequired", True)),
+            })
         cage_rows.append({
             "id": f"cage-{wall.id}-{idx}",
             "hostId": wall.id, "hostCode": wall.panel_code,
-            "panelCode": str(panel.get("panelCode") or f"{wall.panel_code}-P{idx:02d}"),
+            "panelCode": panel_code,
             "panelIndex": int(panel.get("panelIndex") or idx),
-            "start": _pt(float(start.get("x", a.x)), float(start.get("y", a.y)), float(wall.top_elevation)),
-            "end": _pt(float(end.get("x", b.x)), float(end.get("y", b.y)), float(wall.top_elevation)),
+            "start": start_point,
+            "end": end_point,
             "topElevation": float(wall.top_elevation), "bottomElevation": float(wall.bottom_elevation),
             "heightM": round(height, 3), "panelLengthM": round(panel_length, 3),
             "thicknessM": float(wall.thickness), "coverM": round(cover, 3),
@@ -740,9 +760,17 @@ def _wall_cage_descriptors(wall: Any, zones: list[dict[str, Any]], line_cap: int
             "horizontal": {**reinforcement["horizontal"], "estimatedBarCountPerFace": max(2, int(math.floor(height / h_spacing_m)) + 1)},
             "ties": reinforcement["ties"], "zoneIds": reinforcement["zoneIds"],
             "jointType": panel.get("jointType") or "project_specific",
+            "jointMarkers": [
+                {"end": "start", "point": start_point, "jointType": panel.get("jointType") or "project_specific"},
+                {"end": "end", "point": end_point, "jointType": panel.get("jointType") or "project_specific"},
+            ],
+            "liftingPoints": lifting_points,
+            "spliceZones": [{"elevation": value, "type": "coupler_or_staggered_lap", "reviewRequired": True} for value in splice_elevations],
+            "segmentCount": segment_count,
+            "cageStatus": "manual_review" if bool(panel.get("liftingReviewRequired", True)) else "preliminary",
             "liftingReviewRequired": bool(panel.get("liftingReviewRequired", True)),
             "displayLineCap": int(line_cap),
-            "representation": "construction_panel_rebar_cage_grid_lod",
+            "representation": "construction_panel_rebar_cage_grid_with_joints_lifting_and_splice_zones",
         })
     return cage_rows
 

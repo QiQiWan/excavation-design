@@ -8,6 +8,7 @@ import ezdxf
 
 from app.schemas.domain import Project
 from app.services.review_workflow import project_snapshot_hash, review_status
+from app.quality.support_layout_quality import evaluate_support_layout_quality
 
 
 def validate_dxf_file(path: Path) -> dict[str, Any]:
@@ -77,6 +78,18 @@ def build_construction_issue_gate(
     add("CALCULATION_EXISTS", latest is not None, "存在当前设计快照的计算结果")
     fail_count = int((latest.check_summary or {}).get("fail", 0) or 0) if latest else 999
     add("CALCULATION_NO_FAIL", latest is not None and fail_count == 0, f"计算硬失败数量={fail_count}")
+    support_quality = evaluate_support_layout_quality(project)
+    support_metrics = dict(support_quality.metrics or {})
+    illegal_crossings = int(support_metrics.get("supportCrossingCount", 0) or 0)
+    wall_junctions = int(support_metrics.get("wallJunctionCount", 0) or 0)
+    high_wall_junctions = int(support_metrics.get("highDegreeWallJunctionCount", 0) or 0)
+    add("SUPPORT_NO_ILLEGAL_CROSSING", illegal_crossings == 0, f"水平支撑非法穿越数量={illegal_crossings}")
+    add(
+        "SUPPORT_WALL_JUNCTION_REVIEW",
+        high_wall_junctions == 0,
+        f"围护墙上多杆汇交节点={wall_junctions}，其中高分支节点={high_wall_junctions}",
+        "warning" if issue_mode == "review" else "fail",
+    )
     scheme_fail = int((detailing.get("designScheme") or {}).get("summary", {}).get("failCount", 0) or 0)
     add("REBAR_DESIGN_NO_FAIL", scheme_fail == 0, f"配筋设计硬失败数量={scheme_fail}")
     fabrication_fail = int((detailing.get("fabrication") or {}).get("summary", {}).get("hardFailureCount", 0) or 0)
@@ -84,6 +97,31 @@ def build_construction_issue_gate(
     deep_summary = (detailing.get("deepDetailing") or {}).get("summary") or {}
     deep_fail = int(deep_summary.get("hardFailureCount", 0) or 0)
     add("DEEP_DETAILING_NO_FAIL", deep_fail == 0, f"节点钢构件、吊装与预埋件碰撞硬失败数量={deep_fail}")
+    retaining = project.retaining_system
+    panel_codes = [
+        str(panel.get("panelCode"))
+        for wall in (retaining.diaphragm_walls if retaining else [])
+        for panel in (getattr(wall, "construction_panels", []) or [])
+        if panel.get("panelCode")
+    ]
+    cage_panel_codes = [
+        str(item.get("constructionPanelCode"))
+        for item in detailing.get("cageSegments", [])
+        if item.get("constructionPanelCode")
+    ]
+    add("WALL_PANEL_CODE_UNIQUE", len(panel_codes) == len(set(panel_codes)), f"施工槽段编码总数={len(panel_codes)}，唯一数={len(set(panel_codes))}")
+    add(
+        "WALL_PANEL_CAGE_TRACEABILITY",
+        not (set(panel_codes) - set(cage_panel_codes)),
+        f"未映射钢筋笼的施工槽段={','.join(sorted(set(panel_codes) - set(cage_panel_codes))) or '无'}",
+        "warning" if issue_mode == "review" else "fail",
+    )
+    add(
+        "WALL_CAGE_PANEL_REFERENCE_VALID",
+        not (set(cage_panel_codes) - set(panel_codes)),
+        f"引用不存在施工槽段的钢筋笼={','.join(sorted(set(cage_panel_codes) - set(panel_codes))) or '无'}",
+        "warning" if issue_mode == "review" else "fail",
+    )
     add("DXF_VALID", dxf_validation.get("status") == "pass", f"DXF校验失败文件数={dxf_validation.get('failCount', 0)}")
     if drawing_completeness is not None:
         add("DRAWING_COMPLETENESS", drawing_completeness.get("status") != "fail", f"施工图完整性阻断项={drawing_completeness.get('blockerCount', 0)}")
