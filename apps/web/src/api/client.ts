@@ -5,22 +5,27 @@ const API_BASE = CONFIGURED_API_BASE !== undefined
   ? CONFIGURED_API_BASE
   : (import.meta.env.DEV ? 'http://127.0.0.1:8002' : '');
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+type RequestOptions = RequestInit & { timeoutMs?: number; timeoutMessage?: string };
+
+async function request<T>(path: string, init?: RequestOptions): Promise<T> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 120000);
+  const timeoutMs = Math.max(1000, init?.timeoutMs ?? 30000);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   const externalSignal = init?.signal;
   const abortFromExternal = () => controller.abort();
   if (externalSignal) {
     if (externalSignal.aborted) controller.abort();
     else externalSignal.addEventListener('abort', abortFromExternal, { once: true });
   }
-  const signal = controller.signal;
+  const { timeoutMs: _timeoutMs, timeoutMessage, ...fetchInit } = init ?? {};
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...init, signal });
+    response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, signal: controller.signal });
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('请求超过 120 秒，已取消。请检查后台任务或网络状态。');
-    throw error;
+    if (controller.signal.aborted) {
+      throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，后端可能正在恢复或不可用。`);
+    }
+    throw new Error(error instanceof Error ? error.message : '网络请求失败');
   } finally {
     window.clearTimeout(timeout);
     externalSignal?.removeEventListener('abort', abortFromExternal);
@@ -34,21 +39,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const data = await response.json();
       message = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? data);
     } catch {
-      // ignore JSON parse failures
+      // Keep the HTTP status when the proxy returned HTML/plain text.
     }
     throw new Error(message);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
 
 export type AuthIdentity = { actor: string; role: string; authenticated: boolean; keyId?: string; username?: string; authMode?: string };
 
 export const api = {
-  authStatus: () => request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status'),
-  login: (username: string, password: string) => request<{ authenticated: boolean; identity: AuthIdentity; expiresInSeconds: number }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }),
-  me: () => request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me'),
-  logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST' }),
-  health: () => request<{ status: string; service: string }>('/health'),
+  authStatus: () => request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status', { timeoutMs: 5000, timeoutMessage: '登录服务 5 秒内未响应。系统已进入离线恢复页。' }),
+  login: (username: string, password: string) => request<{ authenticated: boolean; identity: AuthIdentity; expiresInSeconds: number }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), timeoutMs: 10000 }),
+  me: () => request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me', { timeoutMs: 5000 }),
+  logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST', timeoutMs: 5000 }),
+  health: () => request<{ status: string; service: string }>('/health', { timeoutMs: 4000 }),
   systemMetrics: () => request<Record<string, unknown>>('/api/system/metrics'),
   systemReadiness: () => request<Record<string, unknown>>('/api/system/readiness'),
   diagnostics: () => request<{ version: string; softwareVersion?: string; algorithmVersion?: string; ruleSetVersion?: string; exportSchemaVersion?: string; pythonVersion: string; databaseConfigured?: boolean; missingModules: string[]; modules: { importName: string; packageName: string; available: boolean; version?: string }[] }>('/api/system/diagnostics'),
@@ -87,6 +94,10 @@ export const api = {
     request<ExcavationModel>(`/api/projects/${projectId}/excavation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   autoWall: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-diaphragm-wall`, { method: 'POST' }),
   autoSupports: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-supports`, { method: 'POST' }),
+  getPlanShapeDiagnostics: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/plan-shape-diagnostics`),
+  getSupportDesignerAudit: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-designer-audit`),
+  getCalculationResourceEstimate: (projectId: string, candidateCount = 0) => request<Record<string, any>>(`/api/projects/${projectId}/design/calculation-resource-estimate?candidate_count=${candidateCount}`),
+  autoSupportsByShape: (projectId: string) => request<{ diagnostics: Record<string, any>; selectedTopologyFamily: string; retainingSystem: RetainingSystem }>(`/api/projects/${projectId}/design/auto-supports-by-shape`, { method: 'POST' }),
   importSupportLayoutCsv: (projectId: string, file: File, replace = true) => { const form = new FormData(); form.append('file', file); return request<Record<string, any>>(`/api/projects/${projectId}/design/import-support-layout?replace=${replace}`, { method: 'POST', body: form }); },
   autoRepairSupports: (projectId: string) => request<unknown>(`/api/projects/${projectId}/design/auto-repair-supports`, { method: 'POST' }),
   optimizeSupports: (projectId: string, payload?: { objectiveWeights?: Record<string, number>; preset?: string }) => request<unknown>(`/api/projects/${projectId}/design/optimize-supports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload ?? {}) }),
@@ -129,7 +140,7 @@ export const api = {
   getMonitoringControl: (projectId: string) => request<MonitoringControlResult>(`/api/projects/${projectId}/advanced/monitoring/control`),
   createTask: (projectId: string, operation: string, payload?: Record<string, unknown>) => request<PitTask>(`/api/projects/${projectId}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation, payload: payload ?? {} }) }),
   createCandidateComparisonBatch: (projectId: string, topN = 3, useCache = true) => request<{ projectId: string; taskCount: number; tasks: PitTask[] }>(`/api/projects/${projectId}/tasks/candidate-comparison-batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topN, useCache }) }),
-  getTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}`),
+  getTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}`, { timeoutMs: 10000 }),
   cancelTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}/cancel`, { method: 'POST' }),
   retryTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}/retry`, { method: 'POST' }),
   getTaskMetrics: () => request<Record<string, unknown>>('/api/task-metrics'),

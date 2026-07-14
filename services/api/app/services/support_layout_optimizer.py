@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from statistics import mean, pstdev
 from typing import Any
 
@@ -106,26 +107,28 @@ POSITION_PATTERNS: list[tuple[str, float]] = [
 
 
 def _available_topology_strategies(project: Project) -> list[str]:
-    """Return only topologies supported by the current axial-member solver.
+    """Select solver-compatible support families from the V3.28 shape taxonomy.
 
-    The current global model treats struts as axial members connected to wall,
-    wale, or ring nodes. A secondary member ending at the mid-span of another
-    strut would introduce a transverse point load and requires an explicit
-    frame/transfer-beam bending model. Until that solver is available, automatic
-    candidates are limited to direct wall-to-wall grids and wall-to-wall
-    diagonal hybrids.
+    Axial wall-to-wall grids and closed ring/radial systems are supported.
+    Orthogonal concave plans receive a zoned-direct preliminary candidate; if
+    junction transfer cannot be closed without a frame node, the candidate is
+    retained as a single controlled-block diagnosis rather than multiplied into
+    cosmetic A/B/C variants.
     """
     if not project.excavation or not project.excavation.outline.points:
         return ["direct_grid"]
-    diag = layout_mod.plan_shape_diagnostics(list(project.excavation.outline.points))
-    if bool(diag.get("circularShaftLike")):
-        return ["direct_grid"]
-    if int(diag.get("concaveVertexCount") or 0) > 0 or bool(diag.get("nearSquarePlan")):
-        # The current solver has no in-plane bending frame node. Generating a
-        # cosmetic hybrid for these plans only creates repeated failed A/B/C
-        # cards and can trigger a large, useless candidate search.
-        return ["direct_grid"]
-    return ["direct_grid", "hybrid_diagonal"]
+    has_center_island = any(
+        getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True)
+        for item in (project.excavation.obstacles or [])
+    )
+    diag = layout_mod.plan_shape_diagnostics(
+        list(project.excavation.outline.points),
+        local_pit_count=len(project.excavation.local_pits or []),
+        has_center_island=has_center_island,
+    )
+    families = [str(item) for item in (diag.get("supportedTopologyFamilies") or [])]
+    supported = [item for item in families if item in {"direct_grid", "hybrid_diagonal", "ring_radial", "zoned_direct"}]
+    return supported or ["direct_grid"]
 
 
 def _status_rank(status: str) -> int:
@@ -411,6 +414,20 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
     support_to_support_terminals = int(quality_metrics.get("supportToSupportTerminalCount", 0) or 0)
     unsupported_internal_endpoints = int(quality_metrics.get("unsupportedInternalEndpointCount", 0) or 0)
     repl_penalty = _replacement_path_penalty(project)
+    shape_diagnostics = layout_mod.plan_shape_diagnostics(
+        list(project.excavation.outline.points) if project.excavation else [],
+        local_pit_count=len(project.excavation.local_pits or []) if project.excavation else 0,
+        has_center_island=any(
+            getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True)
+            for item in (project.excavation.obstacles or [])
+        ) if project.excavation else False,
+    )
+    transfer_required = str(shape_diagnostics.get("capability") or "").startswith("zoned_")
+    transfer_system_present = (
+        not transfer_required
+        or bool(system.ring_beams)
+        or bool(shape_diagnostics.get("hasCenterIsland"))
+    )
     col_obstacle_hits = 0
     obstacles = layout_mod._active_obstacle_polygons(getattr(project.excavation, "obstacles", []) if project.excavation else [])
     for col in system.columns:
@@ -428,6 +445,7 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         and endpoint_missing == 0
         and col_obstacle_hits == 0
         and repl_penalty < 0.75
+        and transfer_system_present
     )
     return {
         "passed": passed,
@@ -443,6 +461,10 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "supportNoUnsupportedInternalEndpoint": unsupported_internal_endpoints == 0,
         "temporaryColumnsOutsideObstacles": col_obstacle_hits == 0,
         "replacementPathContinuity": repl_penalty < 0.75,
+        "shapeTransferSystemComplete": transfer_system_present,
+        "shapeTransferSystemRequired": transfer_required,
+        "shapeArchetype": shape_diagnostics.get("archetype"),
+        "shapePrimarySystem": shape_diagnostics.get("primarySystem"),
         "supportCrossingCount": crossing_count,
         "obstacleConflictCount": obstacle_count,
         "supportOutsideExcavationCount": outside_count,
@@ -797,16 +819,29 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     locked = _locked_supports(project)
     locked_ids = [s.id for s in locked]
     candidates: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
-    shape = layout_mod.plan_shape_diagnostics(list(project.excavation.outline.points))
+    shape = layout_mod.plan_shape_diagnostics(
+        list(project.excavation.outline.points),
+        local_pit_count=len(project.excavation.local_pits or []),
+        has_center_island=any(getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True) for item in project.excavation.obstacles or []),
+    )
     constrained_shape = int(shape.get("concaveVertexCount") or 0) > 0 or bool(shape.get("nearSquarePlan"))
     spacing_values = [4.5, 5.5] if constrained_shape else [4.0, 5.0, 6.0]
     column_values = [15.0, 18.0] if constrained_shape else [12.0, 18.0]
     available_strategies = _available_topology_strategies(project)
+    # Candidate generation is an engineering search, not an unbounded geometry
+    # fuzzer. Complex imported outlines previously multiplied topology, spacing,
+    # column and line-shift combinations until the worker exhausted CPU/RAM.
+    max_trials = max(6, min(120, int(os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT", "36"))))
+    max_support_elements = max(100, min(10000, int(os.getenv("PITGUARD_MAX_SUPPORT_ELEMENTS", "2400"))))
+    trial_count = 0
     for topology_strategy in available_strategies:
         for target_spacing in spacing_values:
             for column_span in column_values:
-                strategy_patterns = POSITION_PATTERNS[:3] if topology_strategy != "direct_grid" else POSITION_PATTERNS[:2]
+                strategy_patterns = POSITION_PATTERNS[:1] if topology_strategy in {"ring_radial", "zoned_direct"} else POSITION_PATTERNS[:3] if topology_strategy != "direct_grid" else POSITION_PATTERNS[:2]
                 for pattern, amplitude in strategy_patterns:
+                    if trial_count >= max_trials:
+                        continue
+                    trial_count += 1
                     # V2.6.0: avoid deep-copying historical calculation results and large
                     # report payloads for every candidate.  Candidate generation only needs
                     # geometry, settings and the current retaining system.
@@ -825,6 +860,10 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         trial_project.retaining_system,
                         layout_config=layout_config,
                     )
+                    if len(trial_project.retaining_system.supports or []) > max_support_elements:
+                        # Reject malformed/over-detailed candidates before repair,
+                        # quality graph construction and geometry serialization.
+                        continue
                     if getattr(project, "retaining_system", None):
                         trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
                     locked_count = _apply_locked_supports(project, trial_project.retaining_system, column_max_span=column_span)
@@ -868,7 +907,7 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         variable_summary={
                             "variableType": "whole_scheme_topology_and_line_position",
                             "topologyFamily": topology_strategy,
-                            "schemeLabel": {"hybrid_diagonal": "转角墙—墙斜撑+对撑混合", "bidirectional_grid": "近方形双向框架", "direct_grid": "传统直对撑"}.get(topology_strategy, topology_strategy),
+                            "schemeLabel": {"hybrid_diagonal": "转角墙—墙斜撑+对撑混合", "bidirectional_grid": "近方形双向框架", "direct_grid": "传统直对撑", "ring_radial": "闭合内环梁+径向支撑", "zoned_direct": "异形分区墙—墙对撑"}.get(topology_strategy, topology_strategy),
                             "positionPattern": pattern,
                             "lineOffsetAmplitude": amplitude,
                             "adjustedLineCount": len(adjustments),
@@ -909,7 +948,7 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         muck_path_continuity_score=round(_muck_path_continuity_score(trial_project, trial_project.retaining_system, metrics), 3),
                         export_readiness=_export_readiness(quality.status, hard, metrics),
                         constructability_note=(
-                            {"hybrid_diagonal": "转角影响区采用直接落在相邻围檩/围护墙上的墙—墙角撑，并删除冲突对撑；", "bidirectional_grid": "仅用于近方形宽大基坑的双向框架；次向构件在专用节点终止并按框架受力复核；", "direct_grid": "传统短跨直对撑，构造直观；"}.get(topology_strategy, "")
+                            {"hybrid_diagonal": "转角影响区采用直接落在相邻围檩/围护墙上的墙—墙角撑，并删除冲突对撑；", "bidirectional_grid": "仅用于近方形宽大基坑的双向框架；次向构件在专用节点终止并按框架受力复核；", "direct_grid": "传统短跨直对撑，构造直观；", "ring_radial": "闭合内环梁承接外围径向支撑，保持大面积出土空间；", "zoned_direct": "按识别出的走廊/翼缘区分区布置墙—墙对撑，转接区必须通过环梁、分隔墙或显式框架复核；"}.get(topology_strategy, "")
                             + _candidate_note(target_spacing, column_span, pattern, terms, hard)
                         ),
                     )

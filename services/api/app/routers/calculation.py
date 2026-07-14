@@ -4,7 +4,6 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project
 from app.schemas.domain import CalculationCase, CalculationResult
 from app.storage.repository import ProjectRepository, get_repository
 from app.services.calculation_trace import build_calculation_trace
@@ -30,6 +29,7 @@ def _require_embedded_heavy_execution() -> None:
 
 @router.post("/build-cases", response_model=list[CalculationCase])
 def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> list[CalculationCase]:
+    from app.calculation.engine import build_default_construction_cases
     project = repo.require(project_id)
     try:
         cases = build_default_construction_cases(project)
@@ -43,6 +43,7 @@ def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repositor
 @router.post("/run", response_model=CalculationResult)
 def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = Depends(get_repository)) -> CalculationResult:
     _require_embedded_heavy_execution()
+    from app.calculation.engine import run_calculation
     project = repo.require(project_id)
     case = None
     if case_id:
@@ -63,6 +64,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
 @router.post("/diagnose-and-repair")
 def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
     _require_embedded_heavy_execution()
+    from app.calculation.engine import run_calculation
     """Run topology preflight, synchronize construction stages and recalculate.
 
     The response is intentionally compact so the UI can explain the root cause
@@ -90,6 +92,7 @@ def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_r
 @router.post("/run-candidate-comparison")
 def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepository = Depends(get_repository)) -> list[dict]:
     _require_embedded_heavy_execution()
+    from app.calculation.engine import run_candidate_comparison_for_project
     project = repo.require(project_id)
     try:
         comparison = run_candidate_comparison_for_project(project, top_n=top_n)

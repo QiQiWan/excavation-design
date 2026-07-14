@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-SOFTWARE_VERSION = "3.27.0"
-ALGORITHM_VERSION = "3.27.0-shape-aware-topology-isolated-worker"
-RULE_SET_VERSION = "2026.07-v3.27-shape-topology-runtime-isolation"
-EXPORT_SCHEMA_VERSION = "3.27"
+SOFTWARE_VERSION = "3.29.0"
+ALGORITHM_VERSION = "3.29.0-resilient-scheme-designer-resource-guard"
+RULE_SET_VERSION = "2026.07-v3.29-scheme-designer-audit-and-runtime-resilience"
+EXPORT_SCHEMA_VERSION = "3.29"
 
 
 def version_manifest() -> dict[str, str]:

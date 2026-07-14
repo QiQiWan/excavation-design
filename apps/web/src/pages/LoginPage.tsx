@@ -6,11 +6,13 @@ export default function LoginPage({
   returnTo = '/',
   notice,
   serviceError,
+  onRetryService,
 }: {
   onAuthenticated: (identity: AuthIdentity) => void;
   returnTo?: string;
   notice?: string;
   serviceError?: string;
+  onRetryService?: () => void;
 }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -68,7 +70,11 @@ export default function LoginPage({
           </div>
 
           {notice ? <div className="loginNotice" role="status">{notice}</div> : null}
-          {serviceError ? <div className="loginServiceError" role="alert">登录服务暂不可用：{serviceError}</div> : null}
+          {serviceError ? <div className="loginServiceError" role="alert">
+            <strong>登录服务暂不可用</strong>
+            <span>{serviceError}</span>
+            <button type="button" className="secondary" onClick={onRetryService}>重新检测服务</button>
+          </div> : null}
 
           <form onSubmit={submit}>
             <label htmlFor="pitguard-username">用户名</label>
@@ -99,7 +105,7 @@ export default function LoginPage({
             </div>
 
             {error ? <div className="loginError" role="alert" aria-live="polite">{error}</div> : null}
-            <button className="loginSubmit" type="submit" disabled={busy || !username.trim() || !password || Boolean(serviceError)}>
+            <button className="loginSubmit" type="submit" disabled={busy || !username.trim() || !password}>
               {busy ? <><span className="loginSpinner" />正在验证</> : '登录并进入工作台'}
             </button>
           </form>
@@ -107,7 +113,7 @@ export default function LoginPage({
           {returnLabel ? <p className="loginReturnHint">验证成功后返回：<code>{returnLabel}</code></p> : null}
           <div className="loginSecurityLine"><span aria-hidden="true">●</span> HttpOnly 会话 · 角色权限控制 · 操作审计</div>
         </div>
-        <footer className="loginFooter">PitGuard V3.26.0 · designer.eatrice.cn</footer>
+        <footer className="loginFooter">PitGuard V3.29.0 · designer.eatrice.cn</footer>
       </section>
     </main>
   );

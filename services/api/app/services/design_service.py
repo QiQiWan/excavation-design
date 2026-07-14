@@ -429,7 +429,7 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
 
     system.supports = supports
     system.wale_beams = _make_wale_beams(excavation, elevations)
-    system.ring_beams = make_ring_beams(excavation, elevations)
+    system.ring_beams = make_ring_beams(excavation, elevations, config=layout_config, supports=supports)
     system.columns = make_column_elements(excavation, supports, max_unbraced_span_m=layout_config.column_max_unbraced_span_m)
     system.support_nodes = make_support_wale_nodes(system.supports, system.wale_beams)
 
@@ -483,7 +483,12 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
         **previous_layout_summary,
         **support_layout_summary(system.supports, system.columns, system.ring_beams, merged_warnings, config=layout_config),
     }
-    system.layout_summary["planShapeDiagnostics"] = plan_shape_diagnostics(list(excavation.outline.points))
+    shape_diagnostics = plan_shape_diagnostics(
+        list(excavation.outline.points),
+        local_pit_count=len(excavation.local_pits or []),
+        has_center_island=any(getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True) for item in excavation.obstacles or []),
+    )
+    system.layout_summary["planShapeDiagnostics"] = shape_diagnostics
     system.layout_summary["designNotes"] = list(dict.fromkeys(design_notes))
     system.layout_summary["warningPolicy"] = "仅保留无法由当前算法闭环处理的工程风险；已自动修复动作进入设计证据。"
     preflight_status = (
@@ -493,20 +498,37 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
         if str(wale_preflight.get("status")) == "warning"
         else "pass"
     )
+    zoned_transfer_required = str(shape_diagnostics.get("capability") or "").startswith("zoned_")
+    zoned_transfer_complete = (
+        not zoned_transfer_required
+        or bool(system.ring_beams)
+        or bool(shape_diagnostics.get("hasCenterIsland"))
+    )
     requires_alternative_system = (
-        preflight_status == "fail"
-        and str(wale_preflight.get("status")) == "fail"
-        and not bool(concave_preflight.get("missingFacesAfter"))
+        (
+            preflight_status == "fail"
+            and str(wale_preflight.get("status")) == "fail"
+            and not bool(concave_preflight.get("missingFacesAfter"))
+        )
+        or not zoned_transfer_complete
     )
     system.layout_summary["strengthTopologyPreflight"] = {
         "executed": True,
         "concaveReturnSupport": concave_preflight,
         "waleSupportBay": wale_preflight,
         "status": preflight_status,
-        "calculationReady": preflight_status != "fail",
+        "calculationReady": preflight_status != "fail" and zoned_transfer_complete,
         "requiresAlternativeSupportSystem": requires_alternative_system,
+        "shapeTransferSystemRequired": zoned_transfer_required,
+        "shapeTransferSystemComplete": zoned_transfer_complete,
+        "shapeArchetype": shape_diagnostics.get("archetype"),
         "alternativeSupportSystemReason": (
-            "直接墙—墙轴压支撑在当前几何中无法同时满足围檩支点间距和零非法交叉；系统已阻断以避免生成支撑中部 T/Y 伪支座。"
+            (
+                "异形分区的凹角/多臂交汇区尚未配置明确的环梁、分隔墙、中心岛或平面框架转接体系；"
+                "当前分区支撑仅可作为方案设计，完整计算与施工版交付已阻断。"
+                if zoned_transfer_required and not zoned_transfer_complete
+                else "直接墙—墙轴压支撑在当前几何中无法同时满足围檩支点间距和零非法交叉；系统已阻断以避免生成支撑中部 T/Y 伪支座。"
+            )
             if requires_alternative_system else None
         ),
         "recommendedSupportSystems": (

@@ -73,6 +73,11 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
         "u_shape": [(-30, -20), (30, -20), (30, 20), (12, 20), (12, -2), (-12, -2), (-12, 20), (-30, 20)],
         "general_concave": [(-32, -18), (28, -18), (34, 2), (12, 8), (18, 26), (-8, 20), (-14, 6), (-32, 12)],
         "near_square": [(-25, -25), (25, -25), (25, 25), (-25, 25)],
+        "c_shape": [(-40, -30), (35, -30), (35, -12), (-12, -12), (-12, 12), (35, 12), (35, 30), (-40, 30)],
+        "z_shape": [(-40, -30), (10, -30), (10, -5), (40, -5), (40, 30), (-10, 30), (-10, 5), (-40, 5)],
+        "h_shape": [(-40, -30), (-20, -30), (-20, -8), (20, -8), (20, -30), (40, -30), (40, 30), (20, 30), (20, 8), (-20, 8), (-20, 30), (-40, 30)],
+        "circle_16": [(20.0 * math.cos(i * math.tau / 16.0), 20.0 * math.sin(i * math.tau / 16.0)) for i in range(16)],
+        "ellipse_20": [(34.0 * math.cos(i * math.tau / 20.0), 18.0 * math.sin(i * math.tau / 20.0)) for i in range(20)],
     }
     rows: list[dict[str, Any]] = []
     for name, raw in shapes.items():
@@ -96,7 +101,7 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
         unsafe_topology = any(value > 0 for value in unsafe_counts.values())
         calculation_ready = (
             quality.status != "fail"
-            and preflight.get("status") != "fail"
+            and bool(preflight.get("calculationReady", preflight.get("status") != "fail"))
             and not unsafe_topology
         )
         # A controlled block is acceptable for capability qualification only
@@ -106,8 +111,10 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
         controlled_block = (
             not calculation_ready
             and not unsafe_topology
-            and bool(fail_categories)
-            and set(fail_categories).issubset({"wale_support_bay"})
+            and (
+                bool(preflight.get("requiresAlternativeSupportSystem"))
+                or (bool(fail_categories) and set(fail_categories).issubset({"wale_support_bay"}))
+            )
         )
         qualified = calculation_ready or controlled_block
         if calculation_ready:

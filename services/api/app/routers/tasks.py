@@ -43,12 +43,12 @@ def create_candidate_comparison_batch(project_id: str, body: CandidateBatchReque
 
 @router.get("/api/projects/{project_id}/tasks")
 def list_project_tasks(project_id: str) -> list[dict]:
-    return [task.as_dict(include_logs=False) for task in task_manager.list(project_id=project_id)]
+    return [task.as_dict(include_logs=False, include_result=False) for task in task_manager.list(project_id=project_id)]
 
 
 @router.get("/api/tasks")
 def list_tasks() -> list[dict]:
-    return [task.as_dict(include_logs=False) for task in task_manager.list()]
+    return [task.as_dict(include_logs=False, include_result=False) for task in task_manager.list()]
 
 
 @router.get("/api/tasks/{task_id}")

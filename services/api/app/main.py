@@ -24,7 +24,7 @@ from app.tasks.manager import task_manager
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.27.0 shape-aware retaining topology, isolated calculation worker and controlled delivery.",
+    description="PitGuard V3.29.0 resilient scheme designer, isolated calculation worker and controlled delivery.",
 )
 
 app.add_middleware(
@@ -89,6 +89,27 @@ app.include_router(industrial.router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "pitguard-api"}
+
+
+@app.get("/health/live")
+def health_live() -> dict[str, str]:
+    """Process-only liveness probe; never touches the project database."""
+    return {"status": "alive", "service": "pitguard-api"}
+
+
+@app.get("/health/ready")
+def health_ready() -> JSONResponse:
+    """Small unauthenticated readiness probe for Nginx/systemd monitoring."""
+    db_path = Path(os.getenv("PITGUARD_DB_PATH", str(DEFAULT_DB_PATH))).expanduser()
+    try:
+        with sqlite3.connect(db_path, timeout=1.0) as conn:
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("SELECT 1").fetchone()
+        payload = {"status": "ready", "service": "pitguard-api", "database": True}
+        return JSONResponse(status_code=200, content=payload)
+    except Exception as exc:
+        payload = {"status": "not_ready", "service": "pitguard-api", "database": False, "error": str(exc)[:240]}
+        return JSONResponse(status_code=503, content=payload)
 
 
 @app.get("/api/system/diagnostics")

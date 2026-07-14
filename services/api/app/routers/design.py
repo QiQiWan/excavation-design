@@ -8,8 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.domain import RetainingSystem, SupportLayoutRepairSummary
 from app.geology.model_builder import ensure_geological_model_covers_excavation
 from app.services.design_service import auto_diaphragm_wall, auto_supports, support_layout_config_from_settings
+from app.services.support_layout import plan_shape_diagnostics
 from app.services.support_layout_repair import adopt_support_layout_candidate, auto_repair_support_layout, set_support_optimization_locks
 from app.services.calculation_state import invalidate_calculation_state
+from app.services.support_scheme_designer_audit import audit_support_scheme_designer
+from app.services.calculation_resource_estimator import estimate_calculation_resources
 from app.services.support_layout_import import import_support_layout_csv
 from app.storage.repository import ProjectRepository, get_repository
 
@@ -68,6 +71,70 @@ def _require_excavation(project_id: str, repo: ProjectRepository):
     return project
 
 
+@router.get("/plan-shape-diagnostics")
+def get_plan_shape_diagnostics(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = _require_excavation(project_id, repo)
+    excavation = project.excavation
+    return plan_shape_diagnostics(
+        list(excavation.outline.points),
+        local_pit_count=len(excavation.local_pits or []),
+        has_center_island=any(
+            getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True)
+            for item in (excavation.obstacles or [])
+        ),
+    )
+
+
+@router.get("/support-designer-audit")
+def get_support_designer_audit(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = _require_excavation(project_id, repo)
+    return audit_support_scheme_designer(project)
+
+
+@router.get("/calculation-resource-estimate")
+def get_calculation_resource_estimate(
+    project_id: str,
+    candidate_count: int = 0,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = _require_excavation(project_id, repo)
+    return estimate_calculation_resources(project, candidate_count=max(0, min(candidate_count, 3)))
+
+
+@router.post("/auto-supports-by-shape")
+def design_supports_by_shape(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    _require_embedded_support_optimization()
+    project = _require_excavation(project_id, repo)
+    ensure_geological_model_covers_excavation(project)
+    excavation = project.excavation
+    diagnostics = plan_shape_diagnostics(
+        list(excavation.outline.points),
+        local_pit_count=len(excavation.local_pits or []),
+        has_center_island=any(
+            getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True)
+            for item in (excavation.obstacles or [])
+        ),
+    )
+    families = [str(item) for item in diagnostics.get("supportedTopologyFamilies", [])]
+    selected = families[0] if families else "balanced_grid"
+    if selected not in {"direct_grid", "hybrid_diagonal", "ring_radial", "zoned_direct"}:
+        selected = "balanced_grid"
+    if project.retaining_system is None or not project.retaining_system.diaphragm_walls:
+        project.retaining_system = auto_diaphragm_wall(excavation, project.retaining_system, project.design_settings)
+    project.retaining_system = auto_supports(
+        excavation,
+        project.retaining_system,
+        layout_config=support_layout_config_from_settings(project.design_settings, topology_strategy=selected),
+    )
+    invalidate_calculation_state(project, reason=f"shape-aware support system regenerated using {selected}", rebuild_cases=True)
+    repo.save(project)
+    return {
+        "diagnostics": diagnostics,
+        "selectedTopologyFamily": selected,
+        "retainingSystem": project.retaining_system.model_dump(mode="json", by_alias=True),
+    }
+
+
 @router.post("/auto-diaphragm-wall", response_model=RetainingSystem)
 def design_diaphragm_wall(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> RetainingSystem:
     project = _require_excavation(project_id, repo)
@@ -80,6 +147,7 @@ def design_diaphragm_wall(project_id: str, repo: ProjectRepository = Depends(get
 
 @router.post("/auto-supports", response_model=RetainingSystem)
 def design_supports(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> RetainingSystem:
+    _require_embedded_support_optimization()
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings))

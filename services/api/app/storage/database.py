@@ -20,6 +20,26 @@ def _canonical_json(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _project_summary_payload(project: dict[str, Any], revision: int = 0) -> dict[str, Any]:
+    results = list(project.get("calculationResults") or [])
+    latest = results[-1] if results else {}
+    return {
+        "id": project.get("id"),
+        "revision": revision,
+        "name": project.get("name", "Untitled"),
+        "location": project.get("location"),
+        "createdAt": project.get("createdAt") or project.get("created_at"),
+        "updatedAt": project.get("updatedAt") or project.get("updated_at"),
+        "hasExcavation": bool(project.get("excavation")),
+        "hasRetainingSystem": bool(project.get("retainingSystem")),
+        "calculationCaseCount": len(project.get("calculationCases") or []),
+        "calculationResultCount": len(results),
+        "latestCalculationId": latest.get("id"),
+        "governingStatus": (latest.get("governingValues") or {}).get("governingCheckStatus"),
+        "geometryConsistent": ((latest.get("reportDiagramData") or {}).get("geometryConsistency") or {}).get("consistent"),
+    }
+
+
 class SQLiteProjectStore:
     """SQLite project store with WAL, immutable revisions and audit events."""
 
@@ -33,12 +53,17 @@ class SQLiteProjectStore:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA temp_store=FILE")
+        conn.execute("PRAGMA cache_size=-32768")
+        conn.execute("PRAGMA mmap_size=0")
         return conn
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA wal_autocheckpoint=1000")
+            conn.execute("PRAGMA journal_size_limit=67108864")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS projects (
@@ -47,6 +72,7 @@ class SQLiteProjectStore:
                     updated_at TEXT NOT NULL,
                     revision INTEGER NOT NULL DEFAULT 0,
                     content_hash TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '{}',
                     data TEXT NOT NULL
                 )
                 """
@@ -56,6 +82,8 @@ class SQLiteProjectStore:
                 conn.execute("ALTER TABLE projects ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
             if "content_hash" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''")
+            if "summary" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN summary TEXT NOT NULL DEFAULT '{}'")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS project_revisions (
@@ -111,18 +139,20 @@ class SQLiteProjectStore:
                 conn.rollback()
                 return current_revision
             revision = current_revision + 1
+            summary_encoded = json.dumps(_project_summary_payload(project, revision), ensure_ascii=False, separators=(",", ":"))
             conn.execute(
                 """
-                INSERT INTO projects (id, name, updated_at, revision, content_hash, data)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (id, name, updated_at, revision, content_hash, summary, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     updated_at=excluded.updated_at,
                     revision=excluded.revision,
                     content_hash=excluded.content_hash,
+                    summary=excluded.summary,
                     data=excluded.data
                 """,
-                (project["id"], project.get("name", "Untitled"), updated_at, revision, content_hash, encoded),
+                (project["id"], project.get("name", "Untitled"), updated_at, revision, content_hash, summary_encoded, encoded),
             )
             conn.execute(
                 """
@@ -138,7 +168,7 @@ class SQLiteProjectStore:
                 """,
                 (f"audit-{uuid4().hex[:16]}", project["id"], revision, actor, action, summary, "{}", _now()),
             )
-            retain = max(10, int(os.getenv("PITGUARD_REVISION_RETENTION", "100")))
+            retain = max(10, int(os.getenv("PITGUARD_REVISION_RETENTION", "30")))
             conn.execute(
                 """
                 DELETE FROM project_revisions
@@ -179,44 +209,32 @@ class SQLiteProjectStore:
         return [json.loads(row["data"]) for row in rows]
 
     def list_summaries(self) -> list[dict[str, Any]]:
-        query = """
-            SELECT
-                id, name, updated_at, revision,
-                json_extract(data, '$.location') AS location,
-                json_extract(data, '$.createdAt') AS created_at,
-                CASE WHEN json_type(data, '$.excavation') IS NOT NULL AND json_type(data, '$.excavation') != 'null' THEN 1 ELSE 0 END AS has_excavation,
-                CASE WHEN json_type(data, '$.retainingSystem') IS NOT NULL AND json_type(data, '$.retainingSystem') != 'null' THEN 1 ELSE 0 END AS has_retaining_system,
-                COALESCE(json_array_length(json_extract(data, '$.calculationCases')), 0) AS calculation_case_count,
-                COALESCE(json_array_length(json_extract(data, '$.calculationResults')), 0) AS calculation_result_count,
-                json_extract(data, '$.calculationResults[#-1].id') AS latest_calculation_id,
-                json_extract(data, '$.calculationResults[#-1].governingValues.governingCheckStatus') AS governing_status,
-                json_extract(data, '$.calculationResults[#-1].reportDiagramData.geometryConsistency.consistent') AS geometry_consistent
-            FROM projects
-            ORDER BY updated_at DESC
-        """
+        # Summaries are persisted separately so the project list never asks
+        # SQLite JSON1 to parse multi-megabyte calculation payloads.
         with self._connect() as conn:
-            try:
-                rows = conn.execute(query).fetchall()
-                return [dict(row) for row in rows]
-            except sqlite3.OperationalError:
-                rows = conn.execute("SELECT id, name, updated_at, revision, data FROM projects ORDER BY updated_at DESC").fetchall()
-        summaries: list[dict[str, Any]] = []
+            rows = conn.execute("SELECT id, name, updated_at, revision, summary FROM projects ORDER BY updated_at DESC").fetchall()
+        output: list[dict[str, Any]] = []
         for row in rows:
-            data = json.loads(row["data"])
-            results = data.get("calculationResults") or []
-            latest = results[-1] if results else {}
-            summaries.append({
-                "id": row["id"], "name": row["name"], "updated_at": row["updated_at"], "revision": row["revision"],
-                "location": data.get("location"), "created_at": data.get("createdAt"),
-                "has_excavation": bool(data.get("excavation")),
-                "has_retaining_system": bool(data.get("retainingSystem")),
-                "calculation_case_count": len(data.get("calculationCases") or []),
-                "calculation_result_count": len(results),
-                "latest_calculation_id": latest.get("id"),
-                "governing_status": (latest.get("governingValues") or {}).get("governingCheckStatus"),
-                "geometry_consistent": ((latest.get("reportDiagramData") or {}).get("geometryConsistency") or {}).get("consistent"),
+            try:
+                item = json.loads(str(row["summary"] or "{}"))
+            except json.JSONDecodeError:
+                item = {}
+            output.append({
+                "id": item.get("id") or row["id"],
+                "revision": int(item.get("revision") or row["revision"] or 0),
+                "name": item.get("name") or row["name"],
+                "location": item.get("location"),
+                "created_at": item.get("createdAt"),
+                "updated_at": item.get("updatedAt") or row["updated_at"],
+                "has_excavation": bool(item.get("hasExcavation")),
+                "has_retaining_system": bool(item.get("hasRetainingSystem")),
+                "calculation_case_count": int(item.get("calculationCaseCount") or 0),
+                "calculation_result_count": int(item.get("calculationResultCount") or 0),
+                "latest_calculation_id": item.get("latestCalculationId"),
+                "governing_status": item.get("governingStatus"),
+                "geometry_consistent": item.get("geometryConsistent"),
             })
-        return summaries
+        return output
 
     def get(self, project_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:

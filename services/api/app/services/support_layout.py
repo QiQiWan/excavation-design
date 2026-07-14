@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import Iterable
 
+from shapely.geometry import LineString, MultiPoint, Point as ShapelyPoint, Polygon as ShapelyPolygon
+
+from app.services.plan_shape_intelligence import classify_excavation_plan
+
 from app.schemas.domain import (
     BeamElement,
     BearingPlateDesign,
@@ -59,7 +63,7 @@ class SupportLayoutConfig:
 
     def normalized(self) -> "SupportLayoutConfig":
         strategy = str(self.topology_strategy or "balanced_grid")
-        if strategy not in {"direct_grid", "hybrid_diagonal", "bidirectional_grid", "balanced_grid"}:
+        if strategy not in {"direct_grid", "hybrid_diagonal", "bidirectional_grid", "balanced_grid", "ring_radial", "zoned_direct"}:
             strategy = "balanced_grid"
         return SupportLayoutConfig(
             target_main_support_spacing_m=max(MIN_PRACTICAL_MAIN_SUPPORT_SPACING_M, min(MAX_PRACTICAL_MAIN_SUPPORT_SPACING_M, float(self.target_main_support_spacing_m))),
@@ -250,84 +254,24 @@ def _plan_axes(points: list[Point2D]) -> PlanAxes:
     return PlanAxes(origin, raw.long_axis, raw.short_axis, u0, u1, v0, v1, raw.method)
 
 
-def plan_shape_diagnostics(points: list[Point2D]) -> dict[str, object]:
-    pts = _dedup_points(points)
-    axes = _plan_axes(pts)
-    area = abs(_signed_area(pts)) if len(pts) >= 3 else 0.0
-    perimeter = sum(_distance(a, b) for a, b in zip(pts, pts[1:] + pts[:1])) if len(pts) >= 2 else 0.0
-    concave_count = len(_concave_vertex_indices(pts)) if len(pts) >= 4 else 0
-    circularity = 4.0 * math.pi * area / max(perimeter * perimeter, EPS)
-    cx = sum(p.x for p in pts) / max(len(pts), 1)
-    cy = sum(p.y for p in pts) / max(len(pts), 1)
-    radii = [math.hypot(p.x - cx, p.y - cy) for p in pts]
-    radial_cv = (math.sqrt(sum((r - mean(radii)) ** 2 for r in radii) / len(radii)) / max(mean(radii), EPS)) if len(radii) > 1 else 1.0
-    aspect = axes.long_span / max(axes.short_span, EPS)
-    circular_shaft_like = len(pts) >= 6 and concave_count == 0 and aspect <= 1.25 and circularity >= 0.72 and radial_cv <= 0.20
-    # Measure whether the boundary follows the two local principal axes.  This
-    # separates orthogonal L/T/U corridors from a generic concave polygon; the
-    # latter must not be repaired with arbitrary fan-shaped diagonals.
-    aligned_length = 0.0
-    total_edge_length = 0.0
-    boundary_edges = [(a, b, _distance(a, b)) for a, b in zip(pts, pts[1:] + pts[:1])]
-    reference_edge = max(boundary_edges, key=lambda row: row[2]) if boundary_edges else None
-    reference_axis = _unit_vector(reference_edge[0], reference_edge[1]) if reference_edge else axes.long_axis
-    reference_normal = (-reference_axis[1], reference_axis[0])
-    for a, b in zip(pts, pts[1:] + pts[:1]):
-        ex, ey = _unit_vector(a, b)
-        length = _distance(a, b)
-        total_edge_length += length
-        alignment = max(
-            abs(ex * reference_axis[0] + ey * reference_axis[1]),
-            abs(ex * reference_normal[0] + ey * reference_normal[1]),
-        )
-        if alignment >= math.cos(math.radians(8.0)):
-            aligned_length += length
-    orthogonal_edge_ratio = aligned_length / max(total_edge_length, EPS)
-    orthogonal_plan = orthogonal_edge_ratio >= 0.90
-    slender = aspect >= 2.20
-    near_square = aspect <= 1.35
-    if circular_shaft_like:
-        classification = "circular_or_multisided_shaft"
-        recommended = "ring_or_radial"
-    elif concave_count and orthogonal_plan:
-        classification = "orthogonal_concave_corridor"
-        recommended = "corridor_wall_to_wall_or_controlled_block"
-    elif concave_count:
-        classification = "general_concave_polygon"
-        recommended = "visibility_wall_pair_or_controlled_block"
-    elif len(pts) == 4 and slender:
-        classification = "slender_quadrilateral"
-        recommended = "short_span_direct_grid_with_terminal_parallel_braces"
-    elif len(pts) == 4 and near_square:
-        classification = "near_square_quadrilateral"
-        recommended = "two_direction_frame_or_ring_subject_to_solver_capability"
-    elif len(pts) == 4:
-        classification = "rotated_or_orthogonal_quadrilateral"
-        recommended = "principal_axis_direct_grid"
-    elif slender:
-        classification = "slender_convex_polygon"
-        recommended = "principal_axis_direct_grid"
-    else:
-        classification = "general_convex_polygon"
-        recommended = "visibility_wall_pair_grid"
-    return {
-        "classification": classification,
-        "vertexCount": len(pts),
-        "concaveVertexCount": concave_count,
-        "principalAxisMethod": axes.method,
-        "principalAxisRotationDeg": round(axes.rotation_deg, 3),
-        "longSpanM": round(axes.long_span, 3),
-        "shortSpanM": round(axes.short_span, 3),
-        "aspectRatio": round(aspect, 4),
-        "circularity": round(circularity, 4),
-        "radialCoefficientOfVariation": round(radial_cv, 4),
-        "circularShaftLike": circular_shaft_like,
-        "orthogonalEdgeRatio": round(orthogonal_edge_ratio, 4),
-        "orthogonalPlan": orthogonal_plan,
-        "slenderPlan": slender,
-        "nearSquarePlan": near_square,
-        "recommendedTopology": recommended,
-    }
+def plan_shape_diagnostics(
+    points: list[Point2D],
+    *,
+    local_pit_count: int = 0,
+    has_center_island: bool = False,
+) -> dict[str, object]:
+    """Return the V3.28 shape taxonomy and support-system recommendation.
+
+    The classifier works in a minimum-rotated-rectangle frame, distinguishes
+    convex, shaft-like and orthogonal concave archetypes, and exposes design
+    zones for L/T/U/C/Z/H/stepped plans.  Legacy keys are retained so existing
+    quality gates and front-end components remain backward compatible.
+    """
+    return classify_excavation_plan(
+        points,
+        local_pit_count=local_pit_count,
+        has_center_island=has_center_island,
+    )
 
 
 def _signed_area(points: list[Point2D]) -> float:
@@ -1424,55 +1368,274 @@ def _center_island_polygon(obstacles: list[tuple[ConstructionObstacle, list[Poin
     return None
 
 
-def _should_use_ring(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> bool:
-    # A large square or near-square excavation must not be classified as a shaft
-    # merely from its bounding-box aspect ratio.  Ring support is selected only
-    # for an explicit centre island or a geometrically shaft-like polygon.
-    return bool(_center_island_polygon(obstacles)) or bool(plan_shape_diagnostics(points).get("circularShaftLike"))
+def _shape_diagnostics_for_excavation(excavation, points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> dict[str, object]:
+    return plan_shape_diagnostics(
+        points,
+        local_pit_count=len(getattr(excavation, "local_pits", []) or []),
+        has_center_island=bool(_center_island_polygon(obstacles)),
+    )
 
 
-def _ring_rectangle(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> tuple[float, float, float, float]:
-    min_x, min_y, max_x, max_y, span_x, span_y = _bounds(points)
+
+def _zoned_direct_layout(
+    excavation,
+    points: list[Point2D],
+    obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
+    diagnostics: dict[str, object],
+    config: SupportLayoutConfig,
+) -> tuple[list[SupportLayoutLine], list[str]]:
+    """Generate preliminary wall-to-wall struts for orthogonal concave zones.
+
+    Each recognized rectangular corridor/wing contributes a family of lines
+    across its local short dimension.  Candidate lines are extended to the
+    *actual excavation boundary* and clipped by the excavation polygon; no
+    support may terminate on a virtual zoning boundary or another support.
+    Junction zones remain a controlled design item until an explicit ring,
+    partition wall, centre island or in-plane frame is provided.
+    """
+    zones = list(diagnostics.get("designZones") or [])
+    if not zones:
+        return [], ["异形轮廓未形成可用的矩形分区，无法自动生成分区墙—墙支撑。"]
+    polygon = ShapelyPolygon([(point.x, point.y) for point in points])
+    if not polygon.is_valid:
+        polygon = polygon.buffer(0)
+    if polygon.is_empty:
+        return [], ["异形轮廓无效，分区支撑生成已阻断。"]
+    min_x, min_y, max_x, max_y = polygon.bounds
+    extent = max(max_x - min_x, max_y - min_y, 1.0) * 2.5
+    lines: list[SupportLayoutLine] = []
+    warnings: list[str] = []
+    fingerprints: set[tuple[int, int, int, int]] = set()
+
+    def line_parts(geometry):
+        if geometry.is_empty:
+            return []
+        if geometry.geom_type == "LineString":
+            return [geometry]
+        if hasattr(geometry, "geoms"):
+            return [item for item in geometry.geoms if item.geom_type == "LineString" and item.length > EPS]
+        return []
+
+    for zone in zones:
+        corners_raw = list(zone.get("corners") or []) if isinstance(zone, dict) else []
+        if len(corners_raw) != 4:
+            continue
+        corners = [Point2D(x=float(item["x"]), y=float(item["y"])) for item in corners_raw]
+        edge_a = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
+        edge_b = (corners[3].x - corners[0].x, corners[3].y - corners[0].y)
+        len_a = math.hypot(*edge_a)
+        len_b = math.hypot(*edge_b)
+        if min(len_a, len_b) <= 0.5:
+            continue
+        if len_a >= len_b:
+            station_origin = corners[0]
+            station_vector = edge_a
+            station_length = len_a
+            support_vector = edge_b
+            support_length = len_b
+        else:
+            station_origin = corners[0]
+            station_vector = edge_b
+            station_length = len_b
+            support_vector = edge_a
+            support_length = len_a
+        station_unit = (station_vector[0] / station_length, station_vector[1] / station_length)
+        support_unit = (support_vector[0] / support_length, support_vector[1] / support_length)
+        station_count = max(1, int(math.ceil(station_length / max(config.target_main_support_spacing_m, 1.0))))
+        bay = station_length / station_count
+        zone_id = str(zone.get("zoneId") or f"zone-{len(lines)+1}")
+        zone_added = 0
+        for index in range(station_count):
+            station = (index + 0.5) * bay
+            center = Point2D(
+                x=station_origin.x + station_unit[0] * station + support_vector[0] * 0.5,
+                y=station_origin.y + station_unit[1] * station + support_vector[1] * 0.5,
+            )
+            ray = LineString([
+                (center.x - support_unit[0] * extent, center.y - support_unit[1] * extent),
+                (center.x + support_unit[0] * extent, center.y + support_unit[1] * extent),
+            ])
+            parts = line_parts(polygon.intersection(ray))
+            if not parts:
+                continue
+            center_point = ShapelyPoint(center.x, center.y)
+            parts.sort(key=lambda item: (item.distance(center_point), -item.length))
+            component = parts[0]
+            if component.distance(center_point) > max(0.25, 0.08 * support_length):
+                continue
+            coords = list(component.coords)
+            start = Point2D(x=float(coords[0][0]), y=float(coords[0][1]))
+            end = Point2D(x=float(coords[-1][0]), y=float(coords[-1][1]))
+            span = _distance(start, end)
+            if span < max(2.5, 0.35 * support_length):
+                continue
+            if not _line_avoids_obstacles(start, end, obstacles):
+                continue
+            # Quantized undirected endpoint key prevents duplicate supports at
+            # overlapping decomposition boundaries.
+            first = (int(round(start.x * 20)), int(round(start.y * 20)))
+            second = (int(round(end.x * 20)), int(round(end.y * 20)))
+            if first > second:
+                first, second = second, first
+            key = (*first, *second)
+            if key in fingerprints:
+                continue
+            fingerprints.add(key)
+            lines.append(SupportLayoutLine(
+                role="main_strut",
+                start=Point2D(x=round(start.x, 4), y=round(start.y, 4)),
+                end=Point2D(x=round(end.x, 4), y=round(end.y, 4)),
+                span_length=round(span, 4),
+                bay_spacing=round(bay, 4),
+                layout_note=(
+                    f"异形分区 {zone_id} 的短跨墙—墙对撑；支撑线由识别分区确定站位，"
+                    "并延伸至真实围护墙边界，两端不得落在虚拟分区线或其他支撑上。"
+                ),
+                topology_family="zoned_direct",
+                design_zone=zone_id,
+                station_chainage_m=round(station, 4),
+                local_clear_span_m=round(span, 4),
+                placement_reason="shape_zone_short_span_wall_to_wall",
+                load_path_class="wall_to_wall",
+            ))
+            zone_added += 1
+        if zone_added == 0:
+            warnings.append(f"分区 {zone_id} 未找到满足可见性、障碍避让和真实落墙条件的短跨支撑。")
+        else:
+            warnings.append(f"分区 {zone_id} 已生成 {zone_added} 根两端落墙的短跨支撑。")
+    if lines:
+        warnings.append(
+            "已按异形轮廓凸分解/走廊分区生成初步墙—墙支撑；凹角和多臂交汇区仍须设置明确的"
+            "环梁、分隔墙、中心岛或具有平面内弯剪刚度的转接框架，并经整体分阶段计算确认。"
+        )
+    return lines, warnings
+
+
+def _should_use_ring(
+    points: list[Point2D],
+    obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
+    config: SupportLayoutConfig | None = None,
+    diagnostics: dict[str, object] | None = None,
+) -> bool:
+    config = (config or SupportLayoutConfig()).normalized()
+    diagnostics = diagnostics or plan_shape_diagnostics(points, has_center_island=bool(_center_island_polygon(obstacles)))
+    if _center_island_polygon(obstacles):
+        return True
+    if config.topology_strategy == "ring_radial":
+        return True
+    if config.topology_strategy in {"direct_grid", "hybrid_diagonal", "bidirectional_grid", "zoned_direct"}:
+        return False
+    primary = str(diagnostics.get("primarySystem") or diagnostics.get("recommendedTopology") or "")
+    capability = str(diagnostics.get("capability") or "")
+    return "ring_radial" in primary and capability.startswith("automatic_ring")
+
+
+def _ring_polygon(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> list[Point2D]:
+    """Return an inner closed load-transfer ring in the excavation plan.
+
+    Circular/elliptical shafts use a geometrically similar inner polygon.  A
+    quadrilateral or compact convex excavation uses a local-axis rectangular
+    ring.  An explicit centre-island obstacle controls the ring footprint.
+    """
     island = _center_island_polygon(obstacles)
     if island:
-        ix0, iy0, ix1, iy1, _, _ = _bounds(island)
-        margin = 3.0
-        return ix0 - margin, iy0 - margin, ix1 + margin, iy1 + margin
-    cx, cy = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
-    hx, hy = max(5.0, span_x * 0.18), max(5.0, span_y * 0.18)
-    return cx - hx, cy - hy, cx + hx, cy + hy
-
-
-def _ring_layout(points: list[Point2D], obstacles: list[tuple[ConstructionObstacle, list[Point2D]]]) -> tuple[list[SupportLayoutLine], list[str]]:
-    min_x, min_y, max_x, max_y, span_x, span_y = _bounds(points)
-    lines: list[SupportLayoutLine] = []
-    # For circular or multi-sided shaft approximations, bounding-box radials may
-    # start exactly at vertices and be rejected by the polygon-inclusion sampler.
-    # Use edge-midpoint radials toward an inner ring proxy instead; this preserves
-    # the normative workflow without requiring a finite-element shaft model.
-    if len(points) > 4 and max(span_x, span_y) / max(min(span_x, span_y), EPS) <= 1.25:
-        cx = sum(p.x for p in points) / len(points)
-        cy = sum(p.y for p in points) / len(points)
-        inner_ratio = 0.42
-        for a, b in zip(points, points[1:] + points[:1]):
-            mid = Point2D(x=(a.x + b.x) / 2.0, y=(a.y + b.y) / 2.0)
-            end = Point2D(x=cx + (mid.x - cx) * inner_ratio, y=cy + (mid.y - cy) * inner_ratio)
-            if _distance(mid, end) >= MIN_MAIN_STRUT_SPAN_M and _line_segment_samples_inside(mid, end, points) and _line_avoids_obstacles(mid, end, obstacles):
-                lines.append(SupportLayoutLine("ring_strut", Point2D(x=round(mid.x, 3), y=round(mid.y, 3)), Point2D(x=round(end.x, 3), y=round(end.y, 3)), round(_distance(mid, end), 3), None, "圆形/多边形竖井环撑体系：由边中点径向传力至内环梁代理，当前按规范算法回归算例处理。"))
-        return lines, ["已启用圆形/多边形竖井环撑布置原型：生成边中点径向支撑，正式工程需结合双墙体系和竖井专项设计复核。"]
-
-    rx0, ry0, rx1, ry1 = _ring_rectangle(points, obstacles)
-    cx, cy = (rx0 + rx1) / 2.0, (ry0 + ry1) / 2.0
-    candidates = [
-        (Point2D(x=min_x, y=cy), Point2D(x=rx0, y=cy)),
-        (Point2D(x=rx1, y=cy), Point2D(x=max_x, y=cy)),
-        (Point2D(x=cx, y=min_y), Point2D(x=cx, y=ry0)),
-        (Point2D(x=cx, y=ry1), Point2D(x=cx, y=max_y)),
+        island_poly = ShapelyPolygon([(point.x, point.y) for point in island])
+        if island_poly.is_valid and island_poly.area > EPS:
+            expanded = island_poly.minimum_rotated_rectangle.buffer(3.0, join_style=2)
+            coords = list(expanded.minimum_rotated_rectangle.exterior.coords)[:-1]
+            return [Point2D(x=round(float(x), 4), y=round(float(y), 4)) for x, y in coords]
+    diagnostics = plan_shape_diagnostics(points)
+    axes = _plan_axes(points)
+    archetype = str(diagnostics.get("archetype") or "")
+    if archetype in {"circle", "ellipse", "regular_multisided_shaft"} and len(points) >= 6:
+        cx = sum(point.x for point in points) / len(points)
+        cy = sum(point.y for point in points) / len(points)
+        ratio = 0.42
+        return [Point2D(x=round(cx + (point.x - cx) * ratio, 4), y=round(cy + (point.y - cy) * ratio, 4)) for point in points]
+    long_half = max(3.0, min(0.23 * axes.long_span, max(3.0, 0.5 * axes.long_span - 5.0)))
+    short_half = max(3.0, min(0.23 * axes.short_span, max(3.0, 0.5 * axes.short_span - 5.0)))
+    center = Point2D(x=0.5 * (axes.long_min + axes.long_max), y=0.5 * (axes.short_min + axes.short_max))
+    local = [
+        Point2D(x=center.x - long_half, y=center.y - short_half),
+        Point2D(x=center.x + long_half, y=center.y - short_half),
+        Point2D(x=center.x + long_half, y=center.y + short_half),
+        Point2D(x=center.x - long_half, y=center.y + short_half),
     ]
-    for start, end in candidates:
-        if _distance(start, end) >= MIN_MAIN_STRUT_SPAN_M and _line_segment_samples_inside(start, end, points) and _line_avoids_obstacles(start, end, obstacles):
-            lines.append(SupportLayoutLine("ring_strut", Point2D(x=round(start.x, 3), y=round(start.y, 3)), Point2D(x=round(end.x, 3), y=round(end.y, 3)), round(_distance(start, end), 3), None, "中心岛/环撑体系：外围围檩通过径向支撑传力至内环梁，适合大平面或中心岛施工方案。"))
-    return lines, ["已启用中心岛/环撑布置原型：生成内环梁和径向支撑，正式工程需结合栈桥、出土口、分区开挖专项复核。"]
+    return [_global_coordinates(point, axes) for point in local]
+
+
+def _ring_intersection(wall_point: Point2D, center: Point2D, ring: ShapelyPolygon) -> Point2D | None:
+    ray = LineString([(wall_point.x, wall_point.y), (center.x, center.y)])
+    intersection = ray.intersection(ring.boundary)
+    candidates: list[tuple[float, Point2D]] = []
+    geometries = []
+    if isinstance(intersection, ShapelyPoint):
+        geometries = [intersection]
+    elif isinstance(intersection, MultiPoint):
+        geometries = list(intersection.geoms)
+    elif hasattr(intersection, "geoms"):
+        geometries = [item for item in intersection.geoms if isinstance(item, ShapelyPoint)]
+    for item in geometries:
+        point = Point2D(x=float(item.x), y=float(item.y))
+        distance = _distance(wall_point, point)
+        if distance > 0.20:
+            candidates.append((distance, point))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda row: row[0])[1]
+
+
+def _ring_layout(
+    points: list[Point2D],
+    obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
+    config: SupportLayoutConfig | None = None,
+) -> tuple[list[SupportLayoutLine], list[str]]:
+    config = (config or SupportLayoutConfig(topology_strategy="ring_radial")).normalized()
+    ring_points = _ring_polygon(points, obstacles)
+    if len(ring_points) < 3:
+        return [], ["未能生成有效内环梁几何。"]
+    outer = ShapelyPolygon([(point.x, point.y) for point in points])
+    ring = ShapelyPolygon([(point.x, point.y) for point in ring_points])
+    if not outer.is_valid or not ring.is_valid or ring.area <= EPS or not outer.buffer(-0.05).contains(ring):
+        return [], ["内环梁无法完整落在基坑轮廓内，已阻断环撑方案。"]
+    center = Point2D(x=float(ring.centroid.x), y=float(ring.centroid.y))
+    lines: list[SupportLayoutLine] = []
+    target_bay = float(config.max_wale_support_bay_m)
+    for edge_index, (first, second) in enumerate(zip(points, points[1:] + points[:1]), start=1):
+        length = _distance(first, second)
+        support_count = max(1, int(math.ceil(length / max(target_bay, 1.0))) - 1)
+        for index in range(1, support_count + 1):
+            chainage = length * index / (support_count + 1)
+            wall_point = _point_at(first, second, chainage)
+            inner_point = _ring_intersection(wall_point, center, ring)
+            if inner_point is None:
+                continue
+            if _distance(wall_point, inner_point) < MIN_MAIN_STRUT_SPAN_M:
+                continue
+            if not _line_segment_samples_inside(wall_point, inner_point, points):
+                continue
+            if not _line_avoids_obstacles(wall_point, inner_point, obstacles):
+                continue
+            lines.append(SupportLayoutLine(
+                "ring_strut",
+                Point2D(x=round(wall_point.x, 3), y=round(wall_point.y, 3)),
+                Point2D(x=round(inner_point.x, 3), y=round(inner_point.y, 3)),
+                round(_distance(wall_point, inner_point), 3),
+                round(length / (support_count + 1), 3),
+                "形状识别驱动环撑体系：外围围檩通过独立径向支撑传力至闭合内环梁；每个墙上支承点独立，禁止径向杆在环梁外汇聚。",
+                topology_family="ring_radial",
+                design_zone=f"ring-face-{edge_index}",
+                station_chainage_m=round(chainage, 3),
+                local_clear_span_m=round(_distance(wall_point, inner_point), 3),
+                placement_reason="shape_adaptive_ring_radial",
+                load_path_class="wall_to_ring",
+            ))
+    warnings = [
+        f"已按平面形状生成闭合内环梁和 {len(lines)} 根外围—内环径向支撑；正式设计需复核环梁轴力-弯矩耦合、节点构造、出土口和拆换撑顺序。"
+    ]
+    if not lines:
+        warnings.append("环撑径向杆未能通过净空与障碍检查，方案进入受控阻断。")
+    return lines, warnings
 
 
 
@@ -1793,9 +1956,15 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
     if len(points) < 3:
         return [], ["基坑轮廓点数不足，无法生成水平支撑。"]
     obstacles = _active_obstacle_polygons(getattr(excavation, "obstacles", []))
-    shape = plan_shape_diagnostics(points)
-    if _should_use_ring(points, obstacles):
-        lines, warnings = _ring_layout(points, obstacles)
+    shape = _shape_diagnostics_for_excavation(excavation, points, obstacles)
+    shape_capability = str(shape.get("capability") or "")
+    use_zoned = config.topology_strategy == "zoned_direct" or (
+        config.topology_strategy == "balanced_grid" and shape_capability.startswith("zoned_")
+    )
+    if use_zoned:
+        lines, warnings = _zoned_direct_layout(excavation, points, obstacles, shape, config)
+    elif _should_use_ring(points, obstacles, config=config, diagnostics=shape):
+        lines, warnings = _ring_layout(points, obstacles, config=config)
     else:
         main_lines, warnings = _main_strut_layout(points, obstacles, config.target_main_support_spacing_m, config=config)
         # Automatic bidirectional T/Y grids are disabled because the current
@@ -1888,8 +2057,9 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
     lines, final_dangling_warnings = _prune_dangling_non_ring_supports(lines)
     warnings.extend(final_dangling_warnings)
     warnings.append(
-        "平面类型识别=" + str(shape.get("classification"))
-        + f"；凹角 {shape.get('concaveVertexCount')} 个；局部长/短跨 {shape.get('longSpanM')}/{shape.get('shortSpanM')}m。"
+        "平面类型识别=" + str(shape.get("archetype") or shape.get("classification"))
+        + f"；凹角 {shape.get('concaveVertexCount')} 个；局部长/短跨 {shape.get('longSpanM')}/{shape.get('shortSpanM')}m；"
+        + f"推荐体系 {shape.get('primarySystem')}；能力边界 {shape.get('capability')}。"
     )
     return lines, warnings
 
@@ -3199,21 +3369,30 @@ def repair_concave_return_supports(project, config: SupportLayoutConfig | None =
     }
 
 
-def make_ring_beams(excavation, elevations: list[float]) -> list[BeamElement]:
+def make_ring_beams(
+    excavation,
+    elevations: list[float],
+    *,
+    config: SupportLayoutConfig | None = None,
+    supports: list[SupportElement] | None = None,
+) -> list[BeamElement]:
     points = _dedup_points(list(excavation.outline.points))
     obstacles = _active_obstacle_polygons(getattr(excavation, "obstacles", []))
-    if not _should_use_ring(points, obstacles):
+    diagnostics = _shape_diagnostics_for_excavation(excavation, points, obstacles)
+    uses_ring = any(item.support_role == "ring_strut" for item in (supports or []))
+    if not uses_ring and not _should_use_ring(points, obstacles, config=config, diagnostics=diagnostics):
         return []
-    rx0, ry0, rx1, ry1 = _ring_rectangle(points, obstacles)
-    corners = [Point2D(x=rx0, y=ry0), Point2D(x=rx1, y=ry0), Point2D(x=rx1, y=ry1), Point2D(x=rx0, y=ry1)]
+    ring_points = _ring_polygon(points, obstacles)
+    if len(ring_points) < 3:
+        return []
     beams: list[BeamElement] = []
     for level_idx, elevation in enumerate(elevations, start=1):
-        for idx, (a, b) in enumerate(zip(corners, corners[1:] + corners[:1]), start=1):
+        for idx, (a, b) in enumerate(zip(ring_points, ring_points[1:] + ring_points[:1]), start=1):
             beams.append(BeamElement(
-                code=f"RB-L{level_idx}-{idx}",
+                code=f"RB-L{level_idx}-{idx:02d}",
                 axis=Polyline2D(points=[a, b], closed=False),
                 elevation=elevation,
-                section=SectionDefinition(width=1.2, height=1.0, name="1200x1000 RC ring beam"),
+                section=SectionDefinition(width=1.2, height=1.0, name="1200x1000 RC closed ring beam"),
                 material=MaterialDefinition(name="Concrete", grade="C40"),
                 beam_role="ring_beam",
                 support_level=level_idx,

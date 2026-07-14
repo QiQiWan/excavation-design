@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+from importlib import import_module
 from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
@@ -9,18 +10,36 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.domain import MonitoringRecord
-from app.services.advanced_suite import build_advanced_engineering_suite
-from app.services.collision_service import evaluate_model_collisions
-from app.services.monitoring_calibration import calibrate_from_monitoring, monitoring_control_summary, monitoring_summary
-from app.services.node_local_analysis import evaluate_node_local_response
-from app.services.review_workflow import review_status, transition_review
-from app.services.serviceability_service import evaluate_long_term_serviceability
-from app.services.coordination_optimizer import build_coordination_optimization, apply_coordination_candidate
-from app.services.node_submodel import build_node_submodels
-from app.services.crane_logistics import optimize_cage_crane_logistics
-from app.services.support_topology_graph import analyze_support_topology, apply_topology_enhancements, preview_topology_enhancements
-from app.drawings.formal_issue import create_drawing_revision
 from app.storage.repository import ProjectRepository, get_repository
+
+
+def _lazy_call(module: str, name: str, *args, **kwargs):
+    return getattr(import_module(module), name)(*args, **kwargs)
+
+
+def build_advanced_engineering_suite(*args, **kwargs): return _lazy_call("app.services.advanced_suite", "build_advanced_engineering_suite", *args, **kwargs)
+def evaluate_model_collisions(*args, **kwargs): return _lazy_call("app.services.collision_service", "evaluate_model_collisions", *args, **kwargs)
+def calibrate_from_monitoring(*args, **kwargs): return _lazy_call("app.services.monitoring_calibration", "calibrate_from_monitoring", *args, **kwargs)
+def monitoring_control_summary(*args, **kwargs): return _lazy_call("app.services.monitoring_calibration", "monitoring_control_summary", *args, **kwargs)
+def monitoring_summary(*args, **kwargs): return _lazy_call("app.services.monitoring_calibration", "monitoring_summary", *args, **kwargs)
+def evaluate_node_local_response(*args, **kwargs): return _lazy_call("app.services.node_local_analysis", "evaluate_node_local_response", *args, **kwargs)
+def review_status(*args, **kwargs): return _lazy_call("app.services.review_workflow", "review_status", *args, **kwargs)
+def transition_review(*args, **kwargs): return _lazy_call("app.services.review_workflow", "transition_review", *args, **kwargs)
+def evaluate_long_term_serviceability(*args, **kwargs): return _lazy_call("app.services.serviceability_service", "evaluate_long_term_serviceability", *args, **kwargs)
+def build_coordination_optimization(*args, **kwargs): return _lazy_call("app.services.coordination_optimizer", "build_coordination_optimization", *args, **kwargs)
+def apply_coordination_candidate(*args, **kwargs): return _lazy_call("app.services.coordination_optimizer", "apply_coordination_candidate", *args, **kwargs)
+def build_node_submodels(*args, **kwargs): return _lazy_call("app.services.node_submodel", "build_node_submodels", *args, **kwargs)
+def optimize_cage_crane_logistics(*args, **kwargs): return _lazy_call("app.services.crane_logistics", "optimize_cage_crane_logistics", *args, **kwargs)
+def analyze_support_topology(*args, **kwargs): return _lazy_call("app.services.support_topology_graph", "analyze_support_topology", *args, **kwargs)
+def apply_topology_enhancements(*args, **kwargs): return _lazy_call("app.services.support_topology_graph", "apply_topology_enhancements", *args, **kwargs)
+def preview_topology_enhancements(*args, **kwargs): return _lazy_call("app.services.support_topology_graph", "preview_topology_enhancements", *args, **kwargs)
+
+
+def create_drawing_revision(*args, **kwargs):
+    # Formal drawing generation imports DXF and rendering stacks. Keep those
+    # optional dependencies out of the login/health API startup path.
+    from app.drawings.formal_issue import create_drawing_revision as impl
+    return impl(*args, **kwargs)
 
 router = APIRouter(prefix="/api/projects/{project_id}/advanced", tags=["advanced-engineering"])
 

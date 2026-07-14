@@ -1770,3 +1770,87 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .calculationAssuranceIssues p { margin: .25rem 0; font-size: .78rem; }
 .calculationAssuranceIssues em { display: block; color: #475569; font-size: .72rem; font-style: normal; }
 @media (max-width: 720px) { .calculationAssuranceHeader { flex-direction: column; } }
+
+.shapeStrategyPanel {
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid var(--line, #d8e0ec);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(244, 248, 255, 0.95), rgba(255, 255, 255, 0.98));
+}
+.shapeStrategyHeader, .shapeSchemeSummary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+.shapeStrategyHeader h3 { margin: 0 0 4px; }
+.shapeMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.shapeMetricGrid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #dfe6f1;
+  border-radius: 9px;
+  background: #fff;
+  min-width: 0;
+}
+.shapeMetricGrid strong { overflow-wrap: anywhere; }
+.shapeMetricGrid span { font-size: 12px; color: #667085; }
+.shapeSchemeSummary > div {
+  flex: 1;
+  padding: 10px 12px;
+  border-left: 3px solid #4c7df0;
+  background: rgba(238, 244, 255, 0.7);
+}
+.shapeSchemeSummary p { margin: 4px 0 0; }
+.shapeRuleColumns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.shapeRuleColumns > div {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+}
+.shapeRuleColumns h4 { margin: 0 0 6px; }
+.shapeRuleColumns ul { margin: 0; padding-left: 18px; }
+@media (max-width: 1200px) {
+  .shapeMetricGrid { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+}
+@media (max-width: 720px) {
+  .shapeStrategyHeader, .shapeSchemeSummary { flex-direction: column; }
+  .shapeMetricGrid, .shapeRuleColumns { grid-template-columns: 1fr; }
+}
+
+.schemeAuditSections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.schemeAuditSection {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #dfe6f1;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+}
+.schemeAuditSection strong { text-transform: uppercase; font-size: 11px; }
+.schemeAuditSection.pass { border-left-color: #16a34a; }
+.schemeAuditSection.warning, .schemeAuditSection.manual_review { border-left-color: #d97706; }
+.schemeAuditSection.fail, .schemeAuditSection.blocked, .schemeAuditSection.error { border-left-color: #dc2626; }

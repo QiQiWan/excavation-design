@@ -5,9 +5,6 @@ import os
 from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.calculation.engine import build_default_construction_cases, run_calculation
-from app.services.rebar_detailing import build_rebar_detailing
-from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme, build_rebar_design_scheme
 from app.storage.repository import ProjectRepository, get_repository
 from app.tasks.manager import task_manager
 
@@ -26,6 +23,7 @@ def get_rebar_detailing(
     mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
+    from app.services.rebar_detailing import build_rebar_detailing
     return build_rebar_detailing(repo.require(project_id), mode=mode)
 
 
@@ -35,6 +33,7 @@ def get_deep_detailing(
     mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
+    from app.services.rebar_detailing import build_rebar_detailing
     detailing = build_rebar_detailing(repo.require(project_id), mode=mode)
     return {
         "projectId": project_id,
@@ -50,6 +49,7 @@ def get_rebar_design_scheme(
     mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
+    from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
     return build_rebar_design_scheme(repo.require(project_id), mode=mode)
 
 
@@ -59,6 +59,7 @@ def apply_design_scheme(
     payload: ApplyRebarSchemePayload = Body(default=ApplyRebarSchemePayload()),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
+    from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme
     project = repo.require(project_id)
     scheme = apply_rebar_design_scheme(project, mode=payload.mode)
     recalculated = False
@@ -68,6 +69,7 @@ def apply_design_scheme(
             repo.save(project)
             queued_task = task_manager.submit(project.id, "calculation_full", {"topN": 0})
         else:
+            from app.calculation.engine import build_default_construction_cases, run_calculation
             if not project.calculation_cases:
                 project.calculation_cases = build_default_construction_cases(project)
             result = run_calculation(

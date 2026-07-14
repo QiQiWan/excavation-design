@@ -63,3 +63,20 @@ describe('application login routing', () => {
     expect(screen.getByText('登录会话已过期，请重新登录后继续。')).toBeInTheDocument();
   });
 });
+
+describe('API outage resilience', () => {
+  it('shows a retryable application login page when auth status cannot be reached', async () => {
+    window.history.replaceState({}, '', '/');
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/status')) return Promise.reject(new TypeError('Failed to fetch'));
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '登录系统' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+    expect(screen.getByText('登录服务暂不可用')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新检测服务' })).toBeInTheDocument();
+  });
+});

@@ -251,7 +251,7 @@ def resolve_identity(request: Request) -> AccessIdentity | None:
 def public_access_allowed(path: str) -> bool:
     normalized = path.rstrip("/") or "/"
     return normalized in {
-        "/health",
+        "/health", "/health/live", "/health/ready",
         "/api/auth/login", "/api/auth/logout", "/api/auth/status",
     }
 

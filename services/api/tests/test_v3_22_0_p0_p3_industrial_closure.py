@@ -14,7 +14,8 @@ from app.tasks.manager import TaskRecord
 def test_geometry_qualification_suite_closes_general_shape_p0() -> None:
     suite = run_geometry_qualification_suite()
     assert suite["status"] == "pass"
-    assert suite["passedCount"] == suite["caseCount"] == 5
+    assert suite["passedCount"] == suite["caseCount"]
+    assert suite["caseCount"] >= 5
     assert all(row["crossingCount"] == 0 for row in suite["cases"])
     assert all(row["outsideCount"] == 0 for row in suite["cases"])
 

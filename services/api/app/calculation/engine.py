@@ -1207,9 +1207,12 @@ def run_single_candidate_calculation(
     pattern = str((candidate.variable_summary or {}).get("positionPattern", "as_generated"))
     amplitude = float((candidate.variable_summary or {}).get("lineOffsetAmplitude", 0.0) or 0.0)
     topology_strategy = str((candidate.variable_summary or {}).get("topologyFamily", "balanced_grid"))
-    trial_project = project.model_copy(deep=True)
+    lightweight_project = project.model_copy(deep=False)
+    lightweight_project.calculation_results = []
+    lightweight_project.calculation_cases = []
+    trial_project = lightweight_project.model_copy(deep=True)
     system, adjustments = build_support_system_from_candidate(
-        project, candidate.target_spacing, candidate.column_max_span, pattern, amplitude, topology_strategy
+        lightweight_project, candidate.target_spacing, candidate.column_max_span, pattern, amplitude, topology_strategy
     )
     if system is None:
         return {

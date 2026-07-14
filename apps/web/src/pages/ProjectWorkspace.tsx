@@ -78,6 +78,54 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   useEffect(() => { window.localStorage.setItem('pitguard-workspace-role', workspaceRole); }, [workspaceRole]);
 
   useEffect(() => {
+    let cancelled = false;
+    const raw = window.sessionStorage.getItem('pitguard-active-task');
+    if (!raw) return () => { cancelled = true; };
+    let saved: { projectId?: string; taskId?: string; title?: string; autoDownload?: boolean };
+    try { saved = JSON.parse(raw); } catch { window.sessionStorage.removeItem('pitguard-active-task'); return () => { cancelled = true; }; }
+    if (saved.projectId !== current.id || !saved.taskId) return () => { cancelled = true; };
+
+    const terminal = new Set(['success', 'failed', 'cancelled', 'interrupted']);
+    void (async () => {
+      let task: PitTask;
+      try { task = await api.getTask(String(saved.taskId)); }
+      catch { return; }
+      if (cancelled) return;
+      setBusy(saved.title || task.title || '恢复后台任务');
+      setOperation({ title: saved.title || task.title || '恢复后台任务', detail: `检测到未完成任务：${task.currentStep}`, progress: task.progress, logs: task.logs?.slice(-8), phases: [{ label: task.currentStep || '恢复任务', status: terminal.has(task.status) ? (task.status === 'success' ? 'done' : 'error') : 'running' }] });
+      let failures = 0;
+      while (!cancelled && !terminal.has(task.status)) {
+        await new Promise((resolve) => window.setTimeout(resolve, document.hidden ? 5000 : 1500));
+        try {
+          task = await api.getTask(task.id);
+          failures = 0;
+          if (!cancelled) setOperation({ title: saved.title || task.title, detail: `${task.currentStep} · ${task.status}`, progress: task.progress, logs: task.logs?.slice(-8), phases: [{ label: task.currentStep || '后台任务', status: 'running' }] });
+        } catch {
+          failures += 1;
+          if (!cancelled) setOperation((value) => value ? { ...value, detail: `任务仍在后台，API重连中（${failures}/8）` } : value);
+          if (failures >= 8) break;
+        }
+      }
+      if (cancelled) return;
+      if (terminal.has(task.status)) {
+        window.sessionStorage.removeItem('pitguard-active-task');
+        if (task.status === 'success') {
+          if (saved.autoDownload && task.result?.filePath) await downloadTaskFile(task);
+          try {
+            const updated = await api.getProject(current.id);
+            if (!cancelled) { setCurrent(updated); onProjectChange(updated); }
+          } catch { /* Completed task remains persisted; a later refresh can reload it. */ }
+          if (!cancelled) setOperation({ title: saved.title || task.title, detail: '后台任务已完成，项目状态已恢复。', progress: 100, logs: task.logs?.slice(-8), phases: [{ label: '完成', status: 'done' }] });
+        } else {
+          if (!cancelled) setError(task.error || `后台任务状态：${task.status}`);
+        }
+      }
+      if (!cancelled) setBusy(undefined);
+    })();
+    return () => { cancelled = true; };
+  }, [current.id, onProjectChange]);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen((value) => !value); }
       if (event.key === 'Escape') setCommandOpen(false);
@@ -137,28 +185,50 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
 
 
   async function runBackendTask(title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload = false) {
+    const terminalStatuses = new Set(['success', 'failed', 'cancelled', 'interrupted']);
+    let task: PitTask | undefined;
     try {
       setBusy(title);
       setError(undefined);
       setOperation({ title, detail: '后端任务队列已接管该操作，正在轮询真实进度。', progress: 2, phases: [{ label: '提交任务', status: 'running' }] });
-      let task = await api.createTask(current.id, operationName, payload ?? {});
+      task = await api.createTask(current.id, operationName, payload ?? {});
+      window.sessionStorage.setItem('pitguard-active-task', JSON.stringify({ projectId: current.id, taskId: task.id, title, autoDownload }));
       setOperation({ title, detail: task.currentStep, progress: task.progress, logs: task.logs, phases: [{ label: task.currentStep || title, status: 'running' }] });
       const started = Date.now();
-      while (!['success', 'failed', 'cancelled'].includes(task.status)) {
-        await new Promise((resolve) => window.setTimeout(resolve, 850));
-        task = await api.getTask(task.id);
-        setOperation({
-          title,
-          detail: `${task.currentStep} · ${task.status}`,
-          progress: task.progress,
-          logs: task.logs?.slice(-8),
-          phases: [{ label: task.currentStep || title, status: task.status === 'running' || task.status === 'queued' ? 'running' : task.status === 'success' ? 'done' : 'error' }]
-        });
-        if (Date.now() - started > 35 * 60 * 1000) throw new Error('任务轮询超时，请检查后端日志。');
+      let transientFailures = 0;
+      while (!terminalStatuses.has(task.status)) {
+        const pollDelay = document.hidden ? 5000 : Math.min(5000, 1000 + Math.floor((Date.now() - started) / 120000) * 500);
+        await new Promise((resolve) => window.setTimeout(resolve, pollDelay));
+        try {
+          task = await api.getTask(task.id);
+          transientFailures = 0;
+          setOperation({
+            title,
+            detail: `${task.currentStep} · ${task.status}`,
+            progress: task.progress,
+            logs: task.logs?.slice(-8),
+            phases: [{ label: task.currentStep || title, status: task.status === 'running' || task.status === 'queued' ? 'running' : task.status === 'success' ? 'done' : 'error' }]
+          });
+        } catch (pollError) {
+          transientFailures += 1;
+          const message = pollError instanceof Error ? pollError.message : String(pollError);
+          setOperation((prev) => prev ? { ...prev, detail: `API暂时不可用，计算worker可能仍在运行。正在重连（${transientFailures}/8）：${message}` } : prev);
+          if (transientFailures >= 8) {
+            throw new Error('连续8次无法读取任务状态。网页已停止轮询，后台任务不会重复提交；请刷新页面或查看worker日志。');
+          }
+          continue;
+        }
+        if (Date.now() - started > 40 * 60 * 1000) throw new Error('任务轮询超过40分钟。后台硬超时会独立终止worker，请查看任务状态和worker日志。');
       }
       if (task.status !== 'success') throw new Error(task.error || `任务状态：${task.status}`);
       if (autoDownload && task.result?.filePath) await downloadTaskFile(task);
-      await refresh();
+      try {
+        await refresh();
+      } catch (refreshError) {
+        const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
+        setOperation({ title, detail: `任务已完成，但项目刷新暂时失败：${message}。可安全刷新浏览器，任务不会重复执行。`, progress: 100, logs: task.logs?.slice(-8), phases: [{ label: '计算完成，等待页面恢复', status: 'done' }] });
+        return;
+      }
       setOperation({ title, detail: autoDownload ? '文件已生成并开始下载，项目数据已刷新。' : '任务完成，项目数据已刷新。', progress: 100, logs: task.logs?.slice(-8), phases: [{ label: '完成', status: 'done' }] });
       window.setTimeout(() => setOperation(undefined), 1800);
     } catch (err) {
@@ -166,6 +236,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
       setError(message);
       setOperation((prev) => prev ? { ...prev, detail: message, phases: prev.phases.map((phase) => ({ ...phase, status: phase.status === 'done' ? 'done' : 'error' })) } : prev);
     } finally {
+      if (task && terminalStatuses.has(task.status)) window.sessionStorage.removeItem('pitguard-active-task');
       setBusy(undefined);
     }
   }
@@ -783,6 +854,9 @@ function GeologyStep({ project, runStep, importVtu, vtuMessage }: { project: Pro
 
 function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
   const [open, setOpen] = useState(false);
+  const [shapeDiagnostics, setShapeDiagnostics] = useState<Record<string, any> | null>(null);
+  const [designerAudit, setDesignerAudit] = useState<Record<string, any> | null>(null);
+  const [resourceEstimate, setResourceEstimate] = useState<Record<string, any> | null>(null);
   const [weightPreset, setWeightPreset] = useState<'balanced' | 'clean_support_layout' | 'fewer_columns' | 'low_axial_force' | 'muck_path_priority'>('clean_support_layout');
   const defaultWeights: Record<string, number> = {
     spacingDeviation: 20,
@@ -822,7 +896,31 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
     setLockedLevels(Array.from(new Set(savedLevels)));
     setLockedObstacleIds(project.excavation?.obstacles?.filter((o) => o.optimizationLocked && o.id).map((o) => o.id!) ?? []);
   }, [project.retainingSystem, project.excavation]);
-  const runAuto = () => runStep('正在生成围护结构体系', async () => { await api.autoWall(project.id); await api.autoSupports(project.id); });
+  useEffect(() => {
+    let active = true;
+    if (!project.excavation) {
+      setShapeDiagnostics(null);
+      setDesignerAudit(null);
+      setResourceEstimate(null);
+      return () => { active = false; };
+    }
+    Promise.allSettled([
+      api.getPlanShapeDiagnostics(project.id),
+      api.getSupportDesignerAudit(project.id),
+      api.getCalculationResourceEstimate(project.id, 0),
+    ]).then(([shapeResult, auditResult, resourceResult]) => {
+      if (!active) return;
+      setShapeDiagnostics(shapeResult.status === 'fulfilled' ? shapeResult.value : null);
+      setDesignerAudit(auditResult.status === 'fulfilled' ? auditResult.value : null);
+      setResourceEstimate(resourceResult.status === 'fulfilled' ? resourceResult.value : null);
+    });
+    return () => { active = false; };
+  }, [project.id, project.excavation?.id, project.excavation?.outline?.points?.length]);
+  const runAuto = () => runTask(
+    '正在由独立进程识别形状并生成围护支撑体系',
+    'support_layout_optimization',
+    { preset: 'clean_support_layout', objectiveWeights: weights },
+  );
   const applyPreset = (value: typeof weightPreset) => {
     setWeightPreset(value);
     setWeights(presetToWeights(value));
@@ -836,6 +934,10 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
     ? layoutSummary.designNotes.map((item) => String(item)).filter(Boolean)
     : [];
   const unresolvedWarnings = project.retainingSystem?.warnings ?? [];
+  const activeShape = (layoutSummary.planShapeDiagnostics as Record<string, any> | undefined) ?? shapeDiagnostics;
+  const shapeScheme = (activeShape?.engineeringScheme ?? {}) as Record<string, any>;
+  const shapeCapability = String(activeShape?.capability ?? 'unknown');
+  const shapeStatusClass = shapeCapability.startsWith('automatic') ? 'pass' : shapeCapability.startsWith('zoned') ? 'warning' : 'error';
   const previewRows = candidates.map((c) => {
     const terms = c.objectiveTerms ?? {};
     const penalty = Object.entries(weights).reduce((sum, [key, value]) => sum + value * Math.min(Number(terms[key] ?? 0), 3), 0)
@@ -845,13 +947,82 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   return (
     <div>
       <div className="actionStrip simplifiedActions">
-        <button onClick={runAuto} disabled={!project.excavation}>一键生成围护体系</button>
+        <button onClick={runAuto} disabled={!project.excavation}>识别形状并生成围护体系</button>
         <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
-        <span className="small">常用路径：一键生成地连墙、围檩、水平支撑、节点和立柱。候选优化、权重和支撑锁定放在高级操作中。</span>
+        <span className="small">系统先识别局部主轴、凸凹特征、走廊分区和转接区，再选择短跨对撑、斜向墙对、内环径向撑或异形分区方案。</span>
       </div>
+      {activeShape && <section className="shapeStrategyPanel">
+        <div className="shapeStrategyHeader">
+          <div><h3>平面形状识别与支撑体系决策</h3><p className="small">识别结果用于候选生成和计算门禁；异形交汇区未形成明确转接体系时只允许方案设计。</p></div>
+          <span className={`statusTag ${shapeStatusClass}`}>{shapeCapability}</span>
+        </div>
+        <div className="shapeMetricGrid">
+          <div><strong>{String(activeShape.archetype ?? activeShape.classification)}</strong><span>识别形状</span></div>
+          <div><strong>{Number(activeShape.longSpanM ?? 0).toFixed(1)} / {Number(activeShape.shortSpanM ?? 0).toFixed(1)} m</strong><span>局部长跨 / 短跨</span></div>
+          <div><strong>{Number(activeShape.aspectRatio ?? 0).toFixed(2)}</strong><span>长宽比</span></div>
+          <div><strong>{Number(activeShape.concaveVertexCount ?? 0)}</strong><span>凹角数量</span></div>
+          <div><strong>{Number(activeShape.zoneCount ?? 0)}</strong><span>设计分区</span></div>
+          <div><strong>{(Number(activeShape.recognitionConfidence ?? 0) * 100).toFixed(0)}%</strong><span>识别置信度</span></div>
+          <div><strong>{String(activeShape.primarySystem ?? activeShape.recommendedTopology ?? '-')}</strong><span>推荐体系</span></div>
+        </div>
+        <div className="shapeSchemeSummary">
+          <div><strong>{String(shapeScheme.name ?? '可见墙对支撑/环撑比选')}</strong><p>{String(shapeScheme.zoning ?? '按局部主轴、凸分解和施工分区确定支撑体系。')}</p></div>
+          <div><strong>可生成拓扑</strong><p>{Array.isArray(activeShape.supportedTopologyFamilies) ? activeShape.supportedTopologyFamilies.join('、') : '-'}</p></div>
+        </div>
+        <details open={viewMode === 'professional'}><summary>查看布置规则、禁用形式和计算模型</summary>
+          <div className="shapeRuleColumns">
+            <div><h4>布置规则</h4><ul>{(Array.isArray(shapeScheme.layoutRules) ? shapeScheme.layoutRules : []).map((item: unknown, index: number) => <li key={`shape-rule-${index}`}>{String(item)}</li>)}</ul></div>
+            <div><h4>禁止形式</h4><ul>{(Array.isArray(shapeScheme.forbidden) ? shapeScheme.forbidden : []).map((item: unknown, index: number) => <li key={`shape-forbidden-${index}`}>{String(item)}</li>)}</ul></div>
+            <div><h4>计算与施工</h4><p>{String(shapeScheme.calculationModel ?? '-')}</p><p>{String(shapeScheme.construction ?? '-')}</p></div>
+          </div>
+        </details>
+      </section>}
+      {designerAudit && <section className="summaryPanel schemeDesignerAuditPanel">
+        <div className="panelTitleRow">
+          <div>
+            <h3>布设方案设计器完整性审计</h3>
+            <p className="small">审计范围包含形状识别、体系兼容、传力闭合、候选差异、施工约束、计算资源和交付门禁。</p>
+          </div>
+          <span className={`statusTag ${designerAudit.status === 'pass' ? 'pass' : designerAudit.status === 'warning' ? 'warning' : 'error'}`}>
+            {designerAudit.status} · {Number(designerAudit.score ?? 0).toFixed(0)}分
+          </span>
+        </div>
+        <div className="shapeMetricGrid">
+          <div><strong>{Number(designerAudit.candidateDiversity?.count ?? 0)}</strong><span>候选数量</span></div>
+          <div><strong>{Number(designerAudit.candidateDiversity?.topologyFamilyCount ?? 0)}</strong><span>拓扑族数量</span></div>
+          <div><strong>{Number(designerAudit.candidateDiversity?.geometryFingerprintCount ?? 0)}</strong><span>实质几何方案</span></div>
+          <div><strong>{Number(resourceEstimate?.estimatedPeakMemoryMb ?? designerAudit.resourceEstimate?.estimatedPeakMemoryMb ?? 0).toFixed(0)} MB</strong><span>估算峰值内存</span></div>
+          <div><strong>{String(resourceEstimate?.status ?? designerAudit.resourceEstimate?.status ?? '-')}</strong><span>计算资源等级</span></div>
+          <div><strong>{designerAudit.blockingItems?.length ?? 0} / {designerAudit.warningItems?.length ?? 0}</strong><span>阻断 / 警告</span></div>
+        </div>
+        <div className="schemeAuditSections" aria-label="设计器审计分项">
+          {(Array.isArray(designerAudit.sections) ? designerAudit.sections : []).map((section: any) => (
+            <article key={String(section.id)} className={`schemeAuditSection ${String(section.status ?? 'warning')}`}>
+              <span>{String(section.name ?? section.id)}</span>
+              <strong>{String(section.status ?? 'warning')}</strong>
+            </article>
+          ))}
+        </div>
+        {(designerAudit.blockingItems?.length ?? 0) > 0 && <div className="unresolvedWarningList">
+          <h4>必须闭环</h4>
+          <ol>{designerAudit.blockingItems.map((item: unknown, index: number) => <li key={`designer-block-${index}`}>{String(item)}</li>)}</ol>
+        </div>}
+        {(designerAudit.warningItems?.length ?? 0) > 0 && <details open={viewMode === 'professional'}>
+          <summary>查看设计器警告与改进建议（{designerAudit.warningItems.length}）</summary>
+          <ol>{designerAudit.warningItems.map((item: unknown, index: number) => <li key={`designer-warning-${index}`}>{String(item)}</li>)}</ol>
+        </details>}
+        <div className="buttonRow">
+          <button className="secondary" onClick={() => {
+            Promise.all([api.getSupportDesignerAudit(project.id), api.getCalculationResourceEstimate(project.id, 0)])
+              .then(([audit, resource]) => { setDesignerAudit(audit); setResourceEstimate(resource); })
+              .catch(() => undefined);
+          }}>重新审计</button>
+          <span className="small">资源等级为 high/blocked 时，系统强制逐方案计算或阻断任务，避免计算拖垮API与登录服务。</span>
+        </div>
+      </section>}
       {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer wideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>围护结构高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div>
         <button onClick={() => runStep('正在生成地下连续墙', () => api.autoWall(project.id))} disabled={!project.excavation}>仅生成地连墙</button>
-        <button onClick={() => runStep('正在生成水平支撑和立柱', () => api.autoSupports(project.id))} disabled={!project.excavation}>仅生成支撑/立柱</button>
+        <button onClick={() => runTask('正在由独立进程生成水平支撑和立柱', 'support_layout_optimization', { preset: 'clean_support_layout', objectiveWeights: weights })} disabled={!project.excavation}>仅生成支撑/立柱</button>
         <div className="drawerSection">
           <h4>支撑优化权重可视化</h4>
           <label className="stackedLabel">优化偏好
@@ -1336,10 +1507,22 @@ function ExportCard({ title, description, href, button, projectId, taskOperation
       setState({ running: true, progress: 12, phase: '提交导出请求' });
       if (projectId && taskOperation) {
         let task = await api.createTask(projectId, taskOperation, {});
-        while (!['success', 'failed', 'cancelled'].includes(task.status)) {
+        const terminalStatuses = new Set(['success', 'failed', 'cancelled', 'interrupted']);
+        const startedAt = Date.now();
+        let transientFailures = 0;
+        while (!terminalStatuses.has(task.status)) {
           setState({ running: true, progress: Math.max(6, task.progress), phase: `${task.currentStep} · ${task.status}` });
-          await new Promise((resolve) => window.setTimeout(resolve, 850));
-          task = await api.getTask(task.id);
+          await new Promise((resolve) => window.setTimeout(resolve, document.hidden ? 4000 : 1000));
+          try {
+            task = await api.getTask(task.id);
+            transientFailures = 0;
+          } catch (pollError) {
+            transientFailures += 1;
+            const message = pollError instanceof Error ? pollError.message : String(pollError);
+            setState({ running: true, progress: Math.max(6, task.progress), phase: `API暂时不可用，正在重连（${transientFailures}/8）：${message}` });
+            if (transientFailures >= 8) throw new Error('连续8次无法读取导出任务状态。后台任务不会重复提交，可刷新页面后从任务记录继续下载。');
+          }
+          if (Date.now() - startedAt > 40 * 60 * 1000) throw new Error('导出任务轮询超过40分钟，独立worker会按硬超时受控终止。');
         }
         if (task.status !== 'success') throw new Error(task.error || `任务状态：${task.status}`);
         setState({ running: true, progress: 86, phase: '浏览器准备下载' });

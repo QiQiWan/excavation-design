@@ -1,31 +1,96 @@
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from app.drawings.cad_export import build_drawing_set_manifest, export_construction_cad_package, export_construction_svg_package
-from app.drawings.formal_issue import export_formal_drawing_package
-from app.drawing_rules import evaluate_drawing_issue_gate
-from app.services.review_workflow import review_status
-from app.ifc.exporter import export_simplified_ifc
-from app.ifc.rebar_visualization import build_rebar_ifc_visualization
-from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility, validate_ifc_file
-from app.reports.docx_report import export_docx_report
 from app.storage.repository import ProjectRepository, get_repository
-from app.services.wall_length_optimizer import export_wall_length_redundancy_report
-from app.services.design_scheme_ledger import export_design_scheme_ledger
-from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
-from app.services.rebar_export import export_rebar_detailing_package
-from app.services.delivery_package import export_coordinated_delivery_package
-from app.services.delivery_release import evaluate_delivery_release_readiness
 
 router = APIRouter(prefix="/api/projects/{project_id}/export", tags=["export"])
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
+
+
+def _lazy_call(module: str, name: str, *args, **kwargs):
+    """Load export-only dependencies after an export request reaches a worker.
+
+    DXF/IFC/DOCX/XLSX stacks are intentionally excluded from the always-on API
+    import graph. This keeps login, health and project-list endpoints available
+    even if an optional exporter is missing or a worker is under memory pressure.
+    """
+    return getattr(import_module(module), name)(*args, **kwargs)
+
+
+def build_drawing_set_manifest(*args, **kwargs):
+    return _lazy_call("app.drawings.cad_export", "build_drawing_set_manifest", *args, **kwargs)
+
+
+def export_construction_cad_package(*args, **kwargs):
+    return _lazy_call("app.drawings.cad_export", "export_construction_cad_package", *args, **kwargs)
+
+
+def export_construction_svg_package(*args, **kwargs):
+    return _lazy_call("app.drawings.cad_export", "export_construction_svg_package", *args, **kwargs)
+
+
+def export_formal_drawing_package(*args, **kwargs):
+    return _lazy_call("app.drawings.formal_issue", "export_formal_drawing_package", *args, **kwargs)
+
+
+def evaluate_drawing_issue_gate(*args, **kwargs):
+    return _lazy_call("app.drawing_rules", "evaluate_drawing_issue_gate", *args, **kwargs)
+
+
+def review_status(*args, **kwargs):
+    return _lazy_call("app.services.review_workflow", "review_status", *args, **kwargs)
+
+
+def export_simplified_ifc(*args, **kwargs):
+    return _lazy_call("app.ifc.exporter", "export_simplified_ifc", *args, **kwargs)
+
+
+def build_rebar_ifc_visualization(*args, **kwargs):
+    return _lazy_call("app.ifc.rebar_visualization", "build_rebar_ifc_visualization", *args, **kwargs)
+
+
+def evaluate_ifc_model_compatibility(*args, **kwargs):
+    return _lazy_call("app.quality.ifc_compatibility", "evaluate_ifc_model_compatibility", *args, **kwargs)
+
+
+def validate_ifc_file(*args, **kwargs):
+    return _lazy_call("app.quality.ifc_compatibility", "validate_ifc_file", *args, **kwargs)
+
+
+def export_docx_report(*args, **kwargs):
+    return _lazy_call("app.reports.docx_report", "export_docx_report", *args, **kwargs)
+
+
+def export_wall_length_redundancy_report(*args, **kwargs):
+    return _lazy_call("app.services.wall_length_optimizer", "export_wall_length_redundancy_report", *args, **kwargs)
+
+
+def export_design_scheme_ledger(*args, **kwargs):
+    return _lazy_call("app.services.design_scheme_ledger", "export_design_scheme_ledger", *args, **kwargs)
+
+
+def build_rebar_design_scheme(*args, **kwargs):
+    return _lazy_call("app.services.rebar_scheme_optimizer", "build_rebar_design_scheme", *args, **kwargs)
+
+
+def export_rebar_detailing_package(*args, **kwargs):
+    return _lazy_call("app.services.rebar_export", "export_rebar_detailing_package", *args, **kwargs)
+
+
+def export_coordinated_delivery_package(*args, **kwargs):
+    return _lazy_call("app.services.delivery_package", "export_coordinated_delivery_package", *args, **kwargs)
+
+
+def evaluate_delivery_release_readiness(*args, **kwargs):
+    return _lazy_call("app.services.delivery_release", "evaluate_delivery_release_readiness", *args, **kwargs)
 
 
 def _export_ifc_with_check(project, mode: str) -> tuple[Path, object]:

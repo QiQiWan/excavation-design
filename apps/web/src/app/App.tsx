@@ -60,6 +60,7 @@ export default function App() {
   const [authPolicy, setAuthPolicy] = useState<AuthPolicy | undefined>();
   const [authError, setAuthError] = useState<string>();
   const [identity, setIdentity] = useState<AuthIdentity | undefined>();
+  const [authRetryNonce, setAuthRetryNonce] = useState(0);
   const { route, navigate } = useBrowserRoute();
 
   const requestedReturnPath = useMemo(() => {
@@ -103,13 +104,20 @@ export default function App() {
       .catch((error) => {
         if (!active) return;
         setIdentity(undefined);
+        setAuthPolicy((value) => value ?? { loginRequired: true, mode: 'session', sessionTtlSeconds: 0 });
         setAuthError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (active) setAuthChecking(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [authRetryNonce]);
+
+  useEffect(() => {
+    if (!authError || identity) return;
+    const timer = window.setTimeout(() => setAuthRetryNonce((value) => value + 1), 15000);
+    return () => window.clearTimeout(timer);
+  }, [authError, identity]);
 
   useEffect(() => {
     const unauthorized = () => {
@@ -156,7 +164,7 @@ export default function App() {
   }
 
   if (authChecking) {
-    return <main className="loginLoading" aria-live="polite"><div className="loginBrandMark">PG</div><p>正在验证登录状态…</p></main>;
+    return <main className="loginLoading" aria-live="polite"><div className="loginBrandMark">PG</div><p>正在验证登录状态…</p><small>超过 5 秒将进入可重试的离线登录页，不会无限等待。</small></main>;
   }
 
   if (!identity) {
@@ -166,6 +174,7 @@ export default function App() {
         returnTo={requestedReturnPath}
         notice={loginReasonMessage(route.search)}
         serviceError={authError}
+        onRetryService={() => setAuthRetryNonce((value) => value + 1)}
       />
     );
   }

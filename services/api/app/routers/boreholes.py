@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, UploadFile
 
-from app.services.borehole_import import parse_borehole_rows, read_csv_bytes, read_excel_bytes
 from app.storage.repository import ProjectRepository, get_repository
 from app.schemas.domain import Borehole, Stratum
 
@@ -11,6 +10,7 @@ router = APIRouter(prefix="/api/projects/{project_id}", tags=["boreholes"])
 
 @router.post("/boreholes/import-csv")
 async def import_boreholes_csv(project_id: str, file: UploadFile = File(...), repo: ProjectRepository = Depends(get_repository)) -> dict:
+    from app.services.borehole_import import parse_borehole_rows, read_csv_bytes
     project = repo.require(project_id)
     rows = read_csv_bytes(await file.read())
     result = parse_borehole_rows(rows, source_file=file.filename)
@@ -24,6 +24,7 @@ async def import_boreholes_csv(project_id: str, file: UploadFile = File(...), re
 
 @router.post("/boreholes/import-excel")
 async def import_boreholes_excel(project_id: str, file: UploadFile = File(...), repo: ProjectRepository = Depends(get_repository)) -> dict:
+    from app.services.borehole_import import parse_borehole_rows, read_excel_bytes
     project = repo.require(project_id)
     rows = read_excel_bytes(await file.read())
     result = parse_borehole_rows(rows, source_file=file.filename)

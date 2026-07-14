@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import RLock, BoundedSemaphore
+from threading import RLock, BoundedSemaphore, Event, Thread
 from typing import Any, Callable
 from uuid import uuid4
 import traceback
@@ -22,32 +22,11 @@ except ImportError:  # pragma: no cover - Windows compatibility
     resource = None  # type: ignore[assignment]
 from contextlib import nullcontext
 
-from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project, run_single_candidate_calculation
-from app.drawings.cad_export import export_construction_cad_package, export_construction_svg_package
-from app.drawings.formal_issue import export_formal_drawing_package
-from app.drawing_rules import evaluate_drawing_issue_gate
-from app.ifc.exporter import export_simplified_ifc
-from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility, validate_ifc_file
-from app.quality.formal_gate import build_formal_report_gate
-from app.reports.docx_report import export_docx_report
 from app.storage.repository import ProjectRepository
 from app.storage.task_store import SQLiteTaskStore
-from app.version import SOFTWARE_VERSION, version_manifest
-from app.services.calculation_trace import build_calculation_trace
-from app.services.issue_center import build_issue_center
-from app.services.benchmark_cases import export_benchmark_package
-from app.services.rebar_detailing import build_rebar_detailing
-from app.services.rebar_export import export_rebar_detailing_package
-from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
-from app.services.wall_length_optimizer import export_wall_length_redundancy_report, mark_wall_length_recalculated
-from app.services.calculation_state import mark_calculation_state_current
-from app.services.design_scheme_ledger import export_design_scheme_ledger
-from app.services.review_workflow import review_status
-from app.services.delivery_package import export_coordinated_delivery_package
-from app.services.industrial_readiness import run_industrial_closure
-from app.services.support_layout_repair import auto_repair_support_layout
-from app.services.calculation_state import invalidate_calculation_state
-from app.geology.model_builder import ensure_geological_model_covers_excavation
+from app.version import SOFTWARE_VERSION
+from app.services.calculation_resource_estimator import estimate_calculation_resources
+
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
 
@@ -58,7 +37,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 32) -> int:
+def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 262144) -> int:
     try:
         return max(minimum, min(maximum, int(os.getenv(name, str(default)))))
     except (TypeError, ValueError):
@@ -78,6 +57,18 @@ def _process_memory_mb() -> float:
         return round(float(value) / 1024.0, 2)
     return 0.0
 
+
+
+
+def _system_available_memory_mb() -> float:
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as stream:
+            for line in stream:
+                if line.startswith("MemAvailable:"):
+                    return round(float(line.split()[1]) / 1024.0, 2)
+    except OSError:
+        pass
+    return 0.0
 
 def _release_process_memory() -> None:
     gc.collect()
@@ -136,7 +127,7 @@ class TaskRecord:
             deduplication_key=data.get("deduplicationKey", data.get("deduplication_key")),
         )
 
-    def as_dict(self, include_logs: bool = False) -> dict[str, Any]:
+    def as_dict(self, include_logs: bool = False, include_result: bool = True, log_limit: int = 80) -> dict[str, Any]:
         data = {
             "id": self.id,
             "projectId": self.project_id,
@@ -145,7 +136,7 @@ class TaskRecord:
             "status": self.status,
             "progress": self.progress,
             "currentStep": self.current_step,
-            "result": self.result,
+            "result": self.result if include_result else None,
             "error": self.error,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
@@ -158,7 +149,7 @@ class TaskRecord:
             "deduplicationKey": self.deduplication_key,
         }
         if include_logs:
-            data["logs"] = list(self.logs)
+            data["logs"] = list(self.logs[-max(1, log_limit):])
         return data
 
 
@@ -176,6 +167,16 @@ class TaskManager:
         self._heavy_concurrency = _env_int("PITGUARD_HEAVY_TASK_CONCURRENCY", 1, 1, 2)
         self._memory_soft_limit_mb = _env_int("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB", 5600, 1024, 131072)
         self._task_timeout_seconds = _env_int("PITGUARD_TASK_TIMEOUT_SECONDS", 1800, 60, 86400)
+        self._resource_watch_interval_seconds = _env_int("PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS", 3, 1, 30)
+        self._worker_rss_hard_limit_mb = _env_int(
+            "PITGUARD_WORKER_RSS_HARD_LIMIT_MB",
+            max(self._memory_soft_limit_mb + 512, int(self._memory_soft_limit_mb * 1.12)),
+            2048,
+            262144,
+        )
+        self._system_memory_reserve_mb = _env_int("PITGUARD_SYSTEM_MEMORY_RESERVE_MB", 1536, 256, 65536)
+        default_heartbeat = Path(os.getenv("PITGUARD_DB_PATH", str(Path(__file__).resolve().parents[2] / "pitguard.sqlite3"))).with_name("worker-heartbeat.json")
+        self._worker_heartbeat_path = Path(os.getenv("PITGUARD_WORKER_HEARTBEAT_PATH", str(default_heartbeat)))
         self._heavy_semaphore = BoundedSemaphore(self._heavy_concurrency)
         self._executor = (
             ThreadPoolExecutor(max_workers=self._worker_count, thread_name_prefix="pitguard-task")
@@ -201,6 +202,105 @@ class TaskManager:
                 self._store.upsert(task.as_dict(include_logs=True))
             self._tasks[task.id] = task
 
+    def _write_worker_heartbeat(self, status: str, task_id: str | None = None) -> None:
+        if self._execution_mode != "worker":
+            return
+        payload = {
+            "status": status,
+            "taskId": task_id,
+            "updatedAt": _now(),
+            "pid": os.getpid(),
+            "rssMb": _process_memory_mb(),
+            "systemAvailableMemoryMb": _system_available_memory_mb(),
+        }
+        try:
+            self._worker_heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._worker_heartbeat_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            temporary.replace(self._worker_heartbeat_path)
+        except OSError:
+            pass
+
+    def _worker_heartbeat_snapshot(self) -> dict[str, Any]:
+        try:
+            payload = json.loads(self._worker_heartbeat_path.read_text(encoding="utf-8"))
+            updated = datetime.fromisoformat(str(payload.get("updatedAt")))
+            age = max(0.0, (datetime.now(timezone.utc) - updated).total_seconds())
+            payload["ageSeconds"] = round(age, 1)
+            payload["healthy"] = age <= 20.0
+            return payload
+        except Exception:
+            return {"status": "unknown", "healthy": False, "ageSeconds": None}
+
+
+    def _mark_worker_resource_abort(self, task_id: str, reason: str, exit_code: int = 137) -> None:
+        raw_task = self._store.get(task_id)
+        if raw_task is not None:
+            now = _now()
+            raw_task["status"] = "interrupted"
+            raw_task["error"] = reason
+            raw_task["currentStep"] = "资源保护闸门终止计算，API服务保持在线"
+            raw_task["updatedAt"] = now
+            raw_task["finishedAt"] = now
+            logs = list(raw_task.get("logs") or [])
+            logs.append(f"[{now}] {reason}")
+            raw_task["logs"] = logs[-500:]
+            self._store.upsert(raw_task)
+        self._write_worker_heartbeat("resource_abort", task_id)
+        os._exit(exit_code)
+
+    def _start_resource_watchdog(self, task: TaskRecord) -> tuple[Event, Thread] | None:
+        if self._execution_mode != "worker" or task.operation not in self._heavy_operations:
+            return None
+        stop_event = Event()
+
+        def monitor() -> None:
+            consecutive_low_memory = 0
+            last_heartbeat = 0.0
+            while not stop_event.wait(float(self._resource_watch_interval_seconds)):
+                rss = _process_memory_mb()
+                available = _system_available_memory_mb()
+                now_monotonic = time.monotonic()
+                if now_monotonic - last_heartbeat >= 10.0:
+                    raw_task = self._store.get(task.id)
+                    if raw_task is not None and raw_task.get("status") == "running":
+                        now = _now()
+                        raw_task["heartbeatAt"] = now
+                        raw_task["updatedAt"] = now
+                        self._store.upsert(raw_task)
+                    self._write_worker_heartbeat("running", task.id)
+                    last_heartbeat = now_monotonic
+                if rss > self._worker_rss_hard_limit_mb:
+                    self._mark_worker_resource_abort(
+                        task.id,
+                        f"计算worker RSS达到 {rss:.0f} MB，超过硬上限 {self._worker_rss_hard_limit_mb} MB，已终止当前计算进程。",
+                    )
+                if available > 0 and available < self._system_memory_reserve_mb:
+                    consecutive_low_memory += 1
+                else:
+                    consecutive_low_memory = 0
+                if consecutive_low_memory >= 2:
+                    self._mark_worker_resource_abort(
+                        task.id,
+                        f"服务器可用内存仅 {available:.0f} MB，低于保留值 {self._system_memory_reserve_mb} MB，已优先终止计算worker。",
+                    )
+
+        thread = Thread(target=monitor, name=f"pitguard-resource-watch-{task.id}", daemon=True)
+        thread.start()
+        return stop_event, thread
+
+    def _resource_preflight(self, task: TaskRecord, project: Any, *, candidate_count: int = 0) -> dict[str, Any]:
+        estimate = estimate_calculation_resources(project, candidate_count=candidate_count)
+        self._append_log(
+            task,
+            "计算资源预估："
+            f"峰值约 {estimate['estimatedPeakMemoryMb']} MB / worker上限 {estimate['workerMemoryMaxMb']} MB；"
+            f"风险等级 {estimate['status']}。",
+        )
+        if not estimate.get("calculationAllowed", True):
+            recommendations = "；".join(estimate.get("recommendations") or [])
+            raise RuntimeError(f"计算规模超过当前worker安全预算，已受控阻断。{recommendations}")
+        return estimate
 
     def _enforce_memory_budget(self, task: TaskRecord, stage: str) -> None:
         """Fail a heavy task cleanly before the operating system OOM-kills the API."""
@@ -322,9 +422,13 @@ class TaskManager:
             "taskTimeoutSeconds": self._task_timeout_seconds,
             "workerCount": self._worker_count if self._execution_mode == "embedded" else 0,
             "heavyTaskConcurrency": self._heavy_concurrency,
+            "workerRssHardLimitMb": self._worker_rss_hard_limit_mb,
+            "systemMemoryReserveMb": self._system_memory_reserve_mb,
+            "systemAvailableMemoryMb": _system_available_memory_mb(),
             "latestUpdatedAt": max((task.updated_at for task in records), default=None),
             "completedCount": len(completed),
             "processResidentMemoryMB": _process_memory_mb(),
+            "workerHeartbeat": self._worker_heartbeat_snapshot() if self._execution_mode == "external" else None,
         }
 
     def list(self, project_id: str | None = None) -> list[TaskRecord]:
@@ -408,6 +512,7 @@ class TaskManager:
             project_lock = self._project_locks.setdefault(task.project_id, RLock())
         heavy_guard = self._heavy_semaphore if task.operation in self._heavy_operations else nullcontext()
         memory_before = _process_memory_mb()
+        watchdog = self._start_resource_watchdog(task)
         try:
             self._set(task, status="running", progress=2, current_step="启动任务")
             self._append_log(task, f"任务内存基线 {memory_before:.2f} MB；重任务并发上限 {self._heavy_concurrency}。")
@@ -432,6 +537,9 @@ class TaskManager:
             self._set(task, status=status, error=str(exc), current_step="任务已取消" if status == "cancelled" else "任务失败", finished_at=_now())
             self._append_log(task, traceback.format_exc(limit=8))
         finally:
+            if watchdog is not None:
+                watchdog[0].set()
+                watchdog[1].join(timeout=1.0)
             _release_process_memory()
             memory_after = _process_memory_mb()
             self._append_log(task, f"任务结束内存 {memory_after:.2f} MB；已执行 Python GC 与 malloc_trim。")
@@ -445,12 +553,19 @@ class TaskManager:
         if self._execution_mode != "worker":
             raise RuntimeError("PITGUARD_TASK_EXECUTION_MODE must be 'worker' for the worker daemon")
         self.recover_external_worker()
+        self._write_worker_heartbeat("starting")
+        last_idle_heartbeat = 0.0
         while True:
             raw = self._store.claim_next()
             if raw is None:
+                now_monotonic = time.monotonic()
+                if now_monotonic - last_idle_heartbeat >= 5.0:
+                    self._write_worker_heartbeat("idle")
+                    last_idle_heartbeat = now_monotonic
                 time.sleep(max(0.2, float(poll_seconds)))
                 continue
             task = TaskRecord.from_dict(raw)
+            self._write_worker_heartbeat("running", task.id)
             with self._lock:
                 self._tasks[task.id] = task
             timed_out = {"value": False}
@@ -482,6 +597,7 @@ class TaskManager:
                 # protection against NumPy/Matplotlib allocator retention and
                 # third-party native leaks. systemd restarts the worker and the
                 # API process remains continuously available.
+                self._write_worker_heartbeat("completed", task.id)
                 return
 
     def _execute_operation(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
@@ -531,12 +647,19 @@ class TaskManager:
         return ProjectRepository()
 
     def _run_support_layout_optimization(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.support_layout_repair import auto_repair_support_layout
+        from app.services.calculation_state import invalidate_calculation_state
+        from app.geology.model_builder import ensure_geological_model_covers_excavation
+        from app.services.design_service import auto_diaphragm_wall
         repo = self._repo()
         project = repo.require(task.project_id)
         if project.excavation is None:
             raise ValueError("Project has no excavation")
+        self._resource_preflight(task, project, candidate_count=0)
         self._stage(task, 10, "检查地质模型覆盖与平面类型")
         ensure_geological_model_covers_excavation(project)
+        if project.retaining_system is None or not project.retaining_system.diaphragm_walls:
+            project.retaining_system = auto_diaphragm_wall(project.excavation, project.retaining_system, project.design_settings)
         self._stage(task, 28, "按平面类型生成受力可闭合的支撑候选")
         result = auto_repair_support_layout(
             project,
@@ -549,6 +672,9 @@ class TaskManager:
             reason="support optimization candidate set regenerated by isolated worker",
             rebuild_cases=True,
         )
+        from app.services.support_scheme_designer_audit import audit_support_scheme_designer
+        project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
+        project.retaining_system.layout_summary["schemeDesignerAudit"] = audit_support_scheme_designer(project)
         repo.save(project)
         return {
             "projectId": project.id,
@@ -559,11 +685,20 @@ class TaskManager:
         }
 
     def _run_calculation_full(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project
+        from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
+        from app.quality.formal_gate import build_formal_report_gate
+        from app.services.calculation_state import mark_calculation_state_current
+        from app.services.wall_length_optimizer import mark_wall_length_recalculated
         repo = self._repo()
         project = repo.require(task.project_id)
+        requested_top_n = max(0, min(3, int(payload.get("topN") if payload.get("topN") is not None else payload.get("top_n") or 0)))
+        resource_estimate = self._resource_preflight(task, project, candidate_count=requested_top_n)
+        if resource_estimate.get("safeModeRequired") and requested_top_n > 0:
+            self._append_log(task, "资源预估要求安全模式：当前任务只计算已采用方案，A/B/C请逐个提交。")
+            requested_top_n = 0
         self._stage(task, 12, "生成施工工况")
         project.calculation_cases = build_default_construction_cases(project)
-        repo.save(project)
         self._check_cancel(task)
 
         self._stage(task, 48, "运行结构、围檩、支撑与稳定计算")
@@ -572,11 +707,10 @@ class TaskManager:
         project.calculation_results.append(result)
         mark_calculation_state_current(project, result.id)
         mark_wall_length_recalculated(project, result.id)
-        repo.save(project)
         self._check_cancel(task)
 
         comparison: list[dict[str, Any]] = []
-        top_n = max(0, min(3, int(payload.get("topN") if payload.get("topN") is not None else payload.get("top_n") or 0)))
+        top_n = requested_top_n
         if top_n > 0 and project.retaining_system and project.retaining_system.support_layout_repair and project.retaining_system.support_layout_repair.candidates:
             self._stage(task, 76, f"执行前 {top_n} 个候选方案完整比选")
             comparison = run_candidate_comparison_for_project(project, top_n=top_n)
@@ -591,16 +725,27 @@ class TaskManager:
                 evaluate_ifc_model_compatibility(project),
                 latest_result=latest,
             )
-            repo.save(project)
         else:
             self._append_log(task, "未发现候选方案，跳过 A/B/C 完整比选。")
+        # Persist one immutable project revision per completed calculation task.
+        # Intermediate construction-case and result saves used to duplicate a
+        # multi-megabyte project blob two or three times and amplify SQLite/WAL
+        # memory pressure while the worker was still holding the solver arrays.
+        repo.save(project)
         self._stage(task, 92, "刷新项目成果和审查状态")
         return {"projectId": project.id, "calculationResultId": project.calculation_results[-1].id, "candidateComparisonCount": len(comparison), "refreshProject": True}
 
     def _run_candidate_comparison(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.calculation.engine import run_candidate_comparison_for_project
+        from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
+        from app.quality.formal_gate import build_formal_report_gate
         repo = self._repo()
         project = repo.require(task.project_id)
         top_n = int(payload.get("topN") or payload.get("top_n") or 3)
+        estimate = self._resource_preflight(task, project, candidate_count=top_n)
+        if estimate.get("safeModeRequired"):
+            top_n = 1
+            self._append_log(task, "资源安全模式已将批量候选完整计算限制为逐个执行。")
         self._stage(task, 25, "读取候选方案")
         comparison = run_candidate_comparison_for_project(project, top_n=top_n)
         self._stage(task, 72, "写入 A/B/C 比选结果")
@@ -620,8 +765,10 @@ class TaskManager:
         return {"projectId": project.id, "candidateComparisonCount": len(comparison), "refreshProject": True}
 
     def _run_candidate_scheme_calculation(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.calculation.engine import run_single_candidate_calculation
         repo = self._repo()
         project = repo.require(task.project_id)
+        self._resource_preflight(task, project, candidate_count=1)
         candidate_id = str(payload.get("candidateId") or "")
         candidate_index = int(payload.get("candidateIndex") or 0)
         use_cache = bool(payload.get("useCache", True))
@@ -630,7 +777,9 @@ class TaskManager:
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
         self._stage(task, 16, f"读取方案 {candidate_index + 1} 几何与计算输入")
-        project_snapshot = project.model_copy(deep=True)
+        project_snapshot = project.model_copy(deep=False)
+        project_snapshot.calculation_results = []
+        project_snapshot.calculation_cases = []
         self._stage(task, 34, "检查候选计算缓存")
         result = run_single_candidate_calculation(
             project_snapshot, candidate.model_copy(deep=True), index=candidate_index, use_cache=use_cache
@@ -663,12 +812,21 @@ class TaskManager:
                 repo.save(current)
         self._stage(task, 96, "刷新方案排名和推荐状态")
         return {
-            "projectId": task.project_id, "candidateId": candidate_id, "candidateIndex": candidate_index,
-            "cacheHit": bool(result.get("cacheHit")), "inputHash": result.get("inputHash"),
-            "result": result, "refreshProject": True,
+            "projectId": task.project_id,
+            "candidateId": candidate_id,
+            "candidateIndex": candidate_index,
+            "cacheHit": bool(result.get("cacheHit")),
+            "inputHash": result.get("inputHash"),
+            "status": result.get("status"),
+            "schemeLabel": result.get("schemeLabel"),
+            "governingValues": dict(result.get("governingValues") or {}),
+            "checkSummary": dict(result.get("checkSummary") or {}),
+            "refreshProject": True,
         }
 
     def _run_ifc_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.ifc.exporter import export_simplified_ifc
+        from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility, validate_ifc_file
         mode = payload.get("mode")
         if not mode:
             mode = {
@@ -692,12 +850,17 @@ class TaskManager:
         return self._file_result(path, "application/octet-stream", {"ifcCheckPath": str(sidecar), "ifcStatus": file_check.status, "ifcScore": file_check.score})
 
     def _run_report_export(self, task: TaskRecord) -> dict[str, Any]:
+        from app.reports.docx_report import export_docx_report
         project = self._repo().require(task.project_id)
         self._stage(task, 22, "汇总计算书章节和图表")
         path = export_docx_report(project, EXPORT_DIR)
         return self._file_result(path, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     def _run_cad_export(self, task: TaskRecord, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        from app.drawings.cad_export import export_construction_cad_package
+        from app.drawing_rules import evaluate_drawing_issue_gate
+        from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
+        from app.services.review_workflow import review_status
         payload = payload or {}
         project = self._repo().require(task.project_id)
         scope = str(payload.get("scope") or "full")
@@ -723,6 +886,7 @@ class TaskManager:
         return self._file_result(path, "application/zip", {"scope": scope, "rebarMode": rebar_mode, "issueMode": issue_mode, "canIssueConstructionDrawings": can_issue, "drawingIssueGate": selected_gate})
 
     def _run_svg_export(self, task: TaskRecord) -> dict[str, Any]:
+        from app.drawings.cad_export import export_construction_svg_package
         project = self._repo().require(task.project_id)
         self._stage(task, 22, "生成 SVG 图纸包")
         path = export_construction_svg_package(project, EXPORT_DIR)
@@ -739,6 +903,7 @@ class TaskManager:
 
 
     def _run_trace_export(self, task: TaskRecord) -> dict[str, Any]:
+        from app.services.calculation_trace import build_calculation_trace
         project = self._repo().require(task.project_id)
         self._stage(task, 28, "生成计算追溯链 JSON")
         EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -748,6 +913,7 @@ class TaskManager:
         return self._file_result(path, "application/json")
 
     def _run_issue_report_export(self, task: TaskRecord) -> dict[str, Any]:
+        from app.services.issue_center import build_issue_center
         project = self._repo().require(task.project_id)
         self._stage(task, 28, "生成问题清单和完成度评估 JSON")
         EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -758,6 +924,7 @@ class TaskManager:
 
 
     def _run_wall_length_redundancy_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.wall_length_optimizer import export_wall_length_redundancy_report
         project = self._repo().require(task.project_id)
         mode = str(payload.get("mode") or "balanced")
         self._stage(task, 28, "生成围护墙设计长度冗余优化报告")
@@ -765,6 +932,7 @@ class TaskManager:
         return self._file_result(path, "application/json")
 
     def _run_design_scheme_ledger_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.design_scheme_ledger import export_design_scheme_ledger
         project = self._repo().require(task.project_id)
         mode = str(payload.get("mode") or "balanced")
         self._stage(task, 30, "生成方案快照与交付闸门台账")
@@ -774,6 +942,10 @@ class TaskManager:
 
 
     def _run_formal_drawing_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.drawings.formal_issue import export_formal_drawing_package
+        from app.drawing_rules import evaluate_drawing_issue_gate
+        from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
+        from app.services.review_workflow import review_status
         project = self._repo().require(task.project_id)
         issue_mode = str(payload.get("issueMode") or payload.get("issue_mode") or "review")
         rebar_mode = str(payload.get("rebarMode") or payload.get("rebar_mode") or "balanced")
@@ -788,6 +960,7 @@ class TaskManager:
         return self._file_result(path, "application/zip", {"issueMode": issue_mode, "refreshProject": True, "drawingIssueGate": issue_gate})
 
     def _run_coordinated_delivery_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.delivery_package import export_coordinated_delivery_package
         project = self._repo().require(task.project_id)
         issue_mode = str(payload.get("issueMode") or payload.get("issue_mode") or "review")
         rebar_mode = str(payload.get("rebarMode") or payload.get("rebar_mode") or "balanced")
@@ -801,12 +974,14 @@ class TaskManager:
         })
 
     def _run_rebar_detailing_export(self, task: TaskRecord) -> dict[str, Any]:
+        from app.services.rebar_export import export_rebar_detailing_package
         project = self._repo().require(task.project_id)
         self._stage(task, 28, "生成钢筋加工深化 ZIP（XLSX/CSV/JSON/使用说明）")
         path = export_rebar_detailing_package(project, EXPORT_DIR, mode="balanced")
         return self._file_result(path, "application/zip", {"packageType": "rebar_detailing", "humanReadablePrimary": "rebar_detailing_schedules.xlsx"})
 
     def _run_benchmark_export(self, task: TaskRecord) -> dict[str, Any]:
+        from app.services.benchmark_cases import export_benchmark_package
         self._stage(task, 20, "运行公开论文典型基坑规范算法回归算例")
         path = export_benchmark_package(EXPORT_DIR, repo=None, persist=False)
         return self._file_result(path, "application/zip")
@@ -826,6 +1001,8 @@ class TaskManager:
         return package
 
     def _run_industrial_closure(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.calculation.engine import run_candidate_comparison_for_project
+        from app.services.industrial_readiness import run_industrial_closure
         repo = self._repo()
         project = repo.require(task.project_id)
         if not project.calculation_results:

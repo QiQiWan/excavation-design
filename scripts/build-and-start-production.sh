@@ -38,7 +38,7 @@ CANDIDATE_WORKERS="${PITGUARD_CANDIDATE_WORKERS:-1}"
 CALC_RESULT_RETENTION="${PITGUARD_CALCULATION_RESULT_RETENTION:-1}"
 API_MEMORY_HIGH="${PITGUARD_API_MEMORY_HIGH:-2G}"
 API_MEMORY_MAX="${PITGUARD_API_MEMORY_MAX:-4G}"
-WORKER_CPU_QUOTA="${PITGUARD_WORKER_CPU_QUOTA:-600%}"
+WORKER_CPU_QUOTA="${PITGUARD_WORKER_CPU_QUOTA:-300%}"
 
 if [ -z "$PYTHON_BIN" ]; then
   if [ -x /root/anaconda3/envs/ifc/bin/python ]; then
@@ -69,13 +69,29 @@ fi
 
 TOTAL_MEMORY_MB="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 8192)"
 if [ -z "$TOTAL_MEMORY_MB" ] || [ "$TOTAL_MEMORY_MB" -lt 4096 ]; then TOTAL_MEMORY_MB=4096; fi
-DEFAULT_WORKER_MEMORY_MAX_MB=$((TOTAL_MEMORY_MB * 60 / 100))
+AVAILABLE_MEMORY_MB="$(awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo $((TOTAL_MEMORY_MB * 70 / 100)))"
+if [ -z "$AVAILABLE_MEMORY_MB" ] || [ "$AVAILABLE_MEMORY_MB" -lt 2048 ]; then AVAILABLE_MEMORY_MB=2048; fi
+SYSTEM_MEMORY_RESERVE_MB="${PITGUARD_SYSTEM_MEMORY_RESERVE_MB:-$((TOTAL_MEMORY_MB * 12 / 100))}"
+if [ "$SYSTEM_MEMORY_RESERVE_MB" -lt 2048 ]; then SYSTEM_MEMORY_RESERVE_MB=2048; fi
+if [ "$SYSTEM_MEMORY_RESERVE_MB" -gt 8192 ]; then SYSTEM_MEMORY_RESERVE_MB=8192; fi
+
+# Size the worker from memory that is actually available at deployment time.
+# A large host may already run databases, dashboards or other services; using a
+# percentage of total RAM alone allowed PitGuard to push the entire node into
+# reclaim/OOM even though its own cgroup limit had not been reached.
+DEFAULT_WORKER_MEMORY_MAX_MB=$((TOTAL_MEMORY_MB * 50 / 100))
+AVAILABLE_WORKER_BUDGET_MB=$((AVAILABLE_MEMORY_MB - SYSTEM_MEMORY_RESERVE_MB))
+if [ "$AVAILABLE_WORKER_BUDGET_MB" -lt "$DEFAULT_WORKER_MEMORY_MAX_MB" ]; then
+  DEFAULT_WORKER_MEMORY_MAX_MB=$AVAILABLE_WORKER_BUDGET_MB
+fi
 if [ "$DEFAULT_WORKER_MEMORY_MAX_MB" -gt 32768 ]; then DEFAULT_WORKER_MEMORY_MAX_MB=32768; fi
-if [ "$DEFAULT_WORKER_MEMORY_MAX_MB" -lt 3072 ]; then DEFAULT_WORKER_MEMORY_MAX_MB=3072; fi
+if [ "$DEFAULT_WORKER_MEMORY_MAX_MB" -lt 2048 ]; then DEFAULT_WORKER_MEMORY_MAX_MB=2048; fi
 WORKER_MEMORY_MAX_MB="${PITGUARD_WORKER_MEMORY_MAX_MB:-$DEFAULT_WORKER_MEMORY_MAX_MB}"
-WORKER_MEMORY_HIGH_MB="${PITGUARD_WORKER_MEMORY_HIGH_MB:-$((WORKER_MEMORY_MAX_MB * 85 / 100))}"
+WORKER_MEMORY_HIGH_MB="${PITGUARD_WORKER_MEMORY_HIGH_MB:-$((WORKER_MEMORY_MAX_MB * 75 / 100))}"
 TASK_MEMORY_SOFT_LIMIT_MB="${PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB:-$((WORKER_MEMORY_HIGH_MB - 256))}"
 if [ "$TASK_MEMORY_SOFT_LIMIT_MB" -lt 2048 ]; then TASK_MEMORY_SOFT_LIMIT_MB=2048; fi
+WORKER_RSS_HARD_LIMIT_MB="${PITGUARD_WORKER_RSS_HARD_LIMIT_MB:-$((WORKER_MEMORY_MAX_MB * 90 / 100))}"
+RESOURCE_WATCH_INTERVAL_SECONDS="${PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS:-3}"
 
 mkdir -p "$RUNTIME_DIR/backups" "$RUNTIME_DIR/cache" "$RUNTIME_DIR/matplotlib" \
   "$RUNTIME_DIR/cache-worker" "$RUNTIME_DIR/matplotlib-worker" \
@@ -132,7 +148,7 @@ cat > "$ENV_FILE" <<ENVEOF
 PITGUARD_DB_PATH=$RUNTIME_DIR/pitguard.sqlite3
 PITGUARD_BACKUP_DIR=$RUNTIME_DIR/backups
 PITGUARD_BACKUP_RETENTION=${PITGUARD_BACKUP_RETENTION:-30}
-PITGUARD_REVISION_RETENTION=${PITGUARD_REVISION_RETENTION:-100}
+PITGUARD_REVISION_RETENTION=${PITGUARD_REVISION_RETENTION:-30}
 PITGUARD_NUMERIC_THREADS=$NUMERIC_THREADS
 OPENBLAS_NUM_THREADS=$NUMERIC_THREADS
 OMP_NUM_THREADS=$NUMERIC_THREADS
@@ -143,11 +159,18 @@ MALLOC_ARENA_MAX=2
 PITGUARD_TASK_WORKERS=$TASK_WORKERS
 PITGUARD_HEAVY_TASK_CONCURRENCY=$HEAVY_TASK_CONCURRENCY
 PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB=$TASK_MEMORY_SOFT_LIMIT_MB
+PITGUARD_WORKER_MEMORY_MAX_MB=$WORKER_MEMORY_MAX_MB
+PITGUARD_WORKER_RSS_HARD_LIMIT_MB=$WORKER_RSS_HARD_LIMIT_MB
+PITGUARD_SYSTEM_MEMORY_RESERVE_MB=$SYSTEM_MEMORY_RESERVE_MB
+PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS=$RESOURCE_WATCH_INTERVAL_SECONDS
 PITGUARD_TASK_TIMEOUT_SECONDS=$TASK_TIMEOUT_SECONDS
 PITGUARD_WORKER_POLL_SECONDS=1.0
+PITGUARD_WORKER_HEARTBEAT_PATH=$RUNTIME_DIR/worker-heartbeat.json
 PITGUARD_WORKER_EXIT_AFTER_TASK=true
 PITGUARD_CANDIDATE_WORKERS=$CANDIDATE_WORKERS
 PITGUARD_CALCULATION_RESULT_RETENTION=$CALC_RESULT_RETENTION
+PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT=${PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT:-36}
+PITGUARD_MAX_SUPPORT_ELEMENTS=${PITGUARD_MAX_SUPPORT_ELEMENTS:-2400}
 PITGUARD_CORS_ORIGINS=https://$DOMAIN
 PITGUARD_USERS='$PITGUARD_USERS_JSON'
 PITGUARD_SESSION_SECRET=$SESSION_SECRET
@@ -162,6 +185,8 @@ cat > "$SYSTEMD_UNIT" <<UNITEOF
 Description=PitGuard FastAPI Backend
 Wants=network-online.target
 After=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=8
 
 [Service]
 Type=simple
@@ -208,6 +233,8 @@ cat > "$WORKER_SYSTEMD_UNIT" <<WORKERUNITEOF
 Description=PitGuard Isolated Calculation Worker
 Wants=network-online.target
 After=network-online.target ${SERVICE_NAME}.service
+StartLimitIntervalSec=120
+StartLimitBurst=30
 
 [Service]
 Type=simple
@@ -231,12 +258,16 @@ UMask=0027
 LimitNOFILE=65535
 MemoryHigh=${WORKER_MEMORY_HIGH_MB}M
 MemoryMax=${WORKER_MEMORY_MAX_MB}M
+MemorySwapMax=0
 CPUQuota=$WORKER_CPU_QUOTA
 CPUWeight=20
 IOWeight=20
 Nice=5
-OOMScoreAdjust=500
-TasksMax=256
+IOSchedulingClass=idle
+IOSchedulingPriority=7
+OOMScoreAdjust=800
+TasksMax=128
+LimitNPROC=128
 OOMPolicy=stop
 NoNewPrivileges=true
 PrivateTmp=true
@@ -301,8 +332,35 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 10s;
-        proxy_read_timeout 30s;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 3s;
+    }
+
+    location = /health/live {
+        proxy_pass http://pitguard_api/health/live;
+        proxy_connect_timeout 1s;
+        proxy_read_timeout 2s;
+    }
+
+    location = /health/ready {
+        proxy_pass http://pitguard_api/health/ready;
+        proxy_connect_timeout 1s;
+        proxy_read_timeout 2s;
+    }
+
+    location = /api/auth/status {
+        auth_basic off;
+        proxy_pass http://pitguard_api/api/auth/status;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 2s;
+        proxy_send_timeout 3s;
+        proxy_read_timeout 3s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        add_header Cache-Control "no-store" always;
     }
 
     location /api/ {

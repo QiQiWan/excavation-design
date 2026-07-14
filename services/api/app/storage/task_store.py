@@ -24,6 +24,11 @@ class SQLiteTaskStore:
         connection = sqlite3.connect(self.db_path, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=30000")
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=NORMAL")
+        connection.execute("PRAGMA temp_store=FILE")
+        connection.execute("PRAGMA cache_size=-8192")
+        connection.execute("PRAGMA mmap_size=0")
         return connection
 
     def _ensure_schema(self) -> None:
