@@ -6,12 +6,16 @@ from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.schemas.domain import Project, SupportLayoutRepairSummary, QualityGateIssue
 from app.services.design_service import auto_supports, support_layout_config_from_settings
 from app.services.support_layout_optimizer import OBJECTIVE_WEIGHTS, build_support_system_from_candidate, normalize_objective_weights, optimize_support_layout_candidates
+from app.services.calculation_state import invalidate_calculation_state
+from app.services.wall_embedment_design import auto_design_wall_embedment
 
 
 REPAIRABLE_CATEGORIES = {
     "support_spacing",
     "support_span",
+    "wale_support_bay",
     "support_crossing",
+    "support_outside_excavation",
     "obstacle_clearance",
     "temporary_column",
     "replacement_path",
@@ -191,7 +195,7 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
         project.retaining_system = best_system
         actions.append({
             "action": "objective_function_support_layout_optimization",
-            "description": "枚举 3.5-6.0m 主对撑分仓与 12-18m 立柱服务跨，并在整线/端点/层/出土边界局部锁定约束下评分采用最优候选方案。",
+            "description": "枚举 3.5-6.0m 主对撑分仓与 12-18m 立柱服务跨，在整线/端点/层/出土边界局部锁定约束下，按非法穿越、内部汇交节点、高度汇交节点和综合工程性能的分层优先级采用最优方案。",
             "candidateCount": len(candidates),
             "bestCandidateId": candidates[0].id,
             "bestCandidateScore": candidates[0].score,
@@ -224,7 +228,11 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
     )
     if candidates:
         pattern = candidates[0].variable_summary.get("positionPattern", "as_generated") if candidates[0].variable_summary else "as_generated"
-        summary += f" 已比选 {len(candidates)} 个约束优化候选方案，采用第 1 名：目标分仓 {candidates[0].target_spacing:.1f}m，立柱服务跨 {candidates[0].column_max_span:.1f}m，支撑线变量策略 {pattern}。"
+        summary += (
+            f" 已比选 {len(candidates)} 个约束优化候选方案，采用第 1 名：目标分仓 {candidates[0].target_spacing:.1f}m，"
+            f"立柱服务跨 {candidates[0].column_max_span:.1f}m，支撑线变量策略 {pattern}，非法穿越 "
+            f"{candidates[0].crossing_count} 处，内部汇交节点 {candidates[0].junction_count} 处。"
+        )
     elif actions:
         summary += " 已执行规则修复兜底。"
     else:
@@ -242,6 +250,7 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
             "换撑路径不得中断",
         ],
         soft_objective_labels=[
+            "平面交叉点与内部汇交节点尽可能少",
             "支撑间距接近 3-6m",
             "支撑体系尽量对称",
             "支撑跨长尽量短",
@@ -317,7 +326,7 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
             "支撑不得交叉", "支撑不得穿越出土口/坡道/保护区", "支撑端点必须落在围檩/环梁/节点上", "立柱不得落入障碍区", "换撑路径不得中断",
         ],
         soft_objective_labels=[
-            "支撑间距接近 3-6m", "支撑体系尽量对称", "支撑跨长尽量短", "立柱数量不过多", "轴力峰值不过大", "出土路径尽量连续",
+            "平面交叉点与内部汇交节点尽可能少", "支撑间距接近 3-6m", "支撑体系尽量对称", "支撑跨长尽量短", "立柱数量不过多", "轴力峰值不过大", "出土路径尽量连续",
         ],
         objective_weights=weights,
         candidate_count=len(candidates),
@@ -342,12 +351,39 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
             "lockSummary": lock_summary,
         }],
         unresolved_issues=[i for i in quality.issues if i.severity in {"fail", "warning", "manual_review"}][:30],
-        summary=f"已采用支撑优化候选方案 {selected.id}：整体拓扑 {topology_strategy}，目标分仓 {selected.target_spacing:.1f}m，立柱服务跨 {selected.column_max_span:.1f}m，线位策略 {pattern}。",
+        summary=(
+            f"已采用支撑优化候选方案 {selected.id}：整体拓扑 {topology_strategy}，目标分仓 {selected.target_spacing:.1f}m，"
+            f"立柱服务跨 {selected.column_max_span:.1f}m，线位策略 {pattern}，非法穿越 {selected.crossing_count} 处，"
+            f"内部汇交节点 {selected.junction_count} 处。"
+        ),
     )
     project.retaining_system.support_layout_repair = repair
     project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
     project.retaining_system.layout_summary["autoRepair"] = repair.model_dump(mode="json", by_alias=True)
     project.retaining_system.layout_summary["supportOptimizationCandidates"] = [c.model_dump(mode="json", by_alias=True) for c in repair.candidates]
+    # Candidate adoption changes the support system but must not leave a known
+    # global wall-toe failure unresolved.  Apply the same common-toe stability
+    # preflight that the calculation engine uses, while respecting imported or
+    # manually locked wall elevations.
+    embedment = auto_design_wall_embedment(
+        project,
+        project.calculation_cases[-1] if project.calculation_cases else None,
+        enabled=bool(getattr(project.design_settings, "auto_wall_embedment_design_enabled", True)),
+    )
+    repair.actions.append({
+        "action": "wall_embedment_preflight_after_candidate_adoption",
+        "status": embedment.get("status"),
+        "changed": embedment.get("changed"),
+        "beforeBottomElevationM": embedment.get("beforeBottomElevationM"),
+        "afterBottomElevationM": embedment.get("afterBottomElevationM"),
+        "beforeMinimumFactor": embedment.get("beforeMinimumFactor"),
+        "afterMinimumFactor": embedment.get("afterMinimumFactor"),
+    })
+    invalidate_calculation_state(
+        project,
+        reason=f"adopted support candidate {selected.id}; retaining topology and member ids changed",
+        rebuild_cases=True,
+    )
     return repair
 
 

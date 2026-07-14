@@ -20,6 +20,7 @@ from app.services.wall_length_optimizer import export_wall_length_redundancy_rep
 from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 from app.services.rebar_export import export_rebar_detailing_package
+from app.services.delivery_package import export_coordinated_delivery_package
 
 router = APIRouter(prefix="/api/projects/{project_id}/export", tags=["export"])
 
@@ -90,7 +91,7 @@ def export_ifc_check(
 @router.api_route("/ifc-rebar-visualization", methods=["GET", "POST"])
 def export_ifc_rebar_visualization(
     project_id: str,
-    max_bars: int = Query(950, ge=50, le=2000, description="Maximum sampled bars returned for browser visualization"),
+    max_bars: int = Query(2400, ge=50, le=5000, description="Maximum sampled bars returned for browser visualization"),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     project = repo.require(project_id)
@@ -207,4 +208,19 @@ def export_formal_drawings(
             "diagnostics": scheme.get("diagnostics"), "drawingIssueGate": issue_gate,
         })
     path = export_formal_drawing_package(project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode)
+    return FileResponse(path=path, filename=path.name, media_type="application/zip")
+
+
+@router.api_route("/coordinated-delivery-package", methods=["GET", "POST"])
+def export_coordinated_delivery(
+    project_id: str,
+    issue_mode: Literal["review", "construction"] = Query("review"),
+    rebar_mode: Literal["conservative", "balanced", "economic"] = Query("balanced"),
+    include_ifc_profiles: bool = Query(True),
+    repo: ProjectRepository = Depends(get_repository),
+) -> FileResponse:
+    project = repo.require(project_id)
+    path = export_coordinated_delivery_package(
+        project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode, include_ifc_profiles=include_ifc_profiles
+    )
     return FileResponse(path=path, filename=path.name, media_type="application/zip")

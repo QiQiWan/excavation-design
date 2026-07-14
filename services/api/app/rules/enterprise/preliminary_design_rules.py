@@ -69,19 +69,26 @@ def support_elevations(top_elevation: float, bottom_elevation: float) -> tuple[l
     if count <= 0:
         return [], warnings
     first_depth = 1.5
-    min_space_above_bottom = 2.0
-    usable_depth = max(depth - first_depth - min_space_above_bottom, 0.0)
+    # The previous implementation placed the lowest support exactly at the
+    # warning threshold and then used <= for the check, so every multi-level
+    # preliminary scheme produced a false warning. Use a target clearance above
+    # the hard minimum and only warn when the generated geometry genuinely falls
+    # below the hard minimum.
+    target_space_above_bottom = 2.5
+    hard_min_space_above_bottom = 2.0
+    usable_depth = max(depth - first_depth - target_space_above_bottom, 0.0)
     if count == 1:
-        elevations = [top_elevation - min(first_depth, max(depth - min_space_above_bottom, 0.5))]
+        elevations = [top_elevation - min(first_depth, max(depth - target_space_above_bottom, 0.5))]
     else:
         spacing = usable_depth / (count - 1) if count > 1 else 0.0
         if spacing < 3.0:
-            warnings.append("按默认支撑道数布置时支撑竖向间距小于 3.0m，需人工调整。")
+            warnings.append("按默认支撑道数布置时支撑竖向间距小于 3.0m，需调整支撑道数或标高。")
         if spacing > 5.0:
-            warnings.append("按默认支撑道数布置时支撑竖向间距大于 5.0m，需人工调整。")
+            warnings.append("按默认支撑道数布置时支撑竖向间距大于 5.0m，需调整支撑道数或标高。")
         elevations = [top_elevation - first_depth - i * spacing for i in range(count)]
-        if elevations[-1] <= bottom_elevation + min_space_above_bottom:
-            warnings.append("最下一道支撑与坑底施工空间不足，需人工复核。")
+        actual_clearance = elevations[-1] - bottom_elevation
+        if actual_clearance < hard_min_space_above_bottom - 1.0e-6:
+            warnings.append(f"最下一道支撑距坑底仅 {actual_clearance:.2f}m，小于自动设计硬下限 {hard_min_space_above_bottom:.2f}m，需调整。")
     return [round(e, 3) for e in elevations], warnings
 
 

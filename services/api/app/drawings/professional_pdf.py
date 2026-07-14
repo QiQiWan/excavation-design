@@ -179,6 +179,57 @@ def _draw_wall_rebar(c: canvas.Canvas, project: Project, box: tuple[float, float
     c.setStrokeColor(colors.black)
 
 
+def _draw_stage_sequence(c: canvas.Canvas, project: Project, box: tuple[float,float,float,float]) -> None:
+    x0,y0,x1,y1=box
+    cases=project.calculation_cases
+    stages=list(cases[-1].stages) if cases else []
+    if not stages:
+        levels=sorted({(int(s.level_index),float(s.elevation)) for s in (project.retaining_system.supports if project.retaining_system else [])})
+        current=float(project.excavation.top_elevation if project.excavation else 0.0)
+        for level,elev in levels:
+            stages.append(type("Stage",(),{"name":f"安装第{level}道支撑","stage_type":"support_installation","excavation_elevation":current,"active_support_levels":[level]})())
+            current=elev-1.0
+            stages.append(type("Stage",(),{"name":f"开挖至EL.{current:.2f}","stage_type":"excavation","excavation_elevation":current,"active_support_levels":[x[0] for x in levels if x[0]<=level]})())
+    cols=4; rows=max(1,math.ceil(min(len(stages),12)/cols)); gap=5*mm
+    cw=(x1-x0-gap*(cols-1))/cols; ch=(y1-y0-gap*(rows-1))/rows
+    top=float(project.excavation.top_elevation if project.excavation else 0.0); bottom=float(project.excavation.bottom_elevation if project.excavation else -12.0)
+    wb=min((float(w.bottom_elevation) for w in (project.retaining_system.diaphragm_walls if project.retaining_system else [])),default=bottom-8)
+    for i,stage in enumerate(stages[:12]):
+        col=i%cols; row=i//cols; bx=x0+col*(cw+gap); by=y1-(row+1)*ch-row*gap
+        c.rect(bx,by,cw,ch); c.setFont("STSong-Light",6); c.drawString(bx+2*mm,by+ch-4*mm,f"阶段{i+1:02d} {stage.name}")
+        sx0=bx+5*mm; sx1=bx+cw*0.63; sy0=by+6*mm; sy1=by+ch-8*mm
+        def zmap(z:float)->float: return sy0+(z-wb)/max(top-wb,1e-9)*(sy1-sy0)
+        c.setLineWidth(1.1); c.line(sx0,zmap(wb),sx0,zmap(top)); c.line(sx1,zmap(wb),sx1,zmap(top))
+        exc=float(stage.excavation_elevation); c.setStrokeColor(colors.red); c.line(sx0,zmap(exc),sx1,zmap(exc)); c.setStrokeColor(colors.black)
+        active=set(int(v) for v in (getattr(stage,"active_support_levels",[]) or []))
+        if project.retaining_system:
+            levels={}
+            for support in project.retaining_system.supports: levels.setdefault(int(support.level_index),float(support.elevation))
+            c.setStrokeColor(colors.HexColor("#1f5fbf"))
+            for level,elev in levels.items():
+                if level in active: c.line(sx0,zmap(elev),sx1,zmap(elev))
+            c.setStrokeColor(colors.black)
+        tx=bx+cw*0.67; c.setFont("STSong-Light",5.5)
+        c.drawString(tx,by+ch-10*mm,f"类型：{stage.stage_type}"); c.drawString(tx,by+ch-14*mm,f"开挖：EL.{exc:.2f}")
+        c.drawString(tx,by+ch-18*mm,"支撑："+",".join(str(v) for v in sorted(active)))
+
+
+def _drawing_reference_rows(manifest: dict[str, Any]) -> list[list[Any]]:
+    calc={
+        "master_plan":"几何/拓扑","wall_panel_layout":"墙段/嵌固","support_level_plan":"轴力/跨度/节点",
+        "excavation_section":"土水压力/位移/稳定","longitudinal_section":"地层/地下水/稳定",
+        "construction_stage_sequence":"分阶段激活/换撑","wall_rebar_general":"墙体配筋",
+        "wall_rebar_elevation":"包络/分区配筋","support_rebar_general":"轴压/偏压配筋","wale_rebar_general":"连续梁内力",
+    }
+    standards={
+        "master_plan":"JGJ120/GB55003","wall_panel_layout":"JGJ120/GB50202","support_level_plan":"JGJ120/GB50010/17",
+        "excavation_section":"JGJ120/GB55003/GB50007","longitudinal_section":"JGJ120/GB50007",
+        "construction_stage_sequence":"JGJ120/GB50497","wall_rebar_general":"GB55008/GB50010",
+        "wall_rebar_elevation":"GB55008/GB50010","support_rebar_general":"GB55008/GB50010","wale_rebar_general":"GB55008/GB50010",
+    }
+    return [[s.get("sheetNo"),s.get("title"),";".join(s.get("modelBinding") or []),calc.get(str(s.get("renderer")),"专项复核"),standards.get(str(s.get("renderer")),"项目规范"),s.get("file")] for s in manifest.get("sheets",[])]
+
+
 def _draw_table(c: canvas.Canvas, rows: list[list[Any]], headers: list[str], box: tuple[float,float,float,float], max_rows: int = 28) -> None:
     x0,y0,x1,y1=box
     data=[headers]+[[str(v) for v in row] for row in rows[:max_rows]]
@@ -215,15 +266,21 @@ def export_professional_batch_pdf(project: Project, output_path: Path, manifest:
         c.setFont("STSong-Light", 12); c.drawString(x0+3*mm,y1-8*mm,str(sheet.get("title") or ""))
         content=(x0+5*mm,y0+5*mm,x1-5*mm,y1-15*mm)
         renderer=str(sheet.get("renderer") or "")
-        if renderer in {"master_plan","legacy_support_plan","support_level_plan","monitoring_plan","wall_rebar_general","rebar_geometry_plan"}:
+        if renderer in {"master_plan","wall_panel_layout","legacy_support_plan","support_level_plan","monitoring_plan","wall_rebar_general","rebar_geometry_plan"}:
             level=sheet.get("level") if renderer=="support_level_plan" else None
             _draw_plan(c,project,content,int(level) if level is not None else None)
-        elif renderer=="excavation_section":
+        elif renderer in {"excavation_section","longitudinal_section"}:
             _draw_section(c,project,content)
+        elif renderer=="construction_stage_sequence":
+            _draw_stage_sequence(c,project,content)
         elif renderer in {"wall_rebar_elevation","single_wall_rebar_elevation","wall_rebar_cage"}:
             _draw_wall_rebar(c,project,content,int(sheet.get("wallIndex")) if sheet.get("wallIndex") else None)
         elif renderer=="general_notes":
             rows=[[s.get("sheetNo"),s.get("title"),s.get("scale"),s.get("paperSize")] for s in manifest.get("sheets",[])]; _draw_table(c,rows,["图号","图名","比例","图幅"],content,24)
+        elif renderer=="drawing_reference_matrix":
+            _draw_table(c,_drawing_reference_rows(manifest),["图号","图名","模型","计算","规范","文件"],content,28)
+        elif renderer=="drawing_quality_summary":
+            rows=[[s.get("sheetNo"),s.get("title"),s.get("paperSize"),s.get("scale"),"是" if s.get("required") else "否","图层/尺寸/图签/纸空间"] for s in manifest.get("sheets",[])]; _draw_table(c,rows,["图号","图名","图幅","比例","必要","检查"],content,28)
         elif renderer in {"rebar_bending_schedule","cage_lifting_plan","splice_layout","cover_conflict_check","shop_signoff","support_rebar_general","wale_rebar_general","cage_hoisting_analysis","coupler_schedule_detail","embedded_collision_quality"}:
             if renderer=="rebar_bending_schedule": rows=[[x.get("barMark"),x.get("hostCode"),x.get("diameterMm"),x.get("fabricationPieceCount"),x.get("pieceLengthsM"),x.get("status")] for x in detailing.get("fabricationBbs",[])]; headers=["编号","构件","直径","件数","下料长度","状态"]
             elif renderer=="cage_lifting_plan": rows=[[x.get("segmentId"),x.get("hostCode"),x.get("lengthM"),x.get("estimatedCageWeightT"),x.get("liftingPointCount"),x.get("status")] for x in detailing.get("cageSegments",[])]; headers=["分段","墙幅","长度","重量/t","吊点","状态"]

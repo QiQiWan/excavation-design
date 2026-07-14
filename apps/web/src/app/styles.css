@@ -1493,3 +1493,110 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .workflowRuleTrace { max-height: 28rem; overflow: auto; padding-right: .35rem; }
 .standardBadge[href] { text-decoration: none; }
 .standardBadge[href]:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(15, 23, 42, .12); }
+
+
+/* V3.12 calculation-centric standards traceability */
+.workflowStandardsRibbon { grid-template-columns:minmax(240px,1fr) auto auto; align-items:start; }
+.workflowStandardsSummary { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:#334155; font-size:12px; }
+.workflowStandardsSummary b { padding:4px 8px; border-radius:999px; background:#f1f5f9; }
+.workflowStandardsPreview { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px; border-top:1px dashed #bfdbfe; padding-top:10px; }
+.workflowStandardsPreview span { display:grid; grid-template-columns:auto 1fr; gap:2px 8px; padding:8px 10px; border:1px solid #dbeafe; border-radius:8px; background:#fff; font-size:12px; }
+.workflowStandardsPreview b { grid-row:1/3; display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:#dbeafe; color:#1d4ed8; }
+.workflowStandardsPreview em { color:#64748b; font-size:10px; font-style:normal; }
+.workflowCalculationMap { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:12px; border-top:1px dashed #bfdbfe; padding-top:12px; }
+.calculationStandardCard { border:1px solid #dbeafe; border-left:4px solid #2563eb; border-radius:10px; padding:12px; background:#fff; min-width:0; }
+.calculationStandardCard.fail { border-left-color:#dc2626; }
+.calculationStandardCard.warning,.calculationStandardCard.manual_review { border-left-color:#d97706; }
+.calculationStandardCard header { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:start; }
+.calculationStandardCard header>span { width:34px; height:34px; display:grid; place-items:center; border-radius:8px; background:#eff6ff; color:#1d4ed8; font-weight:800; }
+.calculationStandardCard h4 { margin:0 0 4px; color:#0f172a; }
+.calculationStandardCard header p { margin:0; color:#475569; font-size:12px; }
+.calculationStandardRefs { margin-top:10px; display:grid; gap:6px; }
+.calculationStandardRefs>strong { color:#1e3a8a; font-size:11px; }
+.calculationStandardRefs>div { display:flex; gap:6px; flex-wrap:wrap; }
+.calculationStandardCard dl { display:grid; grid-template-columns:70px 1fr; gap:5px 8px; margin:10px 0 0; font-size:12px; }
+.calculationStandardCard dt { color:#1e3a8a; font-weight:700; }
+.calculationStandardCard dd { margin:0; color:#334155; }
+.qualityEvidenceBadge { display:inline-flex; padding:5px 8px; border:1px solid #a7f3d0; border-radius:7px; background:#ecfdf5; color:#047857; font-size:11px; font-weight:700; }
+.workflowDocsLink { grid-column:1/-1; justify-self:start; color:#1d4ed8; font-weight:700; }
+.standardsProcessStack { display:grid; gap:16px; }
+.standardsProcessStep { padding:0; overflow:hidden; }
+.standardsProcessStep>header { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:14px 16px; background:#eff6ff; border-bottom:1px solid #bfdbfe; }
+.standardsProcessStep.critical>header { background:#fff1f2; border-bottom-color:#fecdd3; }
+.standardsProcessStep>header>span { display:grid; place-items:center; width:56px; height:42px; border-radius:8px; background:#1d4ed8; color:#fff; font-weight:800; font-size:11px; }
+.standardsProcessStep>header h3 { margin:0; }
+.standardsProcessStep>header p { margin:2px 0 0; color:#64748b; font-size:11px; }
+.calculationLinkTimeline { display:grid; }
+.calculationLinkRow { display:grid; grid-template-columns:64px minmax(260px,1.1fr) minmax(320px,1.4fr) minmax(150px,.65fr); gap:14px; padding:14px 16px; border-bottom:1px solid #e2e8f0; align-items:start; }
+.calculationLinkRow:last-child { border-bottom:0; }
+.calculationSequence { width:42px; height:42px; display:grid; place-items:center; border-radius:50%; background:#dbeafe; color:#1d4ed8; font-weight:800; }
+.calculationDefinition h4 { margin:0 0 5px; }
+.calculationDefinition p,.calculationStandards p { margin:0; color:#475569; font-size:12px; line-height:1.55; }
+.calculationDefinition small { display:block; margin-top:7px; color:#334155; }
+.calculationStandards { display:grid; gap:7px; }
+.calculationStandards>strong { font-size:11px; color:#1e3a8a; }
+.calculationStandards>div { display:flex; gap:6px; flex-wrap:wrap; }
+.calculationEvidence { display:grid; gap:8px; justify-items:start; }
+.standardsProcessStep>footer { padding:12px 16px; background:#f8fafc; color:#334155; font-size:12px; border-top:1px solid #e2e8f0; }
+@media(max-width:1100px){ .calculationLinkRow{grid-template-columns:52px 1fr}.calculationStandards,.calculationEvidence{grid-column:2}.workflowCalculationMap{grid-template-columns:1fr} }
+@media(max-width:720px){ .workflowStandardsRibbon{grid-template-columns:1fr}.calculationLinkRow{grid-template-columns:1fr}.calculationSequence,.calculationStandards,.calculationEvidence{grid-column:1} }
+
+/* V3.12 retaining warning closure: unresolved risks and successful algorithm actions are shown separately. */
+.retainingEvidencePanel {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #d8e0ea);
+  border-radius: 12px;
+  background: var(--panel, #fff);
+}
+.retainingEvidenceHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.retainingEvidenceHeader p { margin: 4px 0 0; }
+.evidenceStatusBadges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.statusTag.info { background: #eaf2ff; color: #174ea6; border-color: #b9d0ff; }
+.unresolvedWarningList {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-left: 4px solid #d97706;
+  background: #fff8e8;
+}
+.unresolvedWarningList h4 { margin: 0 0 6px; }
+.unresolvedWarningList ol,
+.designEvidenceDetails ol { margin: 8px 0 0; padding-left: 22px; }
+.unresolvedWarningList li,
+.designEvidenceDetails li { margin: 5px 0; line-height: 1.55; }
+.designEvidenceDetails {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border, #d8e0ea);
+  border-radius: 9px;
+  background: #f8fafc;
+}
+.designEvidenceDetails summary { cursor: pointer; font-weight: 700; }
+@media (max-width: 900px) {
+  .retainingEvidenceHeader { flex-direction: column; }
+  .evidenceStatusBadges { justify-content: flex-start; }
+}
+.strengthLoopPanel { margin: .75rem 0; padding: .7rem .75rem; border: 1px solid #bfdbfe; border-radius: 10px; background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 70%); }
+.strengthLoopTitle { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.strengthLoopNote { margin: .35rem 0 0; color: #475569; }
+@media (max-width: 720px) { .strengthLoopTitle { align-items: flex-start; flex-direction: column; } }
+
+.table-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button.danger { background: #b42318; border-color: #b42318; color: #fff; }
+button.danger:hover:not(:disabled) { background: #912018; border-color: #912018; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.expertDesignPanel { margin-top: 18px; padding: 18px; border: 1px solid #bfdbfe; border-radius: 20px; background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%); }
+.expertDesignStatusGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 12px 0; }
+.expertDesignStatusGrid > div { display: grid; gap: 5px; border: 1px solid #dbeafe; border-radius: 14px; padding: 12px; background: #fff; }
+.expertDesignStatusGrid span { color: #64748b; font-size: 12px; }
+.expertDesignStatusGrid strong { text-transform: uppercase; }
+.expertDesignStatusGrid em { color: #475569; font-style: normal; line-height: 1.45; }
+.expertRuleStrip { display: flex; gap: 12px; align-items: flex-start; border-left: 4px solid #2563eb; padding: 10px 12px; background: #eff6ff; border-radius: 8px; }
+.expertRuleStrip span { color: #334155; }
+.status-pass { color: #15803d; } .status-warning, .status-manual_review { color: #b45309; } .status-fail { color: #b91c1c; }

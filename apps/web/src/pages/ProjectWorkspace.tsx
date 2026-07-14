@@ -30,7 +30,7 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+type BackendTaskOperation = 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
 
 function DeferredDetails({ summary, defaultOpen = false, children }: { summary: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -478,7 +478,7 @@ function EngineeringDecisionBoard({ project, steps, onJump }: { project: Project
   const warningItems = latest?.formalReportGate?.warningItems?.length ?? latest?.checkSummary?.warning ?? 0;
   const readiness = [
     { label: '地勘资料', value: `${project.boreholes.length} 钻孔 / ${project.strata.length} 地层`, done: project.boreholes.length > 0 && project.strata.length > 0, key: 'boreholes' as const },
-    { label: '地质模型', value: project.geologicalModel?.surfaces?.length ? `${project.geologicalModel.surfaces.length} 个地层面` : '未生成', done: Boolean(project.geologicalModel?.surfaces?.length), key: 'geology' as const },
+    { label: '地质模型', value: project.geologicalModel?.surfaces?.length ? `${project.geologicalModel.surfaces.length} 个地层面${project.geologicalModel.coverageAudit?.autoExtended ? ' / 已外扩' : ''}` : '未生成', done: Boolean(project.geologicalModel?.surfaces?.length && project.geologicalModel?.coverageAudit?.designDomainCovered !== false), key: 'geology' as const },
     { label: '基坑轮廓', value: project.excavation ? `${project.excavation.segments.length} 边段 / ${project.excavation.depth}m` : '未录入', done: Boolean(project.excavation?.segments?.length), key: 'excavation' as const },
     { label: '围护体系', value: ret ? `${ret.diaphragmWalls.length} 墙 / ${ret.supports.length} 支撑 / ${ret.columns.length} 立柱` : '未生成', done: Boolean(ret?.diaphragmWalls?.length && ret?.supports?.length), key: 'retaining' as const },
     { label: '计算结果', value: latest ? `${latest.stageResults?.length ?? 0} 工况结果` : '未计算', done: Boolean(latest), key: 'calculation' as const },
@@ -530,8 +530,12 @@ function buildWorkflowSteps(project: Project): WorkflowStep[] {
     {
       key: 'geology', index: 3, title: '三维地质模型', subtitle: '生成 IDW 地层面，必要时导入 VTU 非结构网格。',
       required: ['已导入钻孔', '已生成地层面', '可提取代表性剖面'],
-      status: project.geologicalModel?.surfaces?.length ? (project.geologicalModel?.warnings?.length ? 'warning' : 'done') : (project.boreholes.length ? 'ready' : 'blocked'),
-      message: project.geologicalModel?.surfaces?.length ? `${project.geologicalModel.surfaces.length} 个地层面` : '需要先导入钻孔并生成模型'
+      status: project.geologicalModel?.surfaces?.length
+        ? (project.geologicalModel?.coverageAudit?.designDomainCovered === false ? 'error' : (project.geologicalModel?.warnings?.length || project.geologicalModel?.coverageAudit?.autoExtended ? 'warning' : 'done'))
+        : (project.boreholes.length ? 'ready' : 'blocked'),
+      message: project.geologicalModel?.surfaces?.length
+        ? `${project.geologicalModel.surfaces.length} 个地层面；${project.geologicalModel.coverageAudit?.message ?? '等待覆盖检查'}`
+        : '需要先导入钻孔并生成模型'
     },
     {
       key: 'excavation', index: 4, title: '基坑轮廓', subtitle: '定义开挖轮廓、坑顶/坑底标高，并生成设计边段。',
@@ -603,11 +607,18 @@ function WorkflowStandardsRibbon({ projectId, revision, stepKey }: { projectId: 
   const step = matrix?.steps.find((item: StandardsProcessStep) => item.workflowStep === stepKey);
   if (!step) return null;
   const mandatory = step.standardRefs.filter((item) => item.level === 'mandatory_all');
+  const links = step.calculationLinks ?? [];
   return <section className={`workflowStandardsRibbon ${step.status}`}>
-    <div className="workflowStandardLead"><span>本步骤规范</span><strong>{step.standardRefs.map((item) => item.code).join(' · ')}</strong><em>{mandatory.length ? `含 ${mandatory.length} 项全文强制通用规范` : '专业设计标准与规程'}</em></div>
-    <div className="workflowStandardBadges">{step.standardRefs.map((item) => item.sourceUrl ? <a href={item.sourceUrl} target="_blank" rel="noreferrer" className={`standardBadge ${item.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={item.id}><b>{item.code}</b><em>{item.levelLabel}</em></a> : <span className={`standardBadge ${item.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={item.id}><b>{item.code}</b><em>{item.levelLabel}</em></span>)}</div>
-    <button className="secondary tiny" onClick={() => setOpen((value) => !value)}>{open ? '收起规范矩阵' : '展开计算与条文对应'}</button>
-    {open ? <div className="workflowStandardDetail"><div><h4>关键计算</h4><p>{step.keyCalculations.join('；')}</p></div><div><h4>条文关注点</h4><p>{step.clauseFocus.join('；')}</p></div><div><h4>输出与状态</h4><p>{step.outputs.join('；')}</p><span className={`matrixStatus ${step.status}`}>{step.status} · 规则 {step.ruleCount} 项</span></div><div className="workflowRuleTrace"><h4>已实现规则与条文证据</h4>{step.rules.length ? step.rules.map((rule) => <span className="ruleTrace" key={String(rule.ruleId)}><b>{String(rule.ruleId)}</b><em>{String(rule.clauseReference ?? '条文待项目复核')}</em></span>) : <p>当前步骤仅建立规范入口和人工复核边界，尚无可自动执行的条文规则。</p>}</div><a href="/docs" target="_blank" rel="noreferrer">打开完整在线计算与规范文档</a></div> : null}
+    <div className="workflowStandardLead"><span>本步骤计算—规范链</span><strong>{step.index}. {step.title}</strong><em>{mandatory.length ? `${mandatory.length} 项全文强制规范参与门禁` : '专业标准按具体计算绑定'}</em></div>
+    <div className="workflowStandardsSummary"><span className={`matrixStatus ${step.status}`}>{step.status}</span><b>{links.length} 个计算节点</b><b>{step.ruleCount} 条已实现规则</b></div>
+    <button className="secondary tiny" onClick={() => setOpen((value) => !value)}>{open ? '收起对应关系' : '展开逐项计算—规范对应'}</button>
+    {open ? <div className="workflowCalculationMap">{links.map((link) => <article className={`calculationStandardCard ${link.status}`} key={`${step.workflowStep}-${link.sequence}`}>
+      <header><span>{step.index}.{link.sequence}</span><div><h4>{link.calculation}</h4><p>{link.method}</p></div><em className={`matrixStatus ${link.status}`}>{link.status}</em></header>
+      <div className="calculationStandardRefs"><strong>直接适用规范</strong><div>{link.standardRefs.length ? link.standardRefs.map((std) => std.sourceUrl ? <a href={std.sourceUrl} target="_blank" rel="noreferrer" className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></a> : <span className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></span>) : <span className="qualityEvidenceBadge">软件数值质量门禁</span>}</div></div>
+      <dl><dt>条文关注</dt><dd>{link.clauseFocus}</dd><dt>输出证据</dt><dd>{link.output}</dd></dl>
+      <details className="ruleTraceDetails"><summary>规则与条文证据（{link.ruleCount}）</summary>{link.rules.length ? link.rules.slice(0, 12).map((rule) => <span className="ruleTrace" key={String(rule.ruleId)}><b>{String(rule.ruleId)}</b><em>{String(rule.clauseReference ?? '条文适用条件需项目复核')}</em></span>) : <p>该节点当前采用方法说明或人工复核门禁，尚无可自动执行的条文规则。</p>}</details>
+    </article>)}</div> : <div className="workflowStandardsPreview">{links.slice(0, 4).map((link) => <span key={link.calculation}><b>{link.sequence}</b>{link.calculation}<em>{link.standardRefs.map((std) => std.code).join(' / ') || '数值质量'}</em></span>)}</div>}
+    <a className="workflowDocsLink" href="/docs" target="_blank" rel="noreferrer">打开完整计算原理与规范追溯文档</a>
   </section>;
 }
 
@@ -747,12 +758,13 @@ function GeologyStep({ project, runStep, importVtu, vtuMessage }: { project: Pro
 
 function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
   const [open, setOpen] = useState(false);
-  const [weightPreset, setWeightPreset] = useState<'balanced' | 'fewer_columns' | 'low_axial_force' | 'muck_path_priority'>('balanced');
+  const [weightPreset, setWeightPreset] = useState<'balanced' | 'clean_support_layout' | 'fewer_columns' | 'low_axial_force' | 'muck_path_priority'>('clean_support_layout');
   const defaultWeights: Record<string, number> = {
     spacingDeviation: 20,
     spanLength: 16,
     obstacleConflict: 34,
-    supportCrossing: 40,
+    supportCrossing: 80,
+    junctionComplexity: 64,
     columnCount: 7,
     muckPathContinuity: 8,
     axialPeakProxy: 11,
@@ -761,16 +773,17 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
     replacementContinuity: 8
   };
   const objectiveMeta = [
-    ['spacingDeviation', '间距偏差'], ['spanLength', '跨长'], ['obstacleConflict', '障碍冲突'], ['supportCrossing', '支撑交叉'], ['columnCount', '立柱数量'], ['muckPathContinuity', '出土通道'], ['axialPeakProxy', '轴力峰值'], ['symmetry', '平面对称'], ['endpointValidity', '端点有效'], ['replacementContinuity', '换撑连续']
+    ['spacingDeviation', '间距偏差'], ['spanLength', '跨长'], ['obstacleConflict', '障碍冲突'], ['supportCrossing', '非法穿越'], ['junctionComplexity', '汇交节点复杂度'], ['columnCount', '立柱数量'], ['muckPathContinuity', '出土通道'], ['axialPeakProxy', '轴力峰值'], ['symmetry', '平面对称'], ['endpointValidity', '端点有效'], ['replacementContinuity', '换撑连续']
   ] as const;
   const presetWeights: Record<string, Record<string, number>> = {
     balanced: {},
+    clean_support_layout: { supportCrossing: 80, junctionComplexity: 80, symmetry: 18, spanLength: 18 },
     fewer_columns: { columnCount: 28, spanLength: 18 },
     low_axial_force: { axialPeakProxy: 32, spanLength: 25, spacingDeviation: 20 },
-    muck_path_priority: { muckPathContinuity: 34, obstacleConflict: 48, supportCrossing: 44 }
+    muck_path_priority: { muckPathContinuity: 34, obstacleConflict: 48, supportCrossing: 80, junctionComplexity: 64 }
   };
   const presetToWeights = (preset: keyof typeof presetWeights) => ({ ...defaultWeights, ...presetWeights[preset] });
-  const [weights, setWeights] = useState<Record<string, number>>(presetToWeights('balanced'));
+  const [weights, setWeights] = useState<Record<string, number>>(presetToWeights('clean_support_layout'));
   const [lockedIds, setLockedIds] = useState<string[]>(project.retainingSystem?.supports?.filter((s) => s.optimizationLocked).map((s) => s.id) ?? []);
   const [lockedStartIds, setLockedStartIds] = useState<string[]>(project.retainingSystem?.supports?.filter((s) => s.optimizationLockedStart).map((s) => s.id) ?? []);
   const [lockedEndIds, setLockedEndIds] = useState<string[]>(project.retainingSystem?.supports?.filter((s) => s.optimizationLockedEnd).map((s) => s.id) ?? []);
@@ -793,6 +806,11 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   const toggleLevel = (level: number) => setLockedLevels((prev) => prev.includes(level) ? prev.filter((item) => item !== level) : [...prev, level]);
   const levels = Array.from(new Set((project.retainingSystem?.supports ?? []).map((s) => s.levelIndex))).sort((a, b) => a - b);
   const candidates = project.retainingSystem?.supportLayoutRepair?.candidates ?? [];
+  const layoutSummary = project.retainingSystem?.layoutSummary ?? {};
+  const designNotes = Array.isArray(layoutSummary.designNotes)
+    ? layoutSummary.designNotes.map((item) => String(item)).filter(Boolean)
+    : [];
+  const unresolvedWarnings = project.retainingSystem?.warnings ?? [];
   const previewRows = candidates.map((c) => {
     const terms = c.objectiveTerms ?? {};
     const penalty = Object.entries(weights).reduce((sum, [key, value]) => sum + value * Math.min(Number(terms[key] ?? 0), 3), 0)
@@ -813,6 +831,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
           <h4>支撑优化权重可视化</h4>
           <label className="stackedLabel">优化偏好
             <select value={weightPreset} onChange={(event) => applyPreset(event.target.value as any)}>
+              <option value="clean_support_layout">整洁优先：交叉点和内部汇交节点最少</option>
               <option value="balanced">均衡：间距、跨长、交叉、障碍、立柱和轴力综合</option>
               <option value="fewer_columns">优先少立柱</option>
               <option value="low_axial_force">优先低轴力峰值</option>
@@ -824,7 +843,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
           </div>
           {previewRows.length ? <table className="table compactTable"><thead><tr><th>实时预览排名</th><th>原排名</th><th>原评分</th><th>新评分</th><th>支撑/立柱</th></tr></thead><tbody>{previewRows.map((row, idx) => <tr key={row.id}><td>{idx + 1}</td><td>{row.rank}</td><td>{row.oldScore}</td><td>{row.previewScore.toFixed(1)}</td><td>{row.supportCount}/{row.columnCount}</td></tr>)}</tbody></table> : <p className="small">生成候选方案后，滑块会实时显示权重变化对候选排序的影响。</p>}
           <button onClick={() => runStep('正在按约束优化器生成候选支撑方案', () => api.optimizeSupports(project.id, { preset: weightPreset, objectiveWeights: weights }))} disabled={!project.excavation}>按当前权重生成 3-5 个候选方案</button>
-          <p className="small">优化器以支撑线位置为变量，硬约束包括交叉、障碍穿越、端点吸附、立柱落点和换撑路径；软目标由当前滑块权重控制。</p>
+          <p className="small">优化器先剔除非法穿越、障碍冲突、端点失效、围檩支点超限和换撑中断方案，再优先减少内部 T/Y/X 汇交节点与高度拥挤节点。综合评分只用于区分同等整洁度的可行方案。</p>
         </div>
         <div className="drawerSection">
           <h4>候选方案局部锁定</h4>
@@ -849,6 +868,26 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
         </div>
         <p className="small">提示：运行优化后，请到“计算校核”页查看候选方案差异动画、A/B/C 完整计算比选，并选择“采用此方案”。</p>
       </aside></div>}
+      {(unresolvedWarnings.length > 0 || designNotes.length > 0) && <section className="retainingEvidencePanel">
+        <div className="retainingEvidenceHeader">
+          <div>
+            <strong>围护布置结论与算法证据</strong>
+            <p className="small">风险项只保留当前尚未闭环的问题；自动吸附、避让、重排和删除等成功动作单列为设计证据。</p>
+          </div>
+          <div className="evidenceStatusBadges">
+            <span className={unresolvedWarnings.length ? 'statusTag warning' : 'statusTag pass'}>待处理 {unresolvedWarnings.length}</span>
+            <span className="statusTag info">算法动作 {designNotes.length}</span>
+          </div>
+        </div>
+        {unresolvedWarnings.length > 0 && <div className="unresolvedWarningList">
+          <h4>尚未闭环的设计风险</h4>
+          <ol>{unresolvedWarnings.map((item, index) => <li key={`retaining-warning-${index}`}>{item}</li>)}</ol>
+        </div>}
+        {designNotes.length > 0 && <details className="designEvidenceDetails" open={viewMode === 'professional'}>
+          <summary>查看算法已执行动作与形成的设计证据（{designNotes.length}）</summary>
+          <ol>{designNotes.map((item, index) => <li key={`retaining-note-${index}`}>{item}</li>)}</ol>
+        </details>}
+      </section>}
       <SchemeComparisonPanel
         project={project}
         compact={viewMode === 'compact'}
@@ -1132,7 +1171,8 @@ function ExportPanel({ project, runTask, selectedLocator, onRefresh, viewMode }:
     {blocked && <div className="warning">当前成果存在阻断或尚未计算。审查成果可以生成，施工版发行仍由质量闸门控制。</div>}
     <div className="actionStrip simplifiedActions"><button onClick={() => runTask('全流程计算与成果生成', 'full_delivery', { topN: 3 })} disabled={!project.retainingSystem}>一键生成完整交付包</button><button className="secondary" onClick={() => setAdvanced((v) => !v)}>{advanced ? '收起扩展格式' : '扩展导出格式'}</button></div>
     <div className="exportGrid preferredExports">
-      <ExportCard projectId={project.id} taskOperation="export_formal_drawings" title="正式图纸发行包" description="CAD、PDF、图纸目录、审签、修订和质量门禁。" href={api.formalDrawingPackageUrl(project.id, 'review')} button="生成图纸包" />
+      <ExportCard projectId={project.id} taskOperation="export_coordinated_delivery" title="协同成果交付包" description="施工图、批量PDF、IFC多配置、计算书、钢筋深化、项目快照、逐图质量和验收矩阵。" href={api.coordinatedDeliveryPackageUrl(project.id, 'review')} button="生成协同交付包" />
+      <ExportCard projectId={project.id} taskOperation="export_formal_drawings" title="正式图纸发行包" description="CAD、批量PDF、图纸—模型—计算—规范索引、修订和逐图质量门禁。" href={api.formalDrawingPackageUrl(project.id, 'review')} button="生成图纸包" />
       <ExportCard projectId={project.id} taskOperation="export_ifc_construction_visual" title="IFC 可视化模型" description="用于外部 BIM 查看和专业协调。" href={api.exportUrl(project.id, 'ifc-construction-visual')} button="下载 IFC" />
       <ExportCard projectId={project.id} taskOperation="export_report" title="计算书 DOCX" description="控制结果、问题清单和 A/B/C 方案比选。" href={api.exportUrl(project.id, 'report')} button="下载计算书" />
       <ExportCard projectId={project.id} taskOperation="export_rebar_detailing" title="钢筋加工深化包" description="逐根钢筋、BBS、套筒、吊装和碰撞协调数据。" href={api.rebarDetailingPackageUrl(project.id)} button="下载钢筋 ZIP" />
@@ -1161,6 +1201,8 @@ function ProjectTreeSummary({ project }: { project: Project }) {
         <li>钻孔：{project.boreholes.length}</li>
         <li>地层：{project.strata.length}</li>
         <li>地质面：{project.geologicalModel?.surfaces?.length ?? 0}</li>
+        <li>设计域覆盖：{project.geologicalModel?.coverageAudit?.designDomainCovered === false ? '不足' : (project.geologicalModel?.coverageAudit?.designDomainCovered ? '已覆盖' : '未检查')}</li>
+        <li>平面外扩：{project.geologicalModel?.coverageAudit?.autoExtended ? `${project.geologicalModel.coverageAudit.maximumExtrapolationDistanceM ?? 0} m` : '未外扩'}</li>
         <li>VTU：{project.geologicalModel?.vtuMesh ? '已导入' : '未导入'}</li>
         <li>基坑边段：{project.excavation?.segments?.length ?? 0}</li>
         <li>地连墙：{project.retainingSystem?.diaphragmWalls?.length ?? 0}</li>
@@ -1306,7 +1348,16 @@ function ExportCard({ title, description, href, button, projectId, taskOperation
   return <div className="exportCard"><h3>{title}</h3><p>{description}</p><button onClick={download} disabled={state.running}>{state.running ? '生成中...' : button}</button>{(state.running || state.phase || state.error) && <div className="downloadProgress"><div><em style={{ width: `${Math.max(2, Math.min(100, state.progress || 6))}%` }} /></div><span>{state.error ? `失败：${state.error}` : state.phase}</span></div>}</div>;
 }
 
+function calculationRequiresRefresh(project: Project) {
+  const state = (project.advancedEngineering?.calculationState ?? {}) as Record<string, unknown>;
+  return Boolean(state.requiresRecalculation);
+}
+
 function getLatestResult(project: Project) {
+  // A result belongs to one immutable geometry/topology snapshot.  Hiding stale
+  // values here prevents workflow cards, gates and A/B/C panels from mixing a
+  // newly adopted support system with an earlier calculation.
+  if (calculationRequiresRefresh(project)) return undefined;
   return project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
 }
 
@@ -1332,7 +1383,8 @@ function requirementStatuses(key: WorkflowStepKey, project: Project): { label: s
   if (key === 'geology') return [
     { label: '已导入钻孔', done: project.boreholes.length > 0 },
     { label: '已生成地层面', done: Boolean(project.geologicalModel?.surfaces?.length) },
-    { label: '可提取代表性剖面', done: Boolean(project.geologicalModel?.surfaces?.length || project.geologicalModel?.vtuMesh) }
+    { label: '可提取代表性剖面', done: Boolean(project.geologicalModel?.surfaces?.length || project.geologicalModel?.vtuMesh) },
+    { label: '覆盖围护结构及施工影响区', done: project.geologicalModel?.coverageAudit?.designDomainCovered !== false && Boolean(project.geologicalModel?.surfaces?.length) }
   ];
   if (key === 'excavation') return [
     { label: '轮廓闭合', done: Boolean(project.excavation?.outline?.closed) },

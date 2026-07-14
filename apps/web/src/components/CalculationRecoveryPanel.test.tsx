@@ -24,7 +24,7 @@ describe('CalculationRecoveryPanel', () => {
     const runStep = vi.fn(async (_label: string, action: () => Promise<unknown>): Promise<void> => { await action(); });
     render(<CalculationRecoveryPanel project={project} runStep={runStep} />);
     expect(screen.getByText('凹角回墙缺少直接支撑')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '诊断并自动修复复算' }));
+    fireEvent.click(screen.getByRole('button', { name: '诊断并执行强度闭环' }));
     expect(runStep).toHaveBeenCalled();
   });
 });

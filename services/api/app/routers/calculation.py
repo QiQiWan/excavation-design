@@ -7,6 +7,7 @@ from app.schemas.domain import CalculationCase, CalculationResult
 from app.storage.repository import ProjectRepository, get_repository
 from app.services.calculation_trace import build_calculation_trace
 from app.services.wall_length_optimizer import mark_wall_length_recalculated
+from app.services.calculation_state import mark_calculation_state_current
 
 router = APIRouter(prefix="/api/projects/{project_id}/calculation", tags=["calculation"])
 
@@ -36,6 +37,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     project.calculation_results.append(result)
+    mark_calculation_state_current(project, result.id)
     mark_wall_length_recalculated(project, result.id)
     repo.save(project)
     return result
@@ -54,6 +56,7 @@ def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_r
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     project.calculation_results.append(result)
+    mark_calculation_state_current(project, result.id)
     mark_wall_length_recalculated(project, result.id)
     repo.save(project)
     diagnostics = dict((result.design_iteration_summary or {}).get("calculationDiagnostics") or {})

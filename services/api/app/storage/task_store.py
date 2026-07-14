@@ -61,3 +61,9 @@ class SQLiteTaskStore:
             else:
                 rows = connection.execute("SELECT data FROM task_records ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
         return [json.loads(row["data"]) for row in rows]
+
+    def delete_by_project(self, project_id: str) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute("DELETE FROM task_records WHERE project_id = ?", (project_id,))
+            connection.commit()
+            return int(cursor.rowcount or 0)

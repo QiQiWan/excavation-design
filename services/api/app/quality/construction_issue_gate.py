@@ -64,6 +64,7 @@ def build_construction_issue_gate(
     dxf_validation: dict[str, Any],
     issue_mode: str,
     drawing_completeness: dict[str, Any] | None = None,
+    sheet_quality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     review = review_status(project)
     snapshot = project_snapshot_hash(project)
@@ -86,6 +87,8 @@ def build_construction_issue_gate(
     add("DXF_VALID", dxf_validation.get("status") == "pass", f"DXF校验失败文件数={dxf_validation.get('failCount', 0)}")
     if drawing_completeness is not None:
         add("DRAWING_COMPLETENESS", drawing_completeness.get("status") != "fail", f"施工图完整性阻断项={drawing_completeness.get('blockerCount', 0)}")
+    if sheet_quality is not None:
+        add("DRAWING_SHEET_QUALITY", sheet_quality.get("status") != "fail", f"图纸表达质量评分={sheet_quality.get('score')}，失败图纸={sheet_quality.get('failCount', 0)}")
 
     if issue_mode == "construction":
         add("FOUR_LEVEL_APPROVAL", bool(review.get("approvalValid")), "当前设计快照已完成四级岗位分离审签")
@@ -109,6 +112,7 @@ def build_construction_issue_gate(
         "warningCount": len(warnings),
         "dxfValidationSummary": {k: v for k, v in dxf_validation.items() if k != "results"},
         "drawingCompletenessSummary": {k: v for k, v in (drawing_completeness or {}).items() if k != "checks"},
+        "sheetQualitySummary": {k: v for k, v in (sheet_quality or {}).items() if k != "sheets"},
     }
 
 

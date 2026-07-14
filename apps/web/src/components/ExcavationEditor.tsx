@@ -177,7 +177,25 @@ export default function ExcavationEditor({ project, onSaved }: { project: Projec
     if (!text) return;
     const nums = text.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
     const upper = text.toUpperCase();
-    if (upper.startsWith('RECT') && nums.length >= 4) {
+    if (upper.startsWith('POLY') || upper.startsWith('POLYGON')) {
+      const body = text.replace(/^POLY(?:GON)?\s*/i, '').replace(/\s+CLOSE\s*$/i, '');
+      const parsed = body.split(';').map((token) => token.trim()).filter(Boolean).map((token) => {
+        const pair = token.match(/(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)/);
+        return pair ? { x: Number(pair[1]), y: Number(pair[2]) } : undefined;
+      }).filter((item): item is Point2D => Boolean(item));
+      if (parsed.length >= 3) {
+        commitPoints(parsed);
+        setPolylineClosed(/\bCLOSE\b/i.test(text));
+        setViewBox(initialViewBox(parsed));
+        setError(undefined);
+      } else {
+        setError('POLY 命令至少需要 3 个坐标点，格式：POLY x1,y1; x2,y2; x3,y3 CLOSE');
+      }
+    } else if (upper.startsWith('TOP_ELEV') && nums.length >= 1) {
+      setTopElevation(nums[0]);
+    } else if (upper.startsWith('BOTTOM_ELEV') && nums.length >= 1) {
+      setBottomElevation(nums[0]);
+    } else if (upper.startsWith('RECT') && nums.length >= 4) {
       const [x, y, w, h] = nums;
       commitPoints([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]);
       setPolylineClosed(true);
@@ -264,7 +282,7 @@ export default function ExcavationEditor({ project, onSaved }: { project: Projec
         <span>添加障碍</span>
       </div>
       <div className="quickCommandBar">
-        <label>快速命令 <input className="commandInput" value={command} placeholder="10,20 / RECT 0 0 60 30 / RAMP 30 15 10 20" onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyCommand(); }} /></label>
+        <label>快速命令 <input className="commandInput" value={command} placeholder="POLY 0,0; 60,0; 60,30; 0,30 CLOSE / RECT 0 0 60 30" onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyCommand(); }} /></label>
         <button className="secondary" onClick={applyCommand}>执行命令</button>
       </div>
 
@@ -281,7 +299,7 @@ export default function ExcavationEditor({ project, onSaved }: { project: Projec
             <h4>DXF 与命令</h4>
             <label className="fileButton">导入 DXF<input type="file" accept=".dxf,text/plain" onChange={(e) => e.target.files?.[0] && importDxf(e.target.files[0])} /></label>
             <button className="secondary" onClick={exportDxf}>导出 DXF</button>
-            <label>命令 <input className="commandInput" value={command} placeholder="10,20 / RECT 0 0 60 30 / RAMP 30 15 10 20" onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyCommand(); }} /></label>
+            <label>命令 <input className="commandInput" value={command} placeholder="POLY 0,0; 60,0; 60,30; 0,30 CLOSE / RECT 0 0 60 30" onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyCommand(); }} /></label>
             <button className="secondary" onClick={applyCommand}>执行命令</button>
           </div>
           <div className="drawerSection">

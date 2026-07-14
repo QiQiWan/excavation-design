@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from app.geology.model_builder import build_geological_model_from_boreholes, _bounds_from_excavation
+from app.geology.model_builder import (
+    build_geological_model_from_boreholes,
+    geological_coverage_audit,
+    required_geological_design_bounds,
+)
 from app.geology.section import extract_representative_section
 from app.schemas.domain import GeologicalModel, GeologicalSection
 from app.services.vtu_import import parse_vtu
@@ -15,7 +19,12 @@ router = APIRouter(prefix="/api/projects/{project_id}/geology", tags=["geology"]
 def build_model(project_id: str, grid_size: float = 10.0, repo: ProjectRepository = Depends(get_repository)) -> GeologicalModel:
     project = repo.require(project_id)
     try:
-        model = build_geological_model_from_boreholes(project.boreholes, grid_size=grid_size, required_bounds=_bounds_from_excavation(project))
+        model = build_geological_model_from_boreholes(
+            project.boreholes,
+            grid_size=grid_size,
+            required_bounds=required_geological_design_bounds(project),
+            max_extrapolation_distance_m=project.design_settings.geology_max_extrapolation_distance_m,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     project.geological_model = model
@@ -41,6 +50,11 @@ async def import_vtu(project_id: str, file: UploadFile = File(...), repo: Projec
 @router.get("/model", response_model=GeologicalModel | None)
 def get_model(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> GeologicalModel | None:
     return repo.require(project_id).geological_model
+
+
+@router.get("/coverage")
+def get_coverage(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return geological_coverage_audit(repo.require(project_id))
 
 
 @router.get("/section", response_model=GeologicalSection)

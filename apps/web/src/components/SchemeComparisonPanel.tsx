@@ -165,10 +165,18 @@ export default function SchemeComparisonPanel({
   compact?: boolean;
 }) {
   const candidates = project.retainingSystem?.supportLayoutRepair?.candidates?.slice(0, 3) ?? [];
-  const latest = project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
-  const fullRows = ((latest?.supportLayoutRepair?.candidateFullCalculations
+  const calculationState = toRecord(project.advancedEngineering?.calculationState);
+  const requiresRecalculation = Boolean(calculationState.requiresRecalculation);
+  const latest = requiresRecalculation || !project.calculationResults.length
+    ? undefined
+    : project.calculationResults[project.calculationResults.length - 1];
+  const storedFullRows = ((latest?.supportLayoutRepair?.candidateFullCalculations
     ?? (latest?.reportDiagramData?.candidateFullCalculationComparison as Record<string, unknown>[] | undefined)
     ?? []) as Record<string, any>[]);
+  // A candidate's full calculation is valid only for the topology snapshot that
+  // produced it.  Once geometry/topology changes, show current proxy metrics and
+  // require a fresh comparison instead of silently falling back to stale rows.
+  const fullRows = requiresRecalculation ? [] : storedFullRows;
   const fullById = useMemo(() => new Map(fullRows.map((row) => [String(row.candidateId ?? ''), row])), [fullRows]);
   const recommended = fullRows.find((row) => row.recommendedByFullCalculation) ?? [...fullRows].sort((a, b) => Number(a.decisionRank ?? 99) - Number(b.decisionRank ?? 99))[0];
   const initial = String(recommended?.candidateId ?? project.retainingSystem?.supportLayoutRepair?.selectedCandidateId ?? candidates[0]?.id ?? '');
@@ -212,16 +220,17 @@ export default function SchemeComparisonPanel({
   }
 
   return <section className={`schemeComparisonPanel ${compact ? 'compact' : ''}`}>
+    {requiresRecalculation && <div className="warning schemeStateWarning"><strong>当前支撑拓扑已变更，旧计算结果已归档。</strong><span>原因：{String(calculationState.reason ?? '方案采用或几何修改')}。请重新生成施工工况并计算后再比较或出图。</span></div>}
     <div className="focusSectionHeader">
       <div>
         <span className="sectionKicker">整体方案决策</span>
         <h3>A / B / C 支撑方案比选</h3>
-        <p>三个整体方案并行完整计算。卡片用于快速浏览，选中后可在下方大视口缩放、平移和查看构件编号。</p>
+        <p>候选卡片先展示几何拓扑预检；只有完成独立施工阶段计算后，才显示轴力、位移、围檩内力和工程排名。几何代理值不作为设计内力。</p>
       </div>
       <div className="schemeHeaderActions">
-        <span className={`schemeState ${fullRows.length >= 3 ? 'ready' : 'pending'}`}>{fullRows.length >= 3 ? '完整计算已完成' : '待完整计算'}</span>
+        <span className={`schemeState ${fullRows.length >= 3 ? 'ready' : 'pending'}`}>{requiresRecalculation ? '旧结果已失效' : fullRows.length >= 3 ? '完整计算已完成' : '待完整计算'}</span>
         {!candidates.length && onGenerateCandidates ? <button onClick={() => void onGenerateCandidates()}>生成 A/B/C 候选</button> : null}
-        {candidates.length ? <button className="secondary" disabled={batchBusy} onClick={() => void runParallelComparison()}>{batchBusy ? 'A/B/C 并行计算中…' : '并行完整计算 A/B/C'}</button> : null}
+        {candidates.length ? <button className="secondary" disabled={batchBusy} onClick={() => void runParallelComparison()}>{batchBusy ? 'A/B/C 完整计算中…' : '完整计算 A/B/C'}</button> : null}
       </div>
     </div>
 
@@ -238,7 +247,8 @@ export default function SchemeComparisonPanel({
     </div> : <>
       <div className="schemeOverviewGrid">
         {candidates.map((candidate) => {
-          const full = fullById.get(String(candidate.id ?? '')) ?? toRecord(candidate.fullCalculation);
+          const full = requiresRecalculation ? {} : (fullById.get(String(candidate.id ?? '')) ?? toRecord(candidate.fullCalculation));
+          const hasFullCalculation = full.maxSupportAxialForce != null && full.maxDisplacement != null;
           const isSelected = String(candidate.id) === String(selected?.id);
           const isRecommended = Boolean(full.recommendedByFullCalculation);
           return <button key={String(candidate.id ?? candidate.rank)} type="button" className={`schemeOverviewCard ${isSelected ? 'selected' : ''} ${isRecommended ? 'recommended' : ''}`} onClick={() => setSelectedId(String(candidate.id ?? ''))}>
@@ -246,11 +256,12 @@ export default function SchemeComparisonPanel({
             <SchemePreview candidate={candidate} />
             <div className="schemeKeyMetrics">
               <span><small>支撑 / 立柱</small><strong>{candidate.supportCount} / {candidate.columnCount}</strong></span>
+              <span><small>非法穿越 / 内部汇交</small><strong>{candidate.crossingCount ?? 0} / {candidate.junctionCount ?? Number(candidate.metrics?.internalJunctionCount ?? 0)}</strong></span>
               <span><small>{withUnitLabel('最长跨度', 'length')}</small><strong>{formatEngineeringValue(candidate.maxSpanLength, 'length')}</strong></span>
-              <span><small>{withUnitLabel('最大轴力', 'force')}</small><strong>{formatEngineeringValue(full.maxSupportAxialForce ?? candidate.axialPeakProxy, 'force')}</strong></span>
-              <span><small>{withUnitLabel('最大位移', 'displacement')}</small><strong>{formatEngineeringValue(full.maxDisplacement, 'displacement')}</strong></span>
+              <span><small>{hasFullCalculation ? withUnitLabel('最大轴力', 'force') : '完整计算状态'}</small><strong>{hasFullCalculation ? formatEngineeringValue(full.maxSupportAxialForce, 'force') : '待计算'}</strong></span>
+              <span><small>{hasFullCalculation ? withUnitLabel('最大位移', 'displacement') : '几何拓扑评分'}</small><strong>{hasFullCalculation ? formatEngineeringValue(full.maxDisplacement, 'displacement') : String(candidate.score ?? '—')}</strong></span>
             </div>
-            <div className="schemeRiskLine"><span className={Number(full.failCount ?? candidate.failCount ?? 0) > 0 ? 'riskFail' : 'riskPass'}>Fail {String(full.failCount ?? candidate.failCount ?? 0)}</span><span>Warning {String(full.warningCount ?? candidate.warningCount ?? 0)}</span><span>得分 {String(full.decisionScore ?? candidate.score ?? '—')}</span></div>
+            <div className="schemeRiskLine"><span className={Number(full.failCount ?? candidate.failCount ?? 0) > 0 ? 'riskFail' : 'riskPass'}>{hasFullCalculation ? '计算 Fail' : '拓扑 Fail'} {String(full.failCount ?? candidate.failCount ?? 0)}</span><span>{hasFullCalculation ? '计算 Warning' : '拓扑 Warning'} {String(full.warningCount ?? candidate.warningCount ?? 0)}</span><span>{hasFullCalculation ? `综合得分 ${String(full.decisionScore ?? '—')}` : '未生成设计内力'}</span></div>
           </button>;
         })}
       </div>

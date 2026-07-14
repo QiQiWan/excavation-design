@@ -14,10 +14,61 @@ _LOCK = RLock()
 
 
 def candidate_input_hash(project: Project, candidate: SupportLayoutOptimizationCandidate) -> str:
+    borehole_signature = [
+        {
+            "code": item.code,
+            "x": round(float(item.x), 4),
+            "y": round(float(item.y), 4),
+            "collar": round(float(item.collar_elevation), 4),
+            "layers": [
+                {
+                    "stratum": layer.stratum_code,
+                    "top": round(float(layer.top_elevation), 4),
+                    "bottom": round(float(layer.bottom_elevation), 4),
+                }
+                for layer in item.layers
+            ],
+        }
+        for item in project.boreholes
+    ]
+    wall_signature = []
+    if project.retaining_system:
+        wall_signature = [
+            {
+                "segmentId": wall.segment_id,
+                "thickness": round(float(wall.thickness), 4),
+                "top": round(float(wall.top_elevation), 4),
+                "bottom": round(float(wall.bottom_elevation), 4),
+                "concrete": wall.concrete_grade,
+                "rebar": wall.rebar_grade,
+            }
+            for wall in project.retaining_system.diaphragm_walls
+        ]
+    case_signature = [
+        {
+            "name": case.name,
+            "stages": [
+                {
+                    "type": stage.stage_type,
+                    "excavationElevation": stage.excavation_elevation,
+                    "groundwaterInside": stage.groundwater_level_inside,
+                    "groundwaterOutside": stage.groundwater_level_outside,
+                    "surcharge": stage.surcharge,
+                    "transferredLevels": stage.transferred_support_levels,
+                }
+                for stage in case.stages
+            ],
+        }
+        for case in project.calculation_cases
+    ]
     payload = {
         "projectId": project.id,
         "excavation": project.excavation.model_dump(mode="json", by_alias=True) if project.excavation else None,
         "strata": [item.model_dump(mode="json", by_alias=True) for item in project.strata],
+        "boreholes": borehole_signature,
+        "walls": wall_signature,
+        "calculationCases": case_signature,
+        "geologyCoverage": (project.geological_model.coverage_audit if project.geological_model else None),
         "designSettings": project.design_settings.model_dump(mode="json", by_alias=True),
         "calibrationFactors": (project.advanced_engineering or {}).get("calibrationFactors") or {},
         "candidate": {

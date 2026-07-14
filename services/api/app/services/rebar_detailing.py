@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -46,8 +47,14 @@ def _quantity_from_group(group: ReinforcementGroup, host_length_m: float, host_h
         return 2
     if host_type == "diaphragm_wall" and group.bar_type == "longitudinal":
         return max(2, int(math.floor(host_length_m / spacing_m)) + 1)
-    if host_type == "diaphragm_wall" and group.bar_type in {"distribution", "tie", "additional"}:
-        return max(2, int(math.floor(host_height_m / spacing_m)) + 1) * (2 if group.bar_type == "distribution" else 1)
+    if host_type == "diaphragm_wall" and group.bar_type == "distribution":
+        return max(2, int(math.floor(host_height_m / spacing_m)) + 1) * 2
+    if host_type == "diaphragm_wall" and group.bar_type == "tie":
+        n_plan = max(2, int(math.floor(host_length_m / spacing_m)) + 1)
+        n_height = max(2, int(math.floor(host_height_m / spacing_m)) + 1)
+        return n_plan * n_height
+    if host_type == "diaphragm_wall" and group.bar_type == "additional":
+        return max(2, int(math.floor(host_length_m / spacing_m)) + 1)
     if group.bar_type == "stirrup":
         return max(2, int(math.floor(host_length_m / spacing_m)) + 1)
     return max(2, int(math.floor(host_length_m / spacing_m)) + 1)
@@ -65,13 +72,15 @@ def _shape_for_group(group: ReinforcementGroup, host_type: str) -> tuple[str, st
     return "99", "additional_detail_bar_manual_review", 1.15
 
 
-def _entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGroup, host_length_m: float, host_height_m: float, index: int) -> dict[str, Any]:
+def _entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGroup, host_length_m: float, host_height_m: float, index: int, host_width_m: float | None = None) -> dict[str, Any]:
     qty = _quantity_from_group(group, host_length_m, host_height_m, host_type)
     shape_code, shape_desc, factor = _shape_for_group(group, host_type)
-    if host_type == "diaphragm_wall" and group.bar_type == "longitudinal":
+    if host_type == "diaphragm_wall" and group.bar_type in {"longitudinal", "additional"}:
         base_len = host_height_m
     elif host_type == "diaphragm_wall" and group.bar_type == "distribution":
         base_len = host_length_m
+    elif host_type == "diaphragm_wall" and group.bar_type == "tie":
+        base_len = max(0.35, float(host_width_m or 1.0) - 0.14)
     elif group.bar_type == "stirrup":
         base_len = max(2.4, min(6.0, 2.0 * (host_height_m if host_height_m < 4.0 else 1.0) + 2.0))
     else:
@@ -103,7 +112,7 @@ def _entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGro
         "lapStatus": "manual_review",
         "hookStatus": "manual_review" if shape_code != "00" else "not_applicable",
         "checkStatus": group.check_status,
-        "source": "PitGuard V2.6.0 normative shop-detailing approximation",
+        "source": "PitGuard V3.19 physical-length and two-direction-zoning shop-detailing model",
         "note": group.location_description,
     }
 
@@ -171,8 +180,10 @@ def _make_individual_bar(bar_mark: str, sub_index: int, host_type: str, host_cod
     }
 
 
-def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> dict[str, Any]:
+def build_individual_rebar_geometry(project: Project, max_bars: int | None = None) -> dict[str, Any]:
     ret = project.retaining_system
+    if max_bars is None:
+        max_bars = max(12000, int(getattr(project.design_settings, "reinforcement_full_geometry_max_bars", 60000) or 60000))
     bars: list[dict[str, Any]] = []
     omitted = 0
     if not ret:
@@ -182,12 +193,12 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
         entry_by_group[str(entry["groupId"])] = entry
     fallback_index = 5000
 
-    def resolve_entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGroup, host_length: float, host_height: float) -> dict[str, Any]:
+    def resolve_entry(host_type: str, host_code: str, host_id: str, group: ReinforcementGroup, host_length: float, host_height: float, host_width: float | None = None) -> dict[str, Any]:
         nonlocal fallback_index
         existing = entry_by_group.get(group.id)
         if existing is not None:
             return existing
-        item = _entry(host_type, host_code, host_id, group, host_length, host_height, fallback_index)
+        item = _entry(host_type, host_code, host_id, group, host_length, host_height, fallback_index, host_width)
         fallback_index += 1
         entry_by_group[group.id] = item
         return item
@@ -209,21 +220,86 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
         max_for_group = min(qty, max_bars - len(bars))
         if qty > max_for_group:
             omitted += qty - max_for_group
+        host_length = max(_host_length(host), 0.01)
+        wall_face_offset = max(width / 2.0 - cover, 0.02)
         for i in range(max_for_group):
             t = (i / max(qty - 1, 1)) if group.bar_type != "stirrup" else ((i + 0.5) / max(qty, 1))
             if host_type == "diaphragm_wall" and group.bar_type == "longitudinal":
-                x, y = _point_at(a, b, t, 0.0)
-                x_lap, y_lap = _point_at(a, b, t, cover * 0.65 if i % 2 == 0 else -cover * 0.65)
+                location = f"{group.name} {group.location_description}".lower()
+                face_sign = -1.0 if ("坑内" in location or "inner" in location) else 1.0
+                x, y = _point_at(a, b, t, wall_face_offset * face_sign)
+                x_lap, y_lap = _point_at(a, b, t, (wall_face_offset - min(0.08, cover * 0.65)) * face_sign)
                 z1 = bottom + cover
                 z2 = bottom + (top - bottom) * 0.48
                 z3 = bottom + (top - bottom) * 0.52
                 z4 = top - cover
                 pts = [{"x": x, "y": y, "z": z1}, {"x": x, "y": y, "z": z2}, {"x": x_lap, "y": y_lap, "z": z3}, {"x": x_lap, "y": y_lap, "z": z4}]
+            elif host_type == "diaphragm_wall" and group.bar_type == "distribution":
+                per_face = max(2, qty // 2)
+                face_index = 0 if i < per_face else 1
+                local_i = i if face_index == 0 else i - per_face
+                face_sign = -1.0 if face_index == 0 else 1.0
+                local_t = local_i / max(per_face - 1, 1)
+                z = bottom + cover + (top - bottom - 2 * cover) * local_t
+                x1, y1 = _point_at(a, b, 0.02, wall_face_offset * face_sign); x2, y2 = _point_at(a, b, 0.98, wall_face_offset * face_sign)
+                hx1, hy1 = _point_at(a, b, 0.05, wall_face_offset * face_sign); hx2, hy2 = _point_at(a, b, 0.95, wall_face_offset * face_sign)
+                pts = [{"x": hx1, "y": hy1, "z": z - 0.18}, {"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}, {"x": hx2, "y": hy2, "z": z - 0.18}]
+            elif host_type == "diaphragm_wall" and group.bar_type == "tie":
+                spacing_m = max(float(group.spacing or 450.0) / 1000.0, 0.1)
+                n_plan = max(2, int(math.floor(host_length / spacing_m)) + 1)
+                n_height = max(2, int(math.ceil(qty / n_plan)))
+                plan_idx = i % n_plan
+                height_idx = min(i // n_plan, n_height - 1)
+                station_t = plan_idx / max(n_plan - 1, 1)
+                z_t = height_idx / max(n_height - 1, 1)
+                cx, cy = _point_at(a, b, station_t, 0.0)
+                z = bottom + cover + (top - bottom - 2 * cover) * z_t
+                p1x, p1y = _point_at(a, b, station_t, -wall_face_offset)
+                p2x, p2y = _point_at(a, b, station_t, wall_face_offset)
+                pts = [{"x": p1x, "y": p1y, "z": z}, {"x": p2x, "y": p2y, "z": z}]
+            elif host_type == "diaphragm_wall" and group.bar_type == "additional":
+                description = str(group.location_description or "")
+                match = re.search(r"CH\s*([+-]?[0-9.]+)\s*[~～-]\s*([+-]?[0-9.]+)\s*m", description, flags=re.I)
+                start_ch = max(0.0, min(host_length, float(match.group(1)))) if match else 0.0
+                end_ch = max(start_ch, min(host_length, float(match.group(2)))) if match else host_length
+                elevations_match = re.search(r"EL\s*([^;]+)", description, flags=re.I)
+                elevations: list[float] = []
+                if elevations_match and "full" not in elevations_match.group(1).lower():
+                    for token in elevations_match.group(1).split(","):
+                        try:
+                            elevations.append(float(token.strip()))
+                        except ValueError:
+                            pass
+                n_levels = max(1, len(elevations))
+                per_face_total = max(2, int(math.ceil(qty / 2)))
+                n_plan = max(2, int(math.ceil(per_face_total / n_levels)))
+                face_index = 0 if i < per_face_total else 1
+                local_i = i if face_index == 0 else i - per_face_total
+                level_index = min(local_i // n_plan, n_levels - 1)
+                plan_index = local_i % n_plan
+                face_sign = -1.0 if face_index == 0 else 1.0
+                local_ratio = plan_index / max(n_plan - 1, 1)
+                chainage = start_ch + (end_ch - start_ch) * local_ratio
+                station_t = chainage / max(host_length, 1e-9)
+                x, y = _point_at(a, b, station_t, wall_face_offset * face_sign)
+                if "corner" in description.lower() or "转角" in group.name:
+                    shift = min(0.35 / max(host_length, 1e-9), 0.04)
+                    x2, y2 = _point_at(a, b, max(0.0, min(1.0, station_t + (shift if plan_index % 2 == 0 else -shift))), wall_face_offset * face_sign)
+                    pts = [
+                        {"x": x, "y": y, "z": bottom + cover},
+                        {"x": x, "y": y, "z": bottom + 0.42 * (top - bottom)},
+                        {"x": x2, "y": y2, "z": top - cover},
+                    ]
+                else:
+                    center_z = elevations[level_index] if elevations else (top + bottom) / 2.0
+                    half_height = min(1.2, max(0.45, (top - bottom) * 0.18))
+                    z0 = max(bottom + cover, center_z - half_height)
+                    z1 = min(top - cover, center_z + half_height)
+                    pts = [{"x": x, "y": y, "z": z0}, {"x": x, "y": y, "z": z1}]
             elif host_type == "diaphragm_wall":
                 z = bottom + cover + (top - bottom - 2 * cover) * t
                 x1, y1 = _point_at(a, b, 0.02, 0.0); x2, y2 = _point_at(a, b, 0.98, 0.0)
-                hx1, hy1 = _point_at(a, b, 0.05, 0.0); hx2, hy2 = _point_at(a, b, 0.95, 0.0)
-                pts = [{"x": hx1, "y": hy1, "z": z - 0.18}, {"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}, {"x": hx2, "y": hy2, "z": z - 0.18}]
+                pts = [{"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}]
             elif group.bar_type == "stirrup":
                 x, y = _point_at(a, b, t, 0.0)
                 # Closed stirrup projected as rectangular cage at a station; keep it visible in 3D/CAD and schedule.
@@ -252,16 +328,16 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
                 z = top + (0.12 if i % 2 == 0 else -0.12)
                 x1, y1 = _point_at(a, b, 0.02, normal_offset); x2, y2 = _point_at(a, b, 0.98, normal_offset)
                 pts = [{"x": x1, "y": y1, "z": z}, {"x": x2, "y": y2, "z": z}]
-            bars.append(_make_individual_bar(str(entry["barMark"]), i + 1, host_type, host_code, host_id, group, shape, pts, anchorage, lap, hook, "PitGuard V2.6.0 individual-bar shop-detailing rule geometry"))
+            bars.append(_make_individual_bar(str(entry["barMark"]), i + 1, host_type, host_code, host_id, group, shape, pts, anchorage, lap, hook, "PitGuard V3.19 individual-bar shop-detailing rule geometry"))
             if len(bars) >= max_bars:
                 omitted += max(0, qty - i - 1)
                 return
 
     for wall in ret.diaphragm_walls:
-        host_len = float(wall.design_length or _host_length(wall))
+        host_len = _host_length(wall)
         host_height = _host_height(wall)
         for g in wall.reinforcement or []:
-            e = resolve_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height)
+            e = resolve_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height, float(wall.thickness or 0.8))
             add_many("diaphragm_wall", wall.panel_code, wall.id, g, wall, e, wall.top_elevation, wall.bottom_elevation, float(wall.thickness or 0.8), host_height)
     for beam in [*ret.crown_beams, *ret.wale_beams, *(ret.ring_beams or [])]:
         host_len = _host_length(beam); host_height = float(beam.section.height or 0.8)
@@ -295,7 +371,9 @@ def build_individual_rebar_geometry(project: Project, max_bars: int = 12000) -> 
             "omittedBarCount": omitted,
             "totalCutLengthM": round(total_len, 3),
             "totalWeightKg": round(total_w, 2),
-            "geometryLevel": "V2.6.0 individual centerline geometry with construction-joint, cage-segment, lifting, splice, cover and bend-radius rule checks",
+            "geometryLevel": "V3.19 full physical-wall-length centerline geometry with separated inner/outer cages, two-face distribution bars and tie-grid generation",
+            "geometryComplete": omitted == 0,
+            "hardLimit": max_bars,
         },
     }
 
@@ -307,9 +385,9 @@ def build_rebar_mark_entries(project: Project) -> list[dict[str, Any]]:
         return entries
     counter = 1
     for wall in ret.diaphragm_walls:
-        host_len = float(wall.design_length or _host_length(wall)); host_height = _host_height(wall)
+        host_len = _host_length(wall); host_height = _host_height(wall)
         for g in wall.reinforcement or []:
-            entries.append(_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height, counter)); counter += 1
+            entries.append(_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height, counter, float(wall.thickness or 0.8))); counter += 1
     for beam in [*ret.crown_beams, *ret.wale_beams, *(ret.ring_beams or [])]:
         host_len = _host_length(beam); host_height = float(beam.section.height or 0.8)
         groups = list(beam.reinforcement or [])
@@ -508,10 +586,10 @@ def build_rebar_detailing(project: Project, mode: str = "balanced") -> dict[str,
         return {"projectId": project.id, "entries": [], "summary": {"barCount": 0, "totalWeightKg": 0.0}, "notes": ["No retaining system."]}
     counter = 1
     for wall in ret.diaphragm_walls:
-        host_len = float(wall.design_length or _host_length(wall))
+        host_len = _host_length(wall)
         host_height = _host_height(wall)
         for g in wall.reinforcement or []:
-            entries.append(_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height, counter)); counter += 1
+            entries.append(_entry("diaphragm_wall", wall.panel_code, wall.id, g, host_len, host_height, counter, float(wall.thickness or 0.8))); counter += 1
     for beam in [*ret.crown_beams, *ret.wale_beams, *(ret.ring_beams or [])]:
         host_len = _host_length(beam)
         host_height = float(beam.section.height or 0.8)

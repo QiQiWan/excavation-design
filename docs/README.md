@@ -1,68 +1,55 @@
 # PitGuard 文档中心
 
-现行文档按主题维护，历史版本说明统一归档，避免根目录堆积大量迭代记录。
+现行文档按产品工作流、计算原理、深化设计、成果交付和版本记录组织。发生冲突时，优先级依次为：当前版本源码与自动化测试、V3.21 现行文档、历史版本文档。
 
-## 现行文档
+## 当前版本 V3.21
 
-### 当前版本
-
-- [V3.11.0 规范追溯、钢筋成套交付与在线计算文档](releases/V3_11_0_STANDARDS_TRACEABILITY_AND_REBAR_DELIVERY.md)
+- [工业化成熟度审查与整洁支撑拓扑优化](engineering/24_INDUSTRIAL_MATURITY_AND_CLEAN_SUPPORT_OPTIMIZATION.md)
+- [V3.21.0 版本说明](releases/V3_21_0_CLEAN_SUPPORT_TOPOLOGY_AND_INDUSTRIAL_MATURITY.md)
+- [设计院式围护设计、施工分幅、完整钢筋笼与八阶段成果闭环](engineering/23_DESIGN_INSTITUTE_PIPELINE_SUPPORT_WALL_CAGE.md)
+- [V3.20.0 版本说明](releases/V3_20_0_DESIGN_INSTITUTE_PIPELINE_AND_REBAR_CAGE.md)
+- [专家式支撑、双向配筋与墙长设计](engineering/22_EXPERT_SUPPORT_REBAR_WALL_LENGTH_DESIGN.md)
+- [项目删除、墙—墙角撑与地质设计域闭环](engineering/21_PROJECT_DELETION_CORNER_SUPPORT_AND_GEOLOGY_COVERAGE.md)
+- [一般多边形围护设计、计算状态一致性与地质设计域](engineering/20_GENERAL_POLYGON_STATE_AND_GEOLOGY_DOMAIN.md)
+- [强度驱动的方案—构件联合设计与计算恢复](engineering/19_STRENGTH_DRIVEN_CALCULATION_RECOVERY.md)
+- [工程施工图体系与协同成果导出](engineering/18_ENGINEERING_DRAWINGS_AND_COORDINATED_EXPORT.md)
 - [设计流程—规范追溯、钢筋深化包与在线计算文档](engineering/16_STANDARDS_TRACEABILITY_REBAR_PACKAGE_AND_ONLINE_DOCUMENTATION.md)
-- [钢筋加工深化包使用指南](operations/07_REBAR_DETAILING_PACKAGE_USAGE.md)
-- [V3.10.0 P0–P2 集成迭代](releases/V3_10_0_P0_P2_INTEGRATED_ITERATION.md)
-- [V3.10.0 详细实施清单](releases/V3_10_0_DETAILED_IMPLEMENTATION_CHECKLIST.md)
-- [V3.10.0 验证记录](releases/V3_10_0_VERIFICATION.md)
-- [几何写回、并行方案、场地路径与模块审查技术说明](engineering/15_GEOMETRY_WRITEBACK_PARALLEL_SCHEME_SITE_ROUTING_MODULE_ASSURANCE_UX.md)
-- [V3.9.0 深化优化、单位体系、整案比选与聚焦交互](releases/V3_9_0_DETAILING_OPTIMIZATION_UNITS_SCHEME_UX.md)
-- [V3.9.0 验证记录](releases/V3_9_0_VERIFICATION.md)
-- [深化优化、单位治理与聚焦型交互技术说明](engineering/14_DETAILING_OPTIMIZATION_AND_FOCUSED_UX.md)
-- [V3.8.0 深化设计与运行环境诊断](releases/V3_8_0_DEEP_DETAILING_AND_ENV_CHECK.md)
-- [V3.8.0 验证记录](releases/V3_8_0_VERIFICATION.md)
-- [深化设计与启动环境诊断技术说明](engineering/13_DEEP_DETAILING_AND_STARTUP_ENV_DIAGNOSTICS.md)
-- [V3.7.0 专业施工图生产链](releases/V3_7_0_PROFESSIONAL_CONSTRUCTION_DRAWING_PIPELINE.md)
-- [V3.7.0 四阶段详细实施清单](releases/V3_7_0_DETAILED_IMPLEMENTATION_CHECKLIST.md)
-- [专业施工图生产链技术说明](engineering/12_PROFESSIONAL_CONSTRUCTION_DRAWING_PIPELINE.md)
-- [V3.6.0 支撑拓扑、整案比选与交互收束](releases/V3_6_0_SUPPORT_TOPOLOGY_SCHEME_UX.md)
-- [V3.5.0 异形基坑计算恢复与智能出图](releases/V3_5_0_CONCAVE_PIT_RECOVERY_AND_DRAWING_INTELLIGENCE.md)
-- [V3.4.0 可配置出图规则引擎](releases/V3_4_0_CONFIGURABLE_DRAWING_RULE_ENGINE.md)
-- [版本记录](releases/CHANGELOG.md)
 
-### 架构与工程说明
+## 产品、架构与计算
 
 - [产品范围与工作流](architecture/01_PRODUCT_SCOPE_AND_WORKFLOW.md)
-- [系统架构与数据接口](architecture/02_ARCHITECTURE_DATA_AND_API.md)
+- [系统架构、数据与 API](architecture/02_ARCHITECTURE_DATA_AND_API.md)
 - [计算方法与工程边界](engineering/03_CALCULATION_METHOD_AND_BOUNDARIES.md)
-- [几何、云图与交付一致性](engineering/04_GEOMETRY_RESULT_AND_DELIVERY_CONSISTENCY.md)
+- [几何、结果与交付一致性](engineering/04_GEOMETRY_RESULT_AND_DELIVERY_CONSISTENCY.md)
 - [配筋设计、三维审查与 CAD 成套出图](engineering/07_REBAR_DESIGN_VISUALIZATION_AND_CAD_DRAWING_SET.md)
 - [高级工程分析、监测反演与审签](engineering/08_ADVANCED_ENGINEERING_MONITORING_REVIEW.md)
-- [可配置、可优化出图规则引擎](engineering/09_CONFIGURABLE_DRAWING_RULE_ENGINE.md)
+- [可配置出图规则引擎](engineering/09_CONFIGURABLE_DRAWING_RULE_ENGINE.md)
+
+## 运行、质量与交付
+
 - [运行、部署与故障排查](operations/05_OPERATION_DEPLOYMENT_AND_TROUBLESHOOTING.md)
 - [测试、质量门禁与发布](operations/06_TESTING_QUALITY_AND_RELEASE.md)
+- [钢筋加工深化包使用指南](operations/07_REBAR_DETAILING_PACKAGE_USAGE.md)
+- [后端默认端口 8002](releases/V3_7_0_BACKEND_PORT_8002.md)
 
-### 历史正式版本
+## 版本记录
 
-- [V3.3.0 八项工程深化闭环](releases/V3_3_0_EIGHT_TRACK_ENGINEERING_CLOSURE.md)
-- [V3.3.0 验证记录](releases/V3_3_0_VERIFICATION.md)
+- [版本变更记录](releases/CHANGELOG.md)
+- `releases/`：V3.0—V3.21 正式版本说明和验证记录；
+- `reference/`：标准矩阵、在线文档快照、数据格式、IFC 映射和监测模板；
+- `archive/root-notes/`：V1.x—V2.9 历史材料，仅用于追溯。
 
-- [V3.2.0 配筋失败诊断、支撑拓扑与交互迭代](releases/V3_2_0_REBAR_DIAGNOSTICS_UX.md)
-- [V3.2.0 验证记录](releases/V3_2_0_VERIFICATION.md)
-- [V3.1.0 配筋与 CAD 迭代说明](releases/V3_1_0_REBAR_CAD_ITERATION.md)
-- [V3.1.0 验证记录](releases/V3_1_0_VERIFICATION.md)
-- [V3.0.0 集成迭代说明](releases/V3_0_0_INTEGRATED_ITERATION.md)
-- [V3.0.0 验证记录](releases/V3_0_0_VERIFICATION.md)
+## V3.21 在线文档逻辑
 
-## 参考与历史资料
+在线文档和接口统一采用八阶段流程：
 
-- `reference/`：数据格式、监测 CSV 模板、标准调研、IFC 映射、历史产品蓝图和既有产品需求等参考资料。
-- `archive/root-notes/`：V1.x—V2.9.0 的阶段性迭代说明，仅用于追溯，不再作为现行实现依据。
+1. 设计依据与设计域；
+2. 支护体系与施工分幅；
+3. 候选方案完整计算与选型；
+4. 分阶段计算与规范校核；
+5. 构件截面、双向配筋与墙趾优化；
+6. 钢筋笼、节点与施工深化；
+7. CAD/PDF/IFC/DOCX/XLSX/JSON 成果生成；
+8. 设计、校核、审核、批准与正式发行。
 
-发生文档冲突时，优先级依次为：V3.11.0 现行文档、源码及自动化测试、历史归档文档。
-
-## Runtime updates
-
-- [Backend default port 8002](releases/V3_7_0_BACKEND_PORT_8002.md)
-
-## V3.11 机器可读文档快照
-
-- `reference/standards_process_matrix_v3_11.json`：八步骤流程—规范—规则—输出矩阵；
-- `reference/online_documentation_v3_11.json`：在线操作、计算原理、成果用途和规范矩阵的离线快照。
+项目流水线接口：`GET /api/projects/{project_id}/expert-design/pipeline`。

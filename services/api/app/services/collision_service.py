@@ -21,6 +21,12 @@ def evaluate_model_collisions(project: Project, mode: str = "balanced") -> dict[
     collisions: list[dict[str, Any]] = []
     intended: list[dict[str, Any]] = []
     supports = ret.supports
+    boundary = None
+    if project.excavation and project.excavation.outline and project.excavation.outline.points:
+        pts = [(p.x, p.y) for p in project.excavation.outline.points]
+        if project.excavation.outline.closed and pts and pts[0] != pts[-1]:
+            pts.append(pts[0])
+        boundary = LineString(pts) if len(pts) >= 2 else None
     vertical_clearance_checks = 0
     for i, a in enumerate(supports):
         la = LineString([(a.start.x, a.start.y), (a.end.x, a.end.y)])
@@ -53,17 +59,24 @@ def evaluate_model_collisions(project: Project, mode: str = "balanced") -> dict[
             connected_column = any(
                 _distance_point_line(c.location.x, c.location.y, la) <= aw / 2 + 0.35
                 and _distance_point_line(c.location.x, c.location.y, lb) <= bw / 2 + 0.35
+                and Point(c.location.x, c.location.y).distance(point) <= 0.75
                 for c in ret.columns
             )
             role_pair = {a.support_role, b.support_role}
-            designed_grid_crossing = role_pair == {"main_strut", "secondary_strut"}
-            status = "pass" if near_endpoint or connected_column else "warning" if designed_grid_crossing else "fail"
+            at_wall = bool(boundary is not None and boundary.distance(point) <= 0.35)
+            ring_exception = role_pair == {"ring_strut"} and bool(ret.ring_beams)
+            valid_node = (near_endpoint and at_wall) or (near_endpoint and connected_column) or ring_exception
+            status = "pass" if valid_node else "fail"
             item = {
                 "id": f"COL-SUP-{a.id}-{b.id}", "objectA": a.code, "objectB": b.code,
                 "levelIndex": a.level_index, "x": point.x, "y": point.y,
                 "type": "support_intersection", "status": status,
-                "message": "节点已有端点/立柱支承" if near_endpoint or connected_column else "主次支撑计划交叉，需确认立柱和 D-08 节点" if designed_grid_crossing else "同类支撑在跨中相交且缺少专用节点",
-                "recommendedAction": "核对立柱坐标并补充 D-08 节点" if designed_grid_crossing and status != "pass" else "补充专用节点或调整支撑线" if status == "fail" else "按节点大样复核",
+                "message": (
+                    "支撑在墙端或带立柱的 T/Y 节点连接" if valid_node and not ring_exception
+                    else "环形/径向支撑按内环节点连接" if ring_exception
+                    else "非环形水平支撑发生跨中穿越或节点缺少立柱"
+                ),
+                "recommendedAction": "按节点大样复核" if status == "pass" else "将次对撑或角撑终止于主支撑节点，并在节点设置临时立柱；禁止跨中穿越",
             }
             (intended if item["status"] == "pass" else collisions).append(item)
     for support in supports:

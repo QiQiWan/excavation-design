@@ -383,6 +383,30 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
     ])
     doc.add_paragraph("表中支撑轴力为包络设计值；标准值、影响范围和分项/重要性系数见第9节。节点、长细比、偏心、温度和施工误差需复核。")
 
+    doc.add_heading("6.1 强度驱动设计与自动恢复记录", level=2)
+    iteration = dict((latest.design_iteration_summary or {}) if latest else {})
+    diagnostics = dict(iteration.get("calculationDiagnostics") or {})
+    strength_loop = dict(diagnostics.get("strengthDesignLoop") or {})
+    topology = dict(iteration.get("topologyPreflight") or diagnostics.get("topologyPreflight") or {})
+    wale_repair = dict(topology.get("waleSupportBayRepair") or {})
+    before_audit = dict(wale_repair.get("auditBefore") or {})
+    after_audit = dict(wale_repair.get("auditAfter") or {})
+    _add_table(doc, ["项目", "修复前", "修复后/结论"], [
+        ["围檩最大有效支点间距(m)", before_audit.get("maxBayM", strength_loop.get("waleBayBeforeM", "-")), after_audit.get("maxBayM", strength_loop.get("waleBayAfterM", "-"))],
+        ["自动增补支撑", 0, topology.get("addedSupportCount", strength_loop.get("addedSupportCount", 0))],
+        ["强度状态", "计算前待校核", strength_loop.get("strengthStatus", (latest.governing_values.strength_check_status if latest else "-"))],
+        ["刚度状态", "计算前待校核", strength_loop.get("stiffnessStatus", (latest.governing_values.stiffness_check_status if latest else "-"))],
+        ["最大自动迭代次数", "-", strength_loop.get("iterationLimit", iteration.get("maxDesignIterations", 3))],
+    ], font_size=7)
+    doc.add_paragraph(
+        "强度闭环顺序：围檩支点间距与回墙传力路径硬门禁 → 施工工况同步 → 墙—围檩—支撑计算 → "
+        "墙、围檩和支撑截面/配筋迭代 → 剩余 fail 阻断施工图发行。"
+    )
+    doc.add_paragraph(
+        "拆换撑阶段的压力分带保留楼板或换撑构件标高；闭合围檩端跨按可靠转角节点形成环向传力。"
+        "节点刚度、楼板连接和施工顺序应结合实际设计图与施工组织复核。"
+    )
+
     doc.add_heading("7 计算模型和公式子集", level=1)
     formula_rows = [
         ["主动/被动土压力", "Ka=tan^2(45-phi/2), Kp=tan^2(45+phi/2); pa=(sigma-u)Ka-2c sqrt(Ka)+u; pp=(sigma-u)Kp+2c sqrt(Kp)+u", "JGJ120 水土分算/朗肯子集"],
@@ -390,7 +414,8 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         ["墙体内力", "EI*y'''' + k_s*y + sum(k_i*y_i)=q(z)", "一维弹性地基梁有限差分"],
         ["正截面受弯", "M <= alpha1*fc*b*x*(h0-x/2), alpha1*fc*b*x=fy*As", "GB50010 单筋矩形截面子集"],
         ["受剪筛查", "V <= 0.7*ft*b*h0（箍筋贡献另需详设）", "GB50010 斜截面简化筛查"],
-        ["围檩连续梁", "EI*w\'\'\'\' + k_i*w_i=q；R_i=k_i*w_i；N_i=R_i/cos(theta)", "围檩弯矩/剪力/挠度和支撑节点反力子集"],
+        ["围檩闭合多跨包络", "R_i=q*l_i；M+=qL^2/8；M-=q(L1^2+L2^2)/12；N_i=R_i/cos(theta)", "全局矩阵负责变形协调；构件设计按直接支点和闭合转角节点形成多跨包络"],
+        ["强度驱动迭代", "L_bay<=L_target；E_d<=R_d；delta<=delta_lim；iteration<=N_max", "先修复传力路径，再扩截面/配筋；达到上限仍不满足时保留 fail"],
         ["支撑施工效应", "N_eff=N_wale+0.5N_preload+N_temperature+N_gap；M_e=N*e0", "预加轴力、温度、间隙和偏心筛查"],
         ["抗隆起", "K=(c*Nc+gamma_eff*D*Nq)/(gamma*H+q); phi=0 -> Nc=5.14,Nq=1", "JGJ120 抗隆起概念筛查"],
         ["抗渗流", "K=gamma_eff*D/(gamma_w*Delta h)", "地下水稳定简化筛查"],
@@ -414,7 +439,7 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         doc.add_paragraph(
             f"嵌固安全系数最小值：{_text(gv.embedment_safety_factor_min)}；"
             f"抗隆起安全系数最小值：{_text(gv.heave_safety_factor_min)}；"
-            f"抗渗安全系数最小值：{_text(gv.seepage_safety_factor_min)}。"
+            f"分层渗流风险指数最大值：{_text(gv.seepage_risk_index_max if gv.seepage_risk_index_max is not None else gv.seepage_safety_factor_min)}（数值越小风险越低）。"
         )
         _add_table(doc, ["阶段", "边段", "支撑数", "最大压力(kPa)", "墙最大弯矩", "墙位移(mm)", "校核项数"], [
             [

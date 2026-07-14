@@ -28,8 +28,10 @@ from app.services.rebar_detailing import build_rebar_detailing
 from app.services.rebar_export import export_rebar_detailing_package
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 from app.services.wall_length_optimizer import export_wall_length_redundancy_report, mark_wall_length_recalculated
+from app.services.calculation_state import mark_calculation_state_current
 from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.review_workflow import review_status
+from app.services.delivery_package import export_coordinated_delivery_package
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
 
@@ -157,6 +159,43 @@ class TaskManager:
         with self._lock:
             return self._tasks.get(task_id)
 
+    def delete_project_records(self, project_id: str) -> dict[str, Any]:
+        """Cancel and remove task records/files belonging to a deleted project."""
+        removed_files: list[str] = []
+        with self._lock:
+            task_ids = [task_id for task_id, task in self._tasks.items() if task.project_id == project_id]
+            for task_id in task_ids:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    continue
+                task.cancel_requested = True
+                future = self._futures.pop(task_id, None)
+                if future is not None:
+                    future.cancel()
+                file_path = str((task.result or {}).get("filePath") or "")
+                if file_path:
+                    path = Path(file_path)
+                    try:
+                        resolved = path.resolve()
+                        export_root = EXPORT_DIR.resolve()
+                        if resolved.exists() and (resolved == export_root or export_root in resolved.parents):
+                            if resolved.is_file():
+                                resolved.unlink()
+                                removed_files.append(str(resolved))
+                            elif resolved.is_dir():
+                                shutil.rmtree(resolved)
+                                removed_files.append(str(resolved))
+                    except OSError:
+                        pass
+                self._tasks.pop(task_id, None)
+            self._project_locks.pop(project_id, None)
+        persisted = self._store.delete_by_project(project_id)
+        return {
+            "deletedTaskCount": max(len(task_ids), persisted),
+            "deletedArtifactCount": len(removed_files),
+            "deletedArtifacts": removed_files,
+        }
+
     def cancel(self, task_id: str) -> TaskRecord | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -216,6 +255,8 @@ class TaskManager:
             result = self._run_svg_export(task)
         elif task.operation == "export_formal_drawings":
             result = self._run_formal_drawing_export(task, payload)
+        elif task.operation == "export_coordinated_delivery":
+            result = self._run_coordinated_delivery_export(task, payload)
         elif task.operation == "export_json":
             result = self._run_json_export(task)
         elif task.operation == "export_trace":
@@ -251,6 +292,7 @@ class TaskManager:
         case = project.calculation_cases[-1] if project.calculation_cases else None
         result = run_calculation(project, case)
         project.calculation_results.append(result)
+        mark_calculation_state_current(project, result.id)
         mark_wall_length_recalculated(project, result.id)
         repo.save(project)
         self._check_cancel(task)
@@ -455,6 +497,19 @@ class TaskManager:
         path = export_formal_drawing_package(project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode)
         return self._file_result(path, "application/zip", {"issueMode": issue_mode, "refreshProject": True, "drawingIssueGate": issue_gate})
 
+    def _run_coordinated_delivery_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        project = self._repo().require(task.project_id)
+        issue_mode = str(payload.get("issueMode") or payload.get("issue_mode") or "review")
+        rebar_mode = str(payload.get("rebarMode") or payload.get("rebar_mode") or "balanced")
+        include_ifc = bool(payload.get("includeIfcProfiles", payload.get("include_ifc_profiles", True)))
+        self._stage(task, 20, "生成施工图、批量PDF和逐图质量报告")
+        path = export_coordinated_delivery_package(
+            project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode, include_ifc_profiles=include_ifc
+        )
+        return self._file_result(path, "application/zip", {
+            "packageType": "coordinated_delivery", "issueMode": issue_mode, "rebarMode": rebar_mode, "refreshProject": True
+        })
+
     def _run_rebar_detailing_export(self, task: TaskRecord) -> dict[str, Any]:
         project = self._repo().require(task.project_id)
         self._stage(task, 28, "生成钢筋加工深化 ZIP（XLSX/CSV/JSON/使用说明）")
@@ -467,71 +522,18 @@ class TaskManager:
         return self._file_result(path, "application/zip")
 
     def _run_full_delivery(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
-        outputs: dict[str, Any] = {}
-        self._stage(task, 6, "执行完整计算")
-        outputs["calculation"] = self._run_calculation_full(task, payload)
-        self._stage(task, 32, "生成施工图可视化 IFC")
-        outputs["ifcConstructionVisual"] = self._run_ifc_export(task, {"mode": "construction_visual"})
-        self._stage(task, 46, "生成 CAD 图纸集并执行出图闸门")
-        outputs["cad"] = self._run_cad_export(task, {"scope": "full", "rebarMode": str(payload.get("rebarMode") or "balanced")})
-        self._stage(task, 58, "生成 SVG 图纸包")
-        outputs["svg"] = self._run_svg_export(task)
-        self._stage(task, 64, "生成正式图纸发行包")
-        outputs["formalDrawings"] = self._run_formal_drawing_export(task, {"issueMode": "review", "rebarMode": str(payload.get("rebarMode") or "balanced")})
-        self._stage(task, 70, "生成 DOCX 计算书")
-        outputs["report"] = self._run_report_export(task)
-        self._stage(task, 80, "生成完整 JSON、追溯链和问题清单")
-        outputs["json"] = self._run_json_export(task)
-        outputs["trace"] = self._run_trace_export(task)
-        outputs["issues"] = self._run_issue_report_export(task)
-        outputs["rebarDetailing"] = self._run_rebar_detailing_export(task)
-        outputs["wallLengthRedundancy"] = self._run_wall_length_redundancy_export(task, {"mode": payload.get("wallLengthMode", "balanced")})
-        outputs["designSchemeLedger"] = self._run_design_scheme_ledger_export(task, {"mode": payload.get("wallLengthMode", "balanced")})
-        self._stage(task, 92, "压缩完整交付包")
-        EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-        bundle_dir = EXPORT_DIR / f"{task.project_id}_full_delivery_v{SOFTWARE_VERSION.replace('.', '_')}"
-        if bundle_dir.exists():
-            shutil.rmtree(bundle_dir)
-        bundle_dir.mkdir(parents=True, exist_ok=True)
-        import json, zipfile
-        refreshed_project = self._repo().require(task.project_id)
-        assurance = evaluate_project_assurance(refreshed_project)
-        manifest = {
-            "projectId": task.project_id,
-            "packageVersion": SOFTWARE_VERSION,
-            **version_manifest(),
-            "softwareCapabilityCompleteness": assurance.get("capabilityCompleteness"),
-            "projectModuleCompleteness": assurance.get("moduleOverallCompleteness"),
-            "engineeringCheckStatus": assurance.get("engineeringCheckStatus"),
-            "reviewStatus": (refreshed_project.review_workflow.status if refreshed_project.review_workflow else "not_started"),
-            "officialIssueGateStatus": assurance.get("officialIssueGateStatus"),
-            "officialIssueGateAllowed": assurance.get("officialIssueGateAllowed"),
-            "outputs": outputs,
-            "officialIssueBoundary": "交付文件已生成；是否允许正式发行以 officialIssueGateAllowed 和四级审签结果为准。",
-        }
-        (bundle_dir / "delivery_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-        for name, item in outputs.items():
-            file_path = item.get("filePath") if isinstance(item, dict) else None
-            if file_path:
-                src = Path(str(file_path))
-                if src.exists():
-                    dst = bundle_dir / f"{name}_{src.name}"
-                    shutil.copy2(src, dst)
-        zip_path = EXPORT_DIR / f"{task.project_id}_full_delivery_v{SOFTWARE_VERSION.replace('.', '_')}.zip"
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for file in bundle_dir.iterdir():
-                if file.is_file():
-                    zf.write(file, arcname=file.name)
-        result = self._file_result(zip_path, "application/zip", {
-            "projectId": task.project_id,
-            "outputs": outputs,
-            "refreshProject": True,
-            "softwareCapabilityCompleteness": assurance.get("capabilityCompleteness"),
-            "projectModuleCompleteness": assurance.get("moduleOverallCompleteness"),
-            "engineeringCheckStatus": assurance.get("engineeringCheckStatus"),
-            "officialIssueGateAllowed": assurance.get("officialIssueGateAllowed"),
+        self._stage(task, 5, "执行完整计算、候选方案比较和设计闭环")
+        calculation = self._run_calculation_full(task, payload)
+        self._check_cancel(task)
+        self._stage(task, 72, "生成图纸、IFC、计算书、钢筋深化与审计索引")
+        package = self._run_coordinated_delivery_export(task, {
+            "issueMode": str(payload.get("issueMode") or "review"),
+            "rebarMode": str(payload.get("rebarMode") or "balanced"),
+            "includeIfcProfiles": bool(payload.get("includeIfcProfiles", True)),
         })
-        return result
+        package["calculation"] = calculation
+        package["fullFlow"] = True
+        return package
 
     def _file_result(self, path: Path, media_type: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         digest = None
@@ -561,6 +563,7 @@ class TaskManager:
             "export_drawings_cad": "导出 CAD 图纸包",
             "export_drawings_svg": "导出 SVG 图纸包",
             "export_formal_drawings": "导出正式图纸发行包",
+            "export_coordinated_delivery": "导出协同成果交付包",
             "export_json": "导出 JSON 数据",
             "export_trace": "导出计算追溯链",
             "export_issue_report": "导出问题清单与完成度评估",

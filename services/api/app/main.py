@@ -8,7 +8,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, export, geology, issues, projects, rebar, standards, tasks, wall_optimization
+from app.routers import advanced, assurance, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, issues, projects, rebar, standards, tasks, wall_optimization
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
@@ -16,7 +16,7 @@ from app.services.unit_registry import unit_registry
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.11 integrated P0-P2 engineering assurance, standards-process traceability, reinforced online documentation and deliverable packaging.",
+    description="PitGuard V3.19 expert-coupled support topology, wall reinforcement and vertical wall-length optimization.",
 )
 
 app.add_middleware(
@@ -43,6 +43,7 @@ app.include_router(export.router)
 app.include_router(issues.router)
 app.include_router(rebar.router)
 app.include_router(wall_optimization.router)
+app.include_router(expert_design.router)
 app.include_router(advanced.router)
 
 

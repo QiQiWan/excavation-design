@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ExcavationEditor from './ExcavationEditor';
 import type { Project } from '../types/domain';
 
@@ -24,6 +24,14 @@ describe('ExcavationEditor CAD-like shell', () => {
     expect(screen.getByText('导入 DXF')).toBeInTheDocument();
     expect(screen.getByText('选中边偏移')).toBeInTheDocument();
     expect(screen.getByText('添加障碍')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('10,20 / RECT 0 0 60 30 / RAMP 30 15 10 20')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/POLY 0,0/)).toBeInTheDocument();
+  });
+
+  it('accepts a complete polygon command for an actual project outline', () => {
+    render(<ExcavationEditor project={project} onSaved={() => undefined} />);
+    const input = screen.getByPlaceholderText(/POLY 0,0/) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'POLY -115,-14; -99,-14; -99,-12; -39,-12; -39,-16.5; -13,-16.5; -13,-13; 98,-13; 98,-14.5; 115,-14.5; 115,14.5; 98,14.5; 98,13; -13,13; -13,16.5; -39,16.5; -39,12; -99,12; -99,14; -115,14 CLOSE' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByText('点数').parentElement).toHaveTextContent('20');
   });
 });

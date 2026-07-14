@@ -11,6 +11,7 @@ def evaluate_drawing_completeness(
     detailing: dict[str, Any],
     package_dir: Path,
     issue_mode: str,
+    sheet_quality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate whether the package contains the minimum coordinated content.
 
@@ -41,6 +42,32 @@ def evaluate_drawing_completeness(
     if project.retaining_system and project.retaining_system.support_nodes:
         add("NODE_DETAILS", has_token("D-01") or has_token("DETAIL"), "节点大样已生成")
         add("NODE_HARDWARE_DETAIL", has_token("D-10") or has_token("NODE_HARDWARE"), "节点承压板、加劲板、焊缝与锚筋详图已生成", "warning" if issue_mode == "review" else "fail")
+    if project.retaining_system and len(project.retaining_system.diaphragm_walls) > 1:
+        add("WALL_JOINT_DETAIL", has_token("D-06") or has_token("WALL_JOINT"), "墙幅接头、止水和钢筋笼连接详图已生成")
+    if project.retaining_system and project.retaining_system.columns:
+        add("SUPPORT_COLUMN_DETAIL", has_token("D-03") or has_token("SUPPORT_COLUMN"), "支撑—立柱节点和基础索引详图已生成")
+    if project.retaining_system and project.retaining_system.supports:
+        add("SUPPORT_SPLICE_DETAIL", has_token("D-07") or has_token("SUPPORT_SPLICE"), "支撑锚固、施工缝和错开搭接详图已生成")
+        levels = sorted({int(item.level_index) for item in project.retaining_system.supports})
+        level_plan_count = sum(1 for rel in rels if "SUPPORT_LEVEL" in rel or "S-02-L" in rel or "S02L" in rel)
+        add("SUPPORT_LEVEL_PLANS", level_plan_count >= len(levels), f"支撑分层平面图 {level_plan_count}/{len(levels)} 张")
+
+    def detail_content_check(token: str, required_layers: list[str], min_entities: int, message: str) -> None:
+        candidates = [item for item in dxf_files if token.upper() in item.name.upper() or token.upper() in item.as_posix().upper()]
+        if not candidates:
+            add(f"CONTENT_{token}", False, message)
+            return
+        try:
+            content = candidates[0].read_text(encoding="utf-8", errors="ignore").upper()
+        except OSError:
+            add(f"CONTENT_{token}", False, message)
+            return
+        entity_count = content.count("\n0\nLINE\n") + content.count("\n0\nLWPOLYLINE\n") + content.count("\n0\nCIRCLE\n") + content.count("\n0\nTEXT\n") + content.count("\n0\nMTEXT\n")
+        layers_ok = all(layer.upper() in content for layer in required_layers)
+        add(f"CONTENT_{token}", entity_count >= min_entities and layers_ok, f"{message}；实体数={entity_count}，关键图层={'完整' if layers_ok else '缺失'}", "warning" if issue_mode == "review" else "fail")
+
+    detail_content_check("D-06", ["PIT_WATERSTOP", "PIT_TABLE", "PIT_DIM", "PIT_REBAR_MAIN"], 70, "D-06应包含平剖面、立面、止水、尺寸、钢筋和接头要求表")
+    detail_content_check("D-03", ["PIT_COLUMN", "PIT_SUPPORT", "PIT_FOUNDATION", "PIT_DIM"], 35, "D-03应包含支撑—立柱平面、立面、尺寸和基础索引")
 
     mandatory_schedules = [
         "rebar_schedule.csv",
@@ -62,6 +89,20 @@ def evaluate_drawing_completeness(
             f"SCHEDULE_{filename.upper().replace('.', '_')}",
             (package_dir / "90_schedules" / filename).exists(),
             f"{filename} 已生成",
+        )
+
+
+    if sheet_quality is not None:
+        add(
+            "SHEET_PUBLICATION_QUALITY",
+            sheet_quality.get("status") != "fail",
+            f"图纸表达质量评分={sheet_quality.get('score')}，失败图纸={sheet_quality.get('failCount', 0)}，警告图纸={sheet_quality.get('warningCount', 0)}",
+            "warning" if issue_mode == "review" else "fail",
+        )
+        add(
+            "SHEET_NUMBER_UNIQUENESS",
+            not bool(sheet_quality.get("duplicateSheetNumbers")),
+            f"重复图号={','.join(sheet_quality.get('duplicateSheetNumbers') or []) or '无'}",
         )
 
     fabrication = detailing.get("fabrication") or {}
@@ -101,5 +142,6 @@ def evaluate_drawing_completeness(
         "warningCount": len(warnings),
         "checks": checks,
         "dxfSheetCount": len(dxf_files),
-        "boundary": "图纸完整性门禁验证图种、加工表和几何覆盖；项目级专业签章、现场条件和企业标准仍需人工校审。",
+        "sheetQualitySummary": {k: v for k, v in (sheet_quality or {}).items() if k != "sheets"},
+        "boundary": "V3.13图纸门禁同时检查图种、分层平面、典型节点内容深度、关键图层、原生尺寸、纸空间、图签、加工表和几何覆盖；项目级专业签章、现场条件和企业标准仍需人工校审。",
     }

@@ -16,8 +16,8 @@ from app.version import SOFTWARE_VERSION
 
 RULE_SCHEMA_VERSION = "1.0"
 KNOWN_RENDERERS = {
-    "general_notes", "master_plan", "legacy_support_plan", "support_level_plan",
-    "excavation_section", "monitoring_plan", "wall_rebar_general", "wall_rebar_elevation",
+    "general_notes", "drawing_reference_matrix", "master_plan", "wall_panel_layout", "legacy_support_plan", "support_level_plan",
+    "excavation_section", "longitudinal_section", "construction_stage_sequence", "monitoring_plan", "wall_rebar_general", "wall_rebar_elevation",
     "single_wall_rebar_elevation", "wall_rebar_cage", "support_rebar_general",
     "wale_rebar_general", "rebar_bending_schedule", "rebar_geometry_plan", "splice_layout",
     "cage_lifting_plan", "cover_conflict_check", "shop_signoff", "detail_compilation",
@@ -25,6 +25,7 @@ KNOWN_RENDERERS = {
     "column_pile_detail", "wall_joint_detail", "support_splice_detail", "grid_node_detail", "concave_return_detail",
     "serviceability_quality", "collision_quality", "node_local_quality", "monitoring_calibration",
     "node_hardware_detail", "cage_hoisting_analysis", "coupler_schedule_detail", "embedded_collision_quality",
+    "drawing_quality_summary",
 }
 KNOWN_SCOPES = {"general", "rebar", "details"}
 KNOWN_MODULES = {"general", "rebar", "details", "quality", "monitoring"}
@@ -78,7 +79,7 @@ BASE_RULE_SET: dict[str, Any] = {
     "schemaVersion": RULE_SCHEMA_VERSION,
     "id": "pitguard-balanced",
     "name": "PitGuard 平衡型出图规则集",
-    "version": "3.8.0",
+    "version": "3.13.0",
     "description": "面向工程审查和施工图深化的默认规则集。",
     "preset": "balanced",
     "modules": {
@@ -123,10 +124,13 @@ BASE_RULE_SET: dict[str, Any] = {
     },
     "sheetRules": [
         _sheet("G00", "G-00", "图纸目录、设计总说明与图例", "general", "general", "general_notes", "00_general/G-00_drawing_index_general_notes.dxf", scale="NTS", required=True, priority=100, model_binding=["project", "standards", "drawing_register"]),
+        _sheet("G01", "G-01", "图纸—模型—计算—规范追溯索引", "general", "general", "drawing_reference_matrix", "00_general/G-01_drawing_model_calculation_standard_matrix.dxf", scale="NTS", required=True, priority=99, model_binding=["drawing_register", "model_ids", "calculation_evidence", "standards"]),
         _sheet("S00", "S-00", "基坑围护与支撑总平面图", "global_plan", "general", "master_plan", "10_plans/S-00_retaining_support_general_arrangement.dxf", scale_policy={"kind": "plan", "extent": "project", "preferred": 200}, required=True, priority=100, model_binding=["excavation", "walls", "wales", "supports", "columns"]),
-        _sheet("S01", "S-01", "围护结构分幅及构件编号图", "plan", "general", "legacy_support_plan", "S-01_support_plan.dxf", scale_policy={"kind": "plan", "extent": "project", "preferred": 200}, trigger={"all": [{"path": "parameters.includeLegacyCompatibilitySheets", "op": "eq", "value": True}, {"path": "facts.wallCount", "op": "gt", "value": 0}]}, legacy=True, model_binding=["walls"]),
+        _sheet("S01", "S-01", "地下连续墙分幅、轴线与控制坐标图", "plan", "general", "wall_panel_layout", "10_plans/S-01_wall_panel_axis_control_coordinates.dxf", scale_policy={"kind": "plan", "extent": "project", "preferred": 200}, trigger={"path": "facts.wallCount", "op": "gt", "value": 0}, required=True, priority=96, model_binding=["walls", "excavation_segments", "control_coordinates"]),
         _sheet("S02", "S-02-L{level:02d}", "第{level}道支撑平面布置图", "level_plan", "general", "support_level_plan", "10_plans/S-02-L{level:02d}_support_level_plan.dxf", scale_policy={"kind": "plan", "extent": "project", "preferred": 150}, trigger={"path": "facts.supportLevelCount", "op": "gt", "value": 0}, expansion="per_level", priority=90, model_binding=["support_level_{level}", "walls", "columns", "nodes"]),
-        _sheet("S03", "S-03", "典型开挖剖面与施工阶段图", "section", "general", "excavation_section", "20_sections/S-03_excavation_stage_section.dxf", scale_policy={"kind": "section", "extent": "depth", "preferred": 100}, trigger={"path": "facts.hasExcavation", "op": "eq", "value": True}, required=True, priority=95),
+        _sheet("S03", "S-03", "横向控制剖面与围护嵌固图", "section", "general", "excavation_section", "20_sections/S-03_transverse_control_section.dxf", scale_policy={"kind": "section", "extent": "depth", "preferred": 100}, trigger={"path": "facts.hasExcavation", "op": "eq", "value": True}, required=True, priority=95, model_binding=["excavation", "wall_embedment", "support_levels", "geology"]),
+        _sheet("S04", "S-04", "纵向控制剖面、地下水与支撑分层图", "section", "general", "longitudinal_section", "20_sections/S-04_longitudinal_control_section.dxf", scale_policy={"kind": "section", "extent": "depth", "preferred": 100}, trigger={"path": "facts.hasExcavation", "op": "eq", "value": True}, required=True, priority=94, model_binding=["excavation", "support_levels", "geology", "groundwater"]),
+        _sheet("S05", "S-05", "开挖、支撑安装、换撑与拆撑施工阶段图", "stage_sequence", "general", "construction_stage_sequence", "20_sections/S-05_construction_stage_sequence.dxf", scale="NTS", trigger={"path": "facts.hasExcavation", "op": "eq", "value": True}, required=True, priority=93, model_binding=["calculation_cases", "construction_stages", "replacement_path"]),
         _sheet("M01", "M-01", "监测点布置总图", "monitoring", "general", "monitoring_plan", "S-06_monitoring_plan.dxf", scale_policy={"kind": "plan", "extent": "project", "preferred": 200}, trigger={"any": [{"path": "facts.monitoringRecordCount", "op": "gt", "value": 0}, {"path": "parameters.includeMonitoringLayoutWithoutRecords", "op": "eq", "value": True}]}, legacy=True),
         _sheet("R01", "R-01", "地下连续墙配筋总图", "rebar_general", "rebar", "wall_rebar_general", "30_rebar/R-01_wall_rebar_general_arrangement.dxf", scale_policy={"kind": "plan", "extent": "project", "preferred": 200}, trigger={"path": "facts.wallCount", "op": "gt", "value": 0}, required=True, priority=95),
         _sheet("R02", "R-02", "地下连续墙分区配筋立面图", "rebar_elevation", "rebar", "wall_rebar_elevation", "30_rebar/R-02_wall_rebar_zone_elevation.dxf", scale_policy={"kind": "section", "extent": "wall_elevation", "preferred": 100}, trigger={"path": "facts.wallCount", "op": "gt", "value": 0}, required=True, priority=95),
@@ -149,11 +153,12 @@ BASE_RULE_SET: dict[str, Any] = {
         _sheet("D06", "D-06", "地下连续墙墙幅接头与钢筋笼连接大样", "node_detail", "details", "wall_joint_detail", "40_details/D-06_wall_panel_joint_detail.dxf", scale_policy={"kind": "detail", "preferred": 20}, trigger={"path": "facts.wallCount", "op": "gt", "value": 1}, priority=85),
         _sheet("D07", "D-07", "钢筋混凝土支撑端部锚固与错开搭接大样", "node_detail", "details", "support_splice_detail", "40_details/D-07_support_anchorage_splice_detail.dxf", scale_policy={"kind": "detail", "preferred": 20}, trigger={"path": "facts.rcSupportCount", "op": "gt", "value": 0}, priority=85),
         _sheet("D08", "D-08", "主次支撑网格交叉节点与立柱连接大样", "node_detail", "details", "grid_node_detail", "40_details/D-08_bidirectional_grid_node_detail.dxf", scale_policy={"kind": "detail", "preferred": 20}, trigger={"path": "facts.secondarySupportCount", "op": "gt", "value": 0}, priority=90, model_binding=["main_strut", "secondary_strut", "columns"]),
-        _sheet("D09", "D-09", "异形凹角回墙局部支撑与围檩转折大样", "node_detail", "details", "concave_return_detail", "40_details/D-09_concave_return_wall_support_detail.dxf", scale_policy={"kind": "detail", "preferred": 20}, trigger={"all": [{"path": "facts.concaveVertexCount", "op": "gt", "value": 0}, {"path": "facts.secondarySupportCount", "op": "gt", "value": 0}]}, priority=92, model_binding=["concave_vertices", "secondary_strut", "walls", "wales", "columns"]),
+        _sheet("D09", "D-09", "异形凹角回墙局部支撑与围檩转折大样", "node_detail", "details", "concave_return_detail", "40_details/D-09_concave_return_wall_support_detail.dxf", scale_policy={"kind": "detail", "preferred": 20}, trigger={"path": "facts.concaveVertexCount", "op": "gt", "value": 0}, priority=92, model_binding=["concave_vertices", "main_or_secondary_support", "walls", "wales", "columns"]),
         _sheet("D10", "D-10", "节点承压板、加劲板、焊缝与锚筋深化大样", "node_detail", "details", "node_hardware_detail", "40_details/D-10_node_hardware_detail.dxf", scale_policy={"kind": "detail", "preferred": 20}, trigger={"path": "facts.supportNodeCount", "op": "gt", "value": 0}, priority=96, model_binding=["support_nodes", "bearing_plates", "stiffeners", "welds", "anchor_bars"]),
         _sheet("R10", "R-10", "钢筋笼吊装、运输与临时加强分析图", "rebar_detail", "rebar", "cage_hoisting_analysis", "30_rebar/R-10_cage_hoisting_analysis.dxf", scale="NTS", trigger={"path": "facts.wallCount", "op": "gt", "value": 0}, priority=92, model_binding=["wall_cages", "lifting_points", "transport_segments"]),
         _sheet("R11", "R-11", "机械连接套筒、丝头和接头错开详图", "rebar_detail", "rebar", "coupler_schedule_detail", "30_rebar/R-11_coupler_splice_detail.dxf", scale="NTS", trigger={"path": "facts.hasRetainingSystem", "op": "eq", "value": True}, priority=90, model_binding=["rebar_couplers", "splice_groups"]),
         _sheet("Q04", "Q-04", "预埋件、钢筋和施工净空碰撞检查图", "quality", "details", "embedded_collision_quality", "50_quality/Q-04_embedded_item_collision_check.dxf", scale="NTS", trigger={"path": "facts.supportNodeCount", "op": "gt", "value": 0}, priority=88, model_binding=["embedded_items", "individual_rebar", "clearance_checks"]),
+        _sheet("Q05", "Q-05", "图纸完整性、表达深度与发行质量检查表", "quality", "details", "drawing_quality_summary", "50_quality/Q-05_drawing_publication_quality_summary.dxf", scale="NTS", trigger={"op": "always"}, priority=89, model_binding=["drawing_manifest", "sheet_quality", "issue_gate"]),
         _sheet("Q02", "Q-02", "长期效应与裂缝控制检查图", "quality", "details", "serviceability_quality", "50_quality/Q-02_serviceability_crack_check.dxf", scale="NTS", trigger={"any": [{"path": "facts.hasCalculation", "op": "eq", "value": True}, {"path": "parameters.includeEmptyQualitySheets", "op": "eq", "value": True}]}, priority=70),
         _sheet("Q03", "Q-03", "构件碰撞、净距与节点拥挤检查图", "quality", "details", "collision_quality", "50_quality/Q-03_collision_clearance_check.dxf", scale="NTS", trigger={"any": [{"path": "facts.supportCount", "op": "gt", "value": 0}, {"path": "parameters.includeEmptyQualitySheets", "op": "eq", "value": True}]}, priority=70),
         _sheet("N01", "N-01", "高利用率节点局部复核索引图", "node_analysis", "details", "node_local_quality", "50_quality/N-01_node_local_analysis.dxf", scale="NTS", trigger={"any": [{"path": "facts.nodeWarningCount", "op": "gt", "value": 0}, {"path": "parameters.includeEmptyQualitySheets", "op": "eq", "value": True}]}, priority=75),
@@ -326,8 +331,33 @@ def normalize_drawing_rule_set(payload: dict[str, Any] | None = None, *, preset:
         params[key] = values or deepcopy(BASE_RULE_SET["parameters"][key])
     for key in ("includeEmptyQualitySheets", "includeLegacyCompatibilitySheets", "includeMonitoringLayoutWithoutRecords", "includePerWallElevations", "constructionRequiresCurrentApproval", "constructionRequiresRevision", "reviewWatermark"):
         params[key] = bool(params.get(key, BASE_RULE_SET["parameters"][key]))
+    # Existing projects may carry a serialized rule list from an older release.
+    # Merge newly introduced core sheet rules by id so version upgrades do not
+    # silently hide mandatory engineering sheets.  Projects can explicitly
+    # suppress a core rule through disabledCoreRuleIds.
+    raw_rules = list(rules.get("sheetRules") or [])
+    disabled_core = {str(x) for x in (rules.get("disabledCoreRuleIds") or [])}
+    inherit_new_core = bool(rules.get("inheritNewCoreRules", True))
+    migrate_stored_core = bool((payload or {}).get("sheetRules"))
+    if inherit_new_core:
+        existing_ids = {str(item.get("id") or "") for item in raw_rules if isinstance(item, dict)}
+        for core_rule in BASE_RULE_SET.get("sheetRules", []):
+            core_id = str(core_rule.get("id") or "")
+            if not core_id or core_id in disabled_core:
+                continue
+            # S-01 changed meaning in V3.13 from a compatibility support plan to
+            # the mandatory wall-panel/axis/control-coordinate drawing.  Upgrade
+            # stored built-in rules while leaving unrelated enterprise rules intact.
+            if core_id == "S01" and (migrate_stored_core or base_name == "balanced"):
+                for idx, existing in enumerate(raw_rules):
+                    if str(existing.get("id") or "") == core_id and str(existing.get("renderer") or "") != str(core_rule.get("renderer") or ""):
+                        raw_rules[idx] = deepcopy(core_rule)
+                        break
+            if core_id not in existing_ids:
+                raw_rules.append(deepcopy(core_rule))
+                existing_ids.add(core_id)
     normalized_rules: list[dict[str, Any]] = []
-    for index, raw in enumerate(rules.get("sheetRules") or []):
+    for index, raw in enumerate(raw_rules):
         item = deepcopy(raw)
         item["id"] = str(item.get("id") or f"RULE-{index+1:03d}")[:64]
         item["enabled"] = bool(item.get("enabled", True))
@@ -392,7 +422,8 @@ def _count_rebar_groups(project: Project) -> int:
 
 
 def build_drawing_context(project: Project, rule_set: dict[str, Any] | None = None, advanced_suite: dict[str, Any] | None = None) -> dict[str, Any]:
-    rules = normalize_drawing_rule_set(rule_set or get_effective_drawing_rule_set(project))
+    candidate = rule_set or get_effective_drawing_rule_set(project)
+    rules = deepcopy(candidate) if candidate.get("ruleSetHash") else normalize_drawing_rule_set(candidate)
     ret = project.retaining_system
     supports = list(ret.supports) if ret else []
     levels = sorted({int(s.level_index) for s in supports})
@@ -582,7 +613,8 @@ def build_drawing_plan(
     issue_mode: str = "review",
     advanced_suite: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    rules = normalize_drawing_rule_set(rule_set or get_effective_drawing_rule_set(project))
+    candidate = rule_set or get_effective_drawing_rule_set(project)
+    rules = deepcopy(candidate) if candidate.get("ruleSetHash") else normalize_drawing_rule_set(candidate)
     context = build_drawing_context(project, rules, advanced_suite)
     selected: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []

@@ -54,6 +54,8 @@ class DesignSettings(DomainModel):
     displacement_limit_ratio: float | None = None
     auto_center_excavation_on_geology: bool = True
     default_support_spacing: float = 5.0
+    # Optional project-defined support depths below excavation top. Empty means enterprise auto-layout.
+    support_level_depths_m: list[float] = Field(default_factory=list)
     service_life_years: int = 50
     relative_humidity: float = 0.75
     sustained_load_ratio: float = 0.65
@@ -65,13 +67,75 @@ class DesignSettings(DomainModel):
     require_formal_approval_for_construction: bool = False
     support_wall_clearance_m: float = 1.0
     max_direct_strut_span_m: float = 24.0
+    max_wale_support_bay_m: float = 7.5
+    hard_max_wale_support_bay_m: float = 9.0
+    auto_strength_design_enabled: bool = True
+    max_design_iterations: int = 3
+    # Wall-toe design is a separate strength/stability loop.  It is enabled by
+    # default because support-topology repair cannot close an embedment failure.
+    auto_wall_embedment_design_enabled: bool = True
+    wall_embedment_safety_margin: float = 0.05
+    wall_embedment_search_increment_m: float = 0.25
+    wall_embedment_max_additional_depth_m: float = 20.0
     diagonal_brace_min_wall_length_m: float = 18.0
+    # Corner braces are wall-to-wall compression members located within a local
+    # corner influence zone. They must not terminate on another horizontal strut.
+    corner_diagonal_min_offset_m: float = 3.5
+    corner_diagonal_max_offset_m: float = 8.0
+    corner_diagonal_max_wall_fraction: float = 0.30
     prefer_diagonal_braces: bool = True
+    # Wale-bay repair normally uses direct wall-to-wall V/corner braces.
+    # Support-to-support T/Y repair nodes are disabled unless the engineer
+    # explicitly selects a grid/frame topology that is modelled for them.
+    allow_wale_repair_t_y_nodes: bool = False
     replacement_slab_effective_width_m: float = 6.0
     replacement_slab_thickness_m: float = 0.25
     replacement_slab_elastic_modulus_mpa: float = 30000.0
     replacement_connection_reduction: float = 0.65
     default_workspace_mode: Literal["compact", "professional"] = "compact"
+    # Geological model domain control.  The design model must cover the retaining
+    # wall and a surrounding influence buffer; values outside the borehole trust
+    # domain are extrapolated conservatively and flagged for review.
+    geology_minimum_plan_buffer_m: float = 10.0
+    geology_depth_buffer_ratio: float = 0.5
+    geology_max_extrapolation_distance_m: float = 60.0
+    auto_extend_geology_to_design_domain: bool = True
+    # Expert-design orchestration. Support topology, vertical wall length and
+    # reinforcement zoning are reviewed as one coupled design problem.
+    expert_design_enabled: bool = True
+    wall_vertical_length_optimization_enabled: bool = True
+    wall_vertical_zone_min_run_m: float = 20.0
+    wall_vertical_zone_max_step_m: float = 2.0
+    wall_vertical_max_zone_count: int = 3
+    wall_vertical_length_target_margin: float = 0.08
+    reinforcement_plan_zoning_enabled: bool = True
+    reinforcement_corner_zone_length_m: float = 3.0
+    reinforcement_support_node_zone_half_length_m: float = 1.8
+    reinforcement_full_geometry_max_bars: int = 60000
+    reinforcement_visualization_density_m: float = 4.0
+    # Design-institute style reserve and anti-downgrade rules for wall cages.
+    # These are project design preferences and remain subject to crack-width,
+    # joint, lifting and local-node verification.
+    wall_rebar_target_utilization: float = 0.88
+    wall_rebar_no_downgrade_existing: bool = True
+    wall_rebar_default_max_main_spacing_mm: float = 180.0
+    wall_rebar_long_wall_threshold_m: float = 40.0
+    wall_rebar_long_wall_max_main_spacing_mm: float = 150.0
+    # V3.20 design-institute workflow controls.  The support family is selected
+    # explicitly before line positioning; elongated pits default to direct short-
+    # span struts and near-square pits require an explicit frame/ring decision.
+    support_layout_family: Literal["auto", "direct_strut", "direct_with_corner", "bidirectional_frame", "ring_radial"] = "auto"
+    support_transition_zone_spacing_factor: float = 0.72
+    support_transition_zone_influence_m: float = 8.0
+    support_min_station_separation_m: float = 2.8
+    # A calculation wall can contain several construction panels / reinforcement
+    # cages.  Panelization is preserved through IFC, CAD and detailing exports.
+    wall_panel_target_length_m: float = 6.0
+    wall_panel_min_length_m: float = 3.0
+    wall_panel_max_length_m: float = 7.0
+    wall_toe_design_mode: Literal["uniform", "zoned", "local"] = "uniform"
+    wall_toe_allow_imported_reference_optimization: bool = False
+    rebar_cage_grid_max_lines_per_face: int = 140
 
 
 class Point2D(DomainModel):
@@ -157,6 +221,7 @@ class GeologicalModel(DomainModel):
     volumes: list[dict[str, Any]] = Field(default_factory=list)
     vtu_mesh: dict[str, Any] | None = None
     warnings: list[str] = Field(default_factory=list)
+    coverage_audit: dict[str, Any] = Field(default_factory=dict)
 
 
 class GeologicalLayer(DomainModel):
@@ -290,6 +355,14 @@ class DiaphragmWallPanel(DomainModel):
     thickness: float
     top_elevation: float
     bottom_elevation: float
+    bottom_elevation_source: Literal[
+        "unknown", "enterprise_initial", "imported", "manual", "auto_stability"
+    ] = "unknown"
+    bottom_elevation_locked: bool = False
+    source_bottom_elevation: float | None = None
+    toe_zone_id: str | None = None
+    toe_profile_status: Literal["uniform", "zoned", "local", "reference_locked"] = "uniform"
+    construction_panels: list[dict[str, Any]] = Field(default_factory=list)
     concrete_grade: str = "C35"
     rebar_grade: str = "HRB400"
     reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
@@ -477,7 +550,12 @@ class SupportElement(DomainModel):
     centerline_offset_m: float | None = None
     start_wall_clearance_m: float | None = None
     end_wall_clearance_m: float | None = None
-    topology_family: Literal["direct_grid", "hybrid_diagonal", "bidirectional_grid", "manual"] = "direct_grid"
+    topology_family: Literal["direct_grid", "hybrid_diagonal", "bidirectional_grid", "ring_radial", "manual"] = "direct_grid"
+    design_zone: str | None = None
+    station_chainage_m: float | None = None
+    local_clear_span_m: float | None = None
+    placement_reason: str | None = None
+    load_path_class: Literal["wall_to_wall", "wall_to_ring", "supported_frame_node", "manual"] = "wall_to_wall"
 
 
 class FoundationDesign(DomainModel):
@@ -800,6 +878,9 @@ class SupportLayoutOptimizationCandidate(DomainModel):
     max_span_length: float | None = None
     max_bay_spacing: float | None = None
     crossing_count: int = 0
+    junction_count: int = 0
+    high_degree_junction_count: int = 0
+    plan_intersection_complexity: float = 0.0
     obstacle_conflict_count: int = 0
     axial_peak_proxy: float | None = None
     symmetry_score: float | None = None
@@ -906,7 +987,10 @@ class GoverningValues(DomainModel):
     governing_check_status: str | None = None
     embedment_safety_factor_min: float | None = None
     heave_safety_factor_min: float | None = None
+    # Legacy field retained for reading older project snapshots. Current layered seepage
+    # screening returns a risk index (smaller is safer), not a safety factor.
     seepage_safety_factor_min: float | None = None
+    seepage_risk_index_max: float | None = None
     strength_check_status: str | None = None
     stiffness_check_status: str | None = None
     stability_check_status: str | None = None
@@ -916,6 +1000,7 @@ class CalculationResult(DomainModel):
     id: str = Field(default_factory=lambda: new_id("calc"))
     project_id: str
     case_id: str
+    support_topology_hash: str | None = None
     stage_results: list[StageCalculationResult] = Field(default_factory=list)
     governing_values: GoverningValues = Field(default_factory=GoverningValues)
     warnings: list[str] = Field(default_factory=list)

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.domain import RetainingSystem, SupportLayoutRepairSummary
 from app.geology.model_builder import ensure_geological_model_covers_excavation
 from app.services.design_service import auto_diaphragm_wall, auto_supports, support_layout_config_from_settings
 from app.services.support_layout_repair import adopt_support_layout_candidate, auto_repair_support_layout, set_support_optimization_locks
+from app.services.calculation_state import invalidate_calculation_state
+from app.services.support_layout_import import import_support_layout_csv
 from app.storage.repository import ProjectRepository, get_repository
 
 router = APIRouter(prefix="/api/projects/{project_id}/design", tags=["design"])
@@ -56,7 +58,8 @@ def _require_excavation(project_id: str, repo: ProjectRepository):
 def design_diaphragm_wall(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> RetainingSystem:
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
-    project.retaining_system = auto_diaphragm_wall(project.excavation, project.retaining_system)
+    project.retaining_system = auto_diaphragm_wall(project.excavation, project.retaining_system, project.design_settings)
+    invalidate_calculation_state(project, reason="diaphragm wall geometry regenerated", rebuild_cases=False)
     repo.save(project)
     return project.retaining_system
 
@@ -66,10 +69,28 @@ def design_supports(project_id: str, repo: ProjectRepository = Depends(get_repos
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings))
+    invalidate_calculation_state(project, reason="support system regenerated", rebuild_cases=True)
     repo.save(project)
     return project.retaining_system
 
 
+
+
+@router.post("/import-support-layout")
+async def import_support_layout(
+    project_id: str,
+    file: UploadFile = File(...),
+    replace: bool = True,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = _require_excavation(project_id, repo)
+    try:
+        result = import_support_layout_csv(project, await file.read(), replace=replace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    invalidate_calculation_state(project, reason="engineer/reference support layout imported", rebuild_cases=True)
+    repo.save(project)
+    return result
 
 
 @router.post("/auto-repair-supports", response_model=SupportLayoutRepairSummary)
@@ -77,6 +98,7 @@ def repair_supports(project_id: str, repo: ProjectRepository = Depends(get_repos
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     result = auto_repair_support_layout(project)
+    invalidate_calculation_state(project, reason="support topology automatically repaired", rebuild_cases=True)
     repo.save(project)
     return result
 
@@ -87,6 +109,7 @@ def optimize_supports(project_id: str, payload: OptimizeSupportsPayload | None =
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     result = auto_repair_support_layout(project, objective_weights=(payload.objective_weights if payload else None), preset=(payload.preset if payload else None))
+    invalidate_calculation_state(project, reason="support optimization candidate set regenerated and best topology applied", rebuild_cases=True)
     repo.save(project)
     return result
 
@@ -123,6 +146,25 @@ def get_retaining_system(project_id: str, repo: ProjectRepository = Depends(get_
 @router.put("/retaining-system", response_model=RetainingSystem)
 def update_retaining_system(project_id: str, payload: dict, repo: ProjectRepository = Depends(get_repository)) -> RetainingSystem:
     project = repo.require(project_id)
-    project.retaining_system = RetainingSystem.model_validate(payload)
+    previous = {
+        wall.segment_id: wall
+        for wall in (project.retaining_system.diaphragm_walls if project.retaining_system else [])
+    }
+    updated = RetainingSystem.model_validate(payload)
+    for wall in updated.diaphragm_walls:
+        old = previous.get(wall.segment_id)
+        if old is None:
+            continue
+        changed = abs(float(wall.bottom_elevation) - float(old.bottom_elevation)) > 1.0e-6
+        # A user/API edit of the toe elevation is a project control value.  Mark
+        # it as manual and locked unless the caller supplied an explicit source
+        # contract (for example the actual-project importer uses "imported").
+        if changed and wall.bottom_elevation_source == "unknown":
+            wall.source_bottom_elevation = float(old.bottom_elevation)
+            wall.bottom_elevation_source = "manual"
+            wall.bottom_elevation_locked = True
+    project.retaining_system = updated
+    ensure_geological_model_covers_excavation(project)
+    invalidate_calculation_state(project, reason="retaining system edited", rebuild_cases=True)
     repo.save(project)
     return project.retaining_system

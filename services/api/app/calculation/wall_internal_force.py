@@ -151,8 +151,45 @@ def analyze_wall_on_elastic_foundation(
         if 0.0 <= d <= wall_depth:
             idx = int(np.argmin(np.abs(z - d)))
             is_transfer = support.id in transferred_ids
-            factor = float(transfer_stiffness_factor) if is_transfer else 1.0
-            support_indices.setdefault(idx, []).append((support, factor, "permanent_transfer" if is_transfer else "temporary_support"))
+            is_corner_transfer = str(getattr(support, "code", "")).startswith("CT-")
+            if is_corner_transfer:
+                factor = 0.55
+                source = "corner_wale_transfer_proxy"
+            elif is_transfer:
+                factor = float(transfer_stiffness_factor)
+                source = "permanent_transfer"
+            else:
+                factor = 1.0
+                source = "temporary_support"
+            support_indices.setdefault(idx, []).append((support, factor, source))
+    # A support at the excavation top is common for crown-beam/top-strut systems.
+    # The previous free-head boundary equations silently ignored springs at node 0,
+    # which exaggerated the first-span displacement and moment. Keep M(0)=0 and
+    # replace the free-shear equation with a spring-supported shear boundary.
+    if 0 in support_indices:
+        top_level_stiffness = 0.0
+        for support, stiffness_factor, _source in support_indices[0]:
+            if support_spring_kn_per_m is not None:
+                support_k = float(support_spring_kn_per_m)
+            elif segment is not None:
+                support_k, _projection = support_spring_stiffness(support, segment)
+            else:
+                length = max(float(support.span_length or 1.0), 1.0)
+                width = float(support.section.width or support.section.diameter or 1.0)
+                height = float(support.section.height or support.section.diameter or 1.0)
+                area = max(width * height, 0.05)
+                elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
+                support_k = elastic_modulus * area / length
+            top_level_stiffness += max(1.0e4, min(2.0e7, support_k * support_stiffness_factor)) * stiffness_factor
+        distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
+        k_top = top_level_stiffness / distribution_length
+        shear_scale = ei / dz**3
+        a[1, :] = 0.0
+        a[1, 0] = -shear_scale + k_top
+        a[1, 1] = 3.0 * shear_scale
+        a[1, 2] = -3.0 * shear_scale
+        a[1, 3] = shear_scale
+
     for i in range(2, n - 2):
         a[i, i - 2] = ei / dz**4
         a[i, i - 1] = -4.0 * ei / dz**4

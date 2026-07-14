@@ -326,6 +326,48 @@ function redundancyFaceStatusText(status?: string) {
   return map[status ?? ''] ?? (status ?? '-');
 }
 
+function ExpertDesignPanel({ project, runStep }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void> }) {
+  const [mode, setMode] = useState('balanced');
+  const [data, setData] = useState<Record<string, any> | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  const latestId = project.calculationResults[project.calculationResults.length - 1]?.id ?? 'none';
+  const load = () => {
+    setLoading(true); setError(undefined);
+    api.getExpertDesignReview(project.id, mode)
+      .then(setData)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { if (project.retainingSystem?.diaphragmWalls?.length) load(); }, [project.id, latestId, mode, project.retainingSystem?.diaphragmWalls?.length]);
+  if (!project.retainingSystem?.diaphragmWalls?.length) return null;
+  const support = (data?.supportSystem ?? {}) as Record<string, any>;
+  const rebar = (data?.wallReinforcement ?? {}) as Record<string, any>;
+  const vertical = (data?.wallVerticalLength ?? {}) as Record<string, any>;
+  const candidates = (vertical.candidates ?? []) as Record<string, any>[];
+  const apply = async (candidateId: string) => {
+    const action = async () => { await api.applyExpertVerticalWallLength(project.id, candidateId, mode, true); load(); };
+    return runStep ? runStep('正在应用围护墙竖向长度方案并重新计算', action) : action();
+  };
+  return <section className="expertDesignPanel">
+    <div className="sectionLead">
+      <div><h4>设计院专家式联合设计</h4><p className="small">支撑体系、施工阶段、墙体双向配筋、墙趾长度和施工可实施性统一审查；候选几何代理不替代完整计算。</p></div>
+      <div className="segmentedControls"><button className={mode === 'conservative' ? 'active' : ''} onClick={() => setMode('conservative')}>保守</button><button className={mode === 'balanced' ? 'active' : ''} onClick={() => setMode('balanced')}>均衡</button><button className={mode === 'economic' ? 'active' : ''} onClick={() => setMode('economic')}>经济</button></div>
+    </div>
+    {loading && <div className="infoBox">正在执行支撑—配筋—墙趾联合审查…</div>}
+    {error && <div className="error">{error}</div>}
+    {data && <>
+      <div className="expertDesignStatusGrid">
+        <div><span>支撑体系</span><strong className={`status-${String(support.status)}`}>{String(support.status ?? '未评估')}</strong><em>{String(support.rationale ?? '')}</em></div>
+        <div><span>墙体配筋</span><strong className={`status-${String(rebar.status)}`}>{String(rebar.status ?? '未评估')}</strong><em>长墙 {String(rebar.longWallCount ?? 0)} 面；密度异常 {String(rebar.sparseLongWallCount ?? 0)} 面</em></div>
+        <div><span>竖向墙长</span><strong className={`status-${String(vertical.status)}`}>{String(vertical.status ?? '未评估')}</strong><em>墙趾候选 {String(candidates.length)} 个；导入/人工锁定墙不自动缩短</em></div>
+      </div>
+      <div className="expertRuleStrip"><strong>推荐体系：{String(support.preferredTopology ?? '-')}</strong><span>墙体沿深度和沿平面双向分区；转角区、支撑节点区、坑底转换区和墙趾区分别表达附加筋。</span></div>
+      {candidates.length > 0 && <div className="wallLengthCandidateGrid">{candidates.map((candidate) => <div className="candidateCard wallLengthCandidate" key={String(candidate.candidateId)}><h5>{String(candidate.label)}</h5><div className="metricGrid compact"><div><strong>{String(candidate.zoneCount)}</strong><span>墙趾分区</span></div><div><strong>{String(candidate.optimizedConcreteVolumeM3)} m³</strong><span>估算混凝土</span></div><div><strong>{String(candidate.estimatedConcreteSavingM3)} m³</strong><span>估算节省</span></div><div><strong>{String(candidate.minimumScreeningFactor)}</strong><span>最小筛查系数</span></div></div><p className="small">状态：{String(candidate.status)}；施工复杂度罚值 {String(candidate.constructabilityPenalty ?? 0)}。分区墙趾必须在墙幅接头或转角处过渡。</p>{candidate.status === 'candidate' && <button onClick={() => void apply(String(candidate.candidateId))}>采用并重新计算</button>}</div>)}</div>}
+    </>}
+  </section>;
+}
+
 function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
   const [mode, setMode] = useState('balanced');
   const [data, setData] = useState<Record<string, any> | undefined>();
@@ -371,8 +413,8 @@ function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Pro
     <section className="wallLengthOptimizationPanel">
       <div className="sectionLead">
         <div>
-          <h4>围护墙设计长度与冗余均衡</h4>
-          <p className="small">项目统一墙厚；优化设计面长度、槽段分幅和局部加强段，不改变外轮廓。</p>
+          <h4>围护墙平面设计段、分幅与冗余均衡</h4>
+          <p className="small">本模块优化平面设计段和槽段分幅；竖向墙长/墙趾标高由上方专家联合设计模块单独控制。</p>
         </div>
         <div className="segmentedControls"><button className={mode === 'conservative' ? 'active' : ''} onClick={() => setMode('conservative')}>保守</button><button className={mode === 'balanced' ? 'active' : ''} onClick={() => setMode('balanced')}>均衡</button><button className={mode === 'economic' ? 'active' : ''} onClick={() => setMode('economic')}>经济</button></div>
       </div>
@@ -414,15 +456,19 @@ function CheckSummaryPills({ summary }: { summary?: Record<string, unknown> }) {
 }
 
 export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional' }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional' }) {
-  const latest = project.calculationResults.length ? project.calculationResults[project.calculationResults.length - 1] : undefined;
+  const calculationState = (project.advancedEngineering?.calculationState ?? {}) as Record<string, unknown>;
+  const requiresRecalculation = Boolean(calculationState.requiresRecalculation);
+  const latest = requiresRecalculation || !project.calculationResults.length
+    ? undefined
+    : project.calculationResults[project.calculationResults.length - 1];
   const checks = latest?.checks ?? [];
-  const candidates = latest?.supportLayoutRepair?.candidates?.slice(0, 5) ?? [];
+  const candidates = (project.retainingSystem?.supportLayoutRepair?.candidates ?? latest?.supportLayoutRepair?.candidates ?? []).slice(0, 5);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | undefined>(latest?.supportLayoutRepair?.selectedCandidateId ?? latest?.supportLayoutRepair?.bestCandidateId ?? candidates[0]?.id);
   const selectedCandidate = useMemo(() => candidates.find((c) => c.id === selectedCandidateId) ?? candidates[0], [candidates, selectedCandidateId]);
   if (density === 'compact') {
     return <div className="viewer compactResultViewer">
       <div className="focusSectionHeader"><div><span className="sectionKicker">计算核心成果</span><h3>计算结果与规范复核</h3><p>专注模式仅展示控制指标和出图闸门。完整矩阵、逐阶段内力和原始台账请切换专业模式。</p></div></div>
-      {!latest ? <div className="emptyDecisionState"><strong>尚未运行计算</strong><p>完成围护结构后执行“一键计算校核”。</p></div> : <>
+      {!latest ? <div className="emptyDecisionState"><strong>{requiresRecalculation ? '原计算结果已失效' : '尚未运行计算'}</strong><p>{requiresRecalculation ? `原因：${String(calculationState.reason ?? '围护几何或支撑拓扑已变化')}。请重建施工工况并重新计算。` : '完成围护结构后执行“一键计算校核”。'}</p></div> : <>
         <div className="resultCards focusResultCards">
           <div><strong>{formatEngineeringValue(latest.governingValues.maxTotalPressure, 'pressure')}</strong><span>最大合成侧压力</span></div>
           <div><strong>{formatEngineeringValue(latest.governingValues.maxSupportAxialForce, 'force')}</strong><span>最大支撑轴力</span></div>
@@ -441,7 +487,7 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
   return (
     <div className="viewer">
       <h3>计算结果与规范复核</h3>
-      {!latest && <p>尚未运行计算。</p>}
+      {!latest && <div className={requiresRecalculation ? 'warning' : ''}>{requiresRecalculation ? `原计算结果已失效：${String(calculationState.reason ?? '围护几何或支撑拓扑已变化')}。请重新计算后再查看内力、方案排名和出图闸门。` : '尚未运行计算。'}</div>}
       {latest && (
         <>
           <div className="resultCards">
@@ -456,6 +502,7 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
             <summary>查看内力包络、墙体云图与设计面局部优化</summary>
             <InternalForceVisualization latest={latest} highlightLocator={highlightLocator} />
             <WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} />
+            <ExpertDesignPanel project={project} runStep={runStep} />
             <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} />
           </details>
           <p>专业复核：{latest.professionalReviewRequired ? '需要' : '否'}</p>

@@ -7,6 +7,7 @@ from app.schemas.domain import ConstructionObstacle, ExcavationModel, Polyline2D
 from app.services.excavation_service import center_excavation_on_geology, generate_excavation_segments, make_excavation_model, polygon_metrics
 from app.storage.repository import ProjectRepository, get_repository
 from app.geology.model_builder import ensure_geological_model_covers_excavation
+from app.services.calculation_state import invalidate_calculation_state
 
 router = APIRouter(prefix="/api/projects/{project_id}/excavation", tags=["excavation"])
 
@@ -36,6 +37,7 @@ def create_excavation(project_id: str, payload: ExcavationPayload, repo: Project
     excavation = center_excavation_on_geology(excavation, project.geological_model, project.design_settings.auto_center_excavation_on_geology)
     project.excavation = excavation
     ensure_geological_model_covers_excavation(project)
+    invalidate_calculation_state(project, reason="excavation geometry or elevation changed", rebuild_cases=bool(project.retaining_system))
     repo.save(project)
     return excavation
 

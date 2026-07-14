@@ -165,6 +165,17 @@ def build_issue_center(project: Project) -> dict[str, Any]:
     if ret and ret.warnings:
         for warning in ret.warnings[:8]:
             issues.append(_issue(category="retaining", severity="warning", message=warning, recommendation="检查支撑间距、角部斜撑、立柱布置和出土通道避让。", workflow_step="retaining", source="retaining_system"))
+    if ret and any(wall.design_results and wall.design_results.check_status == "manual_review" for wall in ret.diaphragm_walls):
+        issues.append(_issue(
+            category="retaining_preliminary",
+            severity="manual_review",
+            message="地连墙墙厚和墙深仍处于企业初选状态，尚未由分阶段计算和稳定验算闭环。",
+            recommendation="运行 Step 6 分阶段计算；完成嵌固、变形、抗隆起、渗流和整体稳定复核后再进入正式审签。",
+            workflow_step="retaining",
+            source="retaining_preliminary_design",
+            target_panel="ResultViewer",
+            auto_fix_available=True,
+        ))
 
     if latest:
         for check in (latest.checks or [])[:80]:

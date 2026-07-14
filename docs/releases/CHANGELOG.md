@@ -1,3 +1,84 @@
+# V3.20.0
+
+- 将围护结构拆分为计算墙段、施工槽段和钢筋笼对象，分别服务于分析、成槽施工和配筋加工。
+- 支撑设计改为体系族选择、站位设计、转折区加密、直接传力审计和完整施工阶段计算；狭长基坑不再为角撑删除连续主对撑。
+- 普通非环形补撑默认禁止落在另一根普通支撑跨中；复杂凹形基坑无法形成直接墙—墙体系时保留硬阻断。
+- 每个施工槽段生成双面主筋、水平筋和拉结筋钢筋笼网格，浏览器 LOD 与 BBS/CSV/XLSX/JSON 完整数量分离。
+- 墙趾 uniform/zoned/local 模式增加稳定与地质高差证据；导入和人工锁定墙趾禁止自动缩短。
+- 新增八阶段专家设计流水线 API；无完整候选选型和核心图纸缺失时分别保持 P3/P7 warning。
+- 丰收湖生成 260 根支撑、40 根立柱、98 个施工槽段/钢筋笼，计算 Fail 0。
+
+# V3.19.0
+
+- 增加设计院专家式支撑—配筋—墙长联合设计与项目级审查接口。
+- 墙体配筋增加目标利用率、连续笼防降级和长墙最大主筋间距控制；balanced 模式默认目标利用率 0.88。
+- 地连墙配筋按深度与平面双向分区，支撑节点和转角附加筋保留墙面里程与支撑标高。
+- 三维钢筋显示按物理墙长动态采样，完整数量保留在钢筋表和加工包中。
+- 新增统一墙趾、连续分区墙趾和保持现状候选；导入/人工墙趾禁止自动缩短。
+- 候选方案完整计算前不再显示 1 kN 等代理值为设计内力。
+
+# V3.18.0
+
+- 增加墙趾嵌固稳定前置设计环：连续墙统一墙趾搜索、只加深不缩短、地质底界约束和完整审计证据。
+- 修复一键地连墙重新生成覆盖导入/人工墙底标高的问题；墙趾新增来源、锁定和原始值字段。
+- 将 20 个墙段重复嵌固失败归并为一个全局墙趾根因，同时保留逐墙段证据。
+- 旧版围檩墙—支撑短撑自动迁移为墙—墙端墙 V 形次支撑；凸形狭长基坑默认不再生成普通支撑跨中 T/Y 修复。
+- 丰收湖复算 Fail 0，围檩最大直接支点间距 6.899 m，墙趾最小嵌固筛查系数 1.289。
+- 计算恢复面板增加墙趾标高、最小嵌固系数、自动加深量和闭环状态。
+
+# V3.17.0
+
+- 项目列表增加不可逆删除：前端二次确认，后端同步清理项目记录、项目任务、受控导出成果和项目锁。
+- 角撑重构为转角影响区内的墙/围檩—墙/围檩直接压杆；默认连接点距角点 3.5～8.0 m，且不超过相邻墙长 30%。
+- 禁止角撑截断并抵在普通水平支撑上；支撑—支撑连接仅允许作为具备明确竖向承托的 T/Y 分支节点。
+- 直对撑、墙—墙角撑、墙法向 T/Y 分支、普通支撑零穿越形成统一拓扑契约，并用于初始生成、围檩补撑、凹角修复、候选优化、计算和出图。
+- 候选 A/B/C 在评分前执行墙端、角点距离、坑内包含、非交叉和围檩支点审计，消除预览拓扑与计算拓扑漂移。
+- 地质设计域检查拆分为 coverageStatus 和 extrapolationStatus；模型已覆盖设计域时覆盖规则通过，自动外扩/外推单独形成提示。
+- 丰收湖基线重新生成 235 根支撑、43 根临时立柱和 20 根墙—墙角撑；普通支撑穿越 0，计算 Fail 0、Warning 5。
+
+# V3.16.0
+
+- 普通主对撑、次对撑、角撑和局部补撑执行同层零穿越硬约束；临时立柱不再使两根贯穿杆件合法化。
+- 分支支撑在首个主支撑交点终止并形成带竖向承托的 T/Y 节点；环梁—径向撑使用独立规则。
+- 修复内部节点被误识别为墙端、净距调整后重新穿越和过滤后悬空端等几何问题。
+- 丰收湖三类非环形候选完成独立复算，普通支撑穿越为 0，计算 Fail 为 0。
+
+# V3.15.0
+
+- 修复方案或几何更新后继续显示旧计算和旧候选完整计算的问题。
+- 新增计算拓扑哈希、旧结果自动归档和施工工况语义同步。
+- 支撑布置升级为局部主轴的一般多边形算法，增加坑外穿越硬门禁。
+- 候选评分前执行强度拓扑预检，并对大型 A/B/C 计算采用串行模式。
+- 一键围护设计在 Step 5 内完成凹角回墙和围檩支点间距闭环，避免将可预防的强度拓扑 Fail 推迟到计算阶段。
+- 修复局部短角撑按最短射线选取导致净距退让后构件坍缩的问题，改为法向优先并增加后退让可施工性门禁。
+- 地质模型自动覆盖实际围护结构及施工影响区，记录可信范围、外推距离和低置信度。
+- 新增 GB 55017-2021 流程映射、V3.15 在线文档和回归测试。
+
+# Changelog
+
+## V3.14.0
+
+- 修复异形短回墙约束、零标高第一支撑、拆换撑压力分带和闭合围檩端部边界。
+- 将墙体覆盖、围檩支点间距、有效无侧向支承长度和构件强度前置到方案设计。
+- 新增角部扇形斜撑、局部短对撑、共享交叉立柱和施工工况同步恢复。
+- 丰收湖项目由 36 项 Fail 降至 0，最大墙体位移由 503.95 mm 降至 3.418 mm。
+- 增加强度驱动诊断面板、在线计算文档、DOCX 记录及有界成本矩阵诊断。
+
+## V3.13.0
+
+- 重构工程施工图体系和逐图质量门禁。
+- 新增协同成果交付包、移交单、验收矩阵、追溯关系和离线哈希校验。
+- 增加旧项目图纸规则迁移。
+
+# V3.12.0 - Actual-project import, warning closure, drawing depth and calculation-linked standards
+
+- Added an actual 24-borehole import package with anisotropic permeability and a 20-vertex excavation command.
+- Added project-defined support-level depths; the actual-case importer writes five source levels and the -32.8 m wall toe.
+- Fixed false bottom-clearance warnings and evaluated long struts by effective unbraced length.
+- Reclassified successful topology actions as design evidence and retained unresolved risks as warnings.
+- Rebuilt the standards UI around individual calculations with direct standards, clause focus, rules and outputs.
+- Deepened support plans, column details, wall-joint/waterstop/cage details and construction drawing gates.
+
 # V3.11.0 - Standards traceability, rebar package and online engineering documentation
 
 - Replaced the misleading rebar JSON download with a structured ZIP containing XLSX, CSV, JSON, checks and usage guidance.
@@ -513,3 +594,11 @@
 - Windows/Linux 一键启动脚本会检查关键前端模块；当 `node_modules` 存在但依赖不完整时自动执行 `npm install` 更新当前前端环境。
 - 计算追溯链升级为条文对比表，按合规、不合规、预警、复核汇总，并显示需求值、限值、利用率、数学公式和规范条文。
 - 进一步压缩界面研发性说明文字，保留设计使用所需状态、对象和建议。
+
+## V3.21.0
+
+- 支撑优化采用整洁度优先的分层排序，非法穿越、内部汇交和高度汇交节点成为主要目标。
+- 新增 `clean_support_layout` 默认预设及交叉/汇交可视化指标。
+- 候选方案在同等安全可行条件下优先选择辅助构件和总构件更少的拓扑。
+- 统一前后端和运行时版本号为 3.21.0。
+- 新增工业化成熟度审查和 P0-P3 迭代路线图。

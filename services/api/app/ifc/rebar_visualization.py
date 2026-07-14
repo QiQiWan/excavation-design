@@ -145,7 +145,14 @@ def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str
                 required_area_per_meter=float(face_row.get("requiredAsMm2PerM") or 0.0),
                 check_status=str(face_row.get("status") or "manual_review"),
             )
-            sampled, estimated = _count_from_spacing(length, spacing, fallback=4, cap=min(5, max_per_wall - sampled_total))
+            # Browser visualization remains sampled, but the sample density must scale with
+            # physical wall length.  The former hard cap of five bars per face made a
+            # 100 m wall look almost unreinforced even when the design was D22@150.
+            visual_pitch = 4.0
+            dynamic_cap = max(8, min(32, int(math.ceil(length / visual_pitch)) + 1))
+            sampled, estimated = _count_from_spacing(
+                length, spacing, fallback=8, cap=min(dynamic_cap, max_per_wall - sampled_total)
+            )
             estimated_total += estimated
             for idx, station in enumerate(_stations(length, sampled), start=1):
                 x = a.x + ux * station + nx * cover * face_sign
@@ -170,7 +177,11 @@ def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str
             diameter=h_dia, spacing=h_spacing, grade=wall.rebar_grade,
             location_description=f"{zone_id} horizontal distribution; EL {top:.3f}~{bottom:.3f}", check_status=str(zone.get("status") or "manual_review"),
         )
-        sample_z, estimate_z = _count_from_spacing(zone_height, h_spacing, fallback=2, cap=min(3, max(1, (max_per_wall - sampled_total) // 2)))
+        dynamic_vertical_cap = max(4, min(16, int(math.ceil(zone_height / 2.0)) + 1))
+        sample_z, estimate_z = _count_from_spacing(
+            zone_height, h_spacing, fallback=4,
+            cap=min(dynamic_vertical_cap, max(1, (max_per_wall - sampled_total) // 2)),
+        )
         estimated_total += estimate_z * 2
         z_values = [bottom + min(0.2, zone_height * 0.15) + max(zone_height - min(0.4, zone_height * 0.3), 0.0) * i / max(sample_z - 1, 1) for i in range(sample_z)]
         for face_index, face_sign in enumerate((-1, 1), start=1):
@@ -630,6 +641,111 @@ def _round_robin_host_sample(items: list[dict[str, Any]], quota: int) -> list[di
         index += 1
     return selected
 
+
+def _governing_wall_cage_reinforcement(wall: Any, zones: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return a constructible cage summary for one calculation wall.
+
+    Browser bars remain selectable samples.  Cage grids are a separate LOD
+    representation generated per construction panel, with real design spacing
+    and estimated counts so long walls no longer look almost unreinforced.
+    """
+    faces: dict[str, dict[str, float]] = {
+        "inner": {"diameterMm": 25.0, "spacingMm": 200.0},
+        "outer": {"diameterMm": 25.0, "spacingMm": 200.0},
+    }
+    horizontal = {"diameterMm": 16.0, "spacingMm": 200.0}
+    ties = {"diameterMm": 12.0, "spacingMm": 450.0}
+    zone_ids: list[str] = []
+    for zone in zones:
+        zone_ids.append(str(zone.get("zoneId") or ""))
+        for row in zone.get("faces", []) or []:
+            face = str(row.get("face") or "inner")
+            current = faces.setdefault(face, {"diameterMm": 25.0, "spacingMm": 200.0})
+            current["diameterMm"] = max(float(current.get("diameterMm") or 0.0), float(row.get("barDiameterMm") or 0.0))
+            spacing = float(row.get("barSpacingMm") or current.get("spacingMm") or 200.0)
+            current["spacingMm"] = min(float(current.get("spacingMm") or spacing), spacing)
+        h = zone.get("horizontalDistribution") or {}
+        horizontal["diameterMm"] = max(float(horizontal["diameterMm"]), float(h.get("diameterMm") or 0.0))
+        horizontal["spacingMm"] = min(float(horizontal["spacingMm"]), float(h.get("spacingMm") or horizontal["spacingMm"]))
+        t = zone.get("tieBars") or {}
+        ties["diameterMm"] = max(float(ties["diameterMm"]), float(t.get("diameterMm") or 0.0))
+        ties["spacingMm"] = min(float(ties["spacingMm"]), float(t.get("spacingMm") or ties["spacingMm"]))
+    if not zones:
+        for group in list(getattr(wall, "reinforcement", []) or []):
+            token = str(getattr(group, "location_description", "") or "").lower()
+            if group.bar_type == "longitudinal":
+                face = "outer" if ("outer" in token or "坑外" in token) else "inner"
+                faces[face]["diameterMm"] = max(float(faces[face]["diameterMm"]), float(group.diameter or 0.0))
+                if group.spacing:
+                    faces[face]["spacingMm"] = min(float(faces[face]["spacingMm"]), float(group.spacing))
+            elif group.bar_type == "distribution":
+                horizontal["diameterMm"] = max(float(horizontal["diameterMm"]), float(group.diameter or 0.0))
+                if group.spacing:
+                    horizontal["spacingMm"] = min(float(horizontal["spacingMm"]), float(group.spacing))
+            elif group.bar_type == "tie":
+                ties["diameterMm"] = max(float(ties["diameterMm"]), float(group.diameter or 0.0))
+                if group.spacing:
+                    ties["spacingMm"] = min(float(ties["spacingMm"]), float(group.spacing))
+    return {"faces": faces, "horizontal": horizontal, "ties": ties, "zoneIds": [z for z in zone_ids if z]}
+
+
+def _wall_cage_descriptors(wall: Any, zones: list[dict[str, Any]], line_cap: int = 160) -> list[dict[str, Any]]:
+    if len(wall.axis.points) < 2:
+        return []
+    a, b = wall.axis.points[0], wall.axis.points[-1]
+    ux, uy, total_length = _unit(a, b)
+    if total_length <= 1.0e-9:
+        return []
+    reinforcement = _governing_wall_cage_reinforcement(wall, zones)
+    panels = list(getattr(wall, "construction_panels", []) or [])
+    if not panels:
+        panels = [{
+            "panelIndex": 1, "panelCode": f"{wall.panel_code}-P01",
+            "startChainageM": 0.0, "endChainageM": total_length, "lengthM": total_length,
+            "start": {"x": a.x, "y": a.y}, "end": {"x": b.x, "y": b.y},
+            "cageCount": 1, "jointType": "project_specific", "liftingReviewRequired": True,
+        }]
+    cage_rows: list[dict[str, Any]] = []
+    height = max(float(wall.top_elevation) - float(wall.bottom_elevation), 0.1)
+    cover = min(max(float(wall.thickness) * 0.08, 0.07), 0.12)
+    for idx, panel in enumerate(panels, start=1):
+        c0 = float(panel.get("startChainageM") or 0.0)
+        c1 = float(panel.get("endChainageM") or panel.get("lengthM") or total_length)
+        c0 = max(0.0, min(total_length, c0)); c1 = max(c0, min(total_length, c1))
+        start = panel.get("start") or {"x": a.x + ux * c0, "y": a.y + uy * c0}
+        end = panel.get("end") or {"x": a.x + ux * c1, "y": a.y + uy * c1}
+        panel_length = max(c1 - c0, 0.01)
+        faces = []
+        for face in ("inner", "outer"):
+            spec = reinforcement["faces"].get(face, reinforcement["faces"]["inner"])
+            spacing_m = max(float(spec.get("spacingMm") or 200.0) / 1000.0, 0.05)
+            faces.append({
+                "face": face,
+                "diameterMm": float(spec.get("diameterMm") or 25.0),
+                "spacingMm": float(spec.get("spacingMm") or 200.0),
+                "estimatedVerticalBarCount": max(2, int(math.floor(panel_length / spacing_m)) + 1),
+            })
+        h_spacing_m = max(float(reinforcement["horizontal"].get("spacingMm") or 200.0) / 1000.0, 0.05)
+        cage_rows.append({
+            "id": f"cage-{wall.id}-{idx}",
+            "hostId": wall.id, "hostCode": wall.panel_code,
+            "panelCode": str(panel.get("panelCode") or f"{wall.panel_code}-P{idx:02d}"),
+            "panelIndex": int(panel.get("panelIndex") or idx),
+            "start": _pt(float(start.get("x", a.x)), float(start.get("y", a.y)), float(wall.top_elevation)),
+            "end": _pt(float(end.get("x", b.x)), float(end.get("y", b.y)), float(wall.top_elevation)),
+            "topElevation": float(wall.top_elevation), "bottomElevation": float(wall.bottom_elevation),
+            "heightM": round(height, 3), "panelLengthM": round(panel_length, 3),
+            "thicknessM": float(wall.thickness), "coverM": round(cover, 3),
+            "faces": faces,
+            "horizontal": {**reinforcement["horizontal"], "estimatedBarCountPerFace": max(2, int(math.floor(height / h_spacing_m)) + 1)},
+            "ties": reinforcement["ties"], "zoneIds": reinforcement["zoneIds"],
+            "jointType": panel.get("jointType") or "project_specific",
+            "liftingReviewRequired": bool(panel.get("liftingReviewRequired", True)),
+            "displayLineCap": int(line_cap),
+            "representation": "construction_panel_rebar_cage_grid_lod",
+        })
+    return cage_rows
+
 def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict[str, Any]:
     retaining = project.retaining_system
     host_summaries: list[dict[str, Any]] = []
@@ -653,6 +769,7 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
 
     zone_scheme = retaining.rebar_design_scheme if retaining and isinstance(retaining.rebar_design_scheme, dict) else {}
     wall_zones_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    cages: list[dict[str, Any]] = []
     for zone in zone_scheme.get("wallZones", []) if isinstance(zone_scheme, dict) else []:
         wall_zones_by_host[str(zone.get("hostId"))].append(zone)
 
@@ -660,6 +777,7 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
         for wall in retaining.diaphragm_walls:
             host_bars: list[dict[str, Any]] = []
             wall_zones = wall_zones_by_host.get(wall.id, [])
+            cages.extend(_wall_cage_descriptors(wall, wall_zones, line_cap=int(getattr(project.design_settings, "rebar_cage_grid_max_lines_per_face", 140) or 140)))
             if wall_zones:
                 sampled, estimated = _add_wall_zone_rebars(host_bars, wall, wall_zones)
                 tokens = sorted({str(face.get("token")) for zone in wall_zones for face in zone.get("faces", []) if face.get("token")})
@@ -721,10 +839,13 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
         bars = [bar for category in category_order for bar in pools.get(category, [])]
         omitted_hosts = 0
     else:
+        # Wall cages carry the largest number of physical bars.  Keep enough wall
+        # samples in the global budget so long walls do not appear artificially
+        # sparse in the 3D viewer.
         weights = {
-            "diaphragm_wall": 0.24,
-            "wale_or_crown_beam": 0.22,
-            "internal_support": 0.44,
+            "diaphragm_wall": 0.46,
+            "wale_or_crown_beam": 0.16,
+            "internal_support": 0.28,
             "support_wale_node": 0.10,
         }
         active_categories = [category for category in category_order if pools.get(category)]
@@ -775,6 +896,8 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
         },
         "summary": {
             "sampledBarCount": len(bars),
+            "cageCount": len(cages),
+            "constructionPanelCount": len(cages),
             "estimatedFullBarCount": estimated_full_count or len(bars),
             "hostCount": len(host_summaries),
             "omittedHostCount": omitted_hosts,
@@ -782,16 +905,18 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
             "byBarType": dict(by_type),
             "byHostType": dict(by_host),
             "byCheckStatus": dict(by_status),
-            "detailLevel": "zone_linked_sampled_bar_level" if wall_zones_by_host else "sampled_bar_level_from_parameterized_reinforcement_groups",
+            "detailLevel": "construction_panel_cage_grid_plus_zone_linked_sampled_bars" if cages else ("zone_linked_sampled_bar_level" if wall_zones_by_host else "sampled_bar_level_from_parameterized_reinforcement_groups"),
             "zoneLinked": bool(wall_zones_by_host),
             "officialDetailingLimit": "sampled browser geometry is linked to design zones and drawing references; full fabrication quantities, couplers, exact laps, hooks and cage lifting remain governed by CAD schedules and engineering review",
         },
         "bars": bars,
+        "cages": cages,
         "hosts": host_summaries[:200],
         "notes": [
             "The visualization is generated from the applied reinforcement design scheme and the same host object IDs used by IFC/CAD exports.",
             "Applied wall-zone schemes display separate elevation ranges, inner/outer faces and drawing references; unapplied projects fall back to governing member groups.",
-            "It intentionally samples dense spacing-based bars to keep browser rendering stable; estimatedFullBarCount records the implied full count.",
+            "Each diaphragm-wall construction panel is also represented by a cage-grid LOD using the governing actual bar spacing; selectable cylinders remain a sampled inspection layer.",
+            "estimatedFullBarCount records the implied full count while cage descriptors preserve panel, face, cover and spacing semantics.",
             "Sampling is balanced across walls, beams, supports and nodes so support detailing remains visible in mixed scenes.",
             "design_detailed.ifc keeps semantic IfcReinforcingBar entities; construction_visual.ifc uses proxy geometry for viewer reliability.",
         ],

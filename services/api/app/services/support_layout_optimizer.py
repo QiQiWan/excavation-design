@@ -13,7 +13,13 @@ OBJECTIVE_WEIGHTS: dict[str, float] = {
     "spacingDeviation": 20.0,
     "spanLength": 16.0,
     "obstacleConflict": 34.0,
-    "supportCrossing": 40.0,
+    # Plan cleanliness is a principal objective.  Proper same-level crossings
+    # remain a hard constraint; the high weight also keeps diagnostic/infeasible
+    # candidates at the bottom and makes the design intent explicit to the UI.
+    "supportCrossing": 80.0,
+    # Legal T/Y/X nodes are sometimes unavoidable, but fewer internal junctions
+    # produce a clearer load path, simpler nodes, and cleaner construction plans.
+    "junctionComplexity": 64.0,
     "columnCount": 7.0,
     "muckPathContinuity": 8.0,
     "axialPeakProxy": 11.0,
@@ -52,6 +58,11 @@ def preset_objective_weights(preset: str | None, overrides: dict[str, float] | N
     elif preset == "muck_path_priority":
         weights["muckPathContinuity"] = max(weights["muckPathContinuity"], 30.0)
         weights["obstacleConflict"] = max(weights["obstacleConflict"], 44.0)
+    elif preset == "clean_support_layout":
+        weights["supportCrossing"] = 80.0
+        weights["junctionComplexity"] = 80.0
+        weights["symmetry"] = max(weights["symmetry"], 18.0)
+        weights["spanLength"] = max(weights["spanLength"], 18.0)
     elif preset == "balanced":
         pass
     return weights
@@ -59,11 +70,12 @@ def preset_objective_weights(preset: str | None, overrides: dict[str, float] | N
 HARD_CONSTRAINT_LABELS = [
     "support_no_crossing",
     "support_no_muck_ramp_protected_crossing",
-    "support_endpoints_on_wale_or_ring_nodes",
+    "support_endpoints_on_wale_ring_or_supported_ty_nodes",
     "temporary_columns_outside_obstacles",
     "replacement_path_continuity",
 ]
 SOFT_OBJECTIVE_LABELS = [
+    "minimum_plan_intersection_and_junction_count",
     "spacing_close_to_3_6m",
     "short_span_length",
     "reasonable_column_count",
@@ -74,7 +86,7 @@ SOFT_OBJECTIVE_LABELS = [
 
 TARGET_SPACING_VALUES = [3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 COLUMN_MAX_SPAN_VALUES = [12.0, 15.0, 18.0]
-TOPOLOGY_STRATEGIES = ["hybrid_diagonal", "bidirectional_grid", "direct_grid"]
+TOPOLOGY_STRATEGIES = ["direct_grid", "hybrid_diagonal", "bidirectional_grid"]
 POSITION_PATTERNS: list[tuple[str, float]] = [
     ("as_generated", 0.0),
     ("global_shift_plus_1p0", 1.0),
@@ -84,6 +96,27 @@ POSITION_PATTERNS: list[tuple[str, float]] = [
     ("alternating_escape_1p5", 1.5),
     ("center_gap_1p5", 1.5),
 ]
+
+
+def _available_topology_strategies(project: Project) -> list[str]:
+    """Return support families that are structurally appropriate for the plan.
+
+    A bidirectional T/Y frame is not offered for a long strip merely to create
+    visual diversity.  It is reserved for near-square wide pits where a second
+    direction is genuinely required and its frame nodes will be analysed.
+    """
+    if not project.excavation or not project.excavation.outline.points:
+        return ["direct_grid"]
+    diag = layout_mod.plan_shape_diagnostics(list(project.excavation.outline.points))
+    aspect = float(diag.get("aspectRatio") or 999.0)
+    short_span = float(diag.get("shortSpanM") or 0.0)
+    circular = bool(diag.get("circularShaftLike"))
+    if circular:
+        return ["direct_grid"]
+    strategies = ["direct_grid", "hybrid_diagonal"]
+    if aspect <= 1.35 and short_span >= 28.0:
+        strategies.append("bidirectional_grid")
+    return strategies
 
 
 def _status_rank(status: str) -> int:
@@ -240,24 +273,22 @@ def _lock_summary(project: Project) -> dict[str, Any]:
 
 
 def _symmetry_score(system: RetainingSystem, project: Project) -> float:
-    b = _bounds(project)
-    if not b or not system.supports:
+    if not project.excavation or not project.excavation.outline.points or not system.supports:
         return 0.5
-    min_x, min_y, max_x, max_y = b
-    cx, cy = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
+    axes = layout_mod._plan_axes(list(project.excavation.outline.points))
     mains = [s for s in system.supports if s.level_index == 1 and s.support_role == "main_strut"]
     if len(mains) <= 1:
         return 0.5
-    axis = _long_axis(project)
-    vals = sorted(((s.start.x + s.end.x) / 2.0 - cx) if axis == "x" else ((s.start.y + s.end.y) / 2.0 - cy) for s in mains)
-    scale = max(max(abs(v) for v in vals), 1.0)
-    mismatch = 0.0
-    pairs = 0
-    for a, bval in zip(vals, reversed(vals)):
-        mismatch += abs(a + bval) / scale
-        pairs += 1
-    return max(0.0, min(1.0, 1.0 - mismatch / max(pairs, 1)))
-
+    vals: list[float] = []
+    for support in mains:
+        midpoint = Point2D(x=(support.start.x + support.end.x) / 2.0, y=(support.start.y + support.end.y) / 2.0)
+        vals.append(layout_mod._local_coordinates(midpoint, axes).x)
+    vals.sort()
+    centre = 0.5 * (axes.long_min + axes.long_max)
+    vals = [value - centre for value in vals]
+    scale = max(max(abs(value) for value in vals), 1.0)
+    mismatch = sum(abs(left + right) / scale for left, right in zip(vals, reversed(vals)))
+    return max(0.0, min(1.0, 1.0 - mismatch / max(len(vals), 1)))
 
 def _muck_path_continuity_score(project: Project, system: RetainingSystem, issue_metrics: dict[str, Any]) -> float:
     obstacles = getattr(project.excavation, "obstacles", []) if project.excavation else []
@@ -286,16 +317,56 @@ def _column_count_penalty(system: RetainingSystem) -> float:
     return abs(density - 0.22) / 0.35
 
 
+def _point_distance(a: Point2D, b: Point2D) -> float:
+    return math.hypot(float(a.x) - float(b.x), float(a.y) - float(b.y))
+
+
+def _endpoint_is_supported_ty_node(system: RetainingSystem, support: SupportElement, endpoint: Point2D, tol: float = 0.03) -> bool:
+    """Return True when an internal endpoint forms a supported T/Y node.
+
+    A non-ring secondary or diagonal member is allowed to terminate at the
+    interior of a same-level support, provided a temporary column exists at
+    that node and its service record connects both members.  This is a node,
+    not a crossing, and must be accepted by optimizer hard constraints.
+    """
+    connected: list[SupportElement] = []
+    for other in system.supports:
+        if other.code == support.code or int(other.level_index) != int(support.level_index):
+            continue
+        if other.support_role == "ring_strut":
+            continue
+        if layout_mod._point_on_segment(endpoint, other.start, other.end, tol=tol):
+            connected.append(other)
+    if not connected:
+        return False
+
+    for column in system.columns:
+        if _point_distance(column.location, endpoint) > max(tol, 0.05):
+            continue
+        served = set(column.support_codes or [])
+        if support.code not in served:
+            continue
+        if any(other.code in served for other in connected):
+            return True
+    return False
+
+
+def _endpoint_is_valid(system: RetainingSystem, support: SupportElement, endpoint: Point2D, face_code: str | None) -> bool:
+    if face_code:
+        return True
+    return _endpoint_is_supported_ty_node(system, support, endpoint)
+
+
 def _endpoint_validity_penalty(system: RetainingSystem) -> float:
     endpoints = 0
     missing = 0
-    for s in system.supports:
-        if s.support_role == "ring_strut":
+    for support in system.supports:
+        if support.support_role == "ring_strut":
             continue
         endpoints += 2
-        if not s.start_face_code:
+        if not _endpoint_is_valid(system, support, support.start, support.start_face_code):
             missing += 1
-        if not s.end_face_code:
+        if not _endpoint_is_valid(system, support, support.end, support.end_face_code):
             missing += 1
     return missing / max(endpoints, 1)
 
@@ -322,22 +393,37 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
     endpoint_missing = _endpoint_validity_penalty(system)
     obstacle_count = int(quality_metrics.get("obstacleConflictCount", 0) or 0)
     crossing_count = int(quality_metrics.get("supportCrossingCount", 0) or 0)
+    outside_count = int(quality_metrics.get("supportOutsideExcavationCount", 0) or 0)
+    wale_fail_count = int(quality_metrics.get("waleSupportBayFailCount", 0) or 0)
     repl_penalty = _replacement_path_penalty(project)
     col_obstacle_hits = 0
     obstacles = layout_mod._active_obstacle_polygons(getattr(project.excavation, "obstacles", []) if project.excavation else [])
     for col in system.columns:
         if not layout_mod._point_avoids_obstacles(col.location, obstacles):
             col_obstacle_hits += 1
-    passed = crossing_count == 0 and obstacle_count == 0 and endpoint_missing == 0 and col_obstacle_hits == 0 and repl_penalty < 0.75
+    passed = (
+        crossing_count == 0
+        and obstacle_count == 0
+        and outside_count == 0
+        and wale_fail_count == 0
+        and endpoint_missing == 0
+        and col_obstacle_hits == 0
+        and repl_penalty < 0.75
+    )
     return {
         "passed": passed,
         "supportNoCrossing": crossing_count == 0,
         "supportNoObstacleConflict": obstacle_count == 0,
-        "endpointsOnWaleOrRingNodes": endpoint_missing == 0,
+        "supportInsideExcavation": outside_count == 0,
+        "waleSupportBayWithinHardLimit": wale_fail_count == 0,
+        "endpointsOnWaleOrRingNodes": endpoint_missing == 0,  # backward-compatible key
+        "endpointsOnWaleRingOrSupportedTYNodes": endpoint_missing == 0,
         "temporaryColumnsOutsideObstacles": col_obstacle_hits == 0,
         "replacementPathContinuity": repl_penalty < 0.75,
         "supportCrossingCount": crossing_count,
         "obstacleConflictCount": obstacle_count,
+        "supportOutsideExcavationCount": outside_count,
+        "waleSupportBayFailCount": wale_fail_count,
         "missingEndpointRatio": round(endpoint_missing, 4),
         "columnObstacleHitCount": col_obstacle_hits,
         "replacementPathPenalty": round(repl_penalty, 4),
@@ -353,11 +439,21 @@ def _objective_terms(project: Project, system: RetainingSystem, target_spacing: 
     muck_score = _muck_path_continuity_score(project, system, issue_metrics)
     symmetry = _symmetry_score(system, project)
     axial_proxy = _axial_peak_proxy(system, bay, spans, target_spacing)
+    support_count = max(len(system.supports), 1)
+    internal_junctions = float(issue_metrics.get("internalJunctionCount", 0) or 0)
+    high_degree_junctions = float(issue_metrics.get("highDegreeJunctionCount", 0) or 0)
+    projected_crossings = float(issue_metrics.get("projectedCrossLevelIntersectionCount", 0) or 0)
+    junction_complexity = (
+        internal_junctions
+        + 1.5 * high_degree_junctions
+        + 0.20 * projected_crossings
+    ) / support_count
     return {
         "spacingDeviation": round(max(0.0, spacing_deviation + bay_cv * 0.5), 4),
         "spanLength": round(max(0.0, span_penalty), 4),
         "obstacleConflict": round(float(issue_metrics.get("obstacleConflictCount", 0) or 0), 4),
         "supportCrossing": round(float(issue_metrics.get("supportCrossingCount", 0) or 0), 4),
+        "junctionComplexity": round(max(0.0, junction_complexity), 4),
         "columnCount": round(max(0.0, _column_count_penalty(system)), 4),
         "muckPathContinuity": round(max(0.0, 1.0 - muck_score), 4),
         "axialPeakProxy": round(max(0.0, axial_proxy), 4),
@@ -377,6 +473,20 @@ def _candidate_score(quality_score: float, terms: dict[str, float], hard: dict[s
         penalty += 65.0
     score = 0.52 * quality_score + 0.48 * max(0.0, 100.0 - penalty)
     return round(max(0.0, min(100.0, score)), 2)
+
+
+def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tuple[float, float, int, int, int, int]:
+    """Lexicographic plan-cleanliness priority used before aggregate score."""
+    metrics = candidate.metrics or {}
+    auxiliary_count = int(metrics.get("secondaryGridSupportCount", 0) or 0) + int(metrics.get("cornerDiagonalCount", 0) or 0)
+    return (
+        float(metrics.get("supportCrossingCount", candidate.crossing_count) or 0.0),
+        float(metrics.get("planIntersectionComplexity", 0.0) or 0.0),
+        int(metrics.get("highDegreeJunctionCount", 0) or 0),
+        int(metrics.get("internalJunctionCount", 0) or 0),
+        auxiliary_count,
+        int(candidate.support_count or 0),
+    )
 
 
 def _line_position_index(system: RetainingSystem, project: Project) -> dict[tuple[int, str], list[SupportElement]]:
@@ -638,7 +748,7 @@ def _candidate_note(target_spacing: float, column_max_span: float, pattern: str,
     hard_text = "硬约束满足" if hard.get("passed") else "硬约束未完全满足"
     return (
         f"目标分仓 {target_spacing:.1f}m，立柱最大服务跨 {column_max_span:.1f}m，支撑线变量策略 {pattern}；"
-        f"{hard_text}。目标函数包含间距偏差、跨长、障碍冲突、交叉、立柱数量、出土路径、轴力峰值代理和对称性。"
+        f"{hard_text}。优化首先压低非法穿越和内部 T/Y/X 汇交节点数量，再比较间距偏差、跨长、障碍冲突、立柱数量、出土路径、轴力峰值代理和对称性。"
     )
 
 
@@ -651,7 +761,8 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     candidates: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
     spacing_values = [4.0, 5.0, 6.0]
     column_values = [12.0, 18.0]
-    for topology_strategy in TOPOLOGY_STRATEGIES:
+    available_strategies = _available_topology_strategies(project)
+    for topology_strategy in available_strategies:
         for target_spacing in spacing_values:
             for column_span in column_values:
                 strategy_patterns = POSITION_PATTERNS[:3] if topology_strategy != "direct_grid" else POSITION_PATTERNS[:2]
@@ -679,6 +790,12 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                     locked_count = _apply_locked_supports(project, trial_project.retaining_system, column_max_span=column_span)
                     adjustments = _shift_main_support_positions(trial_project, trial_project.retaining_system, pattern, amplitude, column_max_span=column_span)
                     adjustments.extend(_apply_endpoint_locks(project, trial_project.retaining_system, column_max_span=column_span))
+                    # Score the constructible topology that will actually be calculated.
+                    # Raw candidate lines can leave concave return walls unsupported or
+                    # create excessive wale bays; ranking those raw geometries produced
+                    # zero-score A/B/C cards that disagreed with the adopted design.
+                    concave_preflight = layout_mod.repair_concave_return_supports(trial_project, layout_config)
+                    wale_preflight = layout_mod.repair_wale_support_bays(trial_project, layout_config)
                     quality = evaluate_support_layout_quality(trial_project)
                     metrics = dict(quality.metrics or {})
                     fail_count = sum(1 for i in quality.issues if i.severity == "fail")
@@ -698,6 +815,7 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         column_max_span=column_span,
                         objective_terms=terms,
                         soft_objectives={
+                            "minimumPlanIntersectionCount": 1.0 - min(1.0, terms.get("junctionComplexity", 1.0)),
                             "spacingCloseTo3To6m": 1.0 - min(1.0, terms.get("spacingDeviation", 1.0)),
                             "shortSpanLength": 1.0 - min(1.0, terms.get("spanLength", 1.0) / 2.0),
                             "reasonableColumnCount": 1.0 - min(1.0, terms.get("columnCount", 1.0)),
@@ -709,7 +827,7 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         variable_summary={
                             "variableType": "whole_scheme_topology_and_line_position",
                             "topologyFamily": topology_strategy,
-                            "schemeLabel": {"hybrid_diagonal": "斜撑+短对撑混合", "bidirectional_grid": "双向网格", "direct_grid": "传统直对撑"}.get(topology_strategy, topology_strategy),
+                            "schemeLabel": {"hybrid_diagonal": "转角墙—墙斜撑+对撑混合", "bidirectional_grid": "近方形双向框架", "direct_grid": "传统直对撑"}.get(topology_strategy, topology_strategy),
                             "positionPattern": pattern,
                             "lineOffsetAmplitude": amplitude,
                             "adjustedLineCount": len(adjustments),
@@ -721,6 +839,11 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                             "geometryFingerprint": ";".join(["-".join(map(str, row)) for row in fingerprint[:80]]),
                             "geometryDifferenceScore": difference_score,
                             "materiallyDifferent": difference_score >= 0.03 or pattern == "as_generated",
+                            "strengthTopologyPreflight": {
+                                "concaveReturnRepair": concave_preflight,
+                                "waleSupportBayRepair": wale_preflight,
+                                "addedSupportCount": int(concave_preflight.get("addedSupportCount", 0) or 0) + int(wale_preflight.get("addedSupportCount", 0) or 0),
+                            },
                         },
                         line_adjustments=adjustments[:30],
                         plan_geometry=_plan_geometry(trial_project, trial_project.retaining_system, adjustments),
@@ -735,19 +858,30 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                         max_span_length=round(max(spans), 3) if spans else None,
                         max_bay_spacing=round(max(bay), 3) if bay else None,
                         crossing_count=int(metrics.get("supportCrossingCount", 0) or 0),
+                        junction_count=int(metrics.get("internalJunctionCount", 0) or 0),
+                        high_degree_junction_count=int(metrics.get("highDegreeJunctionCount", 0) or 0),
+                        plan_intersection_complexity=round(float(metrics.get("planIntersectionComplexity", 0.0) or 0.0), 4),
                         obstacle_conflict_count=int(metrics.get("obstacleConflictCount", 0) or 0),
                         axial_peak_proxy=round(_axial_peak_proxy(trial_project.retaining_system, bay, spans, target_spacing), 3) if spans else None,
                         symmetry_score=round(_symmetry_score(trial_project.retaining_system, trial_project), 3),
                         muck_path_continuity_score=round(_muck_path_continuity_score(trial_project, trial_project.retaining_system, metrics), 3),
                         export_readiness=_export_readiness(quality.status, hard, metrics),
                         constructability_note=(
-                            {"hybrid_diagonal": "角部采用短斜撑并减少靠角超长对撑；", "bidirectional_grid": "双向网格直接约束长边与回墙；", "direct_grid": "传统短跨直对撑，构造直观；"}.get(topology_strategy, "")
+                            {"hybrid_diagonal": "转角影响区采用直接落在相邻围檩/围护墙上的墙—墙角撑，并删除冲突对撑；", "bidirectional_grid": "仅用于近方形宽大基坑的双向框架；次向构件在专用节点终止并按框架受力复核；", "direct_grid": "传统短跨直对撑，构造直观；"}.get(topology_strategy, "")
                             + _candidate_note(target_spacing, column_span, pattern, terms, hard)
                         ),
                     )
                     candidates.append((candidate, trial_project.retaining_system))
     # Feasible candidates first, then score, geometry diversity, then fewer supports/columns for constructability.
-    candidates.sort(key=lambda item: (not item[0].hard_constraints.get("passed", False), -item[0].score, -float(item[0].variable_summary.get("geometryDifferenceScore", 0.0)), _status_rank(item[0].status), item[0].support_count, item[0].column_count))
+    candidates.sort(key=lambda item: (
+        not item[0].hard_constraints.get("passed", False),
+        *_cleanliness_sort_key(item[0]),
+        -item[0].score,
+        -float(item[0].variable_summary.get("geometryDifferenceScore", 0.0)),
+        _status_rank(item[0].status),
+        item[0].support_count,
+        item[0].column_count,
+    ))
     ranked: list[SupportLayoutOptimizationCandidate] = []
     seen: set[tuple] = set()
     selected_system: RetainingSystem | None = None
@@ -791,11 +925,11 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     # operator compares complete A/B/C schemes rather than confirming wall faces
     # one by one.  Remaining slots are filled by score and spacing diversity.
     family_best: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
-    for family in TOPOLOGY_STRATEGIES:
+    for family in available_strategies:
         item = next((pair for pair in candidates if pair[0].hard_constraints.get("passed", False) and str((pair[0].variable_summary or {}).get("topologyFamily")) == family), None)
         if item:
             family_best.append(item)
-    family_best.sort(key=lambda item: -item[0].score)
+    family_best.sort(key=lambda item: (*_cleanliness_sort_key(item[0]), -item[0].score))
     for candidate, system in family_best:
         add_candidate(candidate, system, force=True)
         if len(ranked) >= min(max_candidates, 3):

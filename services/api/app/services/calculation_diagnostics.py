@@ -8,7 +8,7 @@ from app.services.support_layout import unrestrained_concave_face_codes
 
 
 def _status_rank(status: str | None) -> int:
-    return {"pass": 0, "manual_review": 1, "warning": 2, "fail": 3}.get(str(status or ""), 1)
+    return {"pass": 0, "indirect_corner_transfer": 1, "manual_review": 1, "warning": 2, "fail": 3}.get(str(status or ""), 1)
 
 
 def _root_cause(code: str, title: str, description: str, *, severity: str, objects: list[str] | None = None, action: str) -> dict[str, Any]:
@@ -85,10 +85,12 @@ def build_calculation_diagnostics(
     *,
     topology_preflight: dict[str, Any] | None = None,
     support_case_sync: dict[str, Any] | None = None,
+    wall_embedment_preflight: dict[str, Any] | None = None,
     governing_values: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     topology_preflight = dict(topology_preflight or {})
     support_case_sync = dict(support_case_sync or {})
+    wall_embedment_preflight = dict(wall_embedment_preflight or {})
     by_face_level, face_totals = _support_counts(project)
     missing_faces = unrestrained_concave_face_codes(project.excavation, project.retaining_system.supports) if project.excavation and project.retaining_system else []
     envelopes = _wall_envelopes(project, stage_results)
@@ -98,20 +100,60 @@ def build_calculation_diagnostics(
         row["supportFaceCode"] = support_face
         row["directSupportCount"] = face_totals.get(support_face, face_totals.get(display_face, 0))
         row["directSupportCountByLevel"] = by_face_level.get(support_face, by_face_level.get(display_face, {}))
-        row["supportCoverageStatus"] = "fail" if support_face in missing_faces else ("warning" if support_face and int(row["directSupportCount"]) == 0 else "pass")
+        if support_face in missing_faces:
+            row["supportCoverageStatus"] = "fail"
+            row["supportCoverageMethod"] = "missing_direct_or_valid_corner_transfer_path"
+        elif support_face and int(row["directSupportCount"]) == 0:
+            # Short return/step walls can transfer into the closed perimeter wale
+            # and adjacent supported faces.  Keep this visible as an indirect
+            # structural path instead of presenting it as an unexplained warning.
+            row["supportCoverageStatus"] = "indirect_corner_transfer"
+            row["supportCoverageMethod"] = "closed_perimeter_wale_and_adjacent_supported_faces"
+        else:
+            row["supportCoverageStatus"] = "pass"
+            row["supportCoverageMethod"] = "direct_support_endpoint"
 
     roots: list[dict[str, Any]] = []
-    if topology_preflight.get("changed"):
+    concave_repair = dict(topology_preflight.get("concaveReturnRepair") or {})
+    wale_repair = dict(topology_preflight.get("waleSupportBayRepair") or {})
+    if concave_repair.get("changed"):
+        faces = list(concave_repair.get("missingFacesBefore") or concave_repair.get("missingFaces") or [])
+        roots.append(_root_cause(
+            "UNRESTRAINED_CONCAVE_RETURN_WALL_REPAIRED",
+            "凹角回墙传力路径已自动补强",
+            f"计算前发现回墙 {', '.join(faces) or '局部墙面'} 缺少法向直接传力路径，已增补 {int(concave_repair.get('addedSupportCount') or 0)} 根局部次对撑并重新组装工况。",
+            severity="warning",
+            objects=faces,
+            action="复核新增支撑的交叉节点、临时立柱、净空和施工顺序；通过后保留当前拓扑。",
+        ))
+    if wale_repair.get("changed"):
+        faces = list(wale_repair.get("failingFaces") or [])
+        audit_before = dict(wale_repair.get("auditBefore") or {})
+        audit_after = dict(wale_repair.get("auditAfter") or {})
+        roots.append(_root_cause(
+            "WALE_SUPPORT_BAY_REPAIRED",
+            "围檩支点间距已按强度前置规则修复",
+            (
+                f"墙面 {', '.join(faces) or '局部墙面'} 的围檩有效支点间距超过硬上限，"
+                f"已增补 {int(wale_repair.get('addedSupportCount') or 0)} 根角部扇形支撑；"
+                f"最大间距由 {float(audit_before.get('maxBayM') or 0.0):.2f} m 调整为 "
+                f"{float(audit_after.get('maxBayM') or 0.0):.2f} m。"
+            ),
+            severity="warning",
+            objects=faces,
+            action="复核角部扇形支撑节点、交叉立柱和出土通道后，将修复后的围檩支点作为设计基准。",
+        ))
+    if not concave_repair and topology_preflight.get("changed") and not wale_repair:
         faces = list(topology_preflight.get("missingFacesBefore") or topology_preflight.get("missingFaces") or [])
         roots.append(_root_cause(
-            "UNRESTRAINED_CONCAVE_RETURN_WALL",
-            "凹角回墙缺少直接支撑",
-            f"计算前发现回墙 {', '.join(faces) or '局部墙面'} 未形成法向直接传力路径，已增补 {int(topology_preflight.get('addedSupportCount') or 0)} 根局部次对撑。",
-            severity="fail",
+            "SUPPORT_TOPOLOGY_REPAIRED",
+            "支撑拓扑已自动修复",
+            f"计算前已增补 {int(topology_preflight.get('addedSupportCount') or 0)} 根支撑并同步施工工况。",
+            severity="warning",
             objects=faces,
-            action="保留自动增补支撑，复核交叉节点、临时立柱和施工净空后重新计算。",
+            action="复核新增构件、节点、立柱和施工净空后保留当前拓扑。",
         ))
-    elif missing_faces:
+    elif missing_faces and not concave_repair.get("changed"):
         roots.append(_root_cause(
             "UNRESTRAINED_CONCAVE_RETURN_WALL",
             "凹角回墙仍缺少直接支撑",
@@ -123,10 +165,10 @@ def build_calculation_diagnostics(
     if support_case_sync.get("synchronized"):
         roots.append(_root_cause(
             "STALE_STAGE_SUPPORT_REFERENCES",
-            "施工阶段支撑引用已失效",
-            "支撑方案更新后施工阶段仍引用旧构件 ID，本次计算已按支撑层和当前拓扑重建激活关系。",
-            severity="fail",
-            action="核对支撑安装、换撑和拆撑时序，确认后保存新工况。",
+            "施工阶段支撑引用已自动同步",
+            "支撑方案更新后原工况引用旧构件 ID；本次计算已按支撑层、标高和当前拓扑重建激活关系，旧引用未参与计算。",
+            severity="warning",
+            action="核对同步后的支撑安装、换撑和拆撑时序；确认后将新工况保存为项目基准。",
         ))
 
     fail_rules = Counter(str(item.get("ruleId") or "UNKNOWN") for item in checks if item.get("status") == "fail")
@@ -155,6 +197,86 @@ def build_calculation_diagnostics(
             severity="fail",
             action="核对开挖卸载、支撑激活和被动区土弹簧，再优化支撑层位或刚度。",
         ))
+    if any("EMBEDMENT-STABILITY" in rule for rule in fail_rules):
+        before = wall_embedment_preflight.get("beforeMinimumFactor")
+        after = wall_embedment_preflight.get("afterMinimumFactor")
+        before_bottom = wall_embedment_preflight.get("beforeBottomElevationM")
+        after_bottom = wall_embedment_preflight.get("afterBottomElevationM")
+        locked = int(wall_embedment_preflight.get("lockedFailureCount") or 0)
+        roots.append(_root_cause(
+            "WALL_EMBEDMENT_STABILITY",
+            "围护墙墙趾嵌固稳定未闭合",
+            (
+                f"全部/多幅墙出现同一嵌固规则失败，属于共用墙趾标高控制问题；"
+                f"最小筛查系数 {before if before is not None else '-'} → {after if after is not None else '-'}，"
+                f"共用墙趾标高 {before_bottom if before_bottom is not None else '-'}m → {after_bottom if after_bottom is not None else '-'}m。"
+                + (f"其中 {locked} 幅墙趾已锁定，系统未自动覆盖。" if locked else "")
+            ),
+            severity="fail",
+            objects=[str(row.get("wallCode") or row.get("wallId")) for row in wall_embedment_preflight.get("rowsAfter", []) if row.get("status") == "fail"],
+            action="恢复勘察/源模型墙趾控制值，或运行共用墙趾嵌固设计；同时复核被动区土参数、地下水和施工阶段。",
+        ))
+    if any("WALE" in rule and ("FLEXURE" in rule or "SHEAR" in rule or "DEFLECTION" in rule) for rule in fail_rules):
+        roots.append(_root_cause(
+            "WALE_MEMBER_CAPACITY",
+            "围檩强度或刚度仍未闭环",
+            "围檩多工况包络超过当前截面、配筋或挠度控制值。",
+            severity="fail",
+            action="先复核支点间距和拆换撑传力路径，再执行截面与配筋自动迭代；达到工程上限仍不满足时更换体系。",
+        ))
+    if any("QUALITY-SUPPORT_CROSSING" in rule for rule in fail_rules):
+        roots.append(_root_cause(
+            "NON_RING_SUPPORT_CROSSING",
+            "普通水平支撑存在平面穿越",
+            "同层非环形支撑在跨中相互穿越。即使交点附近存在立柱，连续杆件穿越仍会造成节点构造、施工顺序和内力模型不一致。",
+            severity="fail",
+            action="将次对撑或角撑截断至主对撑节点，形成带临时立柱的 T/Y 节点；重新生成支撑并同步施工工况。",
+        ))
+    if any("QUALITY-SUPPORT_OUTSIDE_EXCAVATION" in rule for rule in fail_rules):
+        roots.append(_root_cause(
+            "SUPPORT_OUTSIDE_EXCAVATION",
+            "支撑中心线穿出基坑轮廓",
+            "支撑线在凹角、阶梯段或回折边处离开实际开挖域。",
+            severity="fail",
+            action="按局部主轴和真实多边形求交重新生成，禁止使用包围盒端点代替墙面交点。",
+        ))
+    if any("QUALITY-WALE_SUPPORT_BAY" in rule for rule in fail_rules):
+        roots.append(_root_cause(
+            "WALE_SUPPORT_BAY_HARD_GATE",
+            "围檩直接支点间距超过硬上限",
+            "局部墙面缺少可追溯的直接支点，截面放大不能替代清晰传力路径。",
+            severity="fail",
+            action="采用非交叉短对撑、角部 Y 节点或调整主对撑站位，直至每层每面墙的直接支点间距满足上限。",
+        ))
+    if any("QUALITY-SUPPORT_WALL_CLEARANCE" in rule for rule in fail_rules):
+        roots.append(_root_cause(
+            "SUPPORT_WALL_CLEARANCE",
+            "支撑中心线与围护墙净距不足",
+            "支撑截面或中心线侵入墙体/围檩构造区。",
+            severity="fail",
+            action="保留墙面连接点，通过围檩刚臂将支撑中心线向坑内退让，并重新检查短段可施工长度。",
+        ))
+    if any("QUALITY-TEMPORARY_COLUMN" in rule for rule in fail_rules):
+        roots.append(_root_cause(
+            "TEMPORARY_COLUMN_LOAD_PATH",
+            "长跨或支撑节点缺少临时立柱",
+            "支撑有效无侧向支承长度或 T/Y 节点没有明确竖向传力构件。",
+            severity="fail",
+            action="在内部支撑节点和长跨控制点生成临时立柱/立柱桩，并将服务构件编号写入节点记录。",
+        ))
+
+    # Never leave a hard failure without an engineering diagnosis.  Unknown
+    # rule IDs are grouped and surfaced with their original identifiers so the
+    # frontend does not fall back to an opaque 'unclassified' card.
+    if fail_rules and not any(str(item.get("severity")) == "fail" for item in roots):
+        top = ", ".join(f"{rule}×{count}" for rule, count in fail_rules.most_common(5))
+        roots.append(_root_cause(
+            "OTHER_HARD_CHECK_FAILURES",
+            "存在尚未闭环的硬性校核",
+            f"控制规则：{top}。",
+            severity="fail",
+            action="打开校核清单定位对象、工况、计算值和限值；修复后重新计算，旧结果不得用于出图。",
+        ))
 
     counts = Counter(str(item.get("status") or "manual_review") for item in checks)
     status = "fail" if counts.get("fail", 0) else ("warning" if counts.get("warning", 0) or roots else "pass")
@@ -175,7 +297,7 @@ def build_calculation_diagnostics(
 
     actions: list[dict[str, Any]] = []
     if topology_preflight.get("changed"):
-        actions.append({"code": "REVIEW_ADDED_SUPPORTS", "label": "复核新增局部次对撑", "targetStep": "retaining", "primary": True})
+        actions.append({"code": "REVIEW_ADDED_SUPPORTS", "label": "复核强度前置拓扑修复", "targetStep": "retaining", "primary": True})
     if support_case_sync.get("synchronized"):
         actions.append({"code": "REVIEW_STAGE_SEQUENCE", "label": "复核更新后的施工工况", "targetStep": "calculation", "primary": not actions})
     if counts.get("fail", 0):
@@ -183,13 +305,42 @@ def build_calculation_diagnostics(
     else:
         actions.append({"code": "CONTINUE_REBAR_REVIEW", "label": "进入配筋与出图复核", "targetStep": "deliverables", "primary": not actions})
 
+    wale_before = dict((wale_repair.get("auditBefore") or {}))
+    wale_after = dict((wale_repair.get("auditAfter") or {}))
+    strength_design_loop = {
+        "enabled": bool(getattr(project.design_settings, "auto_strength_design_enabled", True)),
+        "iterationLimit": int(getattr(project.design_settings, "max_design_iterations", 3) or 3),
+        "topologyAdjusted": bool(topology_preflight.get("changed")),
+        "addedSupportCount": int(topology_preflight.get("addedSupportCount") or 0),
+        "waleBayBeforeM": wale_before.get("maxBayM"),
+        "waleBayAfterM": wale_after.get("maxBayM"),
+        "strengthStatus": "fail" if any(("FLEXURE" in rule or "SHEAR" in rule or "AXIAL" in rule) for rule in fail_rules) else "pass",
+        "stiffnessStatus": "fail" if any(("DEFORMATION" in rule or "DEFLECTION" in rule) for rule in fail_rules) else "pass",
+        "topologyStatus": "fail" if any(rule.startswith("QUALITY-SUPPORT_") or "WALE_SUPPORT_BAY" in rule for rule in fail_rules) else "pass",
+        "loadPathPolicy": "replacement slab/waler elevations remain in vertical tributary-band partition during support removal stages",
+        "waleBoundaryPolicy": "closed-perimeter rigid corner joints restrain face-wale end bays; direct strut reactions retain conservative qL equilibrium",
+        "wallEmbedment": {
+            "enabled": bool(wall_embedment_preflight.get("enabled", True)),
+            "status": wall_embedment_preflight.get("status"),
+            "changed": bool(wall_embedment_preflight.get("changed")),
+            "beforeBottomElevationM": wall_embedment_preflight.get("beforeBottomElevationM"),
+            "afterBottomElevationM": wall_embedment_preflight.get("afterBottomElevationM"),
+            "beforeMinimumFactor": wall_embedment_preflight.get("beforeMinimumFactor"),
+            "afterMinimumFactor": wall_embedment_preflight.get("afterMinimumFactor"),
+            "targetFactor": wall_embedment_preflight.get("designTarget"),
+            "message": wall_embedment_preflight.get("message"),
+        },
+    }
+
     return {
         "status": status,
         "caseId": case.id,
         "topologyPreflight": topology_preflight,
         "supportTopologySynchronization": support_case_sync,
+        "wallEmbedmentPreflight": wall_embedment_preflight,
         "rootCauses": roots,
         "wallCoverage": sorted(envelopes, key=lambda row: (-_status_rank(str(row.get("supportCoverageStatus"))), -float(row.get("maxDisplacementMm") or 0.0))),
+        "strengthDesignLoop": strength_design_loop,
         "issueGroups": {
             "failRules": [{"ruleId": key, "count": value} for key, value in fail_rules.most_common()],
             "warningRules": [{"ruleId": key, "count": value} for key, value in warning_rules.most_common()],

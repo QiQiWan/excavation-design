@@ -16,6 +16,7 @@ from app.calculation.wall_internal_force import analyze_wall_on_elastic_foundati
 from app.geometry.consistency import geometry_consistency_summary
 from app.version import SOFTWARE_VERSION, ALGORITHM_VERSION, RULE_SET_VERSION, EXPORT_SCHEMA_VERSION
 from app.geology.section import extract_representative_section
+from app.geology.model_builder import ensure_geological_model_covers_excavation, geological_coverage_audit
 from app.rules.gb50007.foundation_rules import check_foundation_bearing_pressure
 from app.rules.gb50009.load_combination_rules import design_effect_standard_to_uls
 from app.rules.gb50009.load_combinations import check_combination_documented, combination_record
@@ -48,9 +49,11 @@ from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
 from app.quality.formal_gate import build_formal_report_gate
 from app.services.support_layout_repair import auto_repair_support_layout
-from app.services.support_layout import repair_concave_return_supports
+from app.services.support_layout import repair_concave_return_supports, repair_wale_support_bays
 from app.services.calculation_diagnostics import build_calculation_diagnostics
+from app.services.wall_restraint import build_effective_wall_restraints
 from app.services.candidate_result_cache import candidate_input_hash, get_cached_candidate_result, put_cached_candidate_result
+from app.services.wall_embedment_design import auto_design_wall_embedment
 
 LOAD_FACTOR_RETAINING = 1.25
 
@@ -403,6 +406,16 @@ def _min_value(checks: list[dict[str, Any]], token: str) -> float | None:
     return round(min(values), 3) if values else None
 
 
+def _max_value(checks: list[dict[str, Any]], token: str) -> float | None:
+    values: list[float] = []
+    for check in checks:
+        if token in str(check.get("ruleId", check.get("rule_id", ""))):
+            value = check.get("calculatedValue")
+            if isinstance(value, (int, float)) and value < 900:
+                values.append(float(value))
+    return round(max(values), 3) if values else None
+
+
 
 
 def _status_from_counts(fail: int, warning: int, manual: int = 0) -> str:
@@ -653,7 +666,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         required = flex["asRequired"]
         capacity = rectangular_flexural_capacity_knm_per_m(provided, height, beam.material.grade, "HRB400") * width
         shear_capacity = shear.get("concreteShearCapacity", 0.0) * width
-        status = "pass" if flex["status"] == "pass" and shear["status"] == "pass" else "warning"
+        status = "pass" if flex["status"] == "pass" and shear["status"] == "pass" else "fail"
         stirrup_spacing = 100 if shear.get("utilization", 0.0) > 0.75 else 150
         face_code = results[0].face_code
         level_index = results[0].level_index
@@ -690,7 +703,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
             local_bearing_spread_height=local_bearing_spread_height,
             wall_connection_note="围檩与地连墙按连续传力构造处理：节点后方承压扩散区、预埋件/植筋/穿墙筋和墙面局部压应力需由施工图详设复核。",
             envelope=envelope,
-            check_status=status if deflection_status != "fail" else "warning",
+            check_status="fail" if status == "fail" or deflection_status == "fail" else "warning" if deflection_status == "warning" else "pass",
             notes=[
                 "围檩内力来自 V1.9 全局联立刚度矩阵与多工况围檩包络的弯矩、剪力和挠度结果。",
                 "正截面配筋、斜截面抗剪和节点区附加筋已形成子集设计；正式工程需复核构造锚固、裂缝、施工缝和局部承压扩散。",
@@ -718,7 +731,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "GB50010-WALE-SHEAR-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": status if shear["status"] == "pass" else "warning",
+                "status": "pass" if shear["status"] == "pass" else "fail",
                 "calculatedValue": round(v_design, 3),
                 "limitValue": round(shear_capacity, 3),
                 "unit": "kN",
@@ -730,7 +743,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "WALE-DEFLECTION-ENVELOPE-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": "pass" if deflection_status == "pass" else "warning",
+                "status": deflection_status,
                 "calculatedValue": round(max_d, 6),
                 "limitValue": round(deflection_limit, 6),
                 "unit": "m",
@@ -742,7 +755,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "GB50010-WALE-NODE-REBAR-COORDINATION-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": "pass" if status == "pass" else "warning",
+                "status": status,
                 "calculatedValue": design.max_moment_design,
                 "limitValue": design.moment_capacity,
                 "unit": "kN*m",
@@ -804,22 +817,59 @@ def _copy_stage_operational_settings(source: ConstructionStage, target: Construc
     target.replacement_action = source.replacement_action or target.replacement_action
 
 
-def synchronize_calculation_case_supports(project: Project, case: CalculationCase | None) -> tuple[CalculationCase, dict[str, Any]]:
-    """Synchronize staged support IDs after support-layout regeneration.
+def _stage_match_cost(source: ConstructionStage, target: ConstructionStage) -> tuple[int, float, int]:
+    """Semantic stage matching cost used when topology regeneration changes stage count."""
+    type_penalty = 0 if source.stage_type == target.stage_type else 1
+    elevation_delta = abs(float(source.excavation_elevation) - float(target.excavation_elevation))
+    zone_penalty = 0 if (source.zone or "") == (target.zone or "") else 1
+    return type_penalty, elevation_delta, zone_penalty
 
-    Support candidate adoption and automatic repair create new support IDs. Historical
-    cases can therefore silently become unsupported-wall cases. This function treats
-    the support topology as versioned input and rebuilds the default activation path
-    whenever stale references are detected. Operational water/surcharge settings are
-    copied by stage order to avoid losing user adjustments.
+
+def _copy_operational_settings_semantically(source_stages: list[ConstructionStage], target_stages: list[ConstructionStage]) -> list[dict[str, Any]]:
+    unused = set(range(len(source_stages)))
+    mapping: list[dict[str, Any]] = []
+    for target_index, target in enumerate(target_stages):
+        if not unused:
+            break
+        source_index = min(unused, key=lambda index: _stage_match_cost(source_stages[index], target))
+        source = source_stages[source_index]
+        cost = _stage_match_cost(source, target)
+        # Do not copy an unrelated construction operation merely because it has
+        # the same ordinal position.  Type-compatible stages are preferred; a
+        # cross-type copy is allowed only for generic excavation/final aliases.
+        compatible = cost[0] == 0 or {source.stage_type, target.stage_type} <= {"excavation", "final"}
+        if compatible:
+            _copy_stage_operational_settings(source, target)
+            unused.remove(source_index)
+            mapping.append({
+                "sourceStageId": source.id,
+                "sourceStageType": source.stage_type,
+                "sourceElevationM": source.excavation_elevation,
+                "targetStageId": target.id,
+                "targetStageType": target.stage_type,
+                "targetElevationM": target.excavation_elevation,
+                "elevationDeltaM": round(cost[1], 4),
+            })
+    return mapping
+
+
+def synchronize_calculation_case_supports(project: Project, case: CalculationCase | None) -> tuple[CalculationCase, dict[str, Any]]:
+    """Synchronize staged support IDs after topology changes using semantic stages.
+
+    Historical candidate/adopted support ids are never allowed to participate in
+    a current calculation.  Water level, surcharge and zone settings are copied
+    by stage type and nearest excavation elevation, not by list order.
     """
     default_case = build_default_construction_cases(project)[0]
     if case is None:
+        after = _case_support_audit(project, default_case)
         return default_case, {
             "synchronized": True,
             "reason": "no_case_supplied",
             "before": None,
+            "after": after,
             "afterTopologyHash": default_case.support_topology_hash,
+            "operationalSettingMapping": [],
         }
     audit = _case_support_audit(project, case)
     if not audit["requiresSynchronization"]:
@@ -827,22 +877,28 @@ def synchronize_calculation_case_supports(project: Project, case: CalculationCas
             "synchronized": False,
             "reason": "topology_current",
             "before": audit,
+            "after": audit,
             "afterTopologyHash": case.support_topology_hash,
+            "operationalSettingMapping": [],
         }
-    for source, target in zip(case.stages, default_case.stages):
-        _copy_stage_operational_settings(source, target)
+    mapping = _copy_operational_settings_semantically(list(case.stages), list(default_case.stages))
     default_case.name = case.name
     default_case.synchronization_note = (
         f"Support topology synchronized automatically: {audit['staleSupportCount']} stale support IDs and "
-        f"{audit['stageCountWithNoValidSupport']} stages without valid active supports were replaced."
+        f"{audit['stageCountWithNoValidSupport']} stages without valid active supports were replaced; "
+        f"{len(mapping)} operational stage settings were mapped semantically."
     )
+    after = _case_support_audit(project, default_case)
+    if after["requiresSynchronization"]:
+        raise ValueError("Construction-stage support synchronization did not produce a current topology")
     return default_case, {
         "synchronized": True,
         "reason": "stale_support_topology",
         "before": audit,
+        "after": after,
         "afterTopologyHash": default_case.support_topology_hash,
+        "operationalSettingMapping": mapping,
     }
-
 
 def build_default_construction_cases(project: Project) -> list[CalculationCase]:
     if not project.excavation:
@@ -956,7 +1012,6 @@ def _stability_min(result: CalculationResult) -> float | None:
     vals = [
         result.governing_values.embedment_safety_factor_min,
         result.governing_values.heave_safety_factor_min,
-        result.governing_values.seepage_safety_factor_min,
     ]
     if result.stability_detailed_result and result.stability_detailed_result.min_safety_factor is not None:
         vals.append(result.stability_detailed_result.min_safety_factor)
@@ -968,6 +1023,7 @@ def _summarize_candidate_calculation(label: str, candidate, result: CalculationR
     wale = _wale_envelope_metrics(result)
     formal_gate = result.formal_report_gate
     ifc_quality = result.ifc_compatibility
+    embedment = dict((result.design_iteration_summary or {}).get("wallEmbedmentPreflight") or {})
     return {
         "schemeLabel": label,
         "candidateId": candidate.id,
@@ -989,6 +1045,10 @@ def _summarize_candidate_calculation(label: str, candidate, result: CalculationR
         "maxWaleShear": wale["maxWaleShear"],
         "maxWaleDeflection": wale["maxWaleDeflection"],
         "minStabilitySafetyFactor": _stability_min(result),
+        "wallBottomElevation": embedment.get("afterBottomElevationM"),
+        "wallEmbedmentAddedM": embedment.get("addedEmbedmentM"),
+        "wallEmbedmentMinimumFactor": embedment.get("afterMinimumFactor"),
+        "wallEmbedmentDesignStatus": embedment.get("status"),
         "strengthStatus": result.design_review_summary.strength_status if result.design_review_summary else "manual_review",
         "stiffnessStatus": result.design_review_summary.stiffness_status if result.design_review_summary else "manual_review",
         "stabilityStatus": result.design_review_summary.stability_status if result.design_review_summary else "manual_review",
@@ -1002,6 +1062,9 @@ def _summarize_candidate_calculation(label: str, candidate, result: CalculationR
         "manualReviewCount": int((result.check_summary or {}).get("manualReview", (result.check_summary or {}).get("manual_review", 0)) or 0),
         "governingCheckStatus": result.governing_values.governing_check_status,
         "calculationResultId": result.id,
+        "calculatedTopologyHash": _support_topology_hash(trial_project),
+        "geologyCoverage": geological_coverage_audit(trial_project),
+        "calculationDiagnostics": dict((result.design_iteration_summary or {}).get("calculationDiagnostics") or {}),
         "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
     }
 
@@ -1152,6 +1215,15 @@ def run_single_candidate_calculation(
         }
     trial_project.retaining_system = system
     trial_project.calculation_results = []
+    # Candidate comparison must evaluate the constructible, strength-gated
+    # topology.  V3.14 calculated raw candidates with auto_repair=False, so a
+    # scheme could be reported with unsupported return walls or excessive wale
+    # bays even though the adopted project was repaired before its next run.
+    # Apply only additive topology gates here; do not launch another candidate
+    # optimization that could silently replace the scheme being compared.
+    geology_extended = ensure_geological_model_covers_excavation(trial_project)
+    concave_preflight = repair_concave_return_supports(trial_project)
+    wale_preflight = repair_wale_support_bays(trial_project)
     trial_project.calculation_cases = build_default_construction_cases(trial_project)
     candidate_result = run_calculation(
         trial_project, trial_project.calculation_cases[0], auto_repair=False, include_candidate_comparison=False
@@ -1160,6 +1232,15 @@ def run_single_candidate_calculation(
     summary["changedSupportCount"] = len(adjustments)
     summary["topologyFamily"] = topology_strategy
     summary["schemeName"] = str((candidate.variable_summary or {}).get("schemeLabel", topology_strategy))
+    summary["strengthTopologyPreflight"] = {
+        "concaveReturnRepair": concave_preflight,
+        "waleSupportBayRepair": wale_preflight,
+        "geologyExtended": geology_extended,
+        "addedSupportCount": int(concave_preflight.get("addedSupportCount", 0) or 0) + int(wale_preflight.get("addedSupportCount", 0) or 0),
+    }
+    summary["supportCount"] = len(trial_project.retaining_system.supports)
+    summary["columnCount"] = len(trial_project.retaining_system.columns)
+    summary["maxSpanLength"] = max((float(item.span_length or 0.0) for item in trial_project.retaining_system.supports), default=0.0)
     summary["cacheHit"] = False
     summary["inputHash"] = input_hash
     if use_cache and not summary.get("error"):
@@ -1181,14 +1262,28 @@ def _compare_top_support_candidates(project: Project, support_repair, top_n: int
         return run_single_candidate_calculation(project, candidate, index=index, use_cache=True)
 
     outputs: list[dict[str, Any]] = []
-    max_workers = max(1, min(top_n, len(candidates)))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {executor.submit(worker, item): item[0] for item in enumerate(candidates)}
-        for future in as_completed(future_map):
+    # Dense NumPy solves already use threaded BLAS. Running three large candidate
+    # matrices in Python threads can oversubscribe CPU/memory and take far longer
+    # than three serial solves. Keep true parallelism for compact projects and use
+    # deterministic serial evaluation for large/irregular retaining systems.
+    complexity = len(project.retaining_system.supports) + 8 * len(project.retaining_system.diaphragm_walls)
+    max_workers = max(1, min(top_n, len(candidates))) if complexity <= 160 else 1
+    if max_workers == 1:
+        for item in enumerate(candidates):
             try:
-                outputs.append(future.result())
-            except Exception as exc:  # keep the main calculation usable if one candidate fails
-                outputs.append({"schemeLabel": _candidate_label(future_map[future]), "error": str(exc)})
+                outputs.append(worker(item))
+            except Exception as exc:
+                outputs.append({"schemeLabel": _candidate_label(item[0]), "error": str(exc)})
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {executor.submit(worker, item): item[0] for item in enumerate(candidates)}
+            for future in as_completed(future_map):
+                try:
+                    outputs.append(future.result())
+                except Exception as exc:  # keep the main calculation usable if one candidate fails
+                    outputs.append({"schemeLabel": _candidate_label(future_map[future]), "error": str(exc)})
+    for item in outputs:
+        item["comparisonExecutionMode"] = "serial_large_model" if max_workers == 1 else "parallel_compact_model"
     outputs.sort(key=lambda item: item.get("schemeLabel", "Z"))
     _rank_full_candidate_calculations(outputs)
     by_id = {item.get("candidateId"): item for item in outputs if item.get("candidateId")}
@@ -1217,16 +1312,57 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         raise ValueError("Project has no excavation")
     if not project.retaining_system:
         raise ValueError("Project has no retaining system")
-    topology_preflight = repair_concave_return_supports(project) if auto_repair else {"changed": False}
+    geology_extended = ensure_geological_model_covers_excavation(project)
+    geology_audit = geological_coverage_audit(project)
+    if not geology_audit.get("designDomainCovered", False):
+        raise ValueError("Geological model does not cover the retaining-system design domain")
+    strength_auto_enabled = bool(getattr(project.design_settings, "auto_strength_design_enabled", True))
+    requested_case = calculation_case or (project.calculation_cases[-1] if project.calculation_cases else None)
+    wall_embedment_preflight = auto_design_wall_embedment(
+        project,
+        requested_case,
+        enabled=bool(getattr(project.design_settings, "auto_wall_embedment_design_enabled", True)),
+    )
+    concave_topology_preflight = repair_concave_return_supports(project) if auto_repair else {"changed": False}
+    wale_topology_preflight = repair_wale_support_bays(project) if auto_repair and strength_auto_enabled else {"changed": False, "status": "not_run"}
+    topology_preflight = {
+        "changed": bool(concave_topology_preflight.get("changed") or wale_topology_preflight.get("changed")),
+        "addedSupportCount": int(concave_topology_preflight.get("addedSupportCount", 0) or 0) + int(wale_topology_preflight.get("addedSupportCount", 0) or 0),
+        "missingFacesBefore": list(concave_topology_preflight.get("missingFacesBefore") or concave_topology_preflight.get("missingFaces") or []),
+        "concaveReturnRepair": concave_topology_preflight,
+        "waleSupportBayRepair": wale_topology_preflight,
+    }
     if auto_repair:
         current_quality = evaluate_support_layout_quality(project)
         hard_geometry_failure = any(
             issue.severity == "fail"
-            and issue.category in {"support_spacing", "support_span", "support_crossing", "obstacle_clearance", "temporary_column", "replacement_path"}
+            and issue.category in {"support_spacing", "support_span", "wale_support_bay", "support_crossing", "support_outside_excavation", "obstacle_clearance", "temporary_column", "replacement_path"}
             for issue in current_quality.issues
         )
         if hard_geometry_failure or not project.retaining_system.supports:
             support_repair = auto_repair_support_layout(project)
+            # The constrained optimizer may replace the preflight topology.
+            # Re-apply additive wall-restraint and wale-bay hard gates to the
+            # selected candidate before construction stages are synchronized.
+            post_concave = repair_concave_return_supports(project)
+            post_wale = repair_wale_support_bays(project) if strength_auto_enabled else {"changed": False, "status": "not_run"}
+            post_added = int(post_concave.get("addedSupportCount", 0) or 0) + int(post_wale.get("addedSupportCount", 0) or 0)
+            if post_added:
+                topology_preflight["changed"] = True
+                topology_preflight["addedSupportCount"] = int(topology_preflight.get("addedSupportCount", 0) or 0) + post_added
+                topology_preflight["postOptimizationRepair"] = {
+                    "changed": True,
+                    "addedSupportCount": post_added,
+                    "concaveReturnRepair": post_concave,
+                    "waleSupportBayRepair": post_wale,
+                }
+                topology_preflight["waleSupportBayRepair"] = post_wale if post_wale.get("changed") else topology_preflight.get("waleSupportBayRepair", {})
+                topology_preflight["concaveReturnRepair"] = post_concave if post_concave.get("changed") else topology_preflight.get("concaveReturnRepair", {})
+                support_repair.actions.append({
+                    "action": "post_optimization_strength_gate_repair",
+                    "description": f"候选拓扑采用后再次执行回墙与围檩支点硬门禁，增补 {post_added} 根构件。",
+                })
+                support_repair.summary += f" 候选采用后按强度前置门禁增补 {post_added} 根局部构件。"
         else:
             # Calculation is deterministic and fast by default. Candidate
             # enumeration remains an explicit design action, rather than being
@@ -1242,7 +1378,6 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             project.retaining_system.support_layout_repair = support_repair
     else:
         support_repair = project.retaining_system.support_layout_repair if project.retaining_system else None
-    requested_case = calculation_case or (project.calculation_cases[-1] if project.calculation_cases else None)
     case, support_case_sync = synchronize_calculation_case_supports(project, requested_case)
     if support_case_sync.get("synchronized"):
         replaced = False
@@ -1272,11 +1407,19 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     warnings = [
         "计算结果用于工程设计辅助；正式施工图和专家论证仍需注册岩土/结构工程师签审。",
     ]
-    if topology_preflight.get("changed"):
+    if geology_extended:
+        warnings.append("计算前已自动外扩地质模型，使围护结构及施工影响区处于地质设计域内；外推区域按低置信度处理。")
+    if wall_embedment_preflight.get("changed"):
+        warnings.append(str(wall_embedment_preflight.get("message") or "计算前已按嵌固稳定筛查自动加深围护墙墙趾。"))
+    elif wall_embedment_preflight.get("status") == "fail":
+        warnings.append(str(wall_embedment_preflight.get("message") or "墙趾嵌固稳定筛查仍未闭合。"))
+    if concave_topology_preflight.get("changed"):
         warnings.append(
             "计算前拓扑诊断发现凹形回墙缺少直接支点，已增补 "
-            f"{topology_preflight.get('addedSupportCount', 0)} 根局部法向次对撑并重建立柱/节点。"
+            f"{concave_topology_preflight.get('addedSupportCount', 0)} 根局部法向次对撑并重建立柱/节点。"
         )
+    if wale_topology_preflight.get("changed"):
+        warnings.append(str(wale_topology_preflight.get("action") or "围檩支点间距超限已通过角部扇形斜撑自动修复。"))
     if support_case_sync.get("synchronized"):
         before = support_case_sync.get("before") or {}
         warnings.append(
@@ -1327,12 +1470,29 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             ]
             segment_supports = [s for s in active_supports if segment.name in {s.start_face_code, s.end_face_code}]
             segment_transferred_supports = [s for s in transferred_supports if segment.name in {s.start_face_code, s.end_face_code}]
-            wall_restraint_supports = [*segment_supports, *segment_transferred_supports]
-            # Each wall segment receives only supports whose endpoint is connected to that face.
+            load_path_supports = [*active_supports, *transferred_supports]
+            corner_transfer_supports, wall_restraint_audit = build_effective_wall_restraints(
+                project.excavation,
+                segment,
+                load_path_supports,
+                target_spacing_m=float(project.design_settings.default_support_spacing or 5.0),
+            )
+            wall_restraint_supports = [*segment_supports, *segment_transferred_supports, *corner_transfer_supports]
+            # Direct supports remain the source of member axial forces. Short stepped/return
+            # walls may receive reduced-stiffness analytical restraints from the two adjacent
+            # supported faces through continuous wales; these proxies never enter quantities.
             wale_stage_results = []
-            forces = estimate_support_axial_forces(
+            # During replacement/removal stages the basement slab or replacement
+            # waler remains part of the lateral load path at the transferred
+            # elevation.  Using only the still-active struts makes the uppermost
+            # support inherit the full excavation pressure band and creates
+            # fictitious wale moments.  Retain transferred levels while forming
+            # vertical tributary bands, then keep member forces/envelopes only for
+            # physical supports and wales that remain active in this stage.
+            force_distribution_supports = [*segment_supports, *segment_transferred_supports]
+            forces_all = estimate_support_axial_forces(
                 pressure,
-                segment_supports,
+                force_distribution_supports,
                 segment.length,
                 top,
                 top - stage_depth,
@@ -1343,6 +1503,13 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 stage_id=stage.id,
                 wale_result_collector=wale_stage_results,
             )
+            active_segment_support_ids = {item.id for item in segment_supports}
+            active_segment_levels = {int(item.level_index) for item in segment_supports}
+            forces = [item for item in forces_all if item.support_id in active_segment_support_ids]
+            wale_stage_results = [
+                item for item in wale_stage_results
+                if int(item.level_index) in active_segment_levels
+            ]
             wall_force_raw = analyze_wall_on_elastic_foundation(
                 soil_profile=section.layers,
                 supports=segment_supports,
@@ -1355,7 +1522,8 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 wall_thickness=wall_thickness,
                 concrete_grade=concrete_grade,
                 segment=segment,
-                transferred_supports=segment_transferred_supports,
+                transferred_supports=[*segment_transferred_supports, *corner_transfer_supports],
+                transfer_stiffness_factor=0.55 if corner_transfer_supports and not segment_transferred_supports else 1.0,
                 wall_stiffness_factor=wall_stiffness_factor,
                 soil_modulus_factor=soil_modulus_factor,
                 support_stiffness_factor=support_stiffness_factor,
@@ -1435,6 +1603,26 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             segment_design["moment"] = max(segment_design["moment"], m_design)
             segment_design["shear"] = max(segment_design["shear"], v_design)
             stage_checks: list[dict[str, Any]] = []
+            restraint_status = str(wall_restraint_audit.get("status") or "manual_review")
+            stage_checks.append({
+                "ruleId": "PITGUARD-WALL-RESTRAINT-LOAD-PATH",
+                "objectId": wall.id if wall else segment.id,
+                "objectType": "DiaphragmWallPanel",
+                "status": restraint_status,
+                "calculatedValue": len(wall_restraint_audit.get("analyticalTransferLevels") or []),
+                "limitValue": len(wall_restraint_audit.get("activeLevels") or []),
+                "unit": "support levels",
+                "message": (
+                    "墙面已形成直接支撑或短回墙两端围檩传力约束。"
+                    if restraint_status == "pass"
+                    else "墙面存在未闭合支撑层，当前内力不得直接用于构件设计。"
+                ),
+                "clauseReference": "JGJ 120 支撑体系传力明确性与构造连续性原则；短回墙等效约束为软件分析模型，需节点详图复核",
+                "stageId": stage.id,
+                "stageName": stage.name,
+                "segmentId": segment.id,
+                "diagnostics": wall_restraint_audit,
+            })
             numerical = dict(global_coupled.equilibrium_diagnostics or {})
             numerical_status = str(numerical.get("status") or "manual_review")
             stage_checks.append({
@@ -1654,7 +1842,9 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "slabReplacementSource": global_coupled.slab_replacement_source,
                 "slabReplacementRequired": global_coupled.slab_replacement_required,
                 "slabReplacementComponents": global_coupled.slab_replacement_components,
-                "note": "墙体/围檩转角、支撑空间方向、立柱竖向、节点刚域和楼板换撑均进入空间杆系代理矩阵；换撑未激活显示为—，激活阶段按 EA/L 计算。",
+                "wallRestraintAudit": wall_restraint_audit,
+                "cornerTransferProxyCount": len(corner_transfer_supports),
+                "note": "墙体/围檩转角、支撑空间方向、立柱竖向、节点刚域和楼板换撑均进入空间杆系代理矩阵；短回墙可由两端连续围檩形成折减分析约束，代理不计入工程量。",
             }
             stage_results.append(
                 StageCalculationResult(
@@ -1934,6 +2124,34 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "message": issue.message + ((" 建议：" + issue.recommendation) if issue.recommendation else ""),
             "clauseReference": "PitGuard V2.0.4 quality gate",
         })
+    coverage_status = "pass" if geology_audit.get("designDomainCovered", False) else "fail"
+    global_checks.append({
+        "ruleId": "GB55017-2021-GEOLOGICAL-DESIGN-DOMAIN-COVERAGE",
+        "objectId": project.id,
+        "objectType": "GeologicalModel",
+        "status": coverage_status,
+        "calculatedValue": 1.0 if coverage_status == "pass" else 0.0,
+        "limitValue": 1.0,
+        "unit": "covered",
+        "message": str(geology_audit.get("message") or "地质模型平面范围覆盖围护结构和施工影响区。"),
+        "clauseReference": "GB 55017-2021 工程勘察通用规范：勘察成果应覆盖工程设计所需场地范围。",
+    })
+    extrapolation_status = str(geology_audit.get("extrapolationStatus") or "pass")
+    global_checks.append({
+        "ruleId": "GB55017-2021-GEOLOGICAL-EXTRAPOLATION-CONTROL",
+        "objectId": project.id,
+        "objectType": "GeologicalModel",
+        "status": extrapolation_status,
+        "calculatedValue": geology_audit.get("maximumExtrapolationDistanceM"),
+        "limitValue": geology_audit.get("maximumAllowedExtrapolationDistanceM"),
+        "unit": "m",
+        "message": (
+            "地质设计域已覆盖；外扩部分采用受控边界外推并保留低置信度标识。"
+            if geology_audit.get("autoExtended")
+            else "地质模型未使用平面外推。"
+        ),
+        "clauseReference": "GB 55017-2021 工程勘察通用规范：外推区域需明确资料依据、不确定性和补充勘察要求。",
+    })
     global_checks = _consolidate_global_checks(project, global_checks)
     result_summary = _summary(global_checks)
     design_review = _design_review_summary(global_checks, stage_results)
@@ -1945,6 +2163,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         global_checks,
         topology_preflight=topology_preflight,
         support_case_sync=support_case_sync,
+        wall_embedment_preflight=wall_embedment_preflight,
         governing_values={
             "maxDisplacement": round(max_displacement, 3),
             "maxWallMoment": round(max_wall_moment, 3),
@@ -1955,6 +2174,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     result = CalculationResult(
         project_id=project.id,
         case_id=case.id,
+        support_topology_hash=_support_topology_hash(project),
         stage_results=stage_results,
         governing_values=GoverningValues(
             max_total_pressure=round(max_pressure, 3),
@@ -1965,7 +2185,8 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             governing_check_status=_governing_status(global_checks),
             embedment_safety_factor_min=_min_value(global_checks, "EMBEDMENT"),
             heave_safety_factor_min=_min_value(global_checks, "HEAVE"),
-            seepage_safety_factor_min=_min_value(global_checks, "SEEPAGE"),
+            seepage_safety_factor_min=None,
+            seepage_risk_index_max=_max_value(global_checks, "SEEPAGE"),
             strength_check_status=design_review.strength_status,
             stiffness_check_status=design_review.stiffness_status,
             stability_check_status=design_review.stability_status,
@@ -2002,13 +2223,40 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "p21CandidateAbcFullCalculationComparison": bool(candidate_full_calculations),
             "p22ConcavePitTopologyRecovery": True,
             "p23CalculationRootCauseDiagnostics": True,
+            "p24StrengthDrivenTopologyDesign": True,
+            "p25WaleSupportBayHardGate": True,
+            "p26CornerFanAutoRepair": True,
+            "p27ReplacementStageLoadPathPartition": True,
+            "p28ClosedPerimeterWaleEnvelope": True,
+            "p29BoundedCostMatrixDiagnostics": True,
+            "p30SharedGridNodeRecovery": True,
+            "p31GeneralPolygonPrincipalAxisLayout": True,
+            "p32CandidateStateAndStageSynchronization": True,
+            "p33GeologicalDesignDomainCoverage": True,
+            "p34WallEmbedmentStrengthDesign": True,
+            "autoStrengthDesignEnabled": strength_auto_enabled,
+            "maxDesignIterations": int(getattr(project.design_settings, "max_design_iterations", 3) or 3),
+            "topologyPreflight": topology_preflight,
+            "wallEmbedmentPreflight": wall_embedment_preflight,
             "geometryConsistency": geometry_consistency_summary(project),
             "calculationDiagnostics": calculation_diagnostics,
             "supportTopologySynchronization": support_case_sync,
+            "geologyCoverage": geology_audit,
             "supportRoleCount": {role: sum(1 for item in project.retaining_system.supports if item.support_role == role) for role in sorted({item.support_role for item in project.retaining_system.supports})},
-            "remainingBoundary": "V3.5 已完成异形基坑凹角回墙支撑诊断、施工工况同步、计算根因分组和智能出图建议；生产级仍需经验证的三维非线性 FEM、企业图纸标准及逐条规范适用性确认。",
+            "remainingBoundary": "V3.14 已完成支撑拓扑强度前置、围檩支点间距硬门禁、拆换撑压力分带修正、闭合围檩多跨包络和构件强度闭环；生产级仍需经验证的三维非线性 FEM、节点专项分析、企业图纸标准及逐条规范适用性确认。",
         },
         optimization_actions=[
+            {
+                "target": "wall_embedment",
+                "action": "common_wall_toe_stability_design",
+                "count": len(project.retaining_system.diaphragm_walls) if wall_embedment_preflight.get("changed") else 0,
+                "beforeBottomElevationM": wall_embedment_preflight.get("beforeBottomElevationM"),
+                "afterBottomElevationM": wall_embedment_preflight.get("afterBottomElevationM"),
+                "beforeMinimumFactor": wall_embedment_preflight.get("beforeMinimumFactor"),
+                "afterMinimumFactor": wall_embedment_preflight.get("afterMinimumFactor"),
+            },
+            {"target": "support_topology", "action": "strength_first_wale_bay_and_corner_fan_repair", "count": int(topology_preflight.get("addedSupportCount") or 0)},
+            {"target": "replacement_load_path", "action": "retain_transferred_slab_waler_levels_in_vertical_tributary_partition", "count": len([s for s in case.stages if s.transferred_support_levels])},
             {"target": "wale_beam_section", "action": "auto_size_width_height", "count": len([b for b in project.retaining_system.wale_beams if b.design_result])},
             {"target": "support_lifecycle", "action": "preload_temperature_gap_eccentricity_screening", "count": len(project.retaining_system.supports)},
             {"target": "temporary_column", "action": "pile_foundation_screening", "count": len(project.retaining_system.columns)},
@@ -2053,6 +2301,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "wallForceSamples": None,
             "geometryConsistency": geometry_consistency_summary(project),
             "calculationDiagnostics": calculation_diagnostics,
+            "geologyCoverage": geology_audit,
         },
         design_review_summary=design_review,
         stability_detailed_result=stability_package,

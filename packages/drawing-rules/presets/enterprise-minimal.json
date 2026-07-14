@@ -890,23 +890,14 @@
         "preferred": 20
       },
       "trigger": {
-        "all": [
-          {
-            "path": "facts.concaveVertexCount",
-            "op": "gt",
-            "value": 0
-          },
-          {
-            "path": "facts.secondarySupportCount",
-            "op": "gt",
-            "value": 0
-          }
-        ]
+        "path": "facts.concaveVertexCount",
+        "op": "gt",
+        "value": 0
       },
       "expansion": "single",
       "modelBinding": [
         "concave_vertices",
-        "secondary_strut",
+        "main_or_secondary_support",
         "walls",
         "wales",
         "columns"

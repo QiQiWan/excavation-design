@@ -1,0 +1,16 @@
+fastapi<0.129,>=0.128
+uvicorn[standard]<0.49,>=0.48
+pydantic<2.14,>=2.13
+python-multipart<0.1,>=0.0.29
+numpy<2.4,>=2.3
+shapely<2.2,>=2.1
+python-docx<1.3,>=1.2
+openpyxl<3.2,>=3.1
+matplotlib<3.11,>=3.10
+meshio<6,>=5.3
+ezdxf<1.5,>=1.4
+reportlab<4.5,>=4.4
+
+[dev]
+pytest<10,>=9
+httpx<0.29,>=0.28

@@ -32,8 +32,44 @@ describe('SchemeComparisonPanel', () => {
     expect(screen.getByText('方案 B')).toBeInTheDocument();
     expect(screen.getByText('方案 C')).toBeInTheDocument();
     expect(screen.getAllByText('最长跨度（m）').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('最大轴力（kN）').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('完整计算状态').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('待计算').length).toBeGreaterThan(0);
+    expect(screen.queryByText('4,500 kN')).not.toBeInTheDocument();
     expect(screen.getByText('适应窗口')).toBeInTheDocument();
     expect(screen.getByText(/滚轮缩放/)).toBeInTheDocument();
   });
+
+  it('hides stale full-calculation values after topology changes', () => {
+    const staleProject = {
+      ...project,
+      advancedEngineering: {
+        calculationState: {
+          requiresRecalculation: true,
+          reason: 'support topology changed',
+        },
+      },
+      retainingSystem: {
+        ...project.retainingSystem,
+        supportLayoutRepair: {
+          ...project.retainingSystem?.supportLayoutRepair,
+          candidates: project.retainingSystem?.supportLayoutRepair?.candidates?.map((candidate, index) => ({
+            ...candidate,
+            fullCalculation: index === 0 ? { maxDisplacement: 503.95, failCount: 33 } : {},
+          })),
+        },
+      },
+      calculationResults: [{
+        id: 'stale-result', projectId: project.id, caseId: 'old-case',
+        governingValues: { maxDisplacement: 503.95 },
+        checkSummary: { fail: 33 },
+        supportLayoutRepair: { candidateFullCalculations: [{ candidateId: 'A', maxDisplacement: 503.95, failCount: 33 }] },
+      }],
+    } as unknown as Project;
+    render(<SchemeComparisonPanel project={staleProject} compact />);
+    expect(screen.getByText('旧结果已失效')).toBeInTheDocument();
+    expect(screen.getByText(/当前支撑拓扑已变更/)).toBeInTheDocument();
+    expect(screen.queryByText('503.95 mm')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fail 33')).not.toBeInTheDocument();
+  });
+
 });

@@ -83,7 +83,8 @@ function SupportQualityPlan({ project, highlightLocator }: { project: Project; h
       </svg>
       <div className="metricGrid compact">
         <div><strong>{quality?.score ?? '-'}</strong><span>评分</span></div>
-        <div><strong>{String(quality?.metrics?.supportCrossingCount ?? 0)}</strong><span>交叉</span></div>
+        <div><strong>{String(quality?.metrics?.supportCrossingCount ?? 0)}</strong><span>非法穿越</span></div>
+        <div><strong>{String(quality?.metrics?.internalJunctionCount ?? 0)}</strong><span>内部汇交</span></div>
         <div><strong>{String(quality?.metrics?.maxBaySpacing ?? '-')}</strong><span>最大分仓</span></div>
         <div><strong>{String(quality?.metrics?.maxSpanLength ?? '-')}</strong><span>最大跨长</span></div>
       </div>

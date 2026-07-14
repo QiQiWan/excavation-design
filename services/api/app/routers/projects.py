@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.domain import CoordinateSystem, DesignSettings, Project, ProjectSummary, UnitSystem
 from app.storage.repository import ProjectRepository, get_repository
 from app.services.design_scheme_ledger import build_project_dashboard, build_design_scheme_ledger
+from app.tasks.manager import task_manager
 from app.geometry.consistency import geometry_consistency_summary
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -107,8 +108,17 @@ def update_project(project_id: str, payload: dict[str, Any], repo: ProjectReposi
 
 
 @router.delete("/{project_id}")
-def delete_project(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict[str, bool]:
+def delete_project(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict[str, Any]:
+    # Resolve first so a repeated delete returns a clear 404 and does not hide a
+    # client-side selection/state bug.
+    project = repo.require(project_id)
+    cleanup = task_manager.delete_project_records(project_id)
     deleted = repo.delete(project_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
-    return {"deleted": True}
+    return {
+        "deleted": True,
+        "projectId": project_id,
+        "projectName": project.name,
+        **cleanup,
+    }

@@ -15,22 +15,50 @@ export default function CalculationRecoveryPanel({ project, runStep }: { project
   const diagnostics = (result?.designIterationSummary?.calculationDiagnostics ?? result?.reportDiagramData?.calculationDiagnostics) as Record<string, any> | undefined;
   const roots = (diagnostics?.rootCauses ?? []) as Record<string, any>[];
   const comparison = diagnostics?.comparisonWithPrevious as Record<string, any> | undefined;
+  const strengthLoop = diagnostics?.strengthDesignLoop as Record<string, any> | undefined;
+  const topology = (diagnostics?.topologyPreflight ?? result?.designIterationSummary?.topologyPreflight) as Record<string, any> | undefined;
+  const waleRepair = topology?.waleSupportBayRepair as Record<string, any> | undefined;
+  const wallEmbedment = (diagnostics?.wallEmbedmentPreflight ?? result?.designIterationSummary?.wallEmbedmentPreflight) as Record<string, any> | undefined;
+  const beforeAudit = waleRepair?.auditBefore as Record<string, any> | undefined;
+  const afterAudit = waleRepair?.auditAfter as Record<string, any> | undefined;
   const failCount = Number(result?.checkSummary?.fail ?? 0);
   const warningCount = Number(result?.checkSummary?.warning ?? 0);
-  const repaired = Boolean(diagnostics?.topologyPreflight?.changed || diagnostics?.supportTopologySynchronization?.synchronized);
+  const repaired = Boolean(topology?.changed || diagnostics?.supportTopologySynchronization?.synchronized);
   if (!result && !project.retainingSystem) return null;
 
   return <section className={`calculationRecoveryPanel ${failCount > 0 ? 'blocked' : repaired ? 'repaired' : 'ready'}`} aria-labelledby="calculation-recovery-title">
     <div className="sectionLead">
       <div>
-        <h3 id="calculation-recovery-title">计算诊断与自动恢复</h3>
-        <p className="small">先检查异形基坑回墙支撑、施工阶段构件引用和控制墙段，再决定配筋或截面调整。</p>
+        <h3 id="calculation-recovery-title">计算诊断与强度驱动恢复</h3>
+        <p className="small">先闭合墙趾嵌固稳定，再修复支撑拓扑、围檩支点间距和拆换撑传力路径，随后执行墙、围檩、支撑截面与配筋验算。</p>
       </div>
-      <span className={`diagnosticState ${failCount > 0 ? 'fail' : warningCount > 0 ? 'warn' : 'pass'}`}>{failCount > 0 ? `${failCount} 项阻断` : repaired ? '已自动修复复算' : result ? '计算链路有效' : '待计算'}</span>
+      <span className={`diagnosticState ${failCount > 0 ? 'fail' : warningCount > 0 ? 'warn' : 'pass'}`}>{failCount > 0 ? `${failCount} 项阻断` : repaired ? '已自动修复并复算' : result ? '计算链路有效' : '待计算'}</span>
     </div>
 
+    {strengthLoop && <div className="strengthLoopPanel" aria-label="强度驱动设计闭环">
+      <div className="strengthLoopTitle">
+        <strong>强度驱动设计闭环</strong>
+        <span className={`diagnosticState ${strengthLoop.strengthStatus === 'fail' || strengthLoop.stiffnessStatus === 'fail' || strengthLoop.topologyStatus === 'fail' ? 'fail' : 'pass'}`}>
+          拓扑 {String(strengthLoop.topologyStatus ?? '-')} · 强度 {String(strengthLoop.strengthStatus ?? '-')} · 刚度 {String(strengthLoop.stiffnessStatus ?? '-')}
+        </span>
+      </div>
+      <div className="diagnosticComparison">
+        <div><span>围檩最大支点间距</span><strong>{numberText(strengthLoop.waleBayBeforeM ?? beforeAudit?.maxBayM, ' m')} → {numberText(strengthLoop.waleBayAfterM ?? afterAudit?.maxBayM, ' m')}</strong></div>
+        <div><span>自动增补支撑</span><strong>{Number(strengthLoop.addedSupportCount ?? topology?.addedSupportCount ?? 0)} 根</strong></div>
+        <div><span>拓扑修复</span><strong>{strengthLoop.topologyAdjusted ? '已执行' : '无需调整'}</strong></div>
+        <div><span>最大设计迭代</span><strong>{Number(strengthLoop.iterationLimit ?? project.designSettings?.maxDesignIterations ?? 3)} 次</strong></div>
+      </div>
+      {wallEmbedment && <div className="diagnosticComparison" aria-label="墙趾嵌固稳定闭环">
+        <div><span>统一墙趾标高</span><strong>{numberText(wallEmbedment.beforeBottomElevationM, ' m')} → {numberText(wallEmbedment.afterBottomElevationM, ' m')}</strong></div>
+        <div><span>最小嵌固筛查系数</span><strong>{numberText(wallEmbedment.beforeMinimumFactor)} → {numberText(wallEmbedment.afterMinimumFactor)}</strong></div>
+        <div><span>自动加深</span><strong>{numberText(wallEmbedment.addedEmbedmentM, ' m')}</strong></div>
+        <div><span>墙趾设计状态</span><strong>{String(wallEmbedment.status ?? '-')}</strong></div>
+      </div>}
+      <p className="small strengthLoopNote">墙趾嵌固采用统一标高前置闭环；拆换撑阶段保留楼板/换撑标高参与竖向荷载分带；闭合围檩端部按刚性转角节点形成环向传力。模型假定与复核边界均写入计算书。</p>
+    </div>}
+
     {(roots.length > 0 || failCount > 0) && <div className="diagnosticRootGrid">
-      {(roots.length ? roots : [{ code: 'UNCLASSIFIED_CALCULATION_FAILURE', title: '存在未分类计算阻断', description: '当前结果来自旧版本或尚未完成根因诊断。', recommendedAction: '运行诊断修复，系统将检查回墙支撑、工况引用、墙体抗剪和配筋构造。', severity: 'fail' }]).slice(0, 4).map((item) => <article key={String(item.code)} className={`diagnosticRootCard ${String(item.severity ?? 'warning')}`}>
+      {(roots.length ? roots : [{ code: 'CALCULATION_CHECK_DETAILS_REQUIRED', title: '存在硬性校核未闭环', description: `当前共有 ${failCount} 项 fail。请打开校核清单查看规则、构件与控制工况。`, recommendedAction: '重新运行诊断；若仍无根因卡片，按校核清单逐项处理并保留规则 ID。', severity: 'fail' }]).slice(0, 6).map((item) => <article key={String(item.code)} className={`diagnosticRootCard ${String(item.severity ?? 'warning')}`}>
         <strong>{String(item.title ?? item.code)}</strong>
         <p>{String(item.description ?? '')}</p>
         <em>{String(item.recommendedAction ?? '')}</em>
@@ -45,8 +73,8 @@ export default function CalculationRecoveryPanel({ project, runStep }: { project
     </div>}
 
     <div className="actionStrip simplifiedActions">
-      <button disabled={!project.retainingSystem} onClick={() => runStep('正在诊断支撑拓扑、同步施工工况并重新计算', () => api.diagnoseAndRepairCalculation(project.id))}>诊断并自动修复复算</button>
-      <span className="small">自动修复只增补缺失的凹角回墙局部次对撑，保留现有人工支撑；新构件仍需复核净空、节点和施工顺序。</span>
+      <button disabled={!project.retainingSystem} onClick={() => runStep('正在执行墙趾嵌固、支撑拓扑、围檩支点、拆换撑传力和构件强度闭环', () => api.diagnoseAndRepairCalculation(project.id))}>诊断并执行强度闭环</button>
+      <span className="small">自动过程优先增补必要支点并同步施工工况，随后扩截面和配筋；达到配置上限仍不满足时保留 fail，禁止进入施工图发行。</span>
     </div>
   </section>;
 }

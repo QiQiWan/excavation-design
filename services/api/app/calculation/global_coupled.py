@@ -19,6 +19,45 @@ E_CONCRETE_KN_M2 = {
 DEFAULT_SOIL_SPRING_KN_M2 = 12_000.0
 WALL_WALE_COUPLING_KN_M = 2.0e6
 END_ANCHOR_KN_M = 5.0e4
+MAX_SPATIAL_SUPPORT_NODES = 36
+
+
+def _fast_l2(values: np.ndarray) -> float:
+    arr = np.asarray(values, dtype=float)
+    return float(np.sqrt(np.sum(arr * arr, dtype=np.float64)))
+
+
+def _fast_matrix_condition(matrix: np.ndarray) -> tuple[float | None, str]:
+    """Return a bounded-cost condition estimate for symmetric stiffness matrices.
+
+    Full SVD-based ``numpy.linalg.cond`` became a material bottleneck for dense
+    project matrices with many support endpoints.  The assembled stiffness
+    matrix is symmetric, so the eigenvalue ratio is both cheaper and directly
+    interpretable.  For large matrices a diagonal/Gershgorin proxy is reported
+    and explicitly labelled as an estimate.
+    """
+    n = int(matrix.shape[0]) if matrix.ndim == 2 else 0
+    if n == 0:
+        return None, "unavailable"
+    try:
+        if n <= 320:
+            vals = np.linalg.eigvalsh(matrix)
+            abs_vals = np.abs(vals)
+            vmax = float(np.max(abs_vals)) if abs_vals.size else 0.0
+            positive = abs_vals[abs_vals > max(vmax * 1.0e-12, 1.0e-9)]
+            if not positive.size:
+                return None, "symmetric_eigenvalue_ratio"
+            return float(vmax / max(float(np.min(positive)), 1.0e-12)), "symmetric_eigenvalue_ratio"
+        diag = np.abs(np.diag(matrix))
+        positive = diag[diag > max(float(np.max(diag)) * 1.0e-12, 1.0e-9)] if diag.size else diag
+        if not positive.size:
+            return None, "diagonal_ratio_estimate"
+        row_offdiag = np.sum(np.abs(matrix), axis=1) - diag
+        lower = np.maximum(diag - row_offdiag, 1.0e-9)
+        upper = diag + row_offdiag
+        return float(np.max(upper) / max(float(np.min(lower)), 1.0e-9)), "gershgorin_estimate"
+    except (np.linalg.LinAlgError, ValueError, FloatingPointError):
+        return None, "failed"
 
 
 def _pressure_at_depth(profile: PressureProfile, depth: float) -> float:
@@ -85,14 +124,14 @@ def _matrix_equilibrium_diagnostics(
             "message": "线性方程组未获得有效解。",
         }
     effective_k = k_original + np.eye(n) * float(regularization) if regularization > 0.0 else k_original
-    load_norm = max(float(np.linalg.norm(f, ord=2)), 1.0)
+    load_norm = max(_fast_l2(f), 1.0)
     residual = effective_k @ u - f
     original_residual = k_original @ u - f
-    relative = float(np.linalg.norm(residual, ord=2)) / load_norm
-    original_relative = float(np.linalg.norm(original_residual, ord=2)) / load_norm
+    relative = _fast_l2(residual) / load_norm
+    original_relative = _fast_l2(original_residual) / load_norm
     max_residual = float(np.max(np.abs(residual))) if residual.size else 0.0
-    matrix_norm = max(float(np.linalg.norm(k_original, ord="fro")), 1.0)
-    symmetry_error = float(np.linalg.norm(k_original - k_original.T, ord="fro")) / matrix_norm
+    matrix_norm = max(_fast_l2(k_original), 1.0)
+    symmetry_error = _fast_l2(k_original - k_original.T) / matrix_norm
     if regularization > 0.0:
         status = "manual_review"
         message = "方程组采用正则化求解；有效矩阵残差合格时仍需复核原始结构模型约束。"
@@ -111,7 +150,7 @@ def _matrix_equilibrium_diagnostics(
         "matrixSize": n,
         "relativeResidual": float(f"{relative:.12g}"),
         "originalRelativeResidual": float(f"{original_relative:.12g}"),
-        "absoluteResidualL2": float(f"{float(np.linalg.norm(residual, ord=2)):.12g}"),
+        "absoluteResidualL2": float(f"{_fast_l2(residual):.12g}"),
         "maxResidual": float(f"{max_residual:.12g}"),
         "loadNormL2": float(f"{load_norm:.12g}"),
         "matrixSymmetryError": float(f"{symmetry_error:.12g}"),
@@ -438,17 +477,15 @@ def _solve_spatial_frame_proxy(
             "elevation": round(top_elevation - depth, 3),
             "rotation": round(float(U[wall_t[i]]), 8),
         })
-    cond = None
-    try:
-        cond = round(float(np.linalg.cond(K + np.eye(n) * 1e-9)), 3)
-    except Exception:
-        cond = None
+    cond_raw, cond_method = _fast_matrix_condition(K + np.eye(n) * 1e-9)
+    cond = round(float(cond_raw), 3) if cond_raw is not None and math.isfinite(float(cond_raw)) else None
     return {
         "available": True,
         "fallback": fallback,
         "reason": reason,
         "matrixSize": n,
         "conditionNumber": cond,
+        "conditionNumberMethod": cond_method,
         "equilibriumDiagnostics": equilibrium_diagnostics,
         "dofs": [
             {"index": i, "name": name, "value": round(float(U[i]), 8), "unit": dof_meta[i]["unit"], "dofType": dof_meta[i]["type"], "objectId": dof_meta[i].get("objectId"), "stageStatus": stage_type}
@@ -679,20 +716,37 @@ def solve_global_wall_wale_support_system(
         })
 
     replacement_state = _replacement_slab_state(stage_type, length, replacement_slab_properties)
-    spatial = _solve_spatial_frame_proxy(
-        wall_depths=wall_depths,
-        support_nodes=support_nodes,
-        pressure_profile=pressure_profile,
-        top_elevation=top_elevation,
-        excavation_depth=excavation_depth,
-        wall_depth=wall_depth,
-        wall_length=length,
-        wall_ei=ei,
-        soil_k=soil_k,
-        stage_id=stage_id,
-        stage_type=stage_type,
-        replacement_slab_state=replacement_state,
+    if len(support_nodes) > MAX_SPATIAL_SUPPORT_NODES:
+        spatial = {
+            "available": False,
+            "reason": (
+                f"spatial proxy skipped for {len(support_nodes)} support endpoints; "
+                f"condensed wall-wale matrix used above threshold {MAX_SPATIAL_SUPPORT_NODES}"
+            ),
+            "solverMode": "condensed_large_face",
+        }
+    else:
+        spatial = _solve_spatial_frame_proxy(
+            wall_depths=wall_depths,
+            support_nodes=support_nodes,
+            pressure_profile=pressure_profile,
+            top_elevation=top_elevation,
+            excavation_depth=excavation_depth,
+            wall_depth=wall_depth,
+            wall_length=length,
+            wall_ei=ei,
+            soil_k=soil_k,
+            stage_id=stage_id,
+            stage_type=stage_type,
+            replacement_slab_state=replacement_state,
+        )
+    condensed_cond_raw, condensed_condition_method = _fast_matrix_condition(k_global + np.eye(n) * 1e-9) if n else (None, "unavailable")
+    condensed_condition_number = (
+        round(float(condensed_cond_raw), 3)
+        if condensed_cond_raw is not None and math.isfinite(float(condensed_cond_raw))
+        else None
     )
+
     if spatial.get("available"):
         support_reactions = spatial.get("supportReactions", support_reactions) or support_reactions
         wall_points = spatial.get("wallDisplacementProfile", wall_points) or wall_points
@@ -702,13 +756,16 @@ def solve_global_wall_wale_support_system(
 
     return {
         "method": "V2.0 spatial wall-wale-support-column-slab stiffness matrix prototype",
-        "modelDimension": "space-frame-proxy-with-wall-and-wale-rotational-dofs",
+        "modelDimension": "space-frame-proxy-with-wall-and-wale-rotational-dofs" if spatial.get("available") else "condensed-wall-wale-support-matrix",
+        "solverMode": spatial.get("solverMode") or ("spatial_frame_proxy" if spatial.get("available") else "condensed"),
+        "spatialFallbackReason": spatial.get("reason") if not spatial.get("available") else None,
         "stageId": stage_id,
         "faceCode": face_code,
         "fallback": fallback,
         "reason": reason,
         "matrixSize": spatial.get("matrixSize", n) if spatial.get("available") else n,
-        "conditionNumber": spatial.get("conditionNumber") if spatial.get("available") else (round(float(np.linalg.cond(k_global + np.eye(n) * 1e-9)), 3) if n else None),
+        "conditionNumber": spatial.get("conditionNumber") if spatial.get("available") else condensed_condition_number,
+        "conditionNumberMethod": spatial.get("conditionNumberMethod") if spatial.get("available") else condensed_condition_method,
         "equilibriumDiagnostics": spatial.get("equilibriumDiagnostics") if spatial.get("available") else condensed_equilibrium_diagnostics,
         "spatialMatrixSize": spatial.get("matrixSize") if spatial.get("available") else None,
         "spatialConditionNumber": spatial.get("conditionNumber") if spatial.get("available") else None,

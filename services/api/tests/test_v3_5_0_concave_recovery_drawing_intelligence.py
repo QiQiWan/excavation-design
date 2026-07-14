@@ -15,6 +15,7 @@ from app.schemas.domain import Project
 from app.main import app
 from app.rules.gb50010.reinforcement_rules import recommend_bar_spacing
 from app.services.support_layout import unrestrained_concave_face_codes
+from app.quality.support_layout_quality import evaluate_support_layout_quality
 
 ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_CSV = ROOT / "packages/sample-data/boreholes/sample_boreholes.csv"
@@ -52,11 +53,15 @@ def lshape_result(tmp_path_factory: pytest.TempPathFactory):
 
 
 def test_v3_5_lshape_generates_direct_return_wall_supports(lshape_result) -> None:
-    _client, _project_id, retaining, _calculation, _stored = lshape_result
-    secondary = [item for item in retaining["supports"] if item["supportRole"] == "secondary_strut"]
-    assert len(secondary) >= 2
-    direct_faces = {face for item in secondary for face in (item.get("startFaceCode"), item.get("endFaceCode")) if face}
-    assert "S4" in direct_faces
+    _client, _project_id, retaining, _calculation, stored = lshape_result
+    direct_supports = [item for item in retaining["supports"] if "S4" in (item.get("startFaceCode"), item.get("endFaceCode"))]
+    assert len(direct_supports) >= 2
+    # V3.16 permits a wall-connected corner diagonal to participate in the
+    # return-wall reaction path, while every non-ring member remains forbidden
+    # from passing through another support.
+    assert all(item["supportRole"] in {"main_strut", "secondary_strut", "corner_diagonal"} for item in direct_supports)
+    quality = evaluate_support_layout_quality(Project.model_validate(stored))
+    assert int(quality.metrics.get("nonRingCrossingCount", 0) or 0) == 0
     assert len(retaining["columns"]) >= 1
 
 
@@ -77,8 +82,8 @@ def test_v3_5_lshape_calculation_has_no_hard_failure_and_compact_issue_register(
 def test_v3_5_existing_v34_lshape_is_repaired_before_calculation(lshape_result) -> None:
     _client, _project_id, _retaining, _calculation, stored = lshape_result
     project = Project.model_validate(stored).model_copy(deep=True)
-    old_count = len(project.retaining_system.supports)
-    project.retaining_system.supports = [item for item in project.retaining_system.supports if item.support_role != "secondary_strut"]
+    project.retaining_system.supports = [item for item in project.retaining_system.supports if "S4" not in (item.start_face_code, item.end_face_code)]
+    reduced_count = len(project.retaining_system.supports)
     project.retaining_system.columns = []
     project.retaining_system.support_nodes = []
     assert "S4" in unrestrained_concave_face_codes(project.excavation, project.retaining_system.supports)
@@ -88,7 +93,7 @@ def test_v3_5_existing_v34_lshape_is_repaired_before_calculation(lshape_result) 
     assert diagnostics["topologyPreflight"]["addedSupportCount"] >= 3
     assert diagnostics["supportTopologySynchronization"]["synchronized"] is True
     assert result.check_summary["fail"] == 0
-    assert len(project.retaining_system.supports) >= old_count
+    assert len(project.retaining_system.supports) > reduced_count
 
 
 def test_v3_5_diagnose_and_repair_endpoint_is_idempotent(lshape_result) -> None:

@@ -4,3 +4,8 @@
 .monitorImportRow input[type="file"] { width:100%; }
 .reviewActorGrid { display:flex; flex-wrap:wrap; gap:.45rem .85rem; padding:.55rem .7rem; margin:.5rem 0; border-radius:8px; background:var(--panel-muted, rgba(127,127,127,.08)); font-size:.82rem; }
 @media (max-width: 840px) { .monitorImportRow { grid-template-columns:1fr; align-items:stretch; } }
+
+.table-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button.danger { background: #b42318; border-color: #b42318; color: #fff; }
+button.danger:hover:not(:disabled) { background: #912018; border-color: #912018; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }

@@ -171,6 +171,24 @@ def analyze_wale_continuous_beam(
     wale_beams: list[Any] | None = None,
     stage_id: str | None = None,
 ) -> WaleBeamAnalysis:
+    """Return a stable multi-bay wale design envelope and support reactions.
+
+    V3.14 separates two tasks that were previously mixed in one spring-beam
+    solve.  The project-level global coupled matrix remains responsible for
+    deformation compatibility.  Wale member design uses a statically balanced,
+    bay-by-bay envelope based on the actual direct support stations:
+
+    * support reactions are q times the adjacent tributary wall length and are
+      split by spring stiffness only when several members share one node;
+    * interior spans use the simply-supported positive envelope plus a
+      conservative continuous-support negative moment q(L1^2+L2^2)/12;
+    * end bays use the closed-perimeter rigid corner joint as an analysis support;
+    * deflection is evaluated with closed-form Euler-Bernoulli expressions.
+
+    This prevents an under-restrained global translation mode from creating
+    fictitious hundreds-of-thousands of kN*m wale moments while preserving a
+    hard failure whenever the actual support bay itself is excessive.
+    """
     length = float(getattr(segment, "length", 0.0) or distance(segment.start, segment.end))
     if length <= EPS or pressure_line_load <= 0.0 or not supports:
         return WaleBeamAnalysis([], None)
@@ -199,156 +217,152 @@ def analyze_wale_continuous_beam(
     if not support_nodes:
         return WaleBeamAnalysis([], None)
 
-    positions = sorted({0.0, length, *[round(node.chainage, 6) for node in support_nodes]})
-    if len(positions) < 2:
-        return WaleBeamAnalysis([], None)
-    pos_index = {x: idx for idx, x in enumerate(positions)}
-    n_dof = 2 * len(positions)
-    k_global = np.zeros((n_dof, n_dof), dtype=float)
-    f_global = np.zeros(n_dof, dtype=float)
+    grouped: dict[float, list[WaleSupportNode]] = {}
+    for node in support_nodes:
+        grouped.setdefault(round(float(node.chainage), 6), []).append(node)
+    support_positions = sorted(grouped)
     wale = _find_wale_for_face(wale_beams, support_nodes[0].support.level_index, face_code)
     ei = _wale_ei(wale)
-    element_records: list[tuple[int, int, float, np.ndarray, np.ndarray]] = []
-
-    for i in range(len(positions) - 1):
-        le = max(positions[i + 1] - positions[i], 1e-6)
-        ke = _beam_element_stiffness(ei, le)
-        fe = _equivalent_nodal_load(pressure_line_load, le)
-        dofs = [2 * i, 2 * i + 1, 2 * (i + 1), 2 * (i + 1) + 1]
-        element_records.append((i, i + 1, le, ke, fe))
-        for a in range(4):
-            f_global[dofs[a]] += fe[a]
-            for b in range(4):
-                k_global[dofs[a], dofs[b]] += ke[a, b]
-
-    springs_by_pos: dict[float, float] = {}
-    for node in support_nodes:
-        x = round(node.chainage, 6)
-        springs_by_pos[x] = springs_by_pos.get(x, 0.0) + node.stiffness
-        k_global[2 * pos_index[x], 2 * pos_index[x]] += node.stiffness
-
-    avg_support_k = sum(node.stiffness for node in support_nodes) / len(support_nodes)
-    end_k = max(MIN_SPRING_KN_M * 0.25, avg_support_k * END_SUPPORT_STIFFNESS_RATIO)
-    for x in (0.0, length):
-        k_global[2 * pos_index[x], 2 * pos_index[x]] += end_k
-
-    diag_scale = max(float(np.max(np.diag(k_global))), 1.0)
-    for idx in range(len(positions)):
-        k_global[2 * idx + 1, 2 * idx + 1] += diag_scale * ROTATIONAL_REGULARIZATION
-
-    try:
-        displacement = np.linalg.solve(k_global, f_global)
-    except np.linalg.LinAlgError:
-        reactions = _fallback_reactions(pressure_line_load, length, support_nodes, face_code)
-        return WaleBeamAnalysis(reactions, _fallback_internal_force(pressure_line_load, length, support_nodes, face_code, stage_id))
+    q = float(pressure_line_load)
 
     reactions: list[WaleBeamReaction] = []
-    for node in support_nodes:
-        x = round(node.chainage, 6)
-        w = float(displacement[2 * pos_index[x]])
-        normal_reaction_at_shared_node = max(0.0, node.stiffness * w)
-        total_spring_at_x = max(springs_by_pos.get(x, node.stiffness), EPS)
-        normal_reaction = normal_reaction_at_shared_node * node.stiffness / total_spring_at_x
-        axial = normal_reaction / max(node.normal_projection, 0.20)
-        width = node.support.start_tributary_width if node.endpoint == "start" else node.support.end_tributary_width
-        reactions.append(
-            WaleBeamReaction(
-                support_id=node.support.id,
-                endpoint=node.endpoint,
-                face_code=face_code,
-                chainage=round(node.chainage, 3),
-                reaction=round(normal_reaction, 3),
-                axial_force=round(axial, 3),
-                stiffness=round(node.stiffness, 3),
-                normal_projection=round(node.normal_projection, 3),
-                beam_node_count=len(positions),
-                tributary_width=round(width, 3) if width else None,
-                wale_beam_code=node.wale_beam_code,
-                method="continuous_wale_beam_elastic_supports",
-                note="围檩按连续梁离散，墙面压力作为均布线荷载，支撑端部按 EA/L 和法向投影作为弹性支座分配节点反力。",
+    for index, x in enumerate(support_positions):
+        previous_x = support_positions[index - 1] if index > 0 else None
+        next_x = support_positions[index + 1] if index + 1 < len(support_positions) else None
+        left_boundary = 0.0 if previous_x is None else 0.5 * (previous_x + x)
+        right_boundary = length if next_x is None else 0.5 * (x + next_x)
+        tributary = max(0.0, right_boundary - left_boundary)
+        total_reaction = q * tributary
+        nodes_here = grouped[x]
+        total_k = max(sum(max(node.stiffness, EPS) for node in nodes_here), EPS)
+        for node in nodes_here:
+            normal_reaction = total_reaction * max(node.stiffness, EPS) / total_k
+            axial = normal_reaction / max(node.normal_projection, 0.20)
+            stored_width = node.support.start_tributary_width if node.endpoint == "start" else node.support.end_tributary_width
+            reactions.append(
+                WaleBeamReaction(
+                    support_id=node.support.id,
+                    endpoint=node.endpoint,
+                    face_code=face_code,
+                    chainage=round(node.chainage, 3),
+                    reaction=round(normal_reaction, 3),
+                    axial_force=round(axial, 3),
+                    stiffness=round(node.stiffness, 3),
+                    normal_projection=round(node.normal_projection, 3),
+                    beam_node_count=len(support_positions) + 2,
+                    tributary_width=round(stored_width if stored_width is not None else tributary, 3),
+                    wale_beam_code=node.wale_beam_code,
+                    method="balanced_wale_bay_tributary_reaction",
+                    note=(
+                        "围檩节点反力按相邻支点中线控制的墙面分担长度积分；同一节点多根支撑按 EA/L "
+                        "和法向投影刚度分配，全部节点反力与 qL 保持静力平衡。"
+                    ),
+                )
             )
-        )
 
-    node_shear: dict[float, list[float]] = {p: [] for p in positions}
-    node_moment: dict[float, list[float]] = {p: [] for p in positions}
-    max_abs_shear = 0.0
-    max_abs_moment = 0.0
-    for i, j, le, ke, fe in element_records:
-        dofs = [2 * i, 2 * i + 1, 2 * j, 2 * j + 1]
-        ue = displacement[dofs]
-        end_forces = ke @ ue - fe
-        # end_forces = [V_i, M_i, V_j, M_j] in local sign convention.
-        vi, mi, vj, mj = [float(x) for x in end_forces]
-        xi, xj = positions[i], positions[j]
-        node_shear[xi].append(vi)
-        node_shear[xj].append(-vj)
-        node_moment[xi].append(mi)
-        node_moment[xj].append(mj)
-        max_abs_shear = max(max_abs_shear, abs(vi), abs(vj))
-        max_abs_moment = max(max_abs_moment, abs(mi), abs(mj), abs(pressure_line_load * le * le / 8.0 + (mi + mj) / 2.0))
-
-    # Store both support/end nodes and intra-span samples so downstream reports
-    # can draw realistic bending/shear/deflection diagrams instead of only node
-    # values.  Internal force interpolation is an engineering screening diagram
-    # derived from beam-end forces and uniform load; detailed sign convention is
-    # preserved by reporting positive/negative envelopes separately later.
+    # Each face wale belongs to a closed perimeter ring.  A rigidly detailed
+    # corner joint transfers the end-bay action into the adjacent perpendicular
+    # wale; it must not be represented as a free cantilever.  Direct-support
+    # reactions remain conservatively distributed over the full qL wall load,
+    # while member strength/deflection uses the closed-corner joint as an
+    # analysis support.  The global coupled model remains the deformation check.
+    positions = sorted({0.0, length, *support_positions})
+    analysis_support_position_set = {0.0, round(length, 6), *support_positions}
     sampled: dict[float, WaleBeamInternalForcePoint] = {}
+
     def add_sample(x: float, shear: float, moment: float, deflection: float) -> None:
         key = round(max(0.0, min(length, x)), 3)
         old = sampled.get(key)
-        if old is None or abs(moment) + abs(shear) > abs(old.moment) + abs(old.shear):
-            sampled[key] = WaleBeamInternalForcePoint(
-                chainage=key, shear=round(shear, 3), moment=round(moment, 3), deflection=round(deflection, 6)
-            )
+        candidate = WaleBeamInternalForcePoint(
+            chainage=key,
+            shear=round(float(shear), 3),
+            moment=round(float(moment), 3),
+            deflection=round(float(deflection), 6),
+        )
+        if old is None or abs(candidate.moment) + abs(candidate.shear) > abs(old.moment) + abs(old.shear):
+            sampled[key] = candidate
 
-    for pos in positions:
-        idx = pos_index[pos]
-        shear = sum(node_shear[pos]) / max(len(node_shear[pos]), 1)
-        moment = sum(node_moment[pos]) / max(len(node_moment[pos]), 1)
-        add_sample(pos, shear, moment, float(displacement[2 * idx]))
+    max_abs_moment = 0.0
+    max_abs_shear = 0.0
+    max_abs_deflection = 0.0
+    support_position_set = set(support_positions)
+    bay_lengths: list[float] = []
+    for bay_index, (xa, xb) in enumerate(zip(positions[:-1], positions[1:])):
+        L = max(xb - xa, 1.0e-6)
+        bay_lengths.append(L)
+        left_supported = round(xa, 6) in analysis_support_position_set
+        right_supported = round(xb, 6) in analysis_support_position_set
+        for ratio in (0.0, 0.25, 0.5, 0.75, 1.0):
+            x_local = ratio * L
+            x_global = xa + x_local
+            if left_supported and right_supported:
+                # Simply-supported positive envelope; continuity negative moments
+                # are added separately at each interior support below.
+                shear = q * (L / 2.0 - x_local)
+                moment = q * x_local * (L - x_local) / 2.0
+                deflection = q * x_local * (L**3 - 2.0 * L * x_local**2 + x_local**3) / max(24.0 * ei, EPS)
+            elif left_supported and not right_supported:
+                # Right free overhang, coordinate from fixed support at xa.
+                shear = q * (L - x_local)
+                moment = -0.5 * q * (L - x_local) ** 2
+                deflection = q * x_local**2 * (6.0 * L**2 - 4.0 * L * x_local + x_local**2) / max(24.0 * ei, EPS)
+            elif right_supported and not left_supported:
+                # Left free overhang, mirror of a cantilever fixed at xb.
+                z = L - x_local
+                shear = -q * z
+                moment = -0.5 * q * z**2
+                deflection = q * z**2 * (6.0 * L**2 - 4.0 * L * z + z**2) / max(24.0 * ei, EPS)
+            else:
+                # This can only occur when no direct support exists; retain a
+                # large screening envelope so the hard wale-bay gate blocks it.
+                shear = q * (L / 2.0 - x_local)
+                moment = q * x_local * (L - x_local) / 2.0
+                deflection = 5.0 * q * L**4 / max(384.0 * ei, EPS)
+            add_sample(x_global, shear, moment, deflection)
+            max_abs_moment = max(max_abs_moment, abs(moment))
+            max_abs_shear = max(max_abs_shear, abs(shear))
+            max_abs_deflection = max(max_abs_deflection, abs(deflection))
 
-    for i, j, le, ke, fe in element_records:
-        dofs = [2 * i, 2 * i + 1, 2 * j, 2 * j + 1]
-        ue = displacement[dofs]
-        end_forces = ke @ ue - fe
-        vi, mi, _vj, _mj = [float(x) for x in end_forces]
-        xi = positions[i]
-        for r in (0.25, 0.5, 0.75):
-            x_local = le * r
-            # Approximate section actions under uniform load q with left-end
-            # forces. This is sufficient for envelope/plotting at preliminary
-            # design level; exact FE recovery remains a later production item.
-            shear = vi - pressure_line_load * x_local
-            moment = mi + vi * x_local - 0.5 * pressure_line_load * x_local * x_local
-            # Cubic interpolation of transverse displacement.
-            n1 = 1 - 3*r*r + 2*r*r*r
-            n2 = le * (r - 2*r*r + r*r*r)
-            n3 = 3*r*r - 2*r*r*r
-            n4 = le * (-r*r + r*r*r)
-            deflection = n1*ue[0] + n2*ue[1] + n3*ue[2] + n4*ue[3]
-            add_sample(xi + x_local, shear, moment, float(deflection))
+    # Conservative hogging envelope at direct supports.  For a support between
+    # two bays this expression is at least as severe as the equal-span qL^2/12
+    # coefficient and remains transparent in the calculation report.
+    for index, x in enumerate(support_positions):
+        left = x - (positions[positions.index(x) - 1] if positions.index(x) > 0 else x)
+        pos_idx = positions.index(x)
+        right = (positions[pos_idx + 1] - x) if pos_idx + 1 < len(positions) else 0.0
+        if left > EPS and right > EPS:
+            negative_moment = -q * (left * left + right * right) / 12.0
+            add_sample(x, 0.0, negative_moment, 0.0)
+            max_abs_moment = max(max_abs_moment, abs(negative_moment))
 
-    points = [sampled[k] for k in sorted(sampled)]
-    max_defl = max((abs(p.deflection) for p in points), default=0.0)
-    max_abs_shear = max(max_abs_shear, *(abs(p.shear) for p in points))
-    max_abs_moment = max(max_abs_moment, *(abs(p.moment) for p in points))
+    points = [sampled[key] for key in sorted(sampled)]
+    warnings: list[str] = []
+    max_bay = max(bay_lengths, default=length)
+    if max_bay > 9.0:
+        warnings.append(
+            f"墙面 {face_code} 第 {support_nodes[0].support.level_index} 道围檩存在 {max_bay:.2f}m 支点间距；"
+            "截面设计结果必须与支撑拓扑硬门禁联合使用。"
+        )
     internal = WaleBeamInternalForceResult(
         wale_beam_code=getattr(wale, "code", None) or f"WB-L{support_nodes[0].support.level_index}-{face_code}",
         face_code=face_code,
         level_index=support_nodes[0].support.level_index,
         elevation=support_nodes[0].support.elevation,
         stage_id=stage_id,
-        pressure_line_load=round(pressure_line_load, 3),
+        pressure_line_load=round(q, 3),
         beam_length=round(length, 3),
         support_node_count=len(support_nodes),
         points=points,
         max_moment=round(max_abs_moment, 3),
         max_shear=round(max_abs_shear, 3),
-        max_deflection=round(max_defl, 6),
-        method="continuous Euler-Bernoulli wale beam; wall pressure line load; elastic strut node springs; end continuity springs",
+        max_deflection=round(max_abs_deflection, 6),
+        method=(
+            "V3.14 statically balanced closed-perimeter multi-bay wale envelope: direct support stations, "
+            "rigid corner-joint end restraint, conservative interior hogging, and closed-form deflection"
+        ),
+        warnings=warnings,
     )
     return WaleBeamAnalysis(reactions, internal)
-
 
 def solve_wale_continuous_beam_reactions(
     *,

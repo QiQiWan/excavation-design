@@ -28,6 +28,17 @@ export interface DesignSettings {
   displacementLimitRatio?: number;
   autoCenterExcavationOnGeology?: boolean;
   defaultSupportSpacing?: number;
+  supportLayoutFamily?: 'auto' | 'direct_strut' | 'direct_with_corner' | 'bidirectional_frame' | 'ring_radial';
+  supportTransitionZoneSpacingFactor?: number;
+  supportTransitionZoneInfluenceM?: number;
+  supportMinStationSeparationM?: number;
+  wallPanelTargetLengthM?: number;
+  wallPanelMinLengthM?: number;
+  wallPanelMaxLengthM?: number;
+  wallToeDesignMode?: 'uniform' | 'zoned' | 'local';
+  wallToeAllowImportedReferenceOptimization?: boolean;
+  rebarCageGridMaxLines?: number;
+  supportLevelDepthsM?: number[];
   serviceLifeYears?: number;
   relativeHumidity?: number;
   sustainedLoadRatio?: number;
@@ -39,6 +50,10 @@ export interface DesignSettings {
   requireFormalApprovalForConstruction?: boolean;
   supportWallClearanceM?: number;
   maxDirectStrutSpanM?: number;
+  maxWaleSupportBayM?: number;
+  hardMaxWaleSupportBayM?: number;
+  autoStrengthDesignEnabled?: boolean;
+  maxDesignIterations?: number;
   diagonalBraceMinWallLengthM?: number;
   preferDiagonalBraces?: boolean;
   replacementSlabEffectiveWidthM?: number;
@@ -101,7 +116,19 @@ export interface GeologicalSurface { stratumCode: string; surfaceType: 'top' | '
 export interface VtuCellBlock { index: number; vtkType?: number; cellType: string; nodes: number[]; attributes?: Record<string, unknown> }
 export interface VtuSummary { pointCount?: number; cellCount?: number; cellTypes?: string[] }
 export interface VtuMesh { points?: number[][]; cellBlocks?: VtuCellBlock[]; summary?: VtuSummary; detectedFields?: string[]; suggestedMapping?: Record<string, string>; warnings?: string[] }
-export interface GeologicalModel { surfaces: GeologicalSurface[]; volumes: unknown[]; vtuMesh?: VtuMesh; warnings: string[] }
+export interface GeologicalCoverageAudit {
+  status?: 'pass' | 'warning' | 'fail' | 'manual_review' | string;
+  designDomainCovered?: boolean;
+  autoExtended?: boolean;
+  maximumExtrapolationDistanceM?: number;
+  maximumAllowedExtrapolationDistanceM?: number;
+  extrapolationMethod?: string;
+  message?: string;
+  boreholeTrustBounds?: Record<string, number>;
+  modelBounds?: Record<string, number>;
+  requiredBounds?: Record<string, number>;
+}
+export interface GeologicalModel { surfaces: GeologicalSurface[]; volumes: unknown[]; vtuMesh?: VtuMesh; warnings: string[]; coverageAudit?: GeologicalCoverageAudit }
 
 export interface ExcavationSegment {
   id: string;
@@ -182,6 +209,12 @@ export interface DiaphragmWallPanel {
   reinforcement: ReinforcementGroup[];
   designResults?: WallDesignResult;
   professionalReviewRequired: boolean;
+  bottomElevationSource?: string;
+  bottomElevationLocked?: boolean;
+  sourceBottomElevation?: number;
+  toeZoneId?: string;
+  toeProfileStatus?: string;
+  constructionPanels?: Array<Record<string, unknown>>;
   objectLocatorMap?: Record<string, Record<string, unknown>>;
 }
 
@@ -329,11 +362,13 @@ export interface DrawingSheetResult { sheetId: string; title: string; scale: str
 export interface RebarVisualizationPoint { x: number; y: number; z: number }
 export interface RebarVisualizationBar { id: string; ifcClass: string; hostType: string; hostCode: string; hostId: string; groupId: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; count?: number; grade: string; locationDescription?: string; checkStatus?: string; start: RebarVisualizationPoint; end: RebarVisualizationPoint; points?: RebarVisualizationPoint[]; lengthM: number; representation: string; shapeKind?: string; estimatedFullCount?: number; sampledFromCount?: number; zoneId?: string; zoneType?: string; face?: string; drawingRefs?: string[]; envelopeSource?: string; zoneTopElevation?: number; zoneBottomElevation?: number }
 export interface RebarVisualizationHost { hostType: string; hostCode: string; groupCount: number; sampledBarCount: number; estimatedFullBarCount: number; tokens: string[] }
-export interface RebarIfcVisualization { projectId: string; exportProfileMapping: Record<string, string>; summary: { sampledBarCount: number; estimatedFullBarCount: number; hostCount: number; omittedHostCount?: number; steelMassProxyKg?: number; byBarType: Record<string, number>; byHostType: Record<string, number>; byCheckStatus: Record<string, number>; detailLevel: string; officialDetailingLimit?: string }; bars: RebarVisualizationBar[]; hosts: RebarVisualizationHost[]; notes: string[] }
+export interface RebarVisualizationCageFace { face: 'inner' | 'outer' | string; diameterMm: number; spacingMm: number; estimatedVerticalBarCount: number }
+export interface RebarVisualizationCage { id: string; hostId: string; hostCode: string; panelCode: string; panelIndex: number; start: RebarVisualizationPoint; end: RebarVisualizationPoint; topElevation: number; bottomElevation: number; heightM: number; panelLengthM: number; thicknessM: number; coverM: number; faces: RebarVisualizationCageFace[]; horizontal: { diameterMm: number; spacingMm: number; estimatedBarCountPerFace?: number }; ties: { diameterMm: number; spacingMm: number }; zoneIds: string[]; jointType?: string; liftingReviewRequired?: boolean; displayLineCap?: number; representation?: string }
+export interface RebarIfcVisualization { projectId: string; exportProfileMapping: Record<string, string>; summary: { sampledBarCount: number; estimatedFullBarCount: number; cageCount?: number; constructionPanelCount?: number; hostCount: number; omittedHostCount?: number; steelMassProxyKg?: number; byBarType: Record<string, number>; byHostType: Record<string, number>; byCheckStatus: Record<string, number>; detailLevel: string; officialDetailingLimit?: string }; bars: RebarVisualizationBar[]; cages?: RebarVisualizationCage[]; hosts: RebarVisualizationHost[]; notes: string[] }
 
 export interface QualityGateIssue { id?: string; category: string; severity: string; objectId?: string; objectType?: string; message: string; recommendation?: string; highlightGeometry?: Record<string, unknown>; relatedObjectIds?: string[]; displayHint?: string }
 export interface SupportLayoutQualitySummary { score: number; status: string; summary: string; metrics: Record<string, unknown>; issues: QualityGateIssue[]; highlights?: Record<string, unknown>[]; crossingPairs?: Record<string, unknown>[]; checkedAt?: string }
-export interface SupportLayoutOptimizationCandidate { id?: string; rank: number; score: number; status: string; targetSpacing: number; columnMaxSpan: number; objectiveTerms: Record<string, number>; softObjectives?: Record<string, number>; hardConstraints?: Record<string, unknown>; variableSummary?: Record<string, unknown>; lineAdjustments?: Record<string, unknown>[]; planGeometry?: Record<string, unknown>; deltaGeometry?: Record<string, unknown>; weightSummary?: Record<string, unknown>; exportReadiness?: Record<string, unknown>; metrics: Record<string, unknown>; issueCount: number; failCount: number; warningCount: number; supportCount: number; columnCount: number; maxSpanLength?: number; maxBaySpacing?: number; crossingCount?: number; obstacleConflictCount?: number; axialPeakProxy?: number; symmetryScore?: number; muckPathContinuityScore?: number; fullCalculation?: Record<string, unknown>; constructabilityNote?: string }
+export interface SupportLayoutOptimizationCandidate { id?: string; rank: number; score: number; status: string; targetSpacing: number; columnMaxSpan: number; objectiveTerms: Record<string, number>; softObjectives?: Record<string, number>; hardConstraints?: Record<string, unknown>; variableSummary?: Record<string, unknown>; lineAdjustments?: Record<string, unknown>[]; planGeometry?: Record<string, unknown>; deltaGeometry?: Record<string, unknown>; weightSummary?: Record<string, unknown>; exportReadiness?: Record<string, unknown>; metrics: Record<string, unknown>; issueCount: number; failCount: number; warningCount: number; supportCount: number; columnCount: number; maxSpanLength?: number; maxBaySpacing?: number; crossingCount?: number; junctionCount?: number; highDegreeJunctionCount?: number; planIntersectionComplexity?: number; obstacleConflictCount?: number; axialPeakProxy?: number; symmetryScore?: number; muckPathContinuityScore?: number; fullCalculation?: Record<string, unknown>; constructabilityNote?: string }
 export interface SupportLayoutRepairSummary { optimizationMethod?: string; optimizationPhase?: string; hardConstraintLabels?: string[]; softObjectiveLabels?: string[]; objectiveWeights?: Record<string, number>; candidateCount?: number; bestCandidateId?: string; selectedCandidateId?: string; lockedSupportIds?: string[]; lockSummary?: Record<string, unknown>; candidates?: SupportLayoutOptimizationCandidate[]; candidateFullCalculations?: Record<string, unknown>[]; status: string; scoreBefore?: number; scoreAfter?: number; actions: Record<string, unknown>[]; unresolvedIssues: QualityGateIssue[]; summary: string; checkedAt?: string }
 export interface IfcViewerProfileRisk { viewer: string; status: string; riskLevel: string; score: number; riskItems: string[]; recommendation?: string }
 export interface IfcCompatibilityCheckResult { score: number; status: string; summary: string; filePath?: string; exportMode?: string; entityCounts: Record<string, number>; rawUnicodeFound?: boolean; missingReferences?: string[]; zeroDimensionCount?: number; invalidPlacementCount?: number; missingMaterialAssociationCount?: number; missingSpatialContainmentCount?: number; viewerProfiles?: IfcViewerProfileRisk[]; issues: QualityGateIssue[]; checkedAt?: string }
@@ -342,7 +377,7 @@ export interface FormalReportGate { status: string; allowedForOfficialIssue: boo
 export interface DesignReviewSummary { strengthStatus: string; stiffnessStatus: string; stabilityStatus: string; strengthFailCount: number; stiffnessFailCount: number; stabilityFailCount: number; strengthWarningCount: number; stiffnessWarningCount: number; stabilityWarningCount: number; maxStrengthUtilization?: number; maxStiffnessUtilization?: number; minStabilitySafetyFactor?: number; notes: string[] }
 
 export interface StageCalculationResult { stageId: string; segmentId: string; pressureProfile: PressureProfile; supportForces: SupportForceResult[]; waleBeamResults?: WaleBeamInternalForceResult[]; coupledSystemResult?: Record<string, unknown>; globalCoupledResult?: GlobalCoupledSystemResult; wallInternalForce?: WallInternalForceResult; wallInternalForcePlaceholder?: Record<string, unknown>; stabilityChecks?: CheckResult[]; rcChecks?: CheckResult[]; checks: CheckResult[] }
-export interface GoverningValues { maxTotalPressure: number; maxSupportAxialForce: number; maxWallMoment?: number; maxWallShear?: number; maxDisplacement?: number; governingCheckStatus?: string; embedmentSafetyFactorMin?: number; heaveSafetyFactorMin?: number; seepageSafetyFactorMin?: number; strengthCheckStatus?: string; stiffnessCheckStatus?: string; stabilityCheckStatus?: string }
+export interface GoverningValues { maxTotalPressure: number; maxSupportAxialForce: number; maxWallMoment?: number; maxWallShear?: number; maxDisplacement?: number; governingCheckStatus?: string; embedmentSafetyFactorMin?: number; heaveSafetyFactorMin?: number; seepageSafetyFactorMin?: number; seepageRiskIndexMax?: number; strengthCheckStatus?: string; stiffnessCheckStatus?: string; stabilityCheckStatus?: string }
 export interface CalculationResult {
   id: string;
   projectId: string;
@@ -604,6 +639,20 @@ export interface StandardReference {
   sourceUrl?: string;
 }
 
+export interface CalculationStandardLink {
+  sequence: number;
+  calculation: string;
+  method: string;
+  standardIds: string[];
+  standardRefs: StandardReference[];
+  clauseFocus: string;
+  output: string;
+  status: string;
+  checkSummary: Record<string, number>;
+  ruleCount: number;
+  rules: Record<string, unknown>[];
+}
+
 export interface StandardsProcessStep {
   workflowStep: string;
   index: number;
@@ -618,6 +667,7 @@ export interface StandardsProcessStep {
   standardRefs: StandardReference[];
   ruleCount: number;
   rules: Record<string, unknown>[];
+  calculationLinks: CalculationStandardLink[];
   highlight: 'critical' | 'primary' | string;
 }
 

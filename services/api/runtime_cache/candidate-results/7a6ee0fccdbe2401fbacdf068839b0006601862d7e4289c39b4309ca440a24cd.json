@@ -1,0 +1,5460 @@
+{
+  "inputHash": "7a6ee0fccdbe2401fbacdf068839b0006601862d7e4289c39b4309ca440a24cd",
+  "result": {
+    "schemeLabel": "A",
+    "candidateId": "slopt-direct-grid-t4p0-c12p0-as_generated-0p0",
+    "rank": 1,
+    "score": 80.98,
+    "targetSpacing": 4.0,
+    "columnMaxSpan": 12.0,
+    "positionPattern": "as_generated",
+    "supportCount": 260,
+    "columnCount": 48,
+    "maxSpanLength": 31.0,
+    "excessiveDirectStrutCount": 0,
+    "minSupportWallClearance": 1.0,
+    "maxSupportAxialForce": 5261.129,
+    "maxDisplacement": 3.418,
+    "maxWallMoment": 657.737,
+    "maxWallShear": 446.099,
+    "maxWaleMoment": 3622.997,
+    "maxWaleShear": 2070.868,
+    "maxWaleDeflection": 0.013784,
+    "minStabilitySafetyFactor": 0.0,
+    "strengthStatus": "pass",
+    "stiffnessStatus": "pass",
+    "stabilityStatus": "pass",
+    "ifcStatus": "pass",
+    "ifcRisk": "medium",
+    "formalGateStatus": "warning",
+    "formalGateAllowed": false,
+    "checkSummary": {
+      "pass": 1445,
+      "fail": 0,
+      "warning": 5,
+      "manualReview": 0
+    },
+    "failCount": 0,
+    "warningCount": 5,
+    "manualReviewCount": 0,
+    "governingCheckStatus": "warning",
+    "calculationResultId": "calc-1b520a667b09",
+    "calculatedTopologyHash": "bcc18c2c9d84bfab6ce0",
+    "geologyCoverage": {
+      "status": "pass",
+      "requiredBounds": {
+        "minX": -125.0,
+        "minY": -26.5,
+        "maxX": 125.0,
+        "maxY": 26.5
+      },
+      "designDomainCovered": true,
+      "modelBounds": {
+        "minX": -312.0,
+        "minY": -40.0,
+        "maxX": 312.0,
+        "maxY": 40.0
+      },
+      "message": "地质模型平面范围覆盖围护结构和施工影响区。"
+    },
+    "calculationDiagnostics": {
+      "status": "warning",
+      "caseId": "case-4ab0b8abb1a7",
+      "topologyPreflight": {
+        "changed": false,
+        "addedSupportCount": 0,
+        "missingFacesBefore": [],
+        "concaveReturnRepair": {
+          "changed": false
+        },
+        "waleSupportBayRepair": {
+          "changed": false,
+          "status": "not_run"
+        }
+      },
+      "supportTopologySynchronization": {
+        "synchronized": false,
+        "reason": "topology_current",
+        "before": {
+          "currentTopologyHash": "bcc18c2c9d84bfab6ce0",
+          "caseTopologyHash": "bcc18c2c9d84bfab6ce0",
+          "hashMatches": true,
+          "referencedSupportCount": 260,
+          "validReferencedSupportCount": 260,
+          "staleSupportCount": 0,
+          "staleSupportIds": [],
+          "stageCountWithNoValidSupport": 0,
+          "requiresSynchronization": false
+        },
+        "after": {
+          "currentTopologyHash": "bcc18c2c9d84bfab6ce0",
+          "caseTopologyHash": "bcc18c2c9d84bfab6ce0",
+          "hashMatches": true,
+          "referencedSupportCount": 260,
+          "validReferencedSupportCount": 260,
+          "staleSupportCount": 0,
+          "staleSupportIds": [],
+          "stageCountWithNoValidSupport": 0,
+          "requiresSynchronization": false
+        },
+        "afterTopologyHash": "bcc18c2c9d84bfab6ce0",
+        "operationalSettingMapping": []
+      },
+      "rootCauses": [],
+      "wallCoverage": [
+        {
+          "segmentId": "S4",
+          "maxMomentKnMPerM": 819.161,
+          "maxShearKnPerM": 435.275,
+          "maxDisplacementMm": 3.418,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-e5df6913631a",
+          "wallCode": "DW-S4-001",
+          "faceCode": "F4",
+          "supportFaceCode": "S4",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S16",
+          "maxMomentKnMPerM": 819.161,
+          "maxShearKnPerM": 435.275,
+          "maxDisplacementMm": 3.418,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-1b51b0bcc651",
+          "wallCode": "DW-S16-001",
+          "faceCode": "F16",
+          "supportFaceCode": "S16",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S6",
+          "maxMomentKnMPerM": 777.993,
+          "maxShearKnPerM": 458.414,
+          "maxDisplacementMm": 2.982,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-e58eeb2fa853",
+          "wallCode": "DW-S6-001",
+          "faceCode": "F6",
+          "supportFaceCode": "S6",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S14",
+          "maxMomentKnMPerM": 777.993,
+          "maxShearKnPerM": 458.414,
+          "maxDisplacementMm": 2.982,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-7cefaf3a3409",
+          "wallCode": "DW-S14-001",
+          "faceCode": "F14",
+          "supportFaceCode": "S14",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S8",
+          "maxMomentKnMPerM": 712.65,
+          "maxShearKnPerM": 557.624,
+          "maxDisplacementMm": 2.374,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-1d0d1689b69c",
+          "wallCode": "DW-S8-001",
+          "faceCode": "F8",
+          "supportFaceCode": "S8",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S12",
+          "maxMomentKnMPerM": 712.65,
+          "maxShearKnPerM": 557.624,
+          "maxDisplacementMm": 2.374,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-9c53b6c07bf1",
+          "wallCode": "DW-S12-001",
+          "faceCode": "F12",
+          "supportFaceCode": "S12",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S2",
+          "maxMomentKnMPerM": 696.667,
+          "maxShearKnPerM": 501.131,
+          "maxDisplacementMm": 2.271,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-d2f1e19c539b",
+          "wallCode": "DW-S2-001",
+          "faceCode": "F2",
+          "supportFaceCode": "S2",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S18",
+          "maxMomentKnMPerM": 696.667,
+          "maxShearKnPerM": 501.131,
+          "maxDisplacementMm": 2.271,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-06e44070b7fd",
+          "wallCode": "DW-S18-001",
+          "faceCode": "F18",
+          "supportFaceCode": "S18",
+          "directSupportCount": 0,
+          "directSupportCountByLevel": {},
+          "supportCoverageStatus": "indirect_corner_transfer",
+          "supportCoverageMethod": "closed_perimeter_wale_and_adjacent_supported_faces"
+        },
+        {
+          "segmentId": "S7",
+          "maxMomentKnMPerM": 822.171,
+          "maxShearKnPerM": 508.306,
+          "maxDisplacementMm": 3.283,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-3a820e4b697a",
+          "wallCode": "DW-S7-001",
+          "faceCode": "F7",
+          "supportFaceCode": "S7",
+          "directSupportCount": 95,
+          "directSupportCountByLevel": {
+            "1": 19,
+            "2": 19,
+            "3": 19,
+            "4": 19,
+            "5": 19
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S13",
+          "maxMomentKnMPerM": 822.171,
+          "maxShearKnPerM": 508.306,
+          "maxDisplacementMm": 3.283,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-9d497eb7e48d",
+          "wallCode": "DW-S13-001",
+          "faceCode": "F13",
+          "supportFaceCode": "S13",
+          "directSupportCount": 95,
+          "directSupportCountByLevel": {
+            "1": 19,
+            "2": 19,
+            "3": 19,
+            "4": 19,
+            "5": 19
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S10",
+          "maxMomentKnMPerM": 755.309,
+          "maxShearKnPerM": 443.539,
+          "maxDisplacementMm": 2.841,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-80853e46892b",
+          "wallCode": "DW-S10-001",
+          "faceCode": "F10",
+          "supportFaceCode": "S10",
+          "directSupportCount": 30,
+          "directSupportCountByLevel": {
+            "1": 6,
+            "2": 6,
+            "3": 6,
+            "4": 6,
+            "5": 6
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S3",
+          "maxMomentKnMPerM": 753.344,
+          "maxShearKnPerM": 471.326,
+          "maxDisplacementMm": 2.754,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-204b00766160",
+          "wallCode": "DW-S3-001",
+          "faceCode": "F3",
+          "supportFaceCode": "S3",
+          "directSupportCount": 55,
+          "directSupportCountByLevel": {
+            "1": 11,
+            "2": 11,
+            "3": 11,
+            "4": 11,
+            "5": 11
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S17",
+          "maxMomentKnMPerM": 753.344,
+          "maxShearKnPerM": 471.326,
+          "maxDisplacementMm": 2.754,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-de14a83815ad",
+          "wallCode": "DW-S17-001",
+          "faceCode": "F17",
+          "supportFaceCode": "S17",
+          "directSupportCount": 55,
+          "directSupportCountByLevel": {
+            "1": 11,
+            "2": 11,
+            "3": 11,
+            "4": 11,
+            "5": 11
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S20",
+          "maxMomentKnMPerM": 740.065,
+          "maxShearKnPerM": 439.04,
+          "maxDisplacementMm": 2.731,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-99c61e161ad2",
+          "wallCode": "DW-S20-001",
+          "faceCode": "F20",
+          "supportFaceCode": "S20",
+          "directSupportCount": 30,
+          "directSupportCountByLevel": {
+            "1": 6,
+            "2": 6,
+            "3": 6,
+            "4": 6,
+            "5": 6
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S5",
+          "maxMomentKnMPerM": 745.816,
+          "maxShearKnPerM": 475.145,
+          "maxDisplacementMm": 2.689,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-3cfe461b8cc0",
+          "wallCode": "DW-S5-001",
+          "faceCode": "F5",
+          "supportFaceCode": "S5",
+          "directSupportCount": 25,
+          "directSupportCountByLevel": {
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S15",
+          "maxMomentKnMPerM": 745.816,
+          "maxShearKnPerM": 475.145,
+          "maxDisplacementMm": 2.689,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-09144ff55ed3",
+          "wallCode": "DW-S15-001",
+          "faceCode": "F15",
+          "supportFaceCode": "S15",
+          "directSupportCount": 25,
+          "directSupportCountByLevel": {
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S1",
+          "maxMomentKnMPerM": 653.649,
+          "maxShearKnPerM": 487.912,
+          "maxDisplacementMm": 1.995,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-7f4832c9d6c9",
+          "wallCode": "DW-S1-001",
+          "faceCode": "F1",
+          "supportFaceCode": "S1",
+          "directSupportCount": 25,
+          "directSupportCountByLevel": {
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S19",
+          "maxMomentKnMPerM": 653.649,
+          "maxShearKnPerM": 487.912,
+          "maxDisplacementMm": 1.995,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-080246794628",
+          "wallCode": "DW-S19-001",
+          "faceCode": "F19",
+          "supportFaceCode": "S19",
+          "directSupportCount": 25,
+          "directSupportCountByLevel": {
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S9",
+          "maxMomentKnMPerM": 650.158,
+          "maxShearKnPerM": 504.539,
+          "maxDisplacementMm": 1.927,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-1410c1d777d8",
+          "wallCode": "DW-S9-001",
+          "faceCode": "F9",
+          "supportFaceCode": "S9",
+          "directSupportCount": 30,
+          "directSupportCountByLevel": {
+            "1": 6,
+            "2": 6,
+            "3": 6,
+            "4": 6,
+            "5": 6
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        },
+        {
+          "segmentId": "S11",
+          "maxMomentKnMPerM": 650.158,
+          "maxShearKnPerM": 504.539,
+          "maxDisplacementMm": 1.927,
+          "governingStageId": "stage-8fcc49952332",
+          "wallId": "dw-06fb7ef56a79",
+          "wallCode": "DW-S11-001",
+          "faceCode": "F11",
+          "supportFaceCode": "S11",
+          "directSupportCount": 30,
+          "directSupportCountByLevel": {
+            "1": 6,
+            "2": 6,
+            "3": 6,
+            "4": 6,
+            "5": 6
+          },
+          "supportCoverageStatus": "pass",
+          "supportCoverageMethod": "direct_support_endpoint"
+        }
+      ],
+      "strengthDesignLoop": {
+        "enabled": true,
+        "iterationLimit": 3,
+        "topologyAdjusted": false,
+        "addedSupportCount": 0,
+        "waleBayBeforeM": null,
+        "waleBayAfterM": null,
+        "strengthStatus": "pass",
+        "stiffnessStatus": "pass",
+        "loadPathPolicy": "replacement slab/waler elevations remain in vertical tributary-band partition during support removal stages",
+        "waleBoundaryPolicy": "closed-perimeter rigid corner joints restrain face-wale end bays; direct strut reactions retain conservative qL equilibrium"
+      },
+      "issueGroups": {
+        "failRules": [],
+        "warningRules": [
+          {
+            "ruleId": "JGJ120-2012-4.7-INTERNAL-SUPPORT-LAYOUT-SCREEN-FIRST-LEVEL",
+            "count": 1
+          },
+          {
+            "ruleId": "JGJ120-2012-4.7-INTERNAL-SUPPORT-LAYOUT-SCREEN-SPAN",
+            "count": 1
+          },
+          {
+            "ruleId": "JGJ120-SUPPORT-CONSTRUCTION-EFFECTS-SUBSET",
+            "count": 1
+          },
+          {
+            "ruleId": "JGJ120-SUPPORT-LIFECYCLE-PATH-SUBSET",
+            "count": 1
+          },
+          {
+            "ruleId": "QUALITY-OBSTACLE_CLEARANCE",
+            "count": 1
+          }
+        ]
+      },
+      "checkSummary": {
+        "pass": 1445,
+        "fail": 0,
+        "warning": 5,
+        "manualReview": 0
+      },
+      "comparisonWithPrevious": null,
+      "nextActions": [
+        {
+          "code": "CONTINUE_REBAR_REVIEW",
+          "label": "进入配筋与出图复核",
+          "targetStep": "deliverables",
+          "primary": true
+        }
+      ],
+      "professionalBoundary": "自动诊断用于定位计算链路、支撑拓扑和构件控制项；新增支撑及计算结果仍需岩土、结构和施工专业复核。"
+    },
+    "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+    "changedSupportCount": 0,
+    "topologyFamily": "direct_grid",
+    "schemeName": "传统直对撑",
+    "strengthTopologyPreflight": {
+      "concaveReturnRepair": {
+        "changed": false,
+        "addedSupportCount": 0,
+        "missingFaces": []
+      },
+      "waleSupportBayRepair": {
+        "changed": true,
+        "addedSupportCount": 40,
+        "addedSupportIds": [
+          "support-1cad13548113",
+          "support-9fd37dfda424",
+          "support-2b00c369b2a2",
+          "support-fa5768e8e124",
+          "support-03fd4ef3dd35",
+          "support-3e7b5ac4d8ff",
+          "support-efba6e3c93c1",
+          "support-d7f67943e8bf",
+          "support-04d5e6a83012",
+          "support-c82e80ea7d10",
+          "support-ca1342c71ecb",
+          "support-21a01f9d8098",
+          "support-5dfa46605b8d",
+          "support-55f3fe9c18dd",
+          "support-2e31cd968eac",
+          "support-06df10e01d33",
+          "support-d50d6dd00e7d",
+          "support-9bfacbb69930",
+          "support-7193a1cceb86",
+          "support-6013a67f5272",
+          "support-a45471777d49",
+          "support-7da79e8b8daa",
+          "support-7e25b2ea7896",
+          "support-07eace0dfa4a",
+          "support-c946d0f46d04",
+          "support-1eae9d6187ba",
+          "support-2fbc612e82a1",
+          "support-5c7c1b906b32",
+          "support-0ec20badca11",
+          "support-d93a05c50473",
+          "support-9dc0edcfcdef",
+          "support-608083a8fa9c",
+          "support-13cbe6f80b49",
+          "support-fec787b71d89",
+          "support-5516952a36be",
+          "support-369e634a5077",
+          "support-ee868ae10a80",
+          "support-c49eef253193",
+          "support-97f116dcb38d",
+          "support-57001c8395a1"
+        ],
+        "failingFaces": [
+          "S10",
+          "S20"
+        ],
+        "status": "pass",
+        "auditBefore": {
+          "status": "fail",
+          "targetBayM": 7.5,
+          "hardMaxBayM": 9.0,
+          "rows": [
+            {
+              "faceCode": "S1",
+              "levelIndex": 1,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L1-1",
+                "SP-L1-1",
+                "SP-L1-2"
+              ],
+              "stationsM": [
+                5.61,
+                11.22
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                4.78
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 2,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L2-1",
+                "SP-L2-1",
+                "SP-L2-2"
+              ],
+              "stationsM": [
+                5.61,
+                11.22
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                4.78
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 3,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L3-1",
+                "SP-L3-1",
+                "SP-L3-2"
+              ],
+              "stationsM": [
+                5.61,
+                11.22
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                4.78
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 4,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L4-1",
+                "SP-L4-1",
+                "SP-L4-2"
+              ],
+              "stationsM": [
+                5.61,
+                11.22
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                4.78
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 5,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L5-1",
+                "SP-L5-1",
+                "SP-L5-2"
+              ],
+              "stationsM": [
+                5.61,
+                11.22
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                4.78
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 1,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L1-10",
+                "SP-L1-11",
+                "SP-L1-12",
+                "SP-L1-13",
+                "SP-L1-3",
+                "SP-L1-4",
+                "SP-L1-5",
+                "SP-L1-6",
+                "SP-L1-7",
+                "SP-L1-8",
+                "SP-L1-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 2,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L2-10",
+                "SP-L2-11",
+                "SP-L2-12",
+                "SP-L2-13",
+                "SP-L2-3",
+                "SP-L2-4",
+                "SP-L2-5",
+                "SP-L2-6",
+                "SP-L2-7",
+                "SP-L2-8",
+                "SP-L2-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 3,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L3-10",
+                "SP-L3-11",
+                "SP-L3-12",
+                "SP-L3-13",
+                "SP-L3-3",
+                "SP-L3-4",
+                "SP-L3-5",
+                "SP-L3-6",
+                "SP-L3-7",
+                "SP-L3-8",
+                "SP-L3-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 4,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L4-10",
+                "SP-L4-11",
+                "SP-L4-12",
+                "SP-L4-13",
+                "SP-L4-3",
+                "SP-L4-4",
+                "SP-L4-5",
+                "SP-L4-6",
+                "SP-L4-7",
+                "SP-L4-8",
+                "SP-L4-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 5,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L5-10",
+                "SP-L5-11",
+                "SP-L5-12",
+                "SP-L5-13",
+                "SP-L5-3",
+                "SP-L5-4",
+                "SP-L5-5",
+                "SP-L5-6",
+                "SP-L5-7",
+                "SP-L5-8",
+                "SP-L5-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 1,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L1-14",
+                "SP-L1-15",
+                "SP-L1-16",
+                "SP-L1-17",
+                "SP-L1-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 2,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L2-14",
+                "SP-L2-15",
+                "SP-L2-16",
+                "SP-L2-17",
+                "SP-L2-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 3,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L3-14",
+                "SP-L3-15",
+                "SP-L3-16",
+                "SP-L3-17",
+                "SP-L3-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 4,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L4-14",
+                "SP-L4-15",
+                "SP-L4-16",
+                "SP-L4-17",
+                "SP-L4-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 5,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L5-14",
+                "SP-L5-15",
+                "SP-L5-16",
+                "SP-L5-17",
+                "SP-L5-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 1,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L1-19",
+                "SP-L1-20",
+                "SP-L1-21",
+                "SP-L1-22",
+                "SP-L1-23",
+                "SP-L1-24",
+                "SP-L1-25",
+                "SP-L1-26",
+                "SP-L1-27",
+                "SP-L1-28",
+                "SP-L1-29",
+                "SP-L1-30",
+                "SP-L1-31",
+                "SP-L1-32",
+                "SP-L1-33",
+                "SP-L1-34",
+                "SP-L1-35",
+                "SP-L1-36",
+                "SP-L1-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 2,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L2-19",
+                "SP-L2-20",
+                "SP-L2-21",
+                "SP-L2-22",
+                "SP-L2-23",
+                "SP-L2-24",
+                "SP-L2-25",
+                "SP-L2-26",
+                "SP-L2-27",
+                "SP-L2-28",
+                "SP-L2-29",
+                "SP-L2-30",
+                "SP-L2-31",
+                "SP-L2-32",
+                "SP-L2-33",
+                "SP-L2-34",
+                "SP-L2-35",
+                "SP-L2-36",
+                "SP-L2-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 3,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L3-19",
+                "SP-L3-20",
+                "SP-L3-21",
+                "SP-L3-22",
+                "SP-L3-23",
+                "SP-L3-24",
+                "SP-L3-25",
+                "SP-L3-26",
+                "SP-L3-27",
+                "SP-L3-28",
+                "SP-L3-29",
+                "SP-L3-30",
+                "SP-L3-31",
+                "SP-L3-32",
+                "SP-L3-33",
+                "SP-L3-34",
+                "SP-L3-35",
+                "SP-L3-36",
+                "SP-L3-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 4,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L4-19",
+                "SP-L4-20",
+                "SP-L4-21",
+                "SP-L4-22",
+                "SP-L4-23",
+                "SP-L4-24",
+                "SP-L4-25",
+                "SP-L4-26",
+                "SP-L4-27",
+                "SP-L4-28",
+                "SP-L4-29",
+                "SP-L4-30",
+                "SP-L4-31",
+                "SP-L4-32",
+                "SP-L4-33",
+                "SP-L4-34",
+                "SP-L4-35",
+                "SP-L4-36",
+                "SP-L4-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 5,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L5-19",
+                "SP-L5-20",
+                "SP-L5-21",
+                "SP-L5-22",
+                "SP-L5-23",
+                "SP-L5-24",
+                "SP-L5-25",
+                "SP-L5-26",
+                "SP-L5-27",
+                "SP-L5-28",
+                "SP-L5-29",
+                "SP-L5-30",
+                "SP-L5-31",
+                "SP-L5-32",
+                "SP-L5-33",
+                "SP-L5-34",
+                "SP-L5-35",
+                "SP-L5-36",
+                "SP-L5-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 1,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L1-3",
+                "SP-L1-38",
+                "SP-L1-39",
+                "SP-L1-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                11.39
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 2,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L2-3",
+                "SP-L2-38",
+                "SP-L2-39",
+                "SP-L2-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                11.39
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 3,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L3-3",
+                "SP-L3-38",
+                "SP-L3-39",
+                "SP-L3-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                11.39
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 4,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L4-3",
+                "SP-L4-38",
+                "SP-L4-39",
+                "SP-L4-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                11.39
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 5,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L5-3",
+                "SP-L5-38",
+                "SP-L5-39",
+                "SP-L5-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                11.39
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 1,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L1-3",
+                "DB-L1-4"
+              ],
+              "stationsM": [
+                5.625,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                17.75,
+                5.625
+              ],
+              "maxBayM": 17.75,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 2,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L2-3",
+                "DB-L2-4"
+              ],
+              "stationsM": [
+                5.625,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                17.75,
+                5.625
+              ],
+              "maxBayM": 17.75,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 3,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L3-3",
+                "DB-L3-4"
+              ],
+              "stationsM": [
+                5.625,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                17.75,
+                5.625
+              ],
+              "maxBayM": 17.75,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 4,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L4-3",
+                "DB-L4-4"
+              ],
+              "stationsM": [
+                5.625,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                17.75,
+                5.625
+              ],
+              "maxBayM": 17.75,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 5,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L5-3",
+                "DB-L5-4"
+              ],
+              "stationsM": [
+                5.625,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                17.75,
+                5.625
+              ],
+              "maxBayM": 17.75,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 1,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L1-4",
+                "SP-L1-38",
+                "SP-L1-39",
+                "SP-L1-40"
+              ],
+              "stationsM": [
+                5.61,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 2,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L2-4",
+                "SP-L2-38",
+                "SP-L2-39",
+                "SP-L2-40"
+              ],
+              "stationsM": [
+                5.61,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 3,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L3-4",
+                "SP-L3-38",
+                "SP-L3-39",
+                "SP-L3-40"
+              ],
+              "stationsM": [
+                5.61,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 4,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L4-4",
+                "SP-L4-38",
+                "SP-L4-39",
+                "SP-L4-40"
+              ],
+              "stationsM": [
+                5.61,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 5,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 3,
+              "supportCodes": [
+                "DB-L5-4",
+                "SP-L5-38",
+                "SP-L5-39",
+                "SP-L5-40"
+              ],
+              "stationsM": [
+                5.61,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                5.61,
+                5.61,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 1,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L1-19",
+                "SP-L1-20",
+                "SP-L1-21",
+                "SP-L1-22",
+                "SP-L1-23",
+                "SP-L1-24",
+                "SP-L1-25",
+                "SP-L1-26",
+                "SP-L1-27",
+                "SP-L1-28",
+                "SP-L1-29",
+                "SP-L1-30",
+                "SP-L1-31",
+                "SP-L1-32",
+                "SP-L1-33",
+                "SP-L1-34",
+                "SP-L1-35",
+                "SP-L1-36",
+                "SP-L1-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 2,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L2-19",
+                "SP-L2-20",
+                "SP-L2-21",
+                "SP-L2-22",
+                "SP-L2-23",
+                "SP-L2-24",
+                "SP-L2-25",
+                "SP-L2-26",
+                "SP-L2-27",
+                "SP-L2-28",
+                "SP-L2-29",
+                "SP-L2-30",
+                "SP-L2-31",
+                "SP-L2-32",
+                "SP-L2-33",
+                "SP-L2-34",
+                "SP-L2-35",
+                "SP-L2-36",
+                "SP-L2-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 3,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L3-19",
+                "SP-L3-20",
+                "SP-L3-21",
+                "SP-L3-22",
+                "SP-L3-23",
+                "SP-L3-24",
+                "SP-L3-25",
+                "SP-L3-26",
+                "SP-L3-27",
+                "SP-L3-28",
+                "SP-L3-29",
+                "SP-L3-30",
+                "SP-L3-31",
+                "SP-L3-32",
+                "SP-L3-33",
+                "SP-L3-34",
+                "SP-L3-35",
+                "SP-L3-36",
+                "SP-L3-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 4,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L4-19",
+                "SP-L4-20",
+                "SP-L4-21",
+                "SP-L4-22",
+                "SP-L4-23",
+                "SP-L4-24",
+                "SP-L4-25",
+                "SP-L4-26",
+                "SP-L4-27",
+                "SP-L4-28",
+                "SP-L4-29",
+                "SP-L4-30",
+                "SP-L4-31",
+                "SP-L4-32",
+                "SP-L4-33",
+                "SP-L4-34",
+                "SP-L4-35",
+                "SP-L4-36",
+                "SP-L4-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 5,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L5-19",
+                "SP-L5-20",
+                "SP-L5-21",
+                "SP-L5-22",
+                "SP-L5-23",
+                "SP-L5-24",
+                "SP-L5-25",
+                "SP-L5-26",
+                "SP-L5-27",
+                "SP-L5-28",
+                "SP-L5-29",
+                "SP-L5-30",
+                "SP-L5-31",
+                "SP-L5-32",
+                "SP-L5-33",
+                "SP-L5-34",
+                "SP-L5-35",
+                "SP-L5-36",
+                "SP-L5-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 1,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L1-14",
+                "SP-L1-15",
+                "SP-L1-16",
+                "SP-L1-17",
+                "SP-L1-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 2,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L2-14",
+                "SP-L2-15",
+                "SP-L2-16",
+                "SP-L2-17",
+                "SP-L2-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 3,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L3-14",
+                "SP-L3-15",
+                "SP-L3-16",
+                "SP-L3-17",
+                "SP-L3-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 4,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L4-14",
+                "SP-L4-15",
+                "SP-L4-16",
+                "SP-L4-17",
+                "SP-L4-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 5,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L5-14",
+                "SP-L5-15",
+                "SP-L5-16",
+                "SP-L5-17",
+                "SP-L5-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 1,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L1-10",
+                "SP-L1-11",
+                "SP-L1-12",
+                "SP-L1-13",
+                "SP-L1-3",
+                "SP-L1-4",
+                "SP-L1-5",
+                "SP-L1-6",
+                "SP-L1-7",
+                "SP-L1-8",
+                "SP-L1-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 2,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L2-10",
+                "SP-L2-11",
+                "SP-L2-12",
+                "SP-L2-13",
+                "SP-L2-3",
+                "SP-L2-4",
+                "SP-L2-5",
+                "SP-L2-6",
+                "SP-L2-7",
+                "SP-L2-8",
+                "SP-L2-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 3,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L3-10",
+                "SP-L3-11",
+                "SP-L3-12",
+                "SP-L3-13",
+                "SP-L3-3",
+                "SP-L3-4",
+                "SP-L3-5",
+                "SP-L3-6",
+                "SP-L3-7",
+                "SP-L3-8",
+                "SP-L3-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 4,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L4-10",
+                "SP-L4-11",
+                "SP-L4-12",
+                "SP-L4-13",
+                "SP-L4-3",
+                "SP-L4-4",
+                "SP-L4-5",
+                "SP-L4-6",
+                "SP-L4-7",
+                "SP-L4-8",
+                "SP-L4-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 5,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L5-10",
+                "SP-L5-11",
+                "SP-L5-12",
+                "SP-L5-13",
+                "SP-L5-3",
+                "SP-L5-4",
+                "SP-L5-5",
+                "SP-L5-6",
+                "SP-L5-7",
+                "SP-L5-8",
+                "SP-L5-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 1,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L1-2",
+                "SP-L1-1",
+                "SP-L1-2"
+              ],
+              "stationsM": [
+                4.78,
+                10.39
+              ],
+              "bayLengthsM": [
+                4.78,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 2,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L2-2",
+                "SP-L2-1",
+                "SP-L2-2"
+              ],
+              "stationsM": [
+                4.78,
+                10.39
+              ],
+              "bayLengthsM": [
+                4.78,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 3,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L3-2",
+                "SP-L3-1",
+                "SP-L3-2"
+              ],
+              "stationsM": [
+                4.78,
+                10.39
+              ],
+              "bayLengthsM": [
+                4.78,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 4,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L4-2",
+                "SP-L4-1",
+                "SP-L4-2"
+              ],
+              "stationsM": [
+                4.78,
+                10.39
+              ],
+              "bayLengthsM": [
+                4.78,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 5,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L5-2",
+                "SP-L5-1",
+                "SP-L5-2"
+              ],
+              "stationsM": [
+                4.78,
+                10.39
+              ],
+              "bayLengthsM": [
+                4.78,
+                5.61,
+                5.61
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 1,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L1-1",
+                "DB-L1-2"
+              ],
+              "stationsM": [
+                5.44,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                17.12,
+                5.44
+              ],
+              "maxBayM": 17.12,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 2,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L2-1",
+                "DB-L2-2"
+              ],
+              "stationsM": [
+                5.44,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                17.12,
+                5.44
+              ],
+              "maxBayM": 17.12,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 3,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L3-1",
+                "DB-L3-2"
+              ],
+              "stationsM": [
+                5.44,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                17.12,
+                5.44
+              ],
+              "maxBayM": 17.12,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 4,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L4-1",
+                "DB-L4-2"
+              ],
+              "stationsM": [
+                5.44,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                17.12,
+                5.44
+              ],
+              "maxBayM": 17.12,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 5,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 2,
+              "supportCodes": [
+                "DB-L5-1",
+                "DB-L5-2"
+              ],
+              "stationsM": [
+                5.44,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                17.12,
+                5.44
+              ],
+              "maxBayM": 17.12,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "fail"
+            }
+          ],
+          "failCount": 10,
+          "warningCount": 0,
+          "maxBayM": 17.75
+        },
+        "auditAfter": {
+          "status": "pass",
+          "targetBayM": 7.5,
+          "hardMaxBayM": 9.0,
+          "rows": [
+            {
+              "faceCode": "S1",
+              "levelIndex": 1,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L1-1",
+                "DB-L1-F2",
+                "DB-L1-F20",
+                "SP-L1-1",
+                "SP-L1-2"
+              ],
+              "stationsM": [
+                3.0667,
+                5.61,
+                10.88,
+                11.22
+              ],
+              "bayLengthsM": [
+                3.0667,
+                2.5433,
+                5.27,
+                0.34,
+                4.78
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 2,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L2-1",
+                "DB-L2-F2",
+                "DB-L2-F20",
+                "SP-L2-1",
+                "SP-L2-2"
+              ],
+              "stationsM": [
+                3.0667,
+                5.61,
+                10.88,
+                11.22
+              ],
+              "bayLengthsM": [
+                3.0667,
+                2.5433,
+                5.27,
+                0.34,
+                4.78
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 3,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L3-1",
+                "DB-L3-F2",
+                "DB-L3-F20",
+                "SP-L3-1",
+                "SP-L3-2"
+              ],
+              "stationsM": [
+                3.0667,
+                5.61,
+                10.88,
+                11.22
+              ],
+              "bayLengthsM": [
+                3.0667,
+                2.5433,
+                5.27,
+                0.34,
+                4.78
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 4,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L4-1",
+                "DB-L4-F2",
+                "DB-L4-F20",
+                "SP-L4-1",
+                "SP-L4-2"
+              ],
+              "stationsM": [
+                3.0667,
+                5.61,
+                10.88,
+                11.22
+              ],
+              "bayLengthsM": [
+                3.0667,
+                2.5433,
+                5.27,
+                0.34,
+                4.78
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S1",
+              "levelIndex": 5,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L5-1",
+                "DB-L5-F2",
+                "DB-L5-F20",
+                "SP-L5-1",
+                "SP-L5-2"
+              ],
+              "stationsM": [
+                3.0667,
+                5.61,
+                10.88,
+                11.22
+              ],
+              "bayLengthsM": [
+                3.0667,
+                2.5433,
+                5.27,
+                0.34,
+                4.78
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 1,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L1-10",
+                "SP-L1-11",
+                "SP-L1-12",
+                "SP-L1-13",
+                "SP-L1-3",
+                "SP-L1-4",
+                "SP-L1-5",
+                "SP-L1-6",
+                "SP-L1-7",
+                "SP-L1-8",
+                "SP-L1-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 2,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L2-10",
+                "SP-L2-11",
+                "SP-L2-12",
+                "SP-L2-13",
+                "SP-L2-3",
+                "SP-L2-4",
+                "SP-L2-5",
+                "SP-L2-6",
+                "SP-L2-7",
+                "SP-L2-8",
+                "SP-L2-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 3,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L3-10",
+                "SP-L3-11",
+                "SP-L3-12",
+                "SP-L3-13",
+                "SP-L3-3",
+                "SP-L3-4",
+                "SP-L3-5",
+                "SP-L3-6",
+                "SP-L3-7",
+                "SP-L3-8",
+                "SP-L3-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 4,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L4-10",
+                "SP-L4-11",
+                "SP-L4-12",
+                "SP-L4-13",
+                "SP-L4-3",
+                "SP-L4-4",
+                "SP-L4-5",
+                "SP-L4-6",
+                "SP-L4-7",
+                "SP-L4-8",
+                "SP-L4-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S3",
+              "levelIndex": 5,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L5-10",
+                "SP-L5-11",
+                "SP-L5-12",
+                "SP-L5-13",
+                "SP-L5-3",
+                "SP-L5-4",
+                "SP-L5-5",
+                "SP-L5-6",
+                "SP-L5-7",
+                "SP-L5-8",
+                "SP-L5-9"
+              ],
+              "stationsM": [
+                0.829,
+                6.439,
+                12.049,
+                17.659,
+                23.268,
+                28.878,
+                34.488,
+                40.098,
+                45.707,
+                51.317,
+                56.927
+              ],
+              "bayLengthsM": [
+                0.829,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                3.073
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 1,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L1-14",
+                "SP-L1-15",
+                "SP-L1-16",
+                "SP-L1-17",
+                "SP-L1-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 2,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L2-14",
+                "SP-L2-15",
+                "SP-L2-16",
+                "SP-L2-17",
+                "SP-L2-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 3,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L3-14",
+                "SP-L3-15",
+                "SP-L3-16",
+                "SP-L3-17",
+                "SP-L3-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 4,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L4-14",
+                "SP-L4-15",
+                "SP-L4-16",
+                "SP-L4-17",
+                "SP-L4-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S5",
+              "levelIndex": 5,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L5-14",
+                "SP-L5-15",
+                "SP-L5-16",
+                "SP-L5-17",
+                "SP-L5-18"
+              ],
+              "stationsM": [
+                2.537,
+                8.146,
+                13.756,
+                19.366,
+                24.976
+              ],
+              "bayLengthsM": [
+                2.537,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                1.024
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 1,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L1-19",
+                "SP-L1-20",
+                "SP-L1-21",
+                "SP-L1-22",
+                "SP-L1-23",
+                "SP-L1-24",
+                "SP-L1-25",
+                "SP-L1-26",
+                "SP-L1-27",
+                "SP-L1-28",
+                "SP-L1-29",
+                "SP-L1-30",
+                "SP-L1-31",
+                "SP-L1-32",
+                "SP-L1-33",
+                "SP-L1-34",
+                "SP-L1-35",
+                "SP-L1-36",
+                "SP-L1-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 2,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L2-19",
+                "SP-L2-20",
+                "SP-L2-21",
+                "SP-L2-22",
+                "SP-L2-23",
+                "SP-L2-24",
+                "SP-L2-25",
+                "SP-L2-26",
+                "SP-L2-27",
+                "SP-L2-28",
+                "SP-L2-29",
+                "SP-L2-30",
+                "SP-L2-31",
+                "SP-L2-32",
+                "SP-L2-33",
+                "SP-L2-34",
+                "SP-L2-35",
+                "SP-L2-36",
+                "SP-L2-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 3,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L3-19",
+                "SP-L3-20",
+                "SP-L3-21",
+                "SP-L3-22",
+                "SP-L3-23",
+                "SP-L3-24",
+                "SP-L3-25",
+                "SP-L3-26",
+                "SP-L3-27",
+                "SP-L3-28",
+                "SP-L3-29",
+                "SP-L3-30",
+                "SP-L3-31",
+                "SP-L3-32",
+                "SP-L3-33",
+                "SP-L3-34",
+                "SP-L3-35",
+                "SP-L3-36",
+                "SP-L3-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 4,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L4-19",
+                "SP-L4-20",
+                "SP-L4-21",
+                "SP-L4-22",
+                "SP-L4-23",
+                "SP-L4-24",
+                "SP-L4-25",
+                "SP-L4-26",
+                "SP-L4-27",
+                "SP-L4-28",
+                "SP-L4-29",
+                "SP-L4-30",
+                "SP-L4-31",
+                "SP-L4-32",
+                "SP-L4-33",
+                "SP-L4-34",
+                "SP-L4-35",
+                "SP-L4-36",
+                "SP-L4-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S7",
+              "levelIndex": 5,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L5-19",
+                "SP-L5-20",
+                "SP-L5-21",
+                "SP-L5-22",
+                "SP-L5-23",
+                "SP-L5-24",
+                "SP-L5-25",
+                "SP-L5-26",
+                "SP-L5-27",
+                "SP-L5-28",
+                "SP-L5-29",
+                "SP-L5-30",
+                "SP-L5-31",
+                "SP-L5-32",
+                "SP-L5-33",
+                "SP-L5-34",
+                "SP-L5-35",
+                "SP-L5-36",
+                "SP-L5-37"
+              ],
+              "stationsM": [
+                4.585,
+                10.195,
+                15.805,
+                21.415,
+                27.024,
+                32.634,
+                38.244,
+                43.854,
+                49.463,
+                55.073,
+                60.683,
+                66.293,
+                71.902,
+                77.512,
+                83.122,
+                88.732,
+                94.341,
+                99.951,
+                105.561
+              ],
+              "bayLengthsM": [
+                4.585,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.439
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 1,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L1-3",
+                "DB-L1-F4",
+                "DB-L1-F9",
+                "SP-L1-38",
+                "SP-L1-39",
+                "SP-L1-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                5.9,
+                11.39,
+                13.8274
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                0.12,
+                5.49,
+                2.4374,
+                3.1726
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 2,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L2-3",
+                "DB-L2-F4",
+                "DB-L2-F9",
+                "SP-L2-38",
+                "SP-L2-39",
+                "SP-L2-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                5.9,
+                11.39,
+                13.8274
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                0.12,
+                5.49,
+                2.4374,
+                3.1726
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 3,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L3-3",
+                "DB-L3-F4",
+                "DB-L3-F9",
+                "SP-L3-38",
+                "SP-L3-39",
+                "SP-L3-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                5.9,
+                11.39,
+                13.8274
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                0.12,
+                5.49,
+                2.4374,
+                3.1726
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 4,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L4-3",
+                "DB-L4-F4",
+                "DB-L4-F9",
+                "SP-L4-38",
+                "SP-L4-39",
+                "SP-L4-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                5.9,
+                11.39,
+                13.8274
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                0.12,
+                5.49,
+                2.4374,
+                3.1726
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S9",
+              "levelIndex": 5,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L5-3",
+                "DB-L5-F4",
+                "DB-L5-F9",
+                "SP-L5-38",
+                "SP-L5-39",
+                "SP-L5-40"
+              ],
+              "stationsM": [
+                0.171,
+                5.78,
+                5.9,
+                11.39,
+                13.8274
+              ],
+              "bayLengthsM": [
+                0.171,
+                5.609,
+                0.12,
+                5.49,
+                2.4374,
+                3.1726
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 1,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L1-3",
+                "DB-L1-4",
+                "DB-L1-F10",
+                "DB-L1-F4",
+                "DB-L1-F6",
+                "DB-L1-F9"
+              ],
+              "stationsM": [
+                5.625,
+                11.1,
+                11.5417,
+                17.4583,
+                17.9,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                5.475,
+                0.4417,
+                5.9166,
+                0.4417,
+                5.475,
+                5.625
+              ],
+              "maxBayM": 5.917,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 2,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L2-3",
+                "DB-L2-4",
+                "DB-L2-F10",
+                "DB-L2-F4",
+                "DB-L2-F6",
+                "DB-L2-F9"
+              ],
+              "stationsM": [
+                5.625,
+                11.1,
+                11.5417,
+                17.4583,
+                17.9,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                5.475,
+                0.4417,
+                5.9166,
+                0.4417,
+                5.475,
+                5.625
+              ],
+              "maxBayM": 5.917,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 3,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L3-3",
+                "DB-L3-4",
+                "DB-L3-F10",
+                "DB-L3-F4",
+                "DB-L3-F6",
+                "DB-L3-F9"
+              ],
+              "stationsM": [
+                5.625,
+                11.1,
+                11.5417,
+                17.4583,
+                17.9,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                5.475,
+                0.4417,
+                5.9166,
+                0.4417,
+                5.475,
+                5.625
+              ],
+              "maxBayM": 5.917,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 4,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L4-3",
+                "DB-L4-4",
+                "DB-L4-F10",
+                "DB-L4-F4",
+                "DB-L4-F6",
+                "DB-L4-F9"
+              ],
+              "stationsM": [
+                5.625,
+                11.1,
+                11.5417,
+                17.4583,
+                17.9,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                5.475,
+                0.4417,
+                5.9166,
+                0.4417,
+                5.475,
+                5.625
+              ],
+              "maxBayM": 5.917,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S10",
+              "levelIndex": 5,
+              "faceLengthM": 29.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L5-3",
+                "DB-L5-4",
+                "DB-L5-F10",
+                "DB-L5-F4",
+                "DB-L5-F6",
+                "DB-L5-F9"
+              ],
+              "stationsM": [
+                5.625,
+                11.1,
+                11.5417,
+                17.4583,
+                17.9,
+                23.375
+              ],
+              "bayLengthsM": [
+                5.625,
+                5.475,
+                0.4417,
+                5.9166,
+                0.4417,
+                5.475,
+                5.625
+              ],
+              "maxBayM": 5.917,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 1,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L1-4",
+                "DB-L1-F10",
+                "DB-L1-F6",
+                "SP-L1-38",
+                "SP-L1-39",
+                "SP-L1-40"
+              ],
+              "stationsM": [
+                3.1726,
+                5.61,
+                11.1,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                3.1726,
+                2.4374,
+                5.49,
+                0.12,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 2,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L2-4",
+                "DB-L2-F10",
+                "DB-L2-F6",
+                "SP-L2-38",
+                "SP-L2-39",
+                "SP-L2-40"
+              ],
+              "stationsM": [
+                3.1726,
+                5.61,
+                11.1,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                3.1726,
+                2.4374,
+                5.49,
+                0.12,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 3,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L3-4",
+                "DB-L3-F10",
+                "DB-L3-F6",
+                "SP-L3-38",
+                "SP-L3-39",
+                "SP-L3-40"
+              ],
+              "stationsM": [
+                3.1726,
+                5.61,
+                11.1,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                3.1726,
+                2.4374,
+                5.49,
+                0.12,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 4,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L4-4",
+                "DB-L4-F10",
+                "DB-L4-F6",
+                "SP-L4-38",
+                "SP-L4-39",
+                "SP-L4-40"
+              ],
+              "stationsM": [
+                3.1726,
+                5.61,
+                11.1,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                3.1726,
+                2.4374,
+                5.49,
+                0.12,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S11",
+              "levelIndex": 5,
+              "faceLengthM": 17.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "DB-L5-4",
+                "DB-L5-F10",
+                "DB-L5-F6",
+                "SP-L5-38",
+                "SP-L5-39",
+                "SP-L5-40"
+              ],
+              "stationsM": [
+                3.1726,
+                5.61,
+                11.1,
+                11.22,
+                16.829
+              ],
+              "bayLengthsM": [
+                3.1726,
+                2.4374,
+                5.49,
+                0.12,
+                5.609,
+                0.171
+              ],
+              "maxBayM": 5.609,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 1,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L1-19",
+                "SP-L1-20",
+                "SP-L1-21",
+                "SP-L1-22",
+                "SP-L1-23",
+                "SP-L1-24",
+                "SP-L1-25",
+                "SP-L1-26",
+                "SP-L1-27",
+                "SP-L1-28",
+                "SP-L1-29",
+                "SP-L1-30",
+                "SP-L1-31",
+                "SP-L1-32",
+                "SP-L1-33",
+                "SP-L1-34",
+                "SP-L1-35",
+                "SP-L1-36",
+                "SP-L1-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 2,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L2-19",
+                "SP-L2-20",
+                "SP-L2-21",
+                "SP-L2-22",
+                "SP-L2-23",
+                "SP-L2-24",
+                "SP-L2-25",
+                "SP-L2-26",
+                "SP-L2-27",
+                "SP-L2-28",
+                "SP-L2-29",
+                "SP-L2-30",
+                "SP-L2-31",
+                "SP-L2-32",
+                "SP-L2-33",
+                "SP-L2-34",
+                "SP-L2-35",
+                "SP-L2-36",
+                "SP-L2-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 3,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L3-19",
+                "SP-L3-20",
+                "SP-L3-21",
+                "SP-L3-22",
+                "SP-L3-23",
+                "SP-L3-24",
+                "SP-L3-25",
+                "SP-L3-26",
+                "SP-L3-27",
+                "SP-L3-28",
+                "SP-L3-29",
+                "SP-L3-30",
+                "SP-L3-31",
+                "SP-L3-32",
+                "SP-L3-33",
+                "SP-L3-34",
+                "SP-L3-35",
+                "SP-L3-36",
+                "SP-L3-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 4,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L4-19",
+                "SP-L4-20",
+                "SP-L4-21",
+                "SP-L4-22",
+                "SP-L4-23",
+                "SP-L4-24",
+                "SP-L4-25",
+                "SP-L4-26",
+                "SP-L4-27",
+                "SP-L4-28",
+                "SP-L4-29",
+                "SP-L4-30",
+                "SP-L4-31",
+                "SP-L4-32",
+                "SP-L4-33",
+                "SP-L4-34",
+                "SP-L4-35",
+                "SP-L4-36",
+                "SP-L4-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S13",
+              "levelIndex": 5,
+              "faceLengthM": 111.0,
+              "supportNodeCount": 19,
+              "supportCodes": [
+                "SP-L5-19",
+                "SP-L5-20",
+                "SP-L5-21",
+                "SP-L5-22",
+                "SP-L5-23",
+                "SP-L5-24",
+                "SP-L5-25",
+                "SP-L5-26",
+                "SP-L5-27",
+                "SP-L5-28",
+                "SP-L5-29",
+                "SP-L5-30",
+                "SP-L5-31",
+                "SP-L5-32",
+                "SP-L5-33",
+                "SP-L5-34",
+                "SP-L5-35",
+                "SP-L5-36",
+                "SP-L5-37"
+              ],
+              "stationsM": [
+                5.439,
+                11.049,
+                16.659,
+                22.268,
+                27.878,
+                33.488,
+                39.098,
+                44.707,
+                50.317,
+                55.927,
+                61.537,
+                67.146,
+                72.756,
+                78.366,
+                83.976,
+                89.585,
+                95.195,
+                100.805,
+                106.415
+              ],
+              "bayLengthsM": [
+                5.439,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                4.585
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 1,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L1-14",
+                "SP-L1-15",
+                "SP-L1-16",
+                "SP-L1-17",
+                "SP-L1-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 2,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L2-14",
+                "SP-L2-15",
+                "SP-L2-16",
+                "SP-L2-17",
+                "SP-L2-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 3,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L3-14",
+                "SP-L3-15",
+                "SP-L3-16",
+                "SP-L3-17",
+                "SP-L3-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 4,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L4-14",
+                "SP-L4-15",
+                "SP-L4-16",
+                "SP-L4-17",
+                "SP-L4-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S15",
+              "levelIndex": 5,
+              "faceLengthM": 26.0,
+              "supportNodeCount": 5,
+              "supportCodes": [
+                "SP-L5-14",
+                "SP-L5-15",
+                "SP-L5-16",
+                "SP-L5-17",
+                "SP-L5-18"
+              ],
+              "stationsM": [
+                1.024,
+                6.634,
+                12.244,
+                17.854,
+                23.463
+              ],
+              "bayLengthsM": [
+                1.024,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                2.537
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 1,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L1-10",
+                "SP-L1-11",
+                "SP-L1-12",
+                "SP-L1-13",
+                "SP-L1-3",
+                "SP-L1-4",
+                "SP-L1-5",
+                "SP-L1-6",
+                "SP-L1-7",
+                "SP-L1-8",
+                "SP-L1-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 2,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L2-10",
+                "SP-L2-11",
+                "SP-L2-12",
+                "SP-L2-13",
+                "SP-L2-3",
+                "SP-L2-4",
+                "SP-L2-5",
+                "SP-L2-6",
+                "SP-L2-7",
+                "SP-L2-8",
+                "SP-L2-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 3,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L3-10",
+                "SP-L3-11",
+                "SP-L3-12",
+                "SP-L3-13",
+                "SP-L3-3",
+                "SP-L3-4",
+                "SP-L3-5",
+                "SP-L3-6",
+                "SP-L3-7",
+                "SP-L3-8",
+                "SP-L3-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 4,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L4-10",
+                "SP-L4-11",
+                "SP-L4-12",
+                "SP-L4-13",
+                "SP-L4-3",
+                "SP-L4-4",
+                "SP-L4-5",
+                "SP-L4-6",
+                "SP-L4-7",
+                "SP-L4-8",
+                "SP-L4-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S17",
+              "levelIndex": 5,
+              "faceLengthM": 60.0,
+              "supportNodeCount": 11,
+              "supportCodes": [
+                "SP-L5-10",
+                "SP-L5-11",
+                "SP-L5-12",
+                "SP-L5-13",
+                "SP-L5-3",
+                "SP-L5-4",
+                "SP-L5-5",
+                "SP-L5-6",
+                "SP-L5-7",
+                "SP-L5-8",
+                "SP-L5-9"
+              ],
+              "stationsM": [
+                3.073,
+                8.683,
+                14.293,
+                19.902,
+                25.512,
+                31.122,
+                36.732,
+                42.341,
+                47.951,
+                53.561,
+                59.171
+              ],
+              "bayLengthsM": [
+                3.073,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                5.609,
+                5.61,
+                5.61,
+                5.61,
+                0.829
+              ],
+              "maxBayM": 5.61,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 1,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L1-2",
+                "DB-L1-F19",
+                "DB-L1-F8",
+                "SP-L1-1",
+                "SP-L1-2"
+              ],
+              "stationsM": [
+                4.78,
+                5.12,
+                10.39,
+                12.9333
+              ],
+              "bayLengthsM": [
+                4.78,
+                0.34,
+                5.27,
+                2.5433,
+                3.0667
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 2,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L2-2",
+                "DB-L2-F19",
+                "DB-L2-F8",
+                "SP-L2-1",
+                "SP-L2-2"
+              ],
+              "stationsM": [
+                4.78,
+                5.12,
+                10.39,
+                12.9333
+              ],
+              "bayLengthsM": [
+                4.78,
+                0.34,
+                5.27,
+                2.5433,
+                3.0667
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 3,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L3-2",
+                "DB-L3-F19",
+                "DB-L3-F8",
+                "SP-L3-1",
+                "SP-L3-2"
+              ],
+              "stationsM": [
+                4.78,
+                5.12,
+                10.39,
+                12.9333
+              ],
+              "bayLengthsM": [
+                4.78,
+                0.34,
+                5.27,
+                2.5433,
+                3.0667
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 4,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L4-2",
+                "DB-L4-F19",
+                "DB-L4-F8",
+                "SP-L4-1",
+                "SP-L4-2"
+              ],
+              "stationsM": [
+                4.78,
+                5.12,
+                10.39,
+                12.9333
+              ],
+              "bayLengthsM": [
+                4.78,
+                0.34,
+                5.27,
+                2.5433,
+                3.0667
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S19",
+              "levelIndex": 5,
+              "faceLengthM": 16.0,
+              "supportNodeCount": 4,
+              "supportCodes": [
+                "DB-L5-2",
+                "DB-L5-F19",
+                "DB-L5-F8",
+                "SP-L5-1",
+                "SP-L5-2"
+              ],
+              "stationsM": [
+                4.78,
+                5.12,
+                10.39,
+                12.9333
+              ],
+              "bayLengthsM": [
+                4.78,
+                0.34,
+                5.27,
+                2.5433,
+                3.0667
+              ],
+              "maxBayM": 5.27,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 1,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L1-1",
+                "DB-L1-2",
+                "DB-L1-F19",
+                "DB-L1-F2",
+                "DB-L1-F20",
+                "DB-L1-F8"
+              ],
+              "stationsM": [
+                5.44,
+                10.88,
+                11.1467,
+                16.8533,
+                17.12,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                5.44,
+                0.2667,
+                5.7066,
+                0.2667,
+                5.44,
+                5.44
+              ],
+              "maxBayM": 5.707,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 2,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L2-1",
+                "DB-L2-2",
+                "DB-L2-F19",
+                "DB-L2-F2",
+                "DB-L2-F20",
+                "DB-L2-F8"
+              ],
+              "stationsM": [
+                5.44,
+                10.88,
+                11.1467,
+                16.8533,
+                17.12,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                5.44,
+                0.2667,
+                5.7066,
+                0.2667,
+                5.44,
+                5.44
+              ],
+              "maxBayM": 5.707,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 3,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L3-1",
+                "DB-L3-2",
+                "DB-L3-F19",
+                "DB-L3-F2",
+                "DB-L3-F20",
+                "DB-L3-F8"
+              ],
+              "stationsM": [
+                5.44,
+                10.88,
+                11.1467,
+                16.8533,
+                17.12,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                5.44,
+                0.2667,
+                5.7066,
+                0.2667,
+                5.44,
+                5.44
+              ],
+              "maxBayM": 5.707,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 4,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L4-1",
+                "DB-L4-2",
+                "DB-L4-F19",
+                "DB-L4-F2",
+                "DB-L4-F20",
+                "DB-L4-F8"
+              ],
+              "stationsM": [
+                5.44,
+                10.88,
+                11.1467,
+                16.8533,
+                17.12,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                5.44,
+                0.2667,
+                5.7066,
+                0.2667,
+                5.44,
+                5.44
+              ],
+              "maxBayM": 5.707,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            },
+            {
+              "faceCode": "S20",
+              "levelIndex": 5,
+              "faceLengthM": 28.0,
+              "supportNodeCount": 6,
+              "supportCodes": [
+                "DB-L5-1",
+                "DB-L5-2",
+                "DB-L5-F19",
+                "DB-L5-F2",
+                "DB-L5-F20",
+                "DB-L5-F8"
+              ],
+              "stationsM": [
+                5.44,
+                10.88,
+                11.1467,
+                16.8533,
+                17.12,
+                22.56
+              ],
+              "bayLengthsM": [
+                5.44,
+                5.44,
+                0.2667,
+                5.7066,
+                0.2667,
+                5.44,
+                5.44
+              ],
+              "maxBayM": 5.707,
+              "targetBayM": 7.5,
+              "hardMaxBayM": 9.0,
+              "status": "pass"
+            }
+          ],
+          "failCount": 0,
+          "warningCount": 0,
+          "maxBayM": 5.917
+        },
+        "action": "围檩支点间距诊断在 2 个墙面发现硬超限，自动增补 40 根角部扇形斜撑/局部短对撑；最大支点间距由 17.75m 降至 5.917m。"
+      },
+      "geologyExtended": false,
+      "addedSupportCount": 40
+    },
+    "cacheHit": false,
+    "inputHash": "7a6ee0fccdbe2401fbacdf068839b0006601862d7e4289c39b4309ca440a24cd"
+  }
+}

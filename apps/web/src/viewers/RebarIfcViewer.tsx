@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AmbientLight, BoxGeometry, CanvasTexture, Color, CylinderGeometry, DirectionalLight, GridHelper, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Raycaster, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector2, Vector3, WebGLRenderer } from 'three';
+import { AmbientLight, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DirectionalLight, Float32BufferAttribute, GridHelper, LineBasicMaterial, LineSegments, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Raycaster, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector2, Vector3, WebGLRenderer } from 'three';
 import { api } from '../api/client';
-import type { Project, RebarIfcVisualization, RebarVisualizationBar } from '../types/domain';
+import type { Project, RebarIfcVisualization, RebarVisualizationBar, RebarVisualizationCage } from '../types/domain';
 
 type HostFilter = 'all' | 'diaphragm_wall' | 'wale_or_crown_beam' | 'internal_support' | 'support_wale_node';
 type BarFilter = 'all' | 'longitudinal' | 'distribution' | 'stirrup' | 'tie' | 'additional';
@@ -74,6 +74,55 @@ function addBarPolyline(scene: Scene, bar: RebarVisualizationBar, radius: number
     const sphereMat = new MeshStandardMaterial({ color, metalness: 0.25, roughness: 0.48, clippingPlanes });
     pts.slice(0, -1).forEach((pt) => { const node = new Mesh(sphereGeo, sphereMat); node.position.copy(pt); node.userData.info = info; scene.add(node); pickables.push(node); });
   }
+}
+
+function addCageGrid(scene: Scene, cage: RebarVisualizationCage, clippingPlanes: Plane[]) {
+  const start = pointToVector(cage.start);
+  const end = pointToVector(cage.end);
+  const plan = new Vector3(end.x - start.x, 0, end.z - start.z);
+  const length = Math.max(plan.length(), 0.01);
+  const tangent = plan.clone().normalize();
+  const normal = new Vector3(-tangent.z, 0, tangent.x);
+  const topY = cage.topElevation;
+  const bottomY = cage.bottomElevation;
+  const cap = Math.max(20, cage.displayLineCap ?? 160);
+  const positions: number[] = [];
+  const pushSegment = (a: Vector3, b: Vector3) => { positions.push(a.x, a.y, a.z, b.x, b.y, b.z); };
+  cage.faces.forEach((faceSpec) => {
+    const sign = faceSpec.face === 'inner' ? -1 : 1;
+    const offset = Math.max(cage.thicknessM / 2 - cage.coverM, 0.02) * sign;
+    const baseStart = start.clone().addScaledVector(normal, offset);
+    const vCount = Math.max(2, Math.min(cap, faceSpec.estimatedVerticalBarCount || Math.floor(length / Math.max(faceSpec.spacingMm / 1000, 0.05)) + 1));
+    for (let i = 0; i < vCount; i += 1) {
+      const t = i / Math.max(vCount - 1, 1);
+      const p = baseStart.clone().addScaledVector(tangent, length * t);
+      pushSegment(new Vector3(p.x, bottomY + 0.1, p.z), new Vector3(p.x, topY - 0.1, p.z));
+    }
+    const estimatedH = cage.horizontal.estimatedBarCountPerFace || Math.floor(cage.heightM / Math.max(cage.horizontal.spacingMm / 1000, 0.05)) + 1;
+    const hCount = Math.max(2, Math.min(cap, estimatedH));
+    for (let i = 0; i < hCount; i += 1) {
+      const t = i / Math.max(hCount - 1, 1);
+      const y = bottomY + 0.1 + Math.max(cage.heightM - 0.2, 0.01) * t;
+      const a = baseStart.clone(); const b = baseStart.clone().addScaledVector(tangent, length);
+      a.y = y; b.y = y; pushSegment(a, b);
+    }
+  });
+  const tieSpacing = Math.max(cage.ties.spacingMm / 1000, 0.25);
+  const tieCount = Math.max(2, Math.min(24, Math.floor(length / tieSpacing) + 1));
+  for (let i = 0; i < tieCount; i += 1) {
+    const t = i / Math.max(tieCount - 1, 1);
+    const center = start.clone().addScaledVector(tangent, length * t);
+    const a = center.clone().addScaledVector(normal, -(cage.thicknessM / 2 - cage.coverM));
+    const b = center.clone().addScaledVector(normal, cage.thicknessM / 2 - cage.coverM);
+    a.y = b.y = (topY + bottomY) / 2; pushSegment(a, b);
+  }
+  if (!positions.length) return;
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  const material = new LineBasicMaterial({ color: 0x1d4ed8, transparent: true, opacity: 0.72, clippingPlanes });
+  const lines = new LineSegments(geometry, material);
+  lines.userData.info = { type: 'RebarCage', hostId: cage.hostId, hostCode: cage.hostCode, panelCode: cage.panelCode, panelLengthM: cage.panelLengthM, topElevation: cage.topElevation, bottomElevation: cage.bottomElevation, verticalBars: cage.faces.map((row) => `${row.face}:D${row.diameterMm}@${row.spacingMm}`).join('; '), horizontalBars: `D${cage.horizontal.diameterMm}@${cage.horizontal.spacingMm}`, ties: `D${cage.ties.diameterMm}@${cage.ties.spacingMm}`, zoneIds: cage.zoneIds };
+  scene.add(lines);
 }
 
 function makeTextSprite(text: string, color = '#0f172a') {
@@ -172,6 +221,7 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
   const [hostFilter, setHostFilter] = useState<HostFilter>('all');
   const [barFilter, setBarFilter] = useState<BarFilter>('all');
   const [showHosts, setShowHosts] = useState(true);
+  const [showCageGrid, setShowCageGrid] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   const [colorMode, setColorMode] = useState<ColorMode>('barType');
   const [hostOpacity, setHostOpacity] = useState(0.16);
@@ -259,6 +309,10 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
       });
     }
 
+    if (showCageGrid && (hostFilter === 'all' || hostFilter === 'diaphragm_wall')) {
+      (data.cages ?? []).filter((cage) => !isolatedHost || cage.hostId === isolatedHost || cage.hostCode === isolatedHost).forEach((cage) => addCageGrid(scene, cage, clippingPlanes));
+    }
+
     bars.forEach((bar) => {
       const highlighted = Boolean(highlightId && (highlightId === bar.hostId || highlightId === bar.hostCode || highlightId === bar.id || highlightId === bar.groupId));
       const radiusBase = highlighted ? Math.max(0.05, Math.min(0.14, (bar.diameterMm / maxDia) * 0.11)) : Math.max(0.018, Math.min(0.09, (bar.diameterMm / maxDia) * 0.06));
@@ -329,16 +383,17 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
       });
       mount.innerHTML = '';
     };
-  }, [data, bars, showHosts, showLabels, hostOpacity, barScale, colorMode, clip, clipAxis, clipOffset, project, maxDia, highlightId]);
+  }, [data, bars, showHosts, showCageGrid, showLabels, hostOpacity, barScale, colorMode, clip, clipAxis, clipOffset, project, maxDia, highlightId, hostFilter, isolatedHost]);
 
   return (
     <section className="summaryPanel rebarIfcPanel">
       <div className="viewerHeader">
         <div>
           <h3>钢筋级 IFC 可视化</h3>
-          <p className="small">支持按钢筋类型、校核状态或宿主构件着色，可沿平面 X/Y 与高程 Z 剖切；水平支撑显示锚固、错开搭接和节点加密标注。</p>
+          <p className="small">地下连续墙按实际施工槽段显示双面竖筋、水平分布筋和拉结筋组成的钢筋笼网格；可选钢筋仍采用分区采样实体，以兼顾构造识别与浏览性能。</p>
         </div>
         <div className="viewerStats">
+          <span>钢筋笼 {data?.summary.cageCount ?? 0}</span>
           <span>采样 {data?.summary.sampledBarCount ?? 0}</span>
           <span>估算完整 {data?.summary.estimatedFullBarCount ?? 0}</span>
           <span>宿主 {data?.summary.hostCount ?? 0}</span>
@@ -358,6 +413,7 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
           <label>钢筋 <select value={barFilter} onChange={(event) => setBarFilter(event.target.value as BarFilter)}><option value="all">全部</option><option value="longitudinal">纵筋</option><option value="distribution">分布筋</option><option value="stirrup">箍筋</option><option value="tie">拉结筋</option><option value="additional">附加筋</option></select></label>
           <label>着色 <select value={colorMode} onChange={(event) => setColorMode(event.target.value as ColorMode)}><option value="barType">钢筋类型</option><option value="status">校核状态</option><option value="host">宿主构件</option></select></label>
           <label><input type="checkbox" checked={showHosts} onChange={(event) => setShowHosts(event.target.checked)} /> 宿主构件</label>
+          <label><input type="checkbox" checked={showCageGrid} onChange={(event) => setShowCageGrid(event.target.checked)} /> 钢筋笼网格</label>
           <label><input type="checkbox" checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)} /> 构造标注</label>
           <label>宿主透明度 <input type="range" min="0.04" max="0.72" step="0.02" value={hostOpacity} onChange={(event) => setHostOpacity(Number(event.target.value))} /><span>{Math.round(hostOpacity * 100)}%</span></label>
           <label>钢筋显示倍率 <input type="range" min="0.6" max="2.4" step="0.1" value={barScale} onChange={(event) => setBarScale(Number(event.target.value))} /><span>{barScale.toFixed(1)}×</span></label>

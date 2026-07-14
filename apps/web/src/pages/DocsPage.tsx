@@ -16,14 +16,16 @@ function statusLabel(value: string) {
 }
 
 function StandardsTable({ steps }: { steps: StandardsProcessStep[] }) {
-  return <div className="standardsMatrixTableWrap"><table className="table compactTable standardsMatrixTable"><thead><tr><th>流程</th><th>关键计算</th><th>主控规范</th><th>条文关注点</th><th>状态</th><th>输出</th></tr></thead><tbody>{steps.map((step) => <tr key={step.workflowStep} className={step.highlight === 'critical' ? 'criticalStandardRow' : ''}>
-    <td><strong>{step.index}. {step.title}</strong><small>{step.implementationLevel}</small><details className="ruleTraceDetails"><summary>查看已实现规则与条文证据（{step.ruleCount}）</summary>{step.rules.map((rule) => <span className="ruleTrace" key={String(rule.ruleId)}><b>{String(rule.ruleId ?? 'RULE')}</b><em>{String(rule.clauseReference ?? '条文待项目复核')}</em></span>)}</details></td>
-    <td>{step.keyCalculations.map((item) => <span className="matrixToken" key={item}>{item}</span>)}</td>
-    <td>{step.standardRefs.map((std) => std.sourceUrl ? <a href={std.sourceUrl} target="_blank" rel="noreferrer" className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></a> : <span className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></span>)}</td>
-    <td>{step.clauseFocus.join('；')}</td>
-    <td><span className={`matrixStatus ${step.status}`}>{statusLabel(step.status)}</span><small>规则 {step.ruleCount} 项</small></td>
-    <td>{step.outputs.join('；')}</td>
-  </tr>)}</tbody></table></div>;
+  return <section className="standardsProcessStack">{steps.map((step) => <article className={`summaryPanel standardsProcessStep ${step.highlight === 'critical' ? 'critical' : ''}`} key={step.workflowStep}>
+    <header><span>STEP {step.index}</span><div><h3>{step.title}</h3><p>{step.implementationLevel}</p></div><em className={`matrixStatus ${step.status}`}>{statusLabel(step.status)}</em></header>
+    <div className="calculationLinkTimeline">{(step.calculationLinks ?? []).map((link) => <div className={`calculationLinkRow ${link.status}`} key={`${step.workflowStep}-${link.sequence}`}>
+      <div className="calculationSequence">{step.index}.{link.sequence}</div>
+      <div className="calculationDefinition"><h4>{link.calculation}</h4><p>{link.method}</p><small><b>输出：</b>{link.output}</small></div>
+      <div className="calculationStandards"><strong>本计算直接适用</strong><div>{link.standardRefs.length ? link.standardRefs.map((std) => std.sourceUrl ? <a href={std.sourceUrl} target="_blank" rel="noreferrer" className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></a> : <span className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></span>) : <span className="qualityEvidenceBadge">软件数值质量门禁</span>}</div><p><b>条文关注：</b>{link.clauseFocus}</p></div>
+      <div className="calculationEvidence"><span className={`matrixStatus ${link.status}`}>{statusLabel(link.status)}</span><details className="ruleTraceDetails"><summary>{link.ruleCount} 条规则证据</summary>{link.rules.map((rule) => <span className="ruleTrace" key={String(rule.ruleId)}><b>{String(rule.ruleId ?? 'RULE')}</b><em>{String(rule.clauseReference ?? '条文适用条件需项目复核')}</em></span>)}</details></div>
+    </div>)}</div>
+    <footer><b>本步骤最终输出：</b>{step.outputs.join('；')}</footer>
+  </article>)}</section>;
 }
 
 export default function DocsPage() {

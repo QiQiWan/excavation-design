@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from statistics import mean
@@ -26,11 +27,18 @@ REQUIRED_COLUMNS = [
 
 OPTIONAL_COLUMNS = [
     "unit_weight",
+    "saturated_unit_weight",
     "cohesion",
     "friction_angle",
     "elastic_modulus",
+    "compression_modulus",
     "poisson_ratio",
     "permeability",
+    "permeability_x",
+    "permeability_y",
+    "permeability_z",
+    "k0",
+    "horizontal_subgrade_modulus",
     "water_level",
 ]
 
@@ -103,11 +111,18 @@ def read_excel_bytes(content: bytes) -> list[dict[str, str]]:
 def _warn_abnormal_parameters(row: dict[str, str], row_no: int, warnings: list[str]) -> None:
     checks = {
         "unit_weight": (5.0, 30.0, "kN/m3"),
+        "saturated_unit_weight": (5.0, 35.0, "kN/m3"),
         "cohesion": (0.0, 500.0, "kPa"),
         "friction_angle": (0.0, 50.0, "degree"),
         "elastic_modulus": (0.1, 500.0, "MPa"),
+        "compression_modulus": (0.1, 1000.0, "MPa"),
         "poisson_ratio": (0.0, 0.5, ""),
         "permeability": (0.0, 1.0, "m/s"),
+        "permeability_x": (0.0, 1.0, "m/s"),
+        "permeability_y": (0.0, 1.0, "m/s"),
+        "permeability_z": (0.0, 1.0, "m/s"),
+        "k0": (0.0, 3.0, ""),
+        "horizontal_subgrade_modulus": (1.0, 1.0e7, "kN/m3"),
     }
     for key, (low, high, unit) in checks.items():
         raw = row.get(key)
@@ -120,6 +135,34 @@ def _warn_abnormal_parameters(row: dict[str, str], row_no: int, warnings: list[s
         if value < low or value > high:
             suffix = f" {unit}" if unit else ""
             warnings.append(f"第 {row_no} 行：{key}={value}{suffix} 超出 MVP 常规范围 [{low}, {high}]，已保留但需复核。")
+
+
+
+
+def _compact_warnings(warnings: list[str]) -> list[str]:
+    """Collapse repeated row-level range warnings from repeated strata.
+
+    Real projects often repeat one stratum in many boreholes. Showing the same
+    parameter warning once per row obscures the actual number of distinct risks.
+    """
+    grouped: dict[str, tuple[str, int]] = {}
+    ordered: list[str] = []
+    for warning in warnings:
+        match = re.match(r"第 (\d+) 行：(.*超出 MVP 常规范围.*)", warning)
+        if not match:
+            if warning not in ordered:
+                ordered.append(warning)
+            continue
+        row_no, body = match.groups()
+        if body not in grouped:
+            grouped[body] = (row_no, 1)
+        else:
+            first, count = grouped[body]
+            grouped[body] = (first, count + 1)
+    for body, (first, count) in grouped.items():
+        suffix = f"（共 {count} 行，首见第 {first} 行）" if count > 1 else f"（第 {first} 行）"
+        ordered.append(f"{body}{suffix}")
+    return ordered
 
 
 def _merge_soil_parameters(rows: list[dict[str, str]]) -> SoilParameters:
@@ -136,15 +179,22 @@ def _merge_soil_parameters(rows: list[dict[str, str]]) -> SoilParameters:
         return round(mean(values), 6) if values else None
 
     permeability = avg("permeability")
+    permeability_x = avg("permeability_x")
+    permeability_y = avg("permeability_y")
+    permeability_z = avg("permeability_z")
     return SoilParameters(
         unit_weight=avg("unit_weight"),
+        saturated_unit_weight=avg("saturated_unit_weight"),
         cohesion=avg("cohesion"),
         friction_angle=avg("friction_angle"),
         elastic_modulus=avg("elastic_modulus"),
+        compression_modulus=avg("compression_modulus"),
         poisson_ratio=avg("poisson_ratio"),
-        permeability_x=permeability,
-        permeability_y=permeability,
-        permeability_z=permeability,
+        permeability_x=permeability_x if permeability_x is not None else permeability,
+        permeability_y=permeability_y if permeability_y is not None else permeability,
+        permeability_z=permeability_z if permeability_z is not None else permeability,
+        k0=avg("k0"),
+        horizontal_subgrade_modulus=avg("horizontal_subgrade_modulus"),
     )
 
 
@@ -193,7 +243,7 @@ def parse_borehole_rows(rows: list[dict[str, str]], source_file: str | None = No
         bh_rows[code].append(row)
 
     if errors:
-        return BoreholeImportResult(success=False, warnings=warnings, errors=errors)
+        return BoreholeImportResult(success=False, warnings=_compact_warnings(warnings), errors=errors)
 
     boreholes: list[Borehole] = []
     layer_count = 0
@@ -233,7 +283,7 @@ def parse_borehole_rows(rows: list[dict[str, str]], source_file: str | None = No
         boreholes.append(Borehole(code=code, x=x, y=y, collar_elevation=collar, depth=depth, layers=layers, water_levels=water_levels, source_file=source_file))
 
     if errors:
-        return BoreholeImportResult(success=False, warnings=warnings, errors=errors)
+        return BoreholeImportResult(success=False, warnings=_compact_warnings(warnings), errors=errors)
 
     palette = ["#b7c9a8", "#e2c290", "#b6d7e8", "#d5b8d8", "#f4b183", "#a9d18e", "#c9c9c9"]
     strata: list[Stratum] = []
@@ -257,6 +307,6 @@ def parse_borehole_rows(rows: list[dict[str, str]], source_file: str | None = No
         stratum_count=len(strata),
         boreholes=boreholes,
         strata=strata,
-        warnings=warnings,
+        warnings=_compact_warnings(warnings),
         errors=[],
     )

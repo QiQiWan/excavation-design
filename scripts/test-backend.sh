@@ -26,6 +26,8 @@ run_isolated_nodes() {
 if [[ "$MODE" == "fast" ]]; then
   python -m compileall -q app tests
   FAST_NODES=(
+    "tests/test_v3_15_0_general_shape_state_geology.py"
+    "tests/test_v3_14_0_strength_driven_recovery.py"
     "tests/test_v3_11_0_standards_rebar_docs.py"
     "tests/test_v3_6_0_support_topology_scheme_ux.py"
     "tests/test_v3_5_0_concave_recovery_drawing_intelligence.py"

@@ -32,6 +32,13 @@ def _round_spacing(spacing: float, *, minimum: int = 100, maximum: int = 250) ->
     return min(candidates, key=lambda item: abs(item - target))
 
 
+def _standard_bar_diameter(value: float, *, minimum: int = 12) -> int:
+    catalogue = [12, 14, 16, 18, 20, 22, 25, 28, 32, 36, 40]
+    allowed = [item for item in catalogue if item >= minimum]
+    target = max(float(value), float(minimum))
+    return min(allowed, key=lambda item: (abs(item - target), item < target, item))
+
+
 def _select_wall_bar(required_as: float, mode: RebarMode) -> tuple[int, int, float]:
     dia, spacing, provided = recommend_bar_spacing(required_as, preferred_diameters=(20, 22, 25, 28, 32, 36, 40))
     factor = _MODE_FACTORS[mode]["spacing"]
@@ -49,14 +56,16 @@ def _select_wall_bar(required_as: float, mode: RebarMode) -> tuple[int, int, flo
     return int(dia), int(spacing), round(float(provided), 2)
 
 
-def _select_wall_arrangement(required_as: float, mode: RebarMode) -> dict[str, Any]:
+def _select_wall_arrangement(required_as: float, mode: RebarMode, *, max_spacing_mm: float = 225.0) -> dict[str, Any]:
     """Select one- or two-layer wall reinforcement without hiding excess demand."""
     spacing_factor = _MODE_FACTORS[mode]["spacing"]
     candidates: list[dict[str, Any]] = []
     for layers in (1, 2):
         for dia in (20, 22, 25, 28, 32, 36, 40):
             for base_spacing in (225, 200, 180, 160, 150, 140, 125, 120, 100):
-                spacing = _round_spacing(base_spacing * spacing_factor, minimum=100, maximum=225)
+                spacing = _round_spacing(base_spacing * spacing_factor, minimum=100, maximum=min(225, int(max_spacing_mm)))
+                if spacing > float(max_spacing_mm) + 1e-6:
+                    continue
                 provided = layers * as_per_m_for_spacing(dia, spacing)
                 clear = spacing - dia
                 if provided + 1e-6 < required_as or clear < max(30.0, float(dia)):
@@ -86,6 +95,45 @@ def _select_wall_arrangement(required_as: float, mode: RebarMode) -> dict[str, A
         "mechanicalCouplerRequired": True,
         "score": 9999.0,
     }
+
+
+def _face_matches_group(group: ReinforcementGroup, face: str) -> bool:
+    text = f"{group.name} {group.location_description}".lower()
+    if face == "inner":
+        return any(token in text for token in ("坑内", "inner", "excavation side"))
+    return any(token in text for token in ("坑外", "outer", "soil side"))
+
+
+def _existing_face_rebar_floor(wall: Any, face: str) -> dict[str, float | None]:
+    """Return the explicit existing cage floor for one wall face.
+
+    Existing longitudinal cage information is treated as a design decision that
+    must not be silently weakened by an optimizer.  Local/additional bars are
+    excluded because they do not define the continuous base cage.
+    """
+    rows: list[tuple[float, float | None, float]] = []
+    for group in list(getattr(wall, "reinforcement", []) or []):
+        if getattr(group, "bar_type", None) != "longitudinal" or not _face_matches_group(group, face):
+            continue
+        if getattr(group, "check_status", None) == "fail":
+            continue
+        area = float(getattr(group, "area_per_meter", 0.0) or 0.0)
+        spacing = float(getattr(group, "spacing", 0.0) or 0.0) or None
+        diameter = float(getattr(group, "diameter", 0.0) or 0.0)
+        if area <= 0.0 and spacing and diameter > 0.0:
+            area = as_per_m_for_spacing(diameter, spacing)
+        if area > 0.0:
+            rows.append((area, spacing, diameter))
+    if not rows:
+        return {"areaMm2PerM": 0.0, "spacingMm": None, "diameterMm": None}
+    area, spacing, diameter = max(rows, key=lambda item: item[0])
+    return {"areaMm2PerM": round(area, 2), "spacingMm": spacing, "diameterMm": diameter}
+
+
+def _target_wall_utilization(project: Project, mode: RebarMode) -> float:
+    configured = float(getattr(project.design_settings, "wall_rebar_target_utilization", 0.88) or 0.88)
+    mode_target = {"conservative": 0.80, "balanced": configured, "economic": 0.95}[mode]
+    return min(max(mode_target, 0.65), 0.98)
 
 
 def _latest_result(project: Project):
@@ -226,6 +274,13 @@ def _wall_zone_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str,
                 governing_stage = max(selected, key=lambda item: float(item.get("maxAbsShear") or 0.0) + float(item.get("maxAbsDisplacement") or 0.0)).get("governingStageId")
             local_factor = 1.12 if zone_type in {"support_node_zone", "excavation_transition_zone"} else 1.05 if zone_type == "toe_zone" else 1.0
             face_rows: list[dict[str, Any]] = []
+            wall_plan_length = _wall_plan_length(wall)
+            target_utilization = _target_wall_utilization(project, mode)
+            default_max_spacing = float(getattr(project.design_settings, "wall_rebar_default_max_main_spacing_mm", 180.0) or 180.0)
+            long_wall_threshold = float(getattr(project.design_settings, "wall_rebar_long_wall_threshold_m", 40.0) or 40.0)
+            long_wall_max_spacing = float(getattr(project.design_settings, "wall_rebar_long_wall_max_main_spacing_mm", 150.0) or 150.0)
+            configured_max_spacing = long_wall_max_spacing if wall_plan_length >= long_wall_threshold else default_max_spacing
+            no_downgrade = bool(getattr(project.design_settings, "wall_rebar_no_downgrade_existing", True))
             for face, moment in (("inner", positive if positive > 0 else abs_moment * 0.55), ("outer", abs(negative) if negative < 0 else abs_moment * 0.55)):
                 demand = max(moment * factor * local_factor, 0.0)
                 design = design_rectangular_flexure(
@@ -235,11 +290,18 @@ def _wall_zone_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str,
                     rebar_grade=wall.rebar_grade,
                     cover_mm=70.0,
                 )
-                arrangement = _select_wall_arrangement(float(design.governing_as), mode)
+                existing_floor = _existing_face_rebar_floor(wall, face)
+                existing_area = float(existing_floor.get("areaMm2PerM") or 0.0) if no_downgrade else 0.0
+                existing_spacing = existing_floor.get("spacingMm") if no_downgrade else None
+                max_spacing = min(configured_max_spacing, float(existing_spacing)) if existing_spacing else configured_max_spacing
+                reserve_target_as = float(design.governing_as) / max(target_utilization, 1e-9)
+                selection_target_as = max(reserve_target_as, existing_area)
+                arrangement = _select_wall_arrangement(selection_target_as, mode, max_spacing_mm=max_spacing)
                 dia = int(arrangement["diameterMm"])
                 spacing = int(arrangement["spacingMm"])
                 provided = float(arrangement["providedAsMm2PerM"])
                 utilization = float(design.governing_as) / max(provided, 1e-9)
+                reserve_ratio = provided / max(float(design.governing_as), 1e-9) - 1.0
                 clear_spacing = float(arrangement["clearSpacingMm"])
                 minimum_clear = max(30.0, float(dia))
                 status = "pass" if utilization <= 1.0 and clear_spacing >= minimum_clear else "fail"
@@ -263,6 +325,13 @@ def _wall_zone_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str,
                         "barSpacingMm": spacing,
                         "providedAsMm2PerM": provided,
                         "utilization": round(utilization, 3),
+                        "targetUtilization": round(target_utilization, 3),
+                        "designReserveRatio": round(reserve_ratio, 3),
+                        "selectionTargetAsMm2PerM": round(selection_target_as, 2),
+                        "existingContinuousCageFloorAsMm2PerM": round(existing_area, 2),
+                        "existingContinuousCageSpacingMm": existing_spacing,
+                        "maximumMainBarSpacingMm": round(max_spacing, 1),
+                        "noDowngradeExistingCage": no_downgrade,
                         "clearSpacingMm": round(clear_spacing, 1),
                         "minimumClearSpacingMm": round(minimum_clear, 1),
                         "status": status,
@@ -288,7 +357,7 @@ def _wall_zone_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str,
                         "face": face,
                         "status": status,
                         "utilization": round(utilization, 3),
-                        "message": f"{wall.panel_code} {top:.2f}~{bottom:.2f}m {face} face {dia}@{spacing}",
+                        "message": f"{wall.panel_code} {top:.2f}~{bottom:.2f}m {face} face D{dia}@{spacing}; utilization={utilization:.3f}; reserve={reserve_ratio:.1%}",
                     }
                 )
             horizontal_spacing = 150 if zone_type in {"support_node_zone", "excavation_transition_zone"} else 180 if mode == "conservative" else 200
@@ -325,6 +394,168 @@ def _wall_zone_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str,
                 }
             )
     return zones, checks
+
+
+def _wall_plan_length(wall: Any) -> float:
+    points = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    if len(points) < 2:
+        return max(float(getattr(wall, "design_length", 0.0) or 0.0), 0.0)
+    return sum(math.hypot(float(b.x - a.x), float(b.y - a.y)) for a, b in zip(points[:-1], points[1:]))
+
+
+def _wall_chainage(wall: Any, point: Any) -> float | None:
+    points = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    if len(points) < 2 or point is None:
+        return None
+    best: tuple[float, float] | None = None
+    accumulated = 0.0
+    for a, b in zip(points[:-1], points[1:]):
+        dx, dy = float(b.x - a.x), float(b.y - a.y)
+        length = math.hypot(dx, dy)
+        if length <= 1e-9:
+            continue
+        t = max(0.0, min(1.0, ((float(point.x) - float(a.x)) * dx + (float(point.y) - float(a.y)) * dy) / (length * length)))
+        px, py = float(a.x) + t * dx, float(a.y) + t * dy
+        distance = math.hypot(float(point.x) - px, float(point.y) - py)
+        chainage = accumulated + t * length
+        if best is None or distance < best[0]:
+            best = (distance, chainage)
+        accumulated += length
+    return best[1] if best is not None else None
+
+
+def _wall_plan_zones(project: Project, wall_zones: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Create plan-direction wall reinforcement zones linked to actual support nodes.
+
+    The wall strip calculation supplies reinforcement demand through depth.  Plan
+    zoning adds local corner and support-introduction regions.  Repeated support
+    endpoints at different levels are clustered by chainage so a 100 m wall does
+    not receive hundreds of duplicate plan regions.
+    """
+    ret = project.retaining_system
+    if not ret or not bool(getattr(project.design_settings, "reinforcement_plan_zoning_enabled", True)):
+        return [], []
+    depth_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for zone in wall_zones:
+        depth_by_host[str(zone.get("hostId"))].append(zone)
+    result: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+    corner_cfg = max(1.5, float(getattr(project.design_settings, "reinforcement_corner_zone_length_m", 3.0) or 3.0))
+    node_half = max(0.8, float(getattr(project.design_settings, "reinforcement_support_node_zone_half_length_m", 1.8) or 1.8))
+
+    for wall in ret.diaphragm_walls:
+        length = _wall_plan_length(wall)
+        if length <= 0.5:
+            continue
+        identifiers = {str(value) for value in (wall.id, wall.segment_id, wall.panel_code, wall.design_face_code) if value}
+        raw_nodes: list[dict[str, Any]] = []
+        for support in ret.supports:
+            endpoint_rows = (
+                (support.start_face_code, support.start_wall_connection or support.start),
+                (support.end_face_code, support.end_wall_connection or support.end),
+            )
+            for face_code, point in endpoint_rows:
+                if face_code is None or str(face_code) not in identifiers:
+                    continue
+                chainage = _wall_chainage(wall, point)
+                if chainage is None:
+                    continue
+                raw_nodes.append({
+                    "chainage": max(0.0, min(length, float(chainage))),
+                    "elevation": float(support.elevation),
+                    "code": str(support.code),
+                })
+        raw_nodes.sort(key=lambda item: float(item["chainage"]))
+        clusters: list[dict[str, Any]] = []
+        for item in raw_nodes:
+            if clusters and abs(float(clusters[-1]["chainage"]) - float(item["chainage"])) <= 0.25:
+                cluster = clusters[-1]
+                cluster["chainages"].append(float(item["chainage"]))
+                cluster["chainage"] = sum(cluster["chainages"]) / len(cluster["chainages"])
+                cluster["elevations"].add(round(float(item["elevation"]), 3))
+                cluster["codes"].add(str(item["code"]))
+            else:
+                clusters.append({
+                    "chainage": float(item["chainage"]),
+                    "chainages": [float(item["chainage"])],
+                    "elevations": {round(float(item["elevation"]), 3)},
+                    "codes": {str(item["code"])},
+                })
+
+        corner_length = min(corner_cfg, max(length * 0.18, 1.5), max(length / 3.0, 1.5))
+        breaks = {0.0, length, corner_length, max(0.0, length - corner_length)}
+        for node in clusters:
+            station = float(node["chainage"])
+            breaks.add(max(0.0, station - node_half))
+            breaks.add(min(length, station + node_half))
+        ordered = sorted(value for value in breaks if -1e-9 <= value <= length + 1e-9)
+        governing_faces = [face for zone in depth_by_host.get(wall.id, []) for face in zone.get("faces", [])]
+        governing_dia = max((float(face.get("barDiameterMm") or 0.0) for face in governing_faces), default=20.0)
+        governing_spacing = min((float(face.get("barSpacingMm") or 9999.0) for face in governing_faces), default=200.0)
+        raw_zones: list[dict[str, Any]] = []
+        for start_ch, end_ch in zip(ordered[:-1], ordered[1:]):
+            if end_ch - start_ch < 0.20:
+                continue
+            mid = (start_ch + end_ch) / 2.0
+            active = [node for node in clusters if abs(float(node["chainage"]) - mid) <= node_half + 1e-9]
+            if active:
+                zone_type = "support_node_plan_zone"
+                multiplier = 1.25
+                local_spacing = min(governing_spacing, 150.0)
+                additional = {"type": "local_vertical_U_and_horizontal_distribution", "diameterMm": _standard_bar_diameter(governing_dia - 4.0, minimum=16), "spacingMm": 150.0, "verticalHalfHeightM": 1.2}
+                refs = sorted({code for node in active for code in node["codes"]})
+                elevations = sorted({elevation for node in active for elevation in node["elevations"]}, reverse=True)
+            elif mid <= corner_length + 1e-9 or mid >= length - corner_length - 1e-9:
+                zone_type = "corner_plan_zone"
+                multiplier = 1.15
+                local_spacing = min(governing_spacing, 160.0)
+                additional = {"type": "corner_return_and_diagonal_bar", "diameterMm": _standard_bar_diameter(governing_dia - 4.0, minimum=16), "spacingMm": 160.0}
+                refs, elevations = [], []
+            else:
+                zone_type = "field_plan_zone"
+                multiplier = 1.0
+                local_spacing = governing_spacing
+                additional = None
+                refs, elevations = [], []
+            row = {
+                "hostId": wall.id,
+                "hostCode": wall.panel_code,
+                "segmentId": wall.segment_id,
+                "zoneType": zone_type,
+                "startChainageM": round(start_ch, 3),
+                "endChainageM": round(end_ch, 3),
+                "lengthM": round(end_ch - start_ch, 3),
+                "demandMultiplier": multiplier,
+                "governingMainBarDiameterMm": governing_dia,
+                "governingMainBarSpacingMm": local_spacing,
+                "additionalReinforcement": additional,
+                "supportRefs": refs,
+                "supportElevationsM": elevations,
+                "drawingRefs": ["R-01", "R-02", "D-04" if zone_type == "support_node_plan_zone" else "D-06" if zone_type == "corner_plan_zone" else "R-03"],
+                "status": "pass",
+                "professionalReviewRequired": zone_type != "field_plan_zone",
+            }
+            if raw_zones and raw_zones[-1]["zoneType"] == row["zoneType"] and raw_zones[-1]["supportRefs"] == row["supportRefs"] and raw_zones[-1]["supportElevationsM"] == row["supportElevationsM"]:
+                raw_zones[-1]["endChainageM"] = row["endChainageM"]
+                raw_zones[-1]["lengthM"] = round(float(raw_zones[-1]["endChainageM"]) - float(raw_zones[-1]["startChainageM"]), 3)
+            else:
+                raw_zones.append(row)
+
+        for index, row in enumerate(raw_zones, start=1):
+            row["planZoneId"] = f"WPZ-{wall.panel_code}-{index:02d}"
+            result.append(row)
+            checks.append({
+                "checkId": f"RB-WALL-PLAN-{wall.id}-{index}",
+                "category": "wall_plan_reinforcement_zone",
+                "hostId": wall.id,
+                "hostCode": wall.panel_code,
+                "zoneId": row["planZoneId"],
+                "status": "pass",
+                "utilization": None,
+                "message": f"{wall.panel_code} CH {row['startChainageM']:.2f}~{row['endChainageM']:.2f}m {row['zoneType']}; main bars not wider than D{int(governing_dia)}@{int(row['governingMainBarSpacingMm'])}.",
+                "recommendedAction": "在施工图中表达局部附加筋、锚固范围及钢筋笼分段，节点区需结合节点反力复核。" if row["professionalReviewRequired"] else None,
+            })
+    return result, checks
 
 
 _SUPPORT_TARGET_UTILIZATION: dict[str, float] = {"conservative": 0.78, "balanced": 0.88, "economic": 0.95}
@@ -680,9 +911,10 @@ def _build_design_diagnostics(
 def build_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[str, Any]:
     selected_mode = _mode(mode)
     wall_zones, wall_checks = _wall_zone_scheme(project, selected_mode)
+    wall_plan_zones, wall_plan_checks = _wall_plan_zones(project, wall_zones)
     supports, support_checks = _support_scheme(project, selected_mode)
     beams_nodes, beam_node_checks = _beam_and_node_scheme(project, selected_mode)
-    checks = [*wall_checks, *support_checks, *beam_node_checks]
+    checks = [*wall_checks, *wall_plan_checks, *support_checks, *beam_node_checks]
     fail_count = sum(1 for item in checks if item.get("status") == "fail")
     warning_count = sum(1 for item in checks if item.get("status") in {"warning", "manual_review", "preliminary"})
     status = "fail" if fail_count else "warning" if warning_count else "pass"
@@ -692,9 +924,10 @@ def build_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
         "projectId": project.id,
         "mode": selected_mode,
         "status": status,
-        "method": "V3.2 diagnosis-driven reinforcement design: synchronized construction stages, bidirectional support-grid topology, wall single/double-layer selection, RC support section optimization and node bearing sizing",
+        "method": "V3.19 expert reinforcement design: synchronized stages, topology-family review, wall depth-and-plan two-direction zoning, RC support sizing and node bearing/detailing",
         "diagnostics": diagnostics,
         "wallZones": wall_zones,
+        "wallPlanZones": wall_plan_zones,
         "supportSchemes": supports,
         "beamNodeSchemes": beams_nodes,
         "checks": checks,
@@ -706,6 +939,8 @@ def build_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
             "passCount": sum(1 for item in checks if item.get("status") == "pass"),
             "governingStatus": status,
             "zoneBasedDesign": True,
+            "twoDirectionWallZoning": True,
+            "wallPlanZoneCount": len(wall_plan_zones),
             "drawingLinked": True,
             "envelopeAnomalyCount": sum(1 for item in checks if item.get("category") == "calculation_envelope_consistency"),
             "sectionUpgradeRequiredCount": sum(1 for zone in wall_zones for face in zone.get("faces", []) if face.get("status") == "fail") + sum(1 for item in supports if item.get("sectionChanged")),
@@ -736,8 +971,11 @@ def build_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
 
 def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str, list[ReinforcementGroup]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    plan_grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for zone in scheme.get("wallZones", []):
         grouped[str(zone.get("hostId"))].append(zone)
+    for zone in scheme.get("wallPlanZones", []):
+        plan_grouped[str(zone.get("hostId"))].append(zone)
     out: dict[str, list[ReinforcementGroup]] = {}
     ret = project.retaining_system
     if not ret:
@@ -762,7 +1000,7 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
                     area_per_meter=float(governing["providedAsMm2PerM"]),
                     required_area_per_meter=float(governing["requiredAsMm2PerM"]),
                     check_status="pass" if governing.get("status") == "pass" else "warning",
-                    location_description=f"V3.2 governing envelope for {face} face; zone-specific reductions are retained in retainingSystem.rebarDesignScheme",
+                    location_description=f"V3.19 governing envelope for {face} face; utilization target and no-downgrade floor are retained in retainingSystem.rebarDesignScheme",
                 )
             )
         distribution = min((int(zone.get("horizontalDistribution", {}).get("spacingMm") or 200) for zone in zones), default=200)
@@ -770,10 +1008,39 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
         tie_spacing = min((int(zone.get("tieBars", {}).get("spacingMm") or 450) for zone in zones), default=450)
         groups.extend(
             [
-                ReinforcementGroup(name="水平分布筋", bar_type="distribution", diameter=distribution_dia, spacing=distribution, grade=wall.rebar_grade, check_status="pass", location_description="V3.2 zone-governing horizontal distribution reinforcement"),
-                ReinforcementGroup(name="拉结筋/架立筋", bar_type="tie", diameter=12, spacing=tie_spacing, grade=wall.rebar_grade, check_status="manual_review", location_description="V3.2 cage ties; node zones use denser spacing in zone schedule"),
+                ReinforcementGroup(name="水平分布筋", bar_type="distribution", diameter=distribution_dia, spacing=distribution, grade=wall.rebar_grade, check_status="pass", location_description="V3.19 depth-zone governing two-face horizontal distribution reinforcement"),
+                ReinforcementGroup(name="拉结筋/架立筋", bar_type="tie", diameter=12, spacing=tie_spacing, grade=wall.rebar_grade, check_status="manual_review", location_description="V3.19 cage ties; support-node zones use denser spacing in the plan/depth schedules"),
             ]
         )
+        local_zones = plan_grouped.get(wall.id, [])
+        for local in local_zones:
+            zone_type = str(local.get("zoneType") or "field_plan_zone")
+            if zone_type == "field_plan_zone":
+                continue
+            spacing = float((local.get("additionalReinforcement") or {}).get("spacingMm") or (150 if zone_type == "support_node_plan_zone" else 160))
+            diameter = float((local.get("additionalReinforcement") or {}).get("diameterMm") or max(16, distribution_dia))
+            zone_length = max(float(local.get("lengthM") or 0.0), 0.2)
+            # Two faces are scheduled explicitly; the plan-zone chainage is kept
+            # in the description so CAD/BBS geometry remains local rather than
+            # being spread over the whole physical wall.
+            n_plan = int(math.floor(zone_length / max(spacing / 1000.0, 0.1))) + 1
+            start = float(local.get("startChainageM") or 0.0)
+            end = float(local.get("endChainageM") or start + zone_length)
+            is_node = zone_type == "support_node_plan_zone"
+            elevations = [float(value) for value in (local.get("supportElevationsM") or [])]
+            level_count = max(1, len(elevations)) if is_node else 1
+            count = max(4, 2 * n_plan * level_count)
+            elevation_token = ",".join(f"{value:.3f}" for value in elevations)
+            groups.append(ReinforcementGroup(
+                name="支撑节点区附加筋" if is_node else "转角区附加筋",
+                bar_type="additional",
+                diameter=diameter,
+                spacing=spacing,
+                count=count,
+                grade=wall.rebar_grade,
+                check_status="manual_review",
+                location_description=f"V3.19 {'support-node local vertical/U bars' if is_node else 'corner return/diagonal bars'}; CH {start:.3f}~{end:.3f}m; EL {elevation_token or 'full'}; two faces; refs {','.join(local.get('supportRefs') or [])}; see {'D-04' if is_node else 'D-06'}",
+            ))
         out[wall.id] = groups
     return out
 
@@ -805,7 +1072,7 @@ def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
             support.section_optimization_status = "pass" if item.get("status") != "fail" else "topology_upgrade_required"
             support.section_optimization_note = str(item.get("recommendedAction") or "")
         support.reinforcement = [
-            ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=str(longitudinal.get("grade") or "HRB400"), check_status="pass" if item.get("status") == "pass" else "warning", location_description="V3.2 axial-capacity and congestion coordinated longitudinal bars"),
+            ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=str(longitudinal.get("grade") or "HRB400"), check_status="pass" if item.get("status") == "pass" else "warning", location_description="V3.19 axial-capacity and congestion coordinated longitudinal bars"),
             ReinforcementGroup(name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade="HRB400", check_status="manual_review", location_description=f"end zones length {end_zone.get('lengthM')}m at both ends"),
             ReinforcementGroup(name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade="HRB400", check_status="manual_review", location_description="middle-zone confinement and shear reinforcement"),
             ReinforcementGroup(name="支撑拉结/架立筋", bar_type="tie", diameter=12, spacing=400, grade="HRB400", check_status="manual_review", location_description="cage stability and side-face restraint"),
