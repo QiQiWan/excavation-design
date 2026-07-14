@@ -5,6 +5,8 @@ from typing import Any
 from app.ifc.rebar_visualization import build_rebar_ifc_visualization
 from app.schemas.domain import Project
 from app.services.wall_vertical_length_optimizer import analyze_wall_vertical_length
+from app.services.calculation_assurance import verify_current_calculation_contract
+from app.services.delivery_release import evaluate_delivery_release_readiness
 
 
 _STATUS_RANK = {"blocked": 0, "warning": 1, "ready": 2, "pass": 3}
@@ -33,6 +35,9 @@ def evaluate_design_pipeline(project: Project) -> dict[str, Any]:
     fail_count = sum(1 for row in checks if str(row.get("status")) == "fail")
     warning_count = sum(1 for row in checks if str(row.get("status")) == "warning")
     manual_count = sum(1 for row in checks if str(row.get("status")) == "manual_review")
+    calc_assurance = dict(getattr(latest, "calculation_assurance", {}) or {}) if latest else {}
+    contract_status = verify_current_calculation_contract(project, latest) if latest else {"current": False, "reason": "missing calculation result"}
+    release_readiness = evaluate_delivery_release_readiness(project, issue_mode="construction")
     coverage = getattr(project.geological_model, "coverage_audit", None) if project.geological_model else None
     coverage_dict = coverage.model_dump(by_alias=True) if hasattr(coverage, "model_dump") else (coverage or {})
     design_domain_covered = bool(coverage_dict.get("designDomainCovered", False)) if coverage_dict else bool(project.geological_model)
@@ -86,9 +91,26 @@ def evaluate_design_pipeline(project: Project) -> dict[str, Any]:
         [] if candidate_status == "pass" else ["生成至少 3 个可比较方案，对 A/B/C 分别执行独立施工阶段计算，并明确采用方案；禁止使用几何代理轴力和空白位移进行选型。"],
     ))
 
-    calc_status = "blocked" if latest is None or fail_count else ("warning" if warning_count or manual_count else "pass")
+    assurance_status = str(calc_assurance.get("status") or "fail")
+    if latest is None or fail_count or assurance_status == "fail" or not contract_status.get("current"):
+        calc_status = "blocked"
+    elif warning_count or manual_count or assurance_status in {"warning", "manual_review"}:
+        calc_status = "warning"
+    else:
+        calc_status = "pass"
+    calc_actions: list[str] = []
+    if latest is None:
+        calc_actions.append("运行当前快照的完整分阶段计算。")
+    if fail_count:
+        calc_actions.append("修复规范校核硬失败并重新计算。")
+    if not contract_status.get("current"):
+        calc_actions.append("当前输入、施工工况或构件参数已变化，冻结新计算基线并重新计算。")
+    if assurance_status == "fail":
+        calc_actions.append("关闭阶段覆盖、数值收敛、有限性或规范追溯硬失败。")
+    elif assurance_status in {"warning", "manual_review"}:
+        calc_actions.append("完成独立计算差异、病态矩阵、回退求解和低置信度参数人工复核。")
     stages.append(_stage(
-        "P4_ANALYSIS", "分阶段计算与规范校核",
+        "P4_ANALYSIS", "分阶段计算、数值质量与独立复核",
         calc_status,
         {
             "calculationResultId": getattr(latest, "id", None), "failCount": fail_count,
@@ -96,8 +118,17 @@ def evaluate_design_pipeline(project: Project) -> dict[str, Any]:
             "strengthStatus": getattr(getattr(latest, "governing_values", None), "strength_check_status", None),
             "stiffnessStatus": getattr(getattr(latest, "governing_values", None), "stiffness_check_status", None),
             "stabilityStatus": getattr(getattr(latest, "governing_values", None), "stability_check_status", None),
+            "calculationAssuranceStatus": assurance_status,
+            "calculationContract": contract_status,
+            "inputSnapshotHash": getattr(latest, "input_snapshot_hash", None),
+            "adoptedDesignSnapshotHash": getattr(latest, "adopted_design_snapshot_hash", None),
+            "resultHash": getattr(latest, "result_hash", None),
+            "stageCoverage": calc_assurance.get("stageCoverage"),
+            "numericalQuality": calc_assurance.get("numericalQuality"),
+            "independentCheck": calc_assurance.get("independentCheck"),
+            "traceability": calc_assurance.get("traceability"),
         },
-        [] if latest and fail_count == 0 else ["修复计算硬失败并重新生成当前拓扑、地质和施工阶段哈希下的结果。"],
+        calc_actions,
     ))
 
     rebar_scheme = (ret.rebar_design_scheme or {}) if ret else {}
@@ -144,19 +175,26 @@ def evaluate_design_pipeline(project: Project) -> dict[str, Any]:
             "drawingTypes": sorted(drawing_types),
             "requiredDrawingTypes": sorted(required_drawing_types),
             "drawingCoreComplete": drawing_core_complete,
-            "calculationCurrent": bool(latest),
+            "calculationCurrent": bool(contract_status.get("current")),
+            "calculationAssuranceStatus": assurance_status,
             "rebarPackageReady": detailing_ready,
+            "constructionReleaseReadiness": release_readiness,
         },
-        [] if deliverable_status == "ready" else ["补齐总平面、控制剖面、钢筋笼、节点和立柱基础核心图纸，并仅从当前已选方案及当前计算快照生成 CAD/PDF/IFC/DOCX/XLSX。"],
+        [] if deliverable_status == "ready" else ["补齐总平面、控制剖面、钢筋笼、节点和立柱基础核心图纸，并仅从当前已选方案及当前计算合同生成 CAD/PDF/IFC/DOCX/XLSX。"],
     ))
 
     approved = project.review_workflow.status == "approved"
-    issue_status = "pass" if approved and latest and fail_count == 0 and detailing_ready else "blocked"
+    issue_status = "pass" if approved and release_readiness.get("allowed") and drawing_core_complete and detailing_ready else "blocked"
     stages.append(_stage(
-        "P8_REVIEW_ISSUE", "校审、批准与正式发行",
+        "P8_REVIEW_ISSUE", "校审、批准与受控发行",
         issue_status,
-        {"reviewStatus": project.review_workflow.status, "approved": approved, "failCount": fail_count},
-        [] if issue_status == "pass" else ["完成设计、校核、审核、批准和项目级警告闭环后方可正式发行。"],
+        {
+            "reviewStatus": project.review_workflow.status,
+            "approved": approved,
+            "failCount": fail_count,
+            "releaseReadiness": release_readiness,
+        },
+        [] if issue_status == "pass" else ["完成岗位分离审签、当前施工版修订、计算质量包和交付基线校验后方可正式发行。"],
     ))
 
     overall = min(stages, key=lambda row: _STATUS_RANK.get(str(row["status"]), 0))["status"] if stages else "blocked"

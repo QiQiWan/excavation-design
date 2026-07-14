@@ -29,7 +29,8 @@ def _secure_cookie() -> bool:
 
 
 @router.get("/status")
-def auth_status() -> dict:
+def auth_status(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     status = security_status()
     return {
         "loginRequired": bool(configured_users()),
@@ -40,6 +41,7 @@ def auth_status() -> dict:
 
 @router.post("/login")
 def login(payload: LoginPayload, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     identity = authenticate_user(payload.username, payload.password)
     if identity is None:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -58,12 +60,14 @@ def login(payload: LoginPayload, response: Response) -> dict:
 
 @router.post("/logout")
 def logout(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", secure=_secure_cookie(), samesite="lax")
     return {"authenticated": False}
 
 
 @router.get("/me")
-def me(request: Request) -> dict:
+def me(request: Request, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     identity = resolve_identity(request)
     if identity is None:
         raise HTTPException(status_code=401, detail="未登录或会话已过期")

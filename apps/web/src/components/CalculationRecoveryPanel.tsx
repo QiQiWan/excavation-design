@@ -13,6 +13,14 @@ function numberText(value: unknown, unit = '') {
 export default function CalculationRecoveryPanel({ project, runStep }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void> }) {
   const result = latestResult(project);
   const diagnostics = (result?.designIterationSummary?.calculationDiagnostics ?? result?.reportDiagramData?.calculationDiagnostics) as Record<string, any> | undefined;
+  const assurance = (result?.calculationAssurance ?? result?.designIterationSummary?.industrialCalculationAssurance) as Record<string, any> | undefined;
+  const assuranceStatus = String(assurance?.status ?? (result ? 'missing' : 'pending'));
+  const contract = (assurance?.contract ?? {}) as Record<string, any>;
+  const stageCoverage = (assurance?.stageCoverage ?? {}) as Record<string, any>;
+  const numericalQuality = (assurance?.numericalQuality ?? {}) as Record<string, any>;
+  const independentCheck = (assurance?.independentCheck ?? {}) as Record<string, any>;
+  const traceability = (assurance?.traceability ?? {}) as Record<string, any>;
+  const assuranceIssues = (assurance?.issues ?? []) as Record<string, any>[];
   const roots = (diagnostics?.rootCauses ?? []) as Record<string, any>[];
   const comparison = diagnostics?.comparisonWithPrevious as Record<string, any> | undefined;
   const strengthLoop = diagnostics?.strengthDesignLoop as Record<string, any> | undefined;
@@ -34,6 +42,40 @@ export default function CalculationRecoveryPanel({ project, runStep }: { project
       </div>
       <span className={`diagnosticState ${failCount > 0 ? 'fail' : warningCount > 0 ? 'warn' : 'pass'}`}>{failCount > 0 ? `${failCount} 项阻断` : repaired ? '已自动修复并复算' : result ? '计算链路有效' : '待计算'}</span>
     </div>
+
+    {result && <div className={`calculationAssurancePanel ${assuranceStatus}`} aria-label="工业计算质量包">
+      <div className="calculationAssuranceHeader">
+        <div>
+          <strong>工业计算质量包</strong>
+          <p className="small">冻结输入、施工阶段覆盖、数值质量、独立计算对账和规范追溯共同决定计算结果能否进入工程交付。</p>
+        </div>
+        <span className={`diagnosticState ${assuranceStatus === 'pass' ? 'pass' : assuranceStatus === 'fail' || assuranceStatus === 'missing' ? 'fail' : 'warn'}`}>
+          {assuranceStatus === 'pass' ? '计算基线通过' : assuranceStatus === 'fail' ? '计算基线阻断' : assuranceStatus === 'missing' ? '缺少质量包' : '需要复核'}
+        </span>
+      </div>
+      <div className="assuranceMetricGrid">
+        <div><span>计算合同</span><strong title={String(result.calculationContractId ?? contract.contractId ?? '')}>{String(result.calculationContractId ?? contract.contractId ?? '-').slice(0, 24)}</strong></div>
+        <div><span>阶段覆盖</span><strong>{Number(stageCoverage.actual ?? 0)} / {Number(stageCoverage.expected ?? 0)}</strong></div>
+        <div><span>最大条件数</span><strong>{numberText(numericalQuality.maxConditionNumber)}</strong></div>
+        <div><span>最大平衡残差</span><strong>{numberText(numericalQuality.maxRelativeResidual)}</strong></div>
+        <div><span>回退求解</span><strong>{Number(numericalQuality.fallbackCount ?? 0)} 次</strong></div>
+        <div><span>独立位移差</span><strong>{numberText(Number(independentCheck.maxWallDisplacementRelativeDifference ?? 0) * 100, '%')}</strong></div>
+        <div><span>支撑对账复核</span><strong>{Number(independentCheck.supportReconciliationWarningCount ?? 0) + Number(independentCheck.supportReconciliationManualReviewCount ?? 0)} 项</strong></div>
+        <div><span>规范追溯完整率</span><strong>{numberText(Number(traceability.coverage ?? 0) * 100, '%')}</strong></div>
+      </div>
+      <div className="calculationHashStrip">
+        <span title={String(result.inputSnapshotHash ?? '')}>输入 {String(result.inputSnapshotHash ?? '-').slice(0, 12)}</span>
+        <span title={String(result.adoptedDesignSnapshotHash ?? '')}>采用设计 {String(result.adoptedDesignSnapshotHash ?? '-').slice(0, 12)}</span>
+        <span title={String(result.resultHash ?? '')}>结果 {String(result.resultHash ?? '-').slice(0, 12)}</span>
+      </div>
+      {assuranceIssues.some((item) => String(item.status) !== 'pass') && <div className="calculationAssuranceIssues">
+        {assuranceIssues.filter((item) => String(item.status) !== 'pass').slice(0, 4).map((item) => <article key={String(item.code)} className={String(item.status ?? 'warning')}>
+          <strong>{String(item.title ?? item.code)}</strong>
+          <p>{String(item.message ?? '')}</p>
+          {item.requiredAction && <em>{String(item.requiredAction)}</em>}
+        </article>)}
+      </div>}
+    </div>}
 
     {strengthLoop && <div className="strengthLoopPanel" aria-label="强度驱动设计闭环">
       <div className="strengthLoopTitle">

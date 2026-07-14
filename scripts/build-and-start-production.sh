@@ -259,6 +259,12 @@ server {
         access_log off;
     }
 
+    location = /login {
+        expires -1;
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+        try_files /index.html =404;
+    }
+
     location = /index.html {
         expires -1;
         add_header Cache-Control "no-store, no-cache, must-revalidate";
@@ -289,18 +295,29 @@ if [ "$BACKEND_READY" != "1" ]; then
   exit 1
 fi
 
+AUTH_LOGIN_REQUIRED="$(curl -fsS "http://127.0.0.1:$BACKEND_PORT/api/auth/status" | "$PYTHON_BIN" -c 'import json,sys; print("true" if json.load(sys.stdin).get("loginRequired") else "false")')"
+if [ "$AUTH_LOGIN_REQUIRED" != "true" ]; then
+  echo "[PitGuard] Production login is not active. Check PITGUARD_USERS in $ENV_FILE." >&2
+  exit 1
+fi
+
 nginx -t
 systemctl reload nginx
 
 PUBLIC_HEALTH="unverified"
+LOGIN_ROUTE="unverified"
 if curl -kfsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health" >/dev/null 2>&1; then
   PUBLIC_HEALTH="ok"
+fi
+if curl -kfsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/login" >/dev/null 2>&1; then
+  LOGIN_ROUTE="ok"
 fi
 
 cat <<OUTEOF
 
 PitGuard production deployment is ready.
 System URL    : https://$DOMAIN
+Login URL     : https://$DOMAIN/login ($LOGIN_ROUTE)
 Health        : https://$DOMAIN/health ($PUBLIC_HEALTH)
 API docs      : https://$DOMAIN/backend-docs
 Backend       : http://127.0.0.1:$BACKEND_PORT

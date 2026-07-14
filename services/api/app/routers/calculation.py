@@ -8,6 +8,7 @@ from app.storage.repository import ProjectRepository, get_repository
 from app.services.calculation_trace import build_calculation_trace
 from app.services.wall_length_optimizer import mark_wall_length_recalculated
 from app.services.calculation_state import mark_calculation_state_current
+from app.services.calculation_assurance import audit_calculation_inputs, build_calculation_contract, assess_calculation_result, verify_current_calculation_contract
 from app.quality.formal_gate import build_formal_report_gate
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
 
@@ -152,3 +153,27 @@ def checks(project_id: str, repo: ProjectRepository = Depends(get_repository)) -
 @router.get("/trace")
 def calculation_trace(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
     return build_calculation_trace(repo.require(project_id))
+
+
+@router.get("/assurance")
+def calculation_assurance(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = repo.require(project_id)
+    latest = project.calculation_results[-1] if project.calculation_results else None
+    if latest is not None and latest.calculation_assurance:
+        payload = dict(latest.calculation_assurance)
+        payload["contractVerification"] = verify_current_calculation_contract(project, latest)
+        return payload
+    case = project.calculation_cases[-1] if project.calculation_cases else None
+    if case is None:
+        raise HTTPException(status_code=409, detail="No calculation case is available for assurance audit")
+    input_audit = audit_calculation_inputs(project, case)
+    if latest is None:
+        return {
+            "status": "fail",
+            "eligibleForEngineeringUse": False,
+            "eligibleForOfficialIssue": False,
+            "contract": build_calculation_contract(project, case),
+            "inputAudit": input_audit,
+            "issues": [{"code": "RESULT-MISSING", "status": "fail", "message": "尚未运行计算。"}],
+        }
+    return assess_calculation_result(project, case, latest, input_audit=input_audit)

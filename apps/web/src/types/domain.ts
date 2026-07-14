@@ -71,6 +71,12 @@ export interface DesignSettings {
   replacementSlabElasticModulusMpa?: number;
   replacementConnectionReduction?: number;
   defaultWorkspaceMode?: 'compact' | 'professional';
+  calculationAssuranceLevel?: 'screening' | 'engineering' | 'official_issue';
+  requireIndependentCalculationCheck?: boolean;
+  maximumMatrixConditionNumber?: number;
+  maximumEquilibriumRelativeResidual?: number;
+  independentCheckWarningRatio?: number;
+  independentCheckFailRatio?: number;
 }
 
 export interface Point2D { x: number; y: number }
@@ -392,6 +398,12 @@ export interface CalculationResult {
   id: string;
   projectId: string;
   caseId: string;
+  inputSnapshotHash?: string;
+  adoptedDesignSnapshotHash?: string;
+  calculationContractId?: string;
+  resultHash?: string;
+  calculationAssurance?: Record<string, any>;
+  deliveryReadiness?: Record<string, any>;
   stageResults: StageCalculationResult[];
   governingValues: GoverningValues;
   warnings: string[];

@@ -724,6 +724,18 @@ function SettingsStep({ project, onChanged, viewMode }: { project: Project; onCh
         <p className="small boundaryNote">未进入换撑阶段，刚度显示“未激活/—”；进入换撑阶段后若参数缺失，系统将产生硬阻断，不再用 0 代表未知状态。</p>
       </section>
       <section className="summaryPanel">
+        <div className="panelTitleRow"><div><h3>工业计算质量门禁</h3><p className="small">控制输入冻结、数值质量和独立计算差异。阈值属于软件质量控制参数，应由项目计算负责人批准。</p></div><button onClick={() => void save()} disabled={saving}>{saving ? '保存中…' : '保存并使旧结果失效'}</button></div>
+        <div className="settingsFormGrid advancedSettingsGrid">
+          <label>计算质量等级<select value={draft.calculationAssuranceLevel ?? 'engineering'} onChange={(e) => setDraft((v) => ({ ...v, calculationAssuranceLevel: e.target.value as 'screening' | 'engineering' | 'official_issue' }))}><option value="screening">方案筛查</option><option value="engineering">工程设计</option><option value="official_issue">正式发行</option></select></label>
+          <label className="settingCheck"><input type="checkbox" checked={draft.requireIndependentCalculationCheck ?? true} onChange={(e) => setDraft((v) => ({ ...v, requireIndependentCalculationCheck: e.target.checked }))} /><span>要求独立计算路径对账</span></label>
+          <label>矩阵条件数复核阈值<input type="number" min="1000000" step="1000000000" value={draft.maximumMatrixConditionNumber ?? 1e12} onChange={(e) => numberValue('maximumMatrixConditionNumber', e.target.value)} /></label>
+          <label>平衡相对残差阈值<input type="number" min="1e-14" max="0.01" step="1e-9" value={draft.maximumEquilibriumRelativeResidual ?? 1e-8} onChange={(e) => numberValue('maximumEquilibriumRelativeResidual', e.target.value)} /></label>
+          <label>独立计算预警差异比<input type="number" min="0" max="1" step="0.05" value={draft.independentCheckWarningRatio ?? 0.25} onChange={(e) => numberValue('independentCheckWarningRatio', e.target.value)} /></label>
+          <label>独立计算强制复核差异比<input type="number" min="0" max="2" step="0.05" value={draft.independentCheckFailRatio ?? 0.5} onChange={(e) => numberValue('independentCheckFailRatio', e.target.value)} /></label>
+        </div>
+        <p className="small boundaryNote">工程设计等级下，独立解差异超限进入人工复核；正式发行等级可升级为硬阻断。数值阈值用于软件求解质量控制，不替代结构规范限值。</p>
+      </section>
+      <section className="summaryPanel">
         <div className="panelTitleRow"><div><h3>长期效应、抗裂与监测控制</h3><p className="small">这些参数参与准永久组合、长期位移、裂缝筛查和正式图纸发行闸门。</p></div><button onClick={() => void save()} disabled={saving}>{saving ? '保存中…' : '保存设计参数'}</button></div>
         <div className="settingsFormGrid advancedSettingsGrid">
           <label>设计使用年限（年）<input type="number" min="1" max="200" value={draft.serviceLifeYears ?? 50} onChange={(e) => numberValue('serviceLifeYears', e.target.value)} /></label>

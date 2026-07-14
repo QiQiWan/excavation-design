@@ -176,9 +176,45 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         doc.add_paragraph("说明：该首页清单用于导出前自查。存在阻断项时不得作为正式施工图提交；存在 warning/manual_review 时应逐项复核并补充说明。")
     else:
         doc.add_paragraph("尚未形成正式化检查结果。")
+    doc.add_heading("0.1 工业计算质量包", level=2)
+    if latest and latest.calculation_assurance:
+        assurance = dict(latest.calculation_assurance or {})
+        contract = dict(assurance.get("contract") or {})
+        stage_coverage = dict(assurance.get("stageCoverage") or {})
+        numerical = dict(assurance.get("numericalQuality") or {})
+        independent = dict(assurance.get("independentCheck") or {})
+        traceability = dict(assurance.get("traceability") or {})
+        runtime = dict(contract.get("solverRuntime") or {})
+        doc.add_paragraph(
+            f"工业计算质量状态：{assurance.get('status', '-')}；工程使用资格："
+            f"{'是' if assurance.get('eligibleForEngineeringUse') else '否'}；正式发行资格："
+            f"{'是' if assurance.get('eligibleForOfficialIssue') else '否'}。"
+        )
+        _add_table(doc, ["项目", "记录值"], [
+            ["最终计算合同", latest.calculation_contract_id or contract.get("contractId")],
+            ["求解前输入快照 SHA-256", latest.input_snapshot_hash],
+            ["采用设计快照 SHA-256", latest.adopted_design_snapshot_hash],
+            ["计算结果 SHA-256", latest.result_hash],
+            ["阶段—墙段覆盖", f"{stage_coverage.get('actual', 0)}/{stage_coverage.get('expected', 0)}；完整={stage_coverage.get('complete', False)}"],
+            ["最大矩阵条件数", numerical.get("maxConditionNumber")],
+            ["最大平衡相对残差", numerical.get("maxRelativeResidual")],
+            ["回退求解次数", numerical.get("fallbackCount", 0)],
+            ["独立位移最大相对差", independent.get("maxWallDisplacementRelativeDifference")],
+            ["支撑轴力对账复核项", int(independent.get("supportReconciliationWarningCount") or 0) + int(independent.get("supportReconciliationManualReviewCount") or 0)],
+            ["规范追溯完整率", traceability.get("coverage")],
+            ["求解运行环境", f"Python {runtime.get('python', '-')}; NumPy {runtime.get('numpy', '-')}; {runtime.get('system', '-')} {runtime.get('machine', '-')}"],
+        ], font_size=7)
+        issue_rows = [
+            [row.get("code"), row.get("status"), row.get("title"), row.get("message"), row.get("requiredAction")]
+            for row in list(assurance.get("issues") or []) if row.get("status") != "pass"
+        ]
+        _add_table(doc, ["编号", "状态", "质量门禁", "说明", "处理要求"], issue_rows or [["-", "pass", "质量门禁通过", "未发现需关闭的问题。", "-"]], font_size=7)
+        doc.add_paragraph(str(assurance.get("boundary") or "计算质量包不能替代第三方对标和注册工程师签审。"))
+    else:
+        doc.add_paragraph("缺少 V3.24 工业计算质量包，当前计算书不得作为受控施工发行依据。")
     if latest and latest.support_layout_quality:
         q = latest.support_layout_quality
-        doc.add_heading("0.1 支撑布置合理性评分", level=2)
+        doc.add_heading("0.2 支撑布置合理性评分", level=2)
         doc.add_paragraph(q.summary)
         if latest.support_layout_repair:
             doc.add_paragraph(latest.support_layout_repair.summary)
@@ -189,7 +225,7 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
             if not full_compare and latest.report_diagram_data:
                 full_compare = list(latest.report_diagram_data.get("candidateFullCalculationComparison") or [])
             if full_compare:
-                doc.add_heading("0.1.1 方案 A/B/C 完整计算比选", level=2)
+                doc.add_heading("0.2.1 方案 A/B/C 完整计算比选", level=2)
                 doc.add_paragraph("前 3 个候选方案已分别重建支撑体系并运行完整计算链路。下表不再使用轴力代理项排序，而是汇总支撑轴力、墙体位移、围檩内力、稳定性、IFC 风险和正式化闸门状态，用于方案阶段决策。")
                 _add_table(doc, ["方案", "候选", "支撑数", "立柱数", "最大轴力/kN", "最大位移/mm", "围檩弯矩", "围檩剪力", "最小稳定系数", "IFC风险", "正式闸门"], [[
                     item.get("schemeLabel", "-"),

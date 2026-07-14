@@ -20,6 +20,7 @@ from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.rebar_export import export_rebar_detailing_package
 from app.services.review_workflow import project_snapshot_hash, review_status
 from app.services.wall_length_optimizer import export_wall_length_redundancy_report
+from app.services.delivery_release import evaluate_delivery_release_readiness, build_release_certificate
 from app.version import SOFTWARE_VERSION, version_manifest
 
 
@@ -168,6 +169,10 @@ def export_coordinated_delivery_package(
 ) -> Path:
     if issue_mode not in {"review", "construction"}:
         raise ValueError(f"Unsupported issue mode: {issue_mode}")
+    release_readiness = evaluate_delivery_release_readiness(project, issue_mode=issue_mode)
+    if issue_mode == "construction" and not release_readiness.get("allowed"):
+        failed = [row for row in release_readiness.get("checks", []) if row.get("status") == "fail"]
+        raise ValueError("Construction delivery is blocked by release baseline: " + "; ".join(str(row.get("title")) for row in failed))
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     root = out / f"{project.id}_coordinated_delivery_{issue_mode}_v{SOFTWARE_VERSION.replace('.', '_')}"
@@ -254,6 +259,17 @@ def export_coordinated_delivery_package(
     project_json.write_text(json.dumps(project.model_dump(mode="json", by_alias=True), ensure_ascii=False, indent=2), encoding="utf-8")
     artifacts.append(_artifact_record(root, project_json, "项目完整快照", "归档/迁移/二次开发", "archive"))
 
+    latest = project.calculation_results[-1] if project.calculation_results else None
+    contract_json = root / "30_reports/calculation_contract.json"
+    contract_json.write_text(json.dumps(dict((getattr(latest, "calculation_assurance", {}) or {}).get("contract") or {}), ensure_ascii=False, indent=2), encoding="utf-8")
+    artifacts.append(_artifact_record(root, contract_json, "计算输入冻结合同", "设计/校核/归档", "audit"))
+    assurance_json = root / "30_reports/calculation_assurance.json"
+    assurance_json.write_text(json.dumps(dict(getattr(latest, "calculation_assurance", {}) or {}), ensure_ascii=False, indent=2), encoding="utf-8")
+    artifacts.append(_artifact_record(root, assurance_json, "工业计算质量包", "设计/校核/审核", "audit"))
+    readiness_json = root / "00_release/delivery_readiness.json"
+    readiness_json.write_text(json.dumps(release_readiness, ensure_ascii=False, indent=2), encoding="utf-8")
+    artifacts.append(_artifact_record(root, readiness_json, "发行基线预检", "审核/批准/归档", "audit"))
+
     drawing_gate = _read_json_from_zip(formal, "construction_issue_gate.json") if formal else {}
     sheet_quality = _read_json_from_zip(formal, "drawing_sheet_quality.json") if formal else {}
     drawing_completeness = _read_json_from_zip(formal, "drawing_completeness.json") if formal else {}
@@ -262,6 +278,8 @@ def export_coordinated_delivery_package(
 
     acceptance = [
         {"category": "计算", "check": "工程计算无硬失败", "status": "pass" if assurance.get("engineeringCheckStatus") == "pass" else str(assurance.get("engineeringCheckStatus")), "evidence": "计算书/项目快照", "responsibleRole": "设计/校核", "action": "处理fail、warning和人工复核项"},
+        {"category": "计算", "check": "输入冻结、阶段覆盖、数值质量和独立复核", "status": str((getattr(latest, "calculation_assurance", {}) or {}).get("status") or "missing"), "evidence": "30_reports/calculation_contract.json + calculation_assurance.json", "responsibleRole": "设计/校核", "action": "关闭工业计算质量包中的失败、警告和人工复核项"},
+        {"category": "发行", "check": "当前快照发行基线", "status": str(release_readiness.get("status") or "missing"), "evidence": "00_release/delivery_readiness.json", "responsibleRole": "审核/批准", "action": "确保计算合同、审签和施工修订均与当前快照一致"},
         {"category": "图纸", "check": "图种和逐图表达质量", "status": str(sheet_quality.get("status") or "missing"), "evidence": "drawing_sheet_quality.json", "responsibleRole": "设计/校核", "action": "修复失败图纸的图层、尺寸、图签和内容深度"},
         {"category": "图纸", "check": "施工图完整性", "status": str(drawing_completeness.get("status") or "missing"), "evidence": "drawing_completeness.json", "responsibleRole": "专业负责人", "action": "补齐必要图种、表格和节点大样"},
         {"category": "发行", "check": "施工图发行门禁", "status": str(drawing_gate.get("status") or "missing"), "evidence": "construction_issue_gate.json", "responsibleRole": "审核/批准", "action": "完成四级审签和当前快照修订"},
@@ -280,11 +298,25 @@ def export_coordinated_delivery_package(
     hard_failed = any(str(item.get("status")) == "fail" for item in acceptance)
     release_grade = "construction_issued" if issue_mode == "construction" and not hard_failed and review.get("approvalValid") else "review_complete" if not hard_failed else "development_only"
     _write_relationship_matrix(root, artifacts)
+    relationship_matrix = root / "90_audit/deliverable_relationship_matrix.csv"
+    artifacts.append(_artifact_record(root, relationship_matrix, "成果关系矩阵", "设计/校核/归档", "audit"))
     transmittal = root / "00_release/issue_transmittal.csv"
     with transmittal.open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.writer(stream)
         writer.writerow(["project_id", "project_name", "issue_mode", "release_grade", "snapshot_hash", "generated_at", "drawing_status", "engineering_status", "approval_valid"])
         writer.writerow([project.id, project.name, issue_mode, release_grade, project_snapshot_hash(project), datetime.now(timezone.utc).isoformat(), sheet_quality.get("status"), assurance.get("engineeringCheckStatus"), review.get("approvalValid")])
+    artifacts.append(_artifact_record(root, transmittal, "发行移交单", "项目管理/审核/归档", "release-control"))
+
+    release_certificate = build_release_certificate(
+        project,
+        issue_mode=issue_mode,
+        release_grade=release_grade,
+        readiness=release_readiness,
+        artifacts=artifacts,
+    )
+    certificate_path = root / "00_release/release_certificate.json"
+    certificate_path.write_text(json.dumps(release_certificate, ensure_ascii=False, indent=2), encoding="utf-8")
+    artifacts.append(_artifact_record(root, certificate_path, "不可变发行证书", "审核/批准/归档", "release-control"))
 
     manifest = {
         "packageType": "PitGuard coordinated engineering deliverables",
@@ -294,6 +326,8 @@ def export_coordinated_delivery_package(
         "issueMode": issue_mode,
         "rebarMode": rebar_mode,
         "releaseGrade": release_grade,
+        "releaseReadiness": release_readiness,
+        "releaseCertificate": release_certificate,
         "snapshotHash": project_snapshot_hash(project),
         "engineeringStatus": assurance.get("engineeringCheckStatus"),
         "officialIssueGateAllowed": assurance.get("officialIssueGateAllowed"),

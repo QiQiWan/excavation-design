@@ -103,6 +103,12 @@ class DesignSettings(DomainModel):
     replacement_slab_elastic_modulus_mpa: float = 30000.0
     replacement_connection_reduction: float = 0.65
     default_workspace_mode: Literal["compact", "professional"] = "compact"
+    calculation_assurance_level: Literal["screening", "engineering", "official_issue"] = "engineering"
+    require_independent_calculation_check: bool = True
+    maximum_matrix_condition_number: float = Field(default=1.0e12, gt=0.0)
+    maximum_equilibrium_relative_residual: float = Field(default=1.0e-8, gt=0.0)
+    independent_check_warning_ratio: float = Field(default=0.25, ge=0.0, le=1.0)
+    independent_check_fail_ratio: float = Field(default=0.50, ge=0.0, le=2.0)
 
     @model_validator(mode="after")
     def validate_monitoring_threshold_order(self) -> "DesignSettings":
@@ -115,6 +121,8 @@ class DesignSettings(DomainModel):
         for warning, alarm, label in threshold_pairs:
             if warning is not None and alarm is not None and float(warning) > float(alarm):
                 raise ValueError(f"Monitoring {label} warning threshold cannot exceed alarm threshold")
+        if self.independent_check_warning_ratio > self.independent_check_fail_ratio:
+            raise ValueError("Independent-check warning ratio cannot exceed fail ratio")
         if self.monitoring_threshold_source == "project_defined":
             configured_pairs = (
                 (self.monitoring_wall_displacement_warning_mm, self.monitoring_wall_displacement_alarm_mm),
@@ -1034,6 +1042,12 @@ class CalculationResult(DomainModel):
     project_id: str
     case_id: str
     support_topology_hash: str | None = None
+    input_snapshot_hash: str | None = None
+    adopted_design_snapshot_hash: str | None = None
+    calculation_contract_id: str | None = None
+    result_hash: str | None = None
+    calculation_assurance: dict[str, Any] = Field(default_factory=dict)
+    delivery_readiness: dict[str, Any] = Field(default_factory=dict)
     stage_results: list[StageCalculationResult] = Field(default_factory=list)
     governing_values: GoverningValues = Field(default_factory=GoverningValues)
     warnings: list[str] = Field(default_factory=list)

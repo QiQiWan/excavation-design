@@ -51,6 +51,7 @@ from app.quality.formal_gate import build_formal_report_gate
 from app.services.support_layout_repair import auto_repair_support_layout
 from app.services.support_layout import repair_concave_return_supports, repair_wale_support_bays
 from app.services.calculation_diagnostics import build_calculation_diagnostics
+from app.services.calculation_assurance import audit_calculation_inputs, build_calculation_contract, apply_calculation_assurance
 from app.services.wall_restraint import build_effective_wall_restraints
 from app.services.candidate_result_cache import candidate_input_hash, get_cached_candidate_result, put_cached_candidate_result
 from app.services.wall_embedment_design import auto_design_wall_embedment
@@ -1405,8 +1406,10 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     break
         if not replaced:
             project.calculation_cases.append(case)
+    calculation_contract = build_calculation_contract(project, case)
+    calculation_input_audit = audit_calculation_inputs(project, case)
     stage_results: list[StageCalculationResult] = []
-    global_checks: list[dict[str, Any]] = []
+    global_checks: list[dict[str, Any]] = list(calculation_input_audit.get("checks") or [])
     calibration = dict(project.advanced_engineering.get("calibrationFactors") or {})
     wall_stiffness_factor = float(calibration.get("wallStiffnessFactor") or 1.0)
     soil_modulus_factor = float(calibration.get("soilModulusFactor") or 1.0)
@@ -1640,14 +1643,23 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "diagnostics": wall_restraint_audit,
             })
             numerical = dict(global_coupled.equilibrium_diagnostics or {})
-            numerical_status = str(numerical.get("status") or "manual_review")
+            residual_limit = float(getattr(project.design_settings, "maximum_equilibrium_relative_residual", 1.0e-8) or 1.0e-8)
+            residual_value = numerical.get("relativeResidual")
+            if not isinstance(residual_value, (int, float)):
+                numerical_status = "manual_review"
+            elif float(residual_value) > residual_limit * 100.0:
+                numerical_status = "fail"
+            elif float(residual_value) > residual_limit:
+                numerical_status = "warning"
+            else:
+                numerical_status = "pass"
             stage_checks.append({
                 "ruleId": "PITGUARD-NUMERICAL-EQUILIBRIUM",
                 "objectId": segment.id,
                 "objectType": "GlobalCoupledSystem",
                 "status": numerical_status,
                 "calculatedValue": numerical.get("relativeResidual"),
-                "limitValue": 1.0e-8,
+                "limitValue": residual_limit,
                 "unit": "relative residual",
                 "message": numerical.get("message") or "全局刚度方程数值质量需要复核。",
                 "clauseReference": "PitGuard numerical quality gate; engineering-code checks remain independent",
@@ -1656,28 +1668,31 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "diagnostics": numerical,
             })
             condition_number = global_coupled.condition_number
+            condition_review_limit = float(getattr(project.design_settings, "maximum_matrix_condition_number", 1.0e12) or 1.0e12)
+            condition_fail_limit = condition_review_limit * 100.0
+            condition_warning_limit = condition_review_limit / 100.0
             if condition_number is None:
                 condition_status = "manual_review"
                 condition_message = "未获得全局矩阵条件数，需复核矩阵组装与边界约束。"
-            elif condition_number > 1.0e14:
+            elif condition_number > condition_fail_limit:
                 condition_status = "fail"
                 condition_message = "全局矩阵严重病态，当前内力与位移结果不得作为设计依据。"
-            elif condition_number > 1.0e12:
+            elif condition_number > condition_review_limit:
                 condition_status = "manual_review"
-                condition_message = "全局矩阵条件数过高，需复核刚度尺度、约束和构件连接。"
-            elif condition_number > 1.0e10:
+                condition_message = "全局矩阵条件数超过项目复核阈值，需复核刚度尺度、约束和构件连接。"
+            elif condition_number > condition_warning_limit:
                 condition_status = "warning"
-                condition_message = "全局矩阵条件数偏高，建议开展参数尺度与边界条件复核。"
+                condition_message = "全局矩阵条件数接近项目复核阈值，建议开展参数尺度与边界条件复核。"
             else:
                 condition_status = "pass"
-                condition_message = "全局矩阵条件数处于软件质量门禁允许范围。"
+                condition_message = "全局矩阵条件数处于项目数值质量门禁允许范围。"
             stage_checks.append({
                 "ruleId": "PITGUARD-MATRIX-CONDITION",
                 "objectId": segment.id,
                 "objectType": "GlobalCoupledSystem",
                 "status": condition_status,
                 "calculatedValue": condition_number,
-                "limitValue": 1.0e10,
+                "limitValue": condition_review_limit,
                 "unit": "dimensionless",
                 "message": condition_message,
                 "clauseReference": "PitGuard numerical conditioning gate; no fabricated code clause",
@@ -2361,4 +2376,16 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         ],
         professional_review_required=True,
     )
+    result = apply_calculation_assurance(
+        project,
+        case,
+        result,
+        input_audit=calculation_input_audit,
+        contract=calculation_contract,
+    )
+    result.formal_report_gate = build_formal_report_gate(
+        project, result.support_layout_quality, result.ifc_compatibility, latest_result=result
+    )
+    result.report_diagram_data = dict(result.report_diagram_data or {})
+    result.report_diagram_data["formalReportGate"] = result.formal_report_gate.model_dump(mode="json", by_alias=True)
     return result

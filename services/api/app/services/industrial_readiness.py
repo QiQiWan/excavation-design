@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.services.support_topology_contract import support_topology_hash
+from app.services.calculation_assurance import verify_current_calculation_contract
+from app.services.delivery_release import evaluate_delivery_release_readiness
 from app.geometry.consistency import geometry_consistency_summary
 from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.schemas.domain import Point2D, Polyline2D, Project
@@ -96,25 +98,7 @@ def run_geometry_qualification_suite() -> dict[str, Any]:
 
 
 def _calculation_contract(project: Project) -> dict[str, Any]:
-    latest = project.calculation_results[-1] if project.calculation_results else None
-    if not latest:
-        return {"current": False, "reason": "missing calculation"}
-    iteration = dict(latest.design_iteration_summary or {})
-    current_hash = support_topology_hash(project) if project.retaining_system else None
-    return {
-        "current": bool(
-            current_hash
-            and latest.support_topology_hash == current_hash
-            and iteration.get("algorithmVersion") == ALGORITHM_VERSION
-            and iteration.get("ruleSetVersion") == RULE_SET_VERSION
-        ),
-        "storedTopologyHash": latest.support_topology_hash,
-        "currentTopologyHash": current_hash,
-        "storedAlgorithmVersion": iteration.get("algorithmVersion"),
-        "currentAlgorithmVersion": ALGORITHM_VERSION,
-        "storedRuleSetVersion": iteration.get("ruleSetVersion"),
-        "currentRuleSetVersion": RULE_SET_VERSION,
-    }
+    return verify_current_calculation_contract(project)
 
 
 def _trace_coverage(project: Project) -> dict[str, Any]:
@@ -175,6 +159,8 @@ def evaluate_industrial_readiness(
     qualification = run_geometry_qualification_suite() if run_qualification else dict(project.advanced_engineering.get("qualificationSuite") or {})
     review = review_status(project)
     pipeline = evaluate_design_pipeline(project)
+    calculation_assurance = dict(getattr(latest, "calculation_assurance", {}) or {}) if latest else {}
+    release_readiness = evaluate_delivery_release_readiness(project, issue_mode="construction")
     monitoring = monitoring_control_summary(project)
     security = security_status()
 
@@ -186,7 +172,9 @@ def evaluate_industrial_readiness(
 
     p0 = _phase("P0", "计算可信度、规范追溯与正式闸门", [
         _check("P0-CALC", "当前快照已完成计算", bool(latest), getattr(latest, "id", None), "运行完整分阶段计算。"),
-        _check("P0-CONTRACT", "计算拓扑与算法版本一致", bool(contract.get("current")), contract, "按当前支撑拓扑和规则集重新计算。"),
+        _check("P0-CONTRACT", "计算输入、工况、拓扑与算法版本一致", bool(contract.get("current")), contract, "按当前输入、施工工况、支撑拓扑和规则集重新计算。"),
+        _check("P0-ASSURANCE", "工业计算质量包通过", calculation_assurance.get("status") == "pass", calculation_assurance, "关闭输入冻结、阶段覆盖、数值质量、独立复核和追溯问题。"),
+        _check("P0-RESULT-HASH", "计算结果具有不可变输入/结果哈希", bool(latest and latest.input_snapshot_hash and latest.result_hash and latest.calculation_contract_id), {"inputSnapshotHash": getattr(latest, "input_snapshot_hash", None), "resultHash": getattr(latest, "result_hash", None), "contractId": getattr(latest, "calculation_contract_id", None)}, "按当前快照重新运行完整计算。"),
         _check("P0-NO-FAIL", "规范校核无硬失败", bool(latest) and fail_count == 0, {"failCount": fail_count}, "关闭全部 fail 后复算。"),
         _check("P0-FINITE", "控制结果数值有限且有效", _finite_governing_values(project), getattr(latest, "governing_values", None), "检查数值稳定性、输入量纲和矩阵条件数。"),
         _check("P0-TRACE", "计算链追溯覆盖率不低于 90%", trace.get("coverage", 0.0) >= 0.90, trace, "补齐公式、条文、输入、中间量和结果路径。"),
@@ -205,6 +193,7 @@ def evaluate_industrial_readiness(
     p2 = _phase("P2", "版本、任务、审签与可观测性", [
         _check("P2-PIPELINE", "设计院八阶段流程无阻断", pipeline.get("overallStatus") not in {"blocked", "fail"}, pipeline, "按流水线顺序补齐设计依据、计算、深化和成果。", blocking=False),
         _check("P2-APPROVAL", "当前快照完成岗位分离审签", bool(review.get("approvalValid")), review, "完成设计、校核、审核、批准四级审签。", blocking=False),
+        _check("P2-RELEASE-BASELINE", "施工版发行基线完整", bool(release_readiness.get("allowed")), release_readiness, "使计算合同、质量包、正式闸门、审签和施工修订全部对应当前快照。", blocking=False),
         _check("P2-REVISION", "项目启用不可变版本与审计日志", True, {"storage": "sqlite-wal", "immutableRevisions": True, "optimisticConcurrency": True, "requestActorAudit": True}, ""),
         _check("P2-TASK", "后台任务持久化、取消和重试能力可用", True, {"persistentTasks": True, "cancelAtStageBoundary": True, "retryEndpoint": True, "heartbeat": True}, ""),
         _check("P2-OBSERVABILITY", "运行指标与就绪检查可用", True, {"httpLatencyPercentiles": True, "taskMetrics": True, "readinessEndpoint": True}, ""),
@@ -234,6 +223,8 @@ def evaluate_industrial_readiness(
         "warningCount": warnings,
         "phases": phases,
         "calculationContract": contract,
+        "calculationAssurance": calculation_assurance,
+        "deliveryReleaseReadiness": release_readiness,
         "traceability": trace,
         "qualificationSuite": qualification,
         "candidateEvidence": candidate,

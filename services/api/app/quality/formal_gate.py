@@ -5,6 +5,7 @@ import math
 from app.services.support_topology_contract import support_topology_hash
 from app.schemas.domain import FormalReportGate, IfcCompatibilityCheckResult, Project, QualityGateIssue, SupportLayoutQualitySummary
 from app.version import ALGORITHM_VERSION, RULE_SET_VERSION
+from app.services.calculation_assurance import verify_current_calculation_contract
 
 
 def _issue(category: str, severity: str, message: str, object_id: str | None = None, object_type: str | None = None, recommendation: str | None = None) -> QualityGateIssue:
@@ -33,18 +34,44 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
     if latest:
         iteration = dict(getattr(latest, "design_iteration_summary", {}) or {})
         current_hash = support_topology_hash(project) if project.retaining_system else None
-        contract_current = bool(
-            current_hash
-            and getattr(latest, "support_topology_hash", None) == current_hash
-            and iteration.get("algorithmVersion") == ALGORITHM_VERSION
-            and iteration.get("ruleSetVersion") == RULE_SET_VERSION
-        )
+        contract_verification = verify_current_calculation_contract(project, latest)
+        contract_current = bool(contract_verification.get("current"))
         if not contract_current:
             blocking.append(_issue(
                 "calculation_contract",
                 "fail",
                 "当前计算结果与支撑拓扑、算法版本或规则集不一致。",
                 recommendation="按当前设计快照重新建立工况并执行完整计算。",
+            ))
+        assurance = dict(getattr(latest, "calculation_assurance", {}) or iteration.get("industrialCalculationAssurance") or {})
+        assurance_status = str(assurance.get("status") or "missing")
+        if not assurance:
+            missing.append(_issue(
+                "calculation_assurance",
+                "manual_review",
+                "缺少工业计算质量包，未证明输入冻结、阶段覆盖、数值收敛和独立复核已执行。",
+                recommendation="按当前快照重新运行 V3.24 完整计算。",
+            ))
+        elif assurance_status == "fail":
+            blocking.append(_issue(
+                "calculation_assurance",
+                "fail",
+                "工业计算质量包存在硬失败。",
+                recommendation="关闭输入、数值、阶段覆盖或独立复核失败后重新计算。",
+            ))
+        elif assurance_status in {"warning", "manual_review"}:
+            warnings.append(_issue(
+                "calculation_assurance",
+                "manual_review",
+                "工业计算质量包仍存在警告或人工复核项。",
+                recommendation="正式发行前处理独立计算差异、低置信度参数和追溯缺项。",
+            ))
+        if not getattr(latest, "input_snapshot_hash", None) or not getattr(latest, "result_hash", None):
+            blocking.append(_issue(
+                "calculation_baseline",
+                "fail",
+                "计算结果缺少输入快照哈希或结果哈希，无法形成不可变计算基线。",
+                recommendation="重新运行完整计算并保存计算合同。",
             ))
         governing_obj = getattr(latest, "governing_values", None)
         governing = governing_obj.model_dump() if governing_obj is not None else {}
@@ -128,7 +155,10 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
             "ifcCompatibilityStatus": ifc_quality.status if ifc_quality else "missing",
             "ifcCompatibilityScore": ifc_quality.score if ifc_quality else None,
             "viewerProfileCount": len(ifc_quality.viewer_profiles) if ifc_quality else 0,
-            "calculationContractCurrent": bool(latest and getattr(latest, "support_topology_hash", None) and getattr(latest, "support_topology_hash", None) == (support_topology_hash(project) if project.retaining_system else None)),
+            "calculationContractCurrent": bool(latest and verify_current_calculation_contract(project, latest).get("current")),
+            "calculationAssuranceStatus": (getattr(latest, "calculation_assurance", {}) or {}).get("status") if latest else "missing",
+            "inputSnapshotHash": getattr(latest, "input_snapshot_hash", None) if latest else None,
+            "resultHash": getattr(latest, "result_hash", None) if latest else None,
             "blockingCount": len(blocking),
             "warningCount": len(warnings),
             "missingCount": len(missing),

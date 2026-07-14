@@ -111,6 +111,42 @@ def build_calculation_trace(project: Project) -> dict[str, Any]:
 
     entries: list[dict[str, Any]] = []
     idx = 1
+    assurance = dict(getattr(latest, "calculation_assurance", {}) or {})
+    contract = dict(assurance.get("contract") or {})
+    stage_coverage = dict(assurance.get("stageCoverage") or {})
+    numerical = dict(assurance.get("numericalQuality") or {})
+    independent = dict(assurance.get("independentCheck") or {})
+    traceability = dict(assurance.get("traceability") or {})
+    baseline_rows = [
+        ("calculation_input_baseline", "冻结计算输入快照", "输入快照哈希", 1.0 if latest.input_snapshot_hash else 0.0, 1.0, "immutable SHA-256 calculation input snapshot", contract),
+        ("calculation_contract", "计算合同与采用设计快照", "合同当前性", 1.0 if latest.calculation_contract_id and latest.adopted_design_snapshot_hash else 0.0, 1.0, "input + case + geometry + topology + algorithm + rule-set contract", contract),
+        ("stage_coverage", "施工阶段与墙段覆盖", "覆盖完整率", (float(stage_coverage.get("actual") or 0) / max(float(stage_coverage.get("expected") or 0), 1.0)), 1.0, "unique result for every stage × excavation segment", stage_coverage),
+        ("numerical_quality", "数值收敛与病态矩阵审计", "平衡残差", float(numerical.get("maxRelativeResidual") or 0.0), 1.0e-8, "relative residual and matrix condition audit", numerical),
+        ("independent_check", "独立计算路径对账", "最大位移相对差", float(independent.get("maxWallDisplacementRelativeDifference") or 0.0), float(independent.get("warningRatio") or 0.25), "global coupled model versus wall reference solver", independent),
+        ("code_traceability", "规范校核追溯覆盖", "追溯完整率", float(traceability.get("coverage") or 0.0), 0.98, "rule/object/status/message/clause completeness", traceability),
+    ]
+    for category, title, demand_name, demand, capacity, method, evidence in baseline_rows:
+        status = "pass"
+        if category in {"calculation_input_baseline", "calculation_contract", "stage_coverage"} and demand < capacity:
+            status = "fail"
+        elif category == "numerical_quality" and demand > 1.0e-6:
+            status = "fail"
+        elif category == "numerical_quality" and demand > capacity:
+            status = "warning"
+        elif category == "independent_check" and demand > float(independent.get("failRatio") or 0.5):
+            status = "manual_review"
+        elif category == "independent_check" and demand > capacity:
+            status = "warning"
+        elif category == "code_traceability" and demand < 0.90:
+            status = "fail"
+        elif category == "code_traceability" and demand < capacity:
+            status = "warning"
+        entries.append(_entry(
+            index=idx, category=category, title=title, object_type="CalculationBaseline", object_id=latest.calculation_contract_id or latest.id,
+            stage_id=None, stage_name="全局计算基线", demand_name=demand_name, demand_value=demand, capacity_value=capacity, unit="ratio", status=status,
+            formula=method, code_reference="PitGuard V3.24 industrial calculation assurance", method=method, input_parameters=evidence,
+            result_path="calculationResults[-1].calculationAssurance", locator=_locator("calculation", "CalculationRecoveryPanel", "CalculationBaseline", latest.calculation_contract_id or latest.id),
+        )); idx += 1
     max_wall_moment = latest.governing_values.max_wall_moment or 0.0
     max_wall_shear = latest.governing_values.max_wall_shear or 0.0
     max_disp = latest.governing_values.max_displacement or 0.0

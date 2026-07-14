@@ -419,6 +419,8 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
 
     support_quality = evaluate_support_layout_quality(project) if project.retaining_system else None
     support_metrics = dict(support_quality.metrics or {}) if support_quality else {}
+    latest_calculation = project.calculation_results[-1] if project.calculation_results else None
+    calculation_assurance = dict(getattr(latest_calculation, "calculation_assurance", {}) or {}) if latest_calculation else {}
     w.property_set(owner, project_entity, "Pset_PitGuardExportControl", {
         "SoftwareVersion": SOFTWARE_VERSION,
         "ExportMode": mode,
@@ -432,6 +434,11 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
         "HighDegreeWallJunctionCount": support_metrics.get("highDegreeWallJunctionCount"),
         "InternalJunctionCount": support_metrics.get("internalJunctionCount"),
         "PlanIntersectionComplexity": support_metrics.get("planIntersectionComplexity"),
+        "CalculationContractId": getattr(latest_calculation, "calculation_contract_id", None),
+        "CalculationInputSnapshotHash": getattr(latest_calculation, "input_snapshot_hash", None),
+        "CalculationAdoptedDesignHash": getattr(latest_calculation, "adopted_design_snapshot_hash", None),
+        "CalculationResultHash": getattr(latest_calculation, "result_hash", None),
+        "CalculationAssuranceStatus": calculation_assurance.get("status"),
         "ProfessionalReviewRequired": True,
     })
 
@@ -445,6 +452,16 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
             "wallVerticalLengthIsVariable": True,
             "wallEndpointJunctionIncludedInObjective": True,
             "supportLayoutMetrics": support_metrics,
+        },
+        "calculationBaseline": {
+            "calculationResultId": getattr(latest_calculation, "id", None),
+            "calculationContractId": getattr(latest_calculation, "calculation_contract_id", None),
+            "inputSnapshotHash": getattr(latest_calculation, "input_snapshot_hash", None),
+            "adoptedDesignSnapshotHash": getattr(latest_calculation, "adopted_design_snapshot_hash", None),
+            "resultHash": getattr(latest_calculation, "result_hash", None),
+            "assuranceStatus": calculation_assurance.get("status"),
+            "stageCoverage": calculation_assurance.get("stageCoverage"),
+            "solverRuntime": dict((calculation_assurance.get("contract") or {}).get("solverRuntime") or {}),
         },
         "calculationWalls": [],
         "constructionPanels": [],

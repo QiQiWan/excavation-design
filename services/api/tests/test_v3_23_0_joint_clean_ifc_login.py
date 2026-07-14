@@ -210,6 +210,10 @@ def test_application_login_uses_http_only_session_and_role_guard(monkeypatch) ->
     monkeypatch.delenv("PITGUARD_API_KEYS", raising=False)
 
     with TestClient(app) as client:
+        status = client.get("/api/auth/status")
+        assert status.status_code == 200
+        assert status.json()["loginRequired"] is True
+        assert status.headers.get("cache-control") == "no-store"
         assert client.get("/api/system/diagnostics").status_code == 401
         assert client.get("/docs").status_code == 401
         assert client.get("/openapi.json").status_code == 401
@@ -218,12 +222,14 @@ def test_application_login_uses_http_only_session_and_role_guard(monkeypatch) ->
         assert failed.status_code == 401
         logged_in = client.post("/api/auth/login", json={"username": "engineer", "password": password})
         assert logged_in.status_code == 200
+        assert logged_in.headers.get("cache-control") == "no-store"
         cookie = logged_in.headers.get("set-cookie", "")
         assert "pitguard_session=" in cookie
         assert "HttpOnly" in cookie
         assert "SameSite=lax" in cookie
         identity = client.get("/api/auth/me")
         assert identity.status_code == 200
+        assert identity.headers.get("cache-control") == "no-store"
         assert identity.json()["identity"]["role"] == "designer"
         assert client.get("/api/system/diagnostics").status_code == 200
         assert client.get("/docs").status_code == 200
@@ -238,9 +244,11 @@ def test_application_login_uses_http_only_session_and_role_guard(monkeypatch) ->
         assert len(operation_ids) == len(set(operation_ids))
         assert client.get("/api/system/readiness").status_code == 200
         assert client.post("/api/system/backup").status_code == 403
-        assert client.post("/api/auth/logout").status_code == 200
+        logged_out = client.post("/api/auth/logout")
+        assert logged_out.status_code == 200
+        assert logged_out.headers.get("cache-control") == "no-store"
         assert client.get("/api/system/diagnostics").status_code == 401
 
 
 def test_v323_version() -> None:
-    assert SOFTWARE_VERSION == "3.23.0"
+    assert tuple(map(int, SOFTWARE_VERSION.split("."))) >= (3, 23, 0)

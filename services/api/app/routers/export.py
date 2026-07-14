@@ -21,6 +21,7 @@ from app.services.design_scheme_ledger import export_design_scheme_ledger
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 from app.services.rebar_export import export_rebar_detailing_package
 from app.services.delivery_package import export_coordinated_delivery_package
+from app.services.delivery_release import evaluate_delivery_release_readiness
 
 router = APIRouter(prefix="/api/projects/{project_id}/export", tags=["export"])
 
@@ -226,6 +227,15 @@ def export_formal_drawings(
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
 
 
+@router.get("/release-readiness")
+def get_release_readiness(
+    project_id: str,
+    issue_mode: Literal["review", "construction"] = Query("review"),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    return evaluate_delivery_release_readiness(repo.require(project_id), issue_mode=issue_mode)
+
+
 @router.post("/coordinated-delivery-package")
 @router.get("/coordinated-delivery-package", include_in_schema=False)
 def export_coordinated_delivery(
@@ -236,7 +246,13 @@ def export_coordinated_delivery(
     repo: ProjectRepository = Depends(get_repository),
 ) -> FileResponse:
     project = repo.require(project_id)
-    path = export_coordinated_delivery_package(
-        project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode, include_ifc_profiles=include_ifc_profiles
-    )
+    try:
+        path = export_coordinated_delivery_package(
+            project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode, include_ifc_profiles=include_ifc_profiles
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={
+            "message": str(exc),
+            "releaseReadiness": evaluate_delivery_release_readiness(project, issue_mode=issue_mode),
+        }) from exc
     return FileResponse(path=path, filename=path.name, media_type="application/zip")

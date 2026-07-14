@@ -26,7 +26,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     externalSignal?.removeEventListener('abort', abortFromExternal);
   }
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/auth/login') window.dispatchEvent(new CustomEvent('pitguard:unauthorized'));
+    if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/status') {
+      window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
+    }
     let message = `${response.status} ${response.statusText}`;
     try {
       const data = await response.json();
@@ -94,6 +96,8 @@ export const api = {
   buildCases: (projectId: string) => request<unknown[]>(`/api/projects/${projectId}/calculation/build-cases`, { method: 'POST' }),
   runCalculation: (projectId: string) => request<CalculationResult>(`/api/projects/${projectId}/calculation/run`, { method: 'POST' }),
   diagnoseAndRepairCalculation: (projectId: string) => request<Record<string, unknown>>(`/api/projects/${projectId}/calculation/diagnose-and-repair`, { method: 'POST' }),
+  calculationAssurance: (projectId: string) => request<Record<string, unknown>>(`/api/projects/${projectId}/calculation/assurance`),
+  releaseReadiness: (projectId: string, issueMode: 'review' | 'construction' = 'review') => request<Record<string, unknown>>(`/api/projects/${projectId}/export/release-readiness?issue_mode=${issueMode}`),
   runCandidateComparison: (projectId: string, topN = 3) => request<Record<string, unknown>[]>(`/api/projects/${projectId}/calculation/run-candidate-comparison?top_n=${topN}`, { method: 'POST' }),
   getChecks: (projectId: string) => request<{ checks: CheckResult[]; professionalReviewRequired: boolean }>(`/api/projects/${projectId}/calculation/checks`),
   getCalculationTrace: (projectId: string) => request<CalculationTraceResult>(`/api/projects/${projectId}/calculation/trace`),

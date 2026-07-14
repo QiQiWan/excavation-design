@@ -752,6 +752,8 @@ def _write_cross_artifact_traceability_json(project: Project, path: Path, manife
         if panel.get("panelCode")
     ]
     cage_codes = [str(item.get("constructionPanelCode")) for item in detailing.get("cageSegments", []) if item.get("constructionPanelCode")]
+    latest = project.calculation_results[-1] if project.calculation_results else None
+    calculation_assurance = dict(getattr(latest, "calculation_assurance", {}) or {}) if latest else {}
     payload = {
         "projectId": project.id,
         "softwareVersion": SOFTWARE_VERSION,
@@ -779,6 +781,14 @@ def _write_cross_artifact_traceability_json(project: Project, path: Path, manife
             "sheetCount": manifest.get("sheetCount"), "planHash": manifest.get("planHash"),
             "drawingRuleSetHash": manifest.get("drawingRuleSetHash"),
             "matrix": "90_schedules/drawing_model_calculation_standard_matrix.csv",
+        },
+        "calculationBaseline": {
+            "calculationResultId": getattr(latest, "id", None),
+            "calculationContractId": getattr(latest, "calculation_contract_id", None),
+            "inputSnapshotHash": getattr(latest, "input_snapshot_hash", None),
+            "adoptedDesignSnapshotHash": getattr(latest, "adopted_design_snapshot_hash", None),
+            "resultHash": getattr(latest, "result_hash", None),
+            "assuranceStatus": calculation_assurance.get("status"),
         },
         "status": "pass" if len(panel_codes) == len(set(panel_codes)) and set(panel_codes) == set(cage_codes) else "manual_review",
         "professionalReviewRequired": True,

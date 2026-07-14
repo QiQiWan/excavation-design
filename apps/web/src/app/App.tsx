@@ -1,10 +1,20 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type AuthIdentity } from '../api/client';
 import ProjectsPage from '../pages/ProjectsPage';
 const ProjectWorkspace = lazy(() => import('../pages/ProjectWorkspace'));
 const DocsPage = lazy(() => import('../pages/DocsPage'));
 import type { Project } from '../types/domain';
 import LoginPage from '../pages/LoginPage';
+import {
+  buildLoginHref,
+  LOGIN_PATH,
+  loginReasonMessage,
+  readBrowserRoute,
+  returnPathFromLoginSearch,
+  routeHref,
+  safeReturnPath,
+  type BrowserRoute,
+} from './navigation';
 
 type Diagnostics = {
   version: string;
@@ -18,14 +28,46 @@ type Diagnostics = {
   modules: { importName: string; packageName: string; available: boolean; version?: string }[];
 };
 
+type AuthPolicy = {
+  loginRequired: boolean;
+  mode: string;
+  sessionTtlSeconds: number;
+};
+
+function useBrowserRoute() {
+  const [route, setRoute] = useState<BrowserRoute>(() => readBrowserRoute());
+
+  useEffect(() => {
+    const update = () => setRoute(readBrowserRoute());
+    window.addEventListener('popstate', update);
+    return () => window.removeEventListener('popstate', update);
+  }, []);
+
+  const navigate = useCallback((href: string, replace = false) => {
+    if (replace) window.history.replaceState({}, '', href);
+    else window.history.pushState({}, '', href);
+    setRoute(readBrowserRoute());
+  }, []);
+
+  return { route, navigate };
+}
+
 export default function App() {
   const [health, setHealth] = useState('checking');
   const [diagnostics, setDiagnostics] = useState<Diagnostics | undefined>();
   const [selected, setSelected] = useState<Project | undefined>();
   const [authChecking, setAuthChecking] = useState(true);
+  const [authPolicy, setAuthPolicy] = useState<AuthPolicy | undefined>();
+  const [authError, setAuthError] = useState<string>();
   const [identity, setIdentity] = useState<AuthIdentity | undefined>();
+  const { route, navigate } = useBrowserRoute();
 
-  const checkApi = () => {
+  const requestedReturnPath = useMemo(() => {
+    if (route.pathname === LOGIN_PATH) return returnPathFromLoginSearch(route.search);
+    return safeReturnPath(routeHref(route));
+  }, [route]);
+
+  const checkApi = useCallback(() => {
     setHealth('checking');
     api.health()
       .then((data) => {
@@ -37,32 +79,100 @@ export default function App() {
         setHealth(`offline: ${err.message}`);
         setDiagnostics(undefined);
       });
-  };
+  }, []);
 
   useEffect(() => {
     let active = true;
-    api.authStatus().then(async (status) => {
-      if (!active) return;
-      if (!status.loginRequired) { setIdentity({ actor: 'local-development', role: 'admin', authenticated: false, authMode: 'local' }); return; }
-      try { const current = await api.me(); if (active) setIdentity(current.identity); } catch { if (active) setIdentity(undefined); }
-    }).finally(() => { if (active) setAuthChecking(false); });
-    const unauthorized = () => setIdentity(undefined);
-    window.addEventListener('pitguard:unauthorized', unauthorized);
-    return () => { active = false; window.removeEventListener('pitguard:unauthorized', unauthorized); };
+    setAuthChecking(true);
+    setAuthError(undefined);
+    api.authStatus()
+      .then(async (status) => {
+        if (!active) return;
+        setAuthPolicy(status);
+        if (!status.loginRequired) {
+          setIdentity({ actor: 'local-development', role: 'admin', authenticated: false, authMode: 'local' });
+          return;
+        }
+        try {
+          const current = await api.me();
+          if (active) setIdentity(current.identity);
+        } catch {
+          if (active) setIdentity(undefined);
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setIdentity(undefined);
+        setAuthError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (active) setAuthChecking(false);
+      });
+    return () => { active = false; };
   }, []);
 
-  useEffect(() => { if (identity) checkApi(); }, [identity]);
+  useEffect(() => {
+    const unauthorized = () => {
+      const current = readBrowserRoute();
+      const returnTo = current.pathname === LOGIN_PATH
+        ? returnPathFromLoginSearch(current.search)
+        : safeReturnPath(routeHref(current));
+      setSelected(undefined);
+      setIdentity(undefined);
+      setAuthPolicy((value) => value ?? { loginRequired: true, mode: 'session', sessionTtlSeconds: 0 });
+      navigate(buildLoginHref(returnTo, 'expired'), true);
+    };
+    window.addEventListener('pitguard:unauthorized', unauthorized);
+    return () => window.removeEventListener('pitguard:unauthorized', unauthorized);
+  }, [navigate]);
+
+  useEffect(() => {
+    if (authChecking) return;
+    if (identity) {
+      if (route.pathname === LOGIN_PATH) navigate(returnPathFromLoginSearch(route.search), true);
+      return;
+    }
+    if ((authPolicy?.loginRequired || authError) && route.pathname !== LOGIN_PATH) {
+      navigate(buildLoginHref(routeHref(route), authError ? 'offline' : 'required'), true);
+    }
+  }, [authChecking, authError, authPolicy, identity, navigate, route]);
+
+  useEffect(() => { if (identity) checkApi(); }, [checkApi, identity]);
 
   async function logout() {
-    try { await api.logout(); } finally { setSelected(undefined); setIdentity(undefined); }
+    try { await api.logout(); } finally {
+      setSelected(undefined);
+      setIdentity(undefined);
+      setAuthPolicy((value) => value ?? { loginRequired: true, mode: 'session', sessionTtlSeconds: 0 });
+      navigate(buildLoginHref('/', 'logout'), true);
+    }
   }
 
-  if (authChecking) return <main className="loginLoading"><div className="loginBrandMark">PG</div><p>正在检查登录状态…</p></main>;
-  if (!identity) return <LoginPage onAuthenticated={(value) => setIdentity(value)} />;
+  function authenticated(value: AuthIdentity) {
+    const returnTo = requestedReturnPath;
+    setIdentity(value);
+    setAuthError(undefined);
+    navigate(returnTo, true);
+  }
+
+  if (authChecking) {
+    return <main className="loginLoading" aria-live="polite"><div className="loginBrandMark">PG</div><p>正在验证登录状态…</p></main>;
+  }
+
+  if (!identity) {
+    return (
+      <LoginPage
+        onAuthenticated={authenticated}
+        returnTo={requestedReturnPath}
+        notice={loginReasonMessage(route.search)}
+        serviceError={authError}
+      />
+    );
+  }
 
   const offline = !health.startsWith('ok');
   const missingModules = diagnostics?.missingModules ?? [];
-  const isDocs = window.location.pathname === '/docs';
+  const isDocs = route.pathname === '/docs';
 
   if (isDocs) return <Suspense fallback={<main className="page">正在加载文档…</main>}><DocsPage /></Suspense>;
 
