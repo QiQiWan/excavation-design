@@ -2,68 +2,44 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sqlite3
 from pathlib import Path
 
-from app.storage.artifact_store import ProjectArtifactStore, artifact_refs, externalize_project_payload
-from app.storage.database import SQLiteProjectStore, _canonical_json, _compact_project_for_workspace, _aggressively_compact_workspace, _workspace_limit_bytes
+from app.storage.database import SQLiteProjectStore
 
 
-def migrate(database: Path, *, vacuum: bool = False) -> dict[str, int]:
+def migrate(database: Path, *, vacuum: bool = False, include_revisions: bool = False) -> dict[str, object]:
+    """Run memory-aware project storage maintenance.
+
+    Each project is preflighted against current worker headroom. Large snapshots
+    that cannot be safely hydrated receive a SQLite-only workspace rebuild and
+    are left for a later high-headroom worker instead of risking startup OOM.
+    """
     store = SQLiteProjectStore(database)
-    artifact_store = ProjectArtifactStore()
-    stats = {"projects": 0, "revisions": 0, "artifacts": 0, "externalBytes": 0}
-    with store._connect() as conn:  # maintenance-only script
+    with store._connect() as conn:
         project_ids = [str(row[0]) for row in conn.execute("SELECT id FROM projects ORDER BY id").fetchall()]
-        for project_id in project_ids:
-            row = conn.execute("SELECT id, data FROM projects WHERE id = ?", (project_id,)).fetchone()
-            if row is None:
-                continue
-            project = json.loads(str(row["data"]))
-            project = externalize_project_payload(project, artifact_store)
-            encoded = _canonical_json(project)
-            workspace = _compact_project_for_workspace(project)
-            workspace_encoded = _canonical_json(workspace)
-            if len(workspace_encoded.encode("utf-8")) > _workspace_limit_bytes():
-                workspace_encoded = _canonical_json(_aggressively_compact_workspace(workspace))
-            refs = artifact_refs(project)
-            conn.execute(
-                "UPDATE projects SET data=?, content_hash=?, workspace_data=?, payload_bytes=?, workspace_bytes=?, external_bytes=?, artifact_count=? WHERE id=?",
-                (
-                    encoded,
-                    hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
-                    workspace_encoded,
-                    len(encoded.encode("utf-8")),
-                    len(workspace_encoded.encode("utf-8")),
-                    sum(int(item.get("storedBytes") or 0) for item in refs),
-                    len(refs),
-                    str(row["id"]),
-                ),
-            )
-            stats["projects"] += 1
-            stats["artifacts"] += len(refs)
-            stats["externalBytes"] += sum(int(item.get("storedBytes") or 0) for item in refs)
-            conn.commit()
-
-        revision_keys = [(str(row[0]), int(row[1])) for row in conn.execute("SELECT project_id, revision FROM project_revisions ORDER BY project_id, revision").fetchall()]
-        for project_id, revision in revision_keys:
-            row = conn.execute("SELECT project_id, revision, data FROM project_revisions WHERE project_id = ? AND revision = ?", (project_id, revision)).fetchone()
-            if row is None:
-                continue
-            project = json.loads(str(row["data"]))
-            project = externalize_project_payload(project, artifact_store)
-            encoded = _canonical_json(project)
-            digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-            conn.execute(
-                "UPDATE project_revisions SET data=?, content_hash=? WHERE project_id=? AND revision=?",
-                (encoded, digest, str(row["project_id"]), int(row["revision"])),
-            )
-            stats["revisions"] += 1
-            if stats["revisions"] % 10 == 0:
-                conn.commit()
-        conn.commit()
+    stats: dict[str, object] = {
+        "projects": 0,
+        "fullExternalizations": 0,
+        "workspaceOnlyRebuilds": 0,
+        "payloadReductionBytes": 0,
+        "workspaceReductionBytes": 0,
+        "deferredProjects": [],
+    }
+    for project_id in project_ids:
+        result = store.compact_project_storage(project_id, include_revisions=include_revisions)
+        stats["projects"] = int(stats["projects"]) + 1
+        stats["payloadReductionBytes"] = int(stats["payloadReductionBytes"]) + int(result.get("payloadReductionBytes") or 0)
+        stats["workspaceReductionBytes"] = int(stats["workspaceReductionBytes"]) + int(result.get("workspaceReductionBytes") or 0)
+        if result.get("mode") == "full_externalization":
+            stats["fullExternalizations"] = int(stats["fullExternalizations"]) + 1
+        else:
+            stats["workspaceOnlyRebuilds"] = int(stats["workspaceOnlyRebuilds"]) + 1
+            deferred = list(stats["deferredProjects"])
+            deferred.append(project_id)
+            stats["deferredProjects"] = deferred
+    with sqlite3.connect(database, timeout=60.0) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         if vacuum:
             conn.execute("VACUUM")
@@ -71,11 +47,12 @@ def migrate(database: Path, *, vacuum: bool = False) -> dict[str, int]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Externalize PitGuard heavy project datasets")
+    parser = argparse.ArgumentParser(description="Memory-aware PitGuard project artifact maintenance")
     parser.add_argument("--database", required=True)
     parser.add_argument("--vacuum", action="store_true")
+    parser.add_argument("--include-revisions", action="store_true")
     args = parser.parse_args()
-    stats = migrate(Path(args.database), vacuum=args.vacuum)
+    stats = migrate(Path(args.database), vacuum=args.vacuum, include_revisions=args.include_revisions)
     print(json.dumps(stats, ensure_ascii=False))
 
 

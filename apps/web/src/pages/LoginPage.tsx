@@ -121,7 +121,7 @@ export default function LoginPage({
           {returnLabel ? <p className="loginReturnHint">验证成功后返回：<code>{returnLabel}</code></p> : null}
           <div className="loginSecurityLine"><span aria-hidden="true">●</span> HttpOnly 会话 · 角色权限控制 · 操作审计</div>
         </div>
-        <footer className="loginFooter">PitGuard V3.34.0 · designer.eatrice.cn</footer>
+        <footer className="loginFooter">PitGuard V3.36.0 · designer.eatrice.cn</footer>
       </section>
     </main>
   );

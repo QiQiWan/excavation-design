@@ -127,7 +127,9 @@ def test_workspace_hard_limit_removes_large_candidate_preview(tmp_path: Path, mo
     payload, metadata = store.get_workspace_json(project.id) or ("", {})
     parsed = json.loads(payload)
     candidate = parsed["retainingSystem"]["supportLayoutRepair"]["candidates"][0]
-    assert candidate["planGeometry"] == {}
+    assert candidate["planGeometry"]["previewSchema"] == "candidate-plan-v1"
+    assert candidate["planGeometry"]["supports"] == []
+    assert candidate["planGeometry"]["columns"] == []
     assert candidate["deltaGeometry"] == {}
     assert metadata["workspaceBytes"] < 4 * 1024 * 1024
 
@@ -138,5 +140,7 @@ def test_production_deployment_prepares_workspace_before_api_start() -> None:
     assert "prepare-project-workspace-storage.py" in script
     assert "Environment=PITGUARD_PROCESS_ROLE=api" in script
     assert "Environment=PITGUARD_PROCESS_ROLE=worker" in script
-    assert "PITGUARD_API_FULL_PROJECT_LIMIT_MB" in script
+    assert 'RESOURCE_POLICY_MODE="${PITGUARD_RESOURCE_POLICY_MODE:-adaptive}"' in script
+    assert "PITGUARD_API_FULL_PROJECT_HARD_CAP_MB" in script
+    assert "PITGUARD_WORKSPACE_PAYLOAD_HARD_CAP_MB" in script
     assert "pre_v331_artifact_" in script or "pre_v330_workspace_" in script

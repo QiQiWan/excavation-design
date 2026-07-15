@@ -96,16 +96,99 @@ def _effective_unbraced_length(system: RetainingSystem, support: SupportElement)
     return max((b - a for a, b in zip(ordered[:-1], ordered[1:])), default=length)
 
 
-def _latest_force_envelope(project: Project) -> dict[str, float]:
+def _force_envelope_from_stages(stage_results: list[Any] | None) -> dict[str, float]:
     forces: dict[str, float] = {}
-    for result in project.calculation_results or []:
-        for stage in result.stage_results or []:
-            for item in stage.support_forces or []:
-                if not item.support_id:
-                    continue
-                value = abs(float(item.axial_force_design or item.effective_axial_force or item.axial_force or 0.0))
-                forces[item.support_id] = max(forces.get(item.support_id, 0.0), value)
+    for stage in stage_results or []:
+        for item in getattr(stage, "support_forces", None) or []:
+            support_id = getattr(item, "support_id", None)
+            if not support_id:
+                continue
+            value = abs(float(
+                getattr(item, "axial_force_design", None)
+                or getattr(item, "effective_axial_force", None)
+                or getattr(item, "axial_force", None)
+                or 0.0
+            ))
+            forces[str(support_id)] = max(forces.get(str(support_id), 0.0), value)
     return forces
+
+
+def _force_evidence(
+    project: Project,
+    *,
+    calculation_result: Any | None = None,
+    stage_results_override: list[Any] | None = None,
+    calculation_current_override: bool | None = None,
+) -> tuple[dict[str, float], dict[str, Any]]:
+    if stage_results_override is not None:
+        forces = _force_envelope_from_stages(stage_results_override)
+        return forces, {
+            "source": "current_calculation_run",
+            "current": True if calculation_current_override is None else bool(calculation_current_override),
+            "resultId": getattr(calculation_result, "id", None),
+            "supportForceCount": len(forces),
+            "staleCalculationIgnored": False,
+            "contractVerification": {"current": True, "reason": "current calculation stage results supplied directly"},
+            "assurance": dict(getattr(calculation_result, "calculation_assurance", None) or {}),
+        }
+
+    latest = calculation_result or (project.calculation_results[-1] if project.calculation_results else None)
+    if latest is None:
+        return {}, {
+            "source": "none",
+            "current": False,
+            "resultId": None,
+            "supportForceCount": 0,
+            "staleCalculationIgnored": False,
+            "contractVerification": {"current": False, "reason": "missing calculation result"},
+            "assurance": {},
+        }
+    if calculation_current_override is None:
+        from app.services.calculation_assurance import verify_current_calculation_contract
+        verification = verify_current_calculation_contract(project, latest)
+        current = bool(verification.get("current"))
+    else:
+        current = bool(calculation_current_override)
+        verification = {"current": current, "reason": "caller supplied calculation currency"}
+    forces = _force_envelope_from_stages(getattr(latest, "stage_results", None)) if current else {}
+    return forces, {
+        "source": "latest_current_calculation" if current else "stale_calculation_ignored",
+        "current": current,
+        "resultId": getattr(latest, "id", None),
+        "supportForceCount": len(forces),
+        "staleCalculationIgnored": not current,
+        "contractVerification": verification,
+        "assurance": dict(getattr(latest, "calculation_assurance", None) or {}),
+    }
+
+
+def _geotechnical_evidence(project: Project) -> dict[str, Any]:
+    strata = list(project.strata or [])
+    required = ("unit_weight", "friction_angle")
+    complete = 0
+    low_confidence = 0
+    empirical_or_manual = 0
+    for stratum in strata:
+        params = stratum.parameters
+        if all(getattr(params, key, None) is not None for key in required):
+            complete += 1
+        if str(stratum.confidence) == "low":
+            low_confidence += 1
+        if str(stratum.parameter_source) in {"empirical", "manual"}:
+            empirical_or_manual += 1
+    coverage = dict(getattr(project.geological_model, "coverage_audit", None) or {}) if project.geological_model else {}
+    coverage_pass = bool(coverage.get("pass", coverage.get("covered", bool(project.geological_model))))
+    return {
+        "stratumCount": len(strata),
+        "boreholeCount": len(project.boreholes or []),
+        "requiredParameterCompleteCount": complete,
+        "requiredParameterCompletenessRatio": round(complete / len(strata), 4) if strata else 0.0,
+        "lowConfidenceStratumCount": low_confidence,
+        "empiricalOrManualStratumCount": empirical_or_manual,
+        "geologicalModelAvailable": bool(project.geological_model),
+        "coverageAuditAvailable": bool(coverage),
+        "coveragePass": coverage_pass,
+    }
 
 
 def _average_soil_parameters(project: Project) -> tuple[float, float]:
@@ -281,7 +364,15 @@ def _connectivity_metrics(system: RetainingSystem) -> dict[str, Any]:
     }
 
 
-def evaluate_support_deep_design(project: Project, system: RetainingSystem | None = None, *, include_members: bool = True) -> dict[str, Any]:
+def evaluate_support_deep_design(
+    project: Project,
+    system: RetainingSystem | None = None,
+    *,
+    include_members: bool = True,
+    calculation_result: Any | None = None,
+    stage_results_override: list[Any] | None = None,
+    calculation_current_override: bool | None = None,
+) -> dict[str, Any]:
     system = system or project.retaining_system
     if not system or not system.supports:
         return {
@@ -291,9 +382,19 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
             "memberChecks": [],
             "issues": ["缺少水平支撑，无法执行深化设计筛查。"],
             "designActions": ["先完成平面形状识别和支撑体系生成。"],
+            "screeningPass": False,
+            "hardPass": False,
+            "calculationReady": False,
+            "formalDesignReady": False,
+            "evidenceGrade": "D",
         }
 
-    actual = _latest_force_envelope(project)
+    actual, force_evidence = _force_evidence(
+        project,
+        calculation_result=calculation_result,
+        stage_results_override=stage_results_override,
+        calculation_current_override=calculation_current_override,
+    )
     level_count = max(len({int(item.level_index) for item in system.supports}), 1)
     members = [_member_screening(project, system, item, actual, level_count) for item in system.supports]
     failures = [item for item in members if item["status"] == "fail"]
@@ -304,17 +405,9 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
     max_slenderness = max((float(item["slenderness"]) for item in members), default=0.0)
     max_unbraced = max((float(item["effectiveUnbracedLengthM"]) for item in members), default=0.0)
     construction_effect_ratio = max(
-        (
-            (float(item["preloadKn"]) + float(item["thermalKn"]) + float(item["gapClosureKn"]))
-            / max(float(item["baseAxialKn"]), 1.0)
-            for item in members
-        ),
+        ((float(item["preloadKn"]) + float(item["thermalKn"]) + float(item["gapClosureKn"])) / max(float(item["baseAxialKn"]), 1.0) for item in members),
         default=0.0,
     )
-    # Demand balance is evaluated within each support level. A low coefficient
-    # of variation indicates that the plan stations and tributary widths share
-    # lateral load reasonably evenly; a high value often signals local support
-    # clustering, an oversized bay, or an abrupt transition near a widened zone.
     level_demands: dict[int, list[float]] = defaultdict(list)
     for item in members:
         level_demands[int(item["levelIndex"])].append(float(item["designAxialKn"]))
@@ -333,7 +426,39 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
     node_count = len(system.support_nodes or [])
     node_unchecked = sum(1 for node in (system.support_nodes or []) if node.check_status in {"manual_review", "warning", "fail"})
 
-    status = "fail" if failures else "warning" if warnings or node_unchecked else "pass"
+    source_counts = defaultdict(int)
+    for item in members:
+        source_counts[str(item.get("screeningDemandSource") or "unknown")] += 1
+    support_count = len(system.supports)
+    staged_count = source_counts["staged_calculation_envelope"]
+    stored_count = source_counts["stored_design_axial_force"]
+    fallback_count = source_counts["tributary_pressure_screening"]
+    staged_coverage = staged_count / max(support_count, 1)
+    geotechnical = _geotechnical_evidence(project)
+    assurance = dict(force_evidence.get("assurance") or {})
+    assurance_status = str(assurance.get("status") or assurance.get("overallStatus") or "unknown").lower()
+    eligible_for_issue = bool(assurance.get("eligibleForOfficialIssue") or assurance.get("eligible_for_official_issue"))
+
+    screening_pass = not failures
+    calculation_ready = bool(screening_pass and force_evidence.get("current") and staged_coverage >= 0.95)
+    geotechnical_ready = bool(
+        geotechnical["stratumCount"] > 0
+        and geotechnical["requiredParameterCompletenessRatio"] >= 0.95
+        and geotechnical["lowConfidenceStratumCount"] == 0
+        and geotechnical["geologicalModelAvailable"]
+        and geotechnical["coveragePass"]
+    )
+    formal_design_ready = bool(calculation_ready and node_unchecked == 0 and geotechnical_ready and (eligible_for_issue or assurance_status == "pass"))
+    if calculation_ready and formal_design_ready:
+        evidence_grade = "A"
+    elif calculation_ready:
+        evidence_grade = "B"
+    elif staged_count > 0 or stored_count == support_count:
+        evidence_grade = "C"
+    else:
+        evidence_grade = "D"
+
+    status = "fail" if failures else "warning" if warnings or node_unchecked or not calculation_ready else "pass"
     issues: list[str] = []
     actions: list[str] = []
     if failures:
@@ -342,6 +467,18 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
     if warnings:
         issues.append(f"{len(warnings)} 根支撑接近目标利用率或长细比筛查限值。")
         actions.append("对高利用率构件执行完整施工阶段轴力包络、二阶效应和节点刚度复核。")
+    if force_evidence.get("staleCalculationIgnored"):
+        issues.append("检测到历史计算结果与当前方案合同不一致，已禁止其参与支撑承载力判定。")
+        actions.append("按当前几何、支撑拓扑、土层参数和施工阶段重新执行完整计算。")
+    if staged_coverage < 0.95:
+        issues.append(f"当前分阶段计算轴力仅覆盖 {staged_count}/{support_count} 根支撑，其余采用存储轴力或分担宽度估算。")
+        actions.append("补齐所有支撑在各施工阶段的轴力包络后，再进入计算就绪状态。")
+    if geotechnical["stratumCount"] == 0 or geotechnical["requiredParameterCompletenessRatio"] < 0.95:
+        issues.append("土层重度和内摩擦角等控制参数不完整，主动土压力快速估算的证据等级受限。")
+        actions.append("补齐分层勘察参数、参数来源和置信度，并复核地质模型覆盖范围。")
+    if geotechnical["lowConfidenceStratumCount"]:
+        issues.append(f"存在 {geotechnical['lowConfidenceStratumCount']} 个低置信度土层，正式设计需要勘察复核或敏感性包络。")
+        actions.append("对低置信度参数执行不利取值、上下限敏感性分析和监测反演校准。")
     if connectivity["singleMemberWallPairCount"]:
         issues.append("部分墙面对仅由单根构件连接，施工拆换或局部失效时缺少替代传力路径。")
         actions.append("在不增加非法交叉的前提下复核关键墙面对的冗余、分区施工和换撑路径。")
@@ -355,10 +492,10 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
         issues.append(f"{node_unchecked}/{node_count} 个支撑—围檩节点尚未达到通过状态。")
         actions.append("完成端板/承压板、局部围檩、加劲肋、锚固及混凝土节点区验算。")
     if not issues:
-        issues.append("快速深化筛查未发现阻断项；仍需以完整分阶段计算和节点详图作为正式依据。")
+        issues.append("当前方案已具备完整计算证据；正式发行仍受全局质量闸门、校审签署和施工图完整性控制。")
 
     metrics = {
-        "supportCount": len(system.supports),
+        "supportCount": support_count,
         "supportLevelCount": level_count,
         "memberFailCount": len(failures),
         "memberWarningCount": len(warnings),
@@ -371,18 +508,22 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
         "supportMaterialVolumeM3": round(total_volume, 3),
         "supportNodeCount": node_count,
         "supportNodeUncheckedCount": node_unchecked,
+        "stagedCalculationMemberCount": staged_count,
+        "storedDesignForceMemberCount": stored_count,
+        "tributaryScreeningMemberCount": fallback_count,
+        "stagedCalculationCoverageRatio": round(staged_coverage, 4),
         **{key: value for key, value in connectivity.items() if key != "levels"},
     }
     return {
         "status": status,
         "summary": (
-            f"支撑深化筛查：{len(system.supports)} 根、{level_count} 层；"
-            f"最大组合利用率 {max_util:.3f}，最大长细比 {max_slenderness:.1f}；"
+            f"支撑深化筛查：{support_count} 根、{level_count} 层；最大组合利用率 {max_util:.3f}，"
+            f"分阶段轴力覆盖 {staged_coverage:.0%}；证据等级 {evidence_grade}；"
             f"失败 {len(failures)} 根、预警 {len(warnings)} 根。"
         ),
         "model": {
             "name": "wall-wale-strut staged preliminary deep-design screening",
-            "memberDemand": "max(staged envelope, stored design force, tributary pressure screening)",
+            "memberDemand": "current staged envelope > stored design force > tributary pressure screening",
             "constructionEffects": "N_eff = N + 0.5*N_preload + N_temperature + N_gap",
             "stability": "N_capacity = min(0.85*A*f, 0.75*pi^2*E*I/(K*L)^2)",
             "interaction": "eta = N_eff/N_capacity + M_ecc/M_capacity",
@@ -395,7 +536,20 @@ def evaluate_support_deep_design(project: Project, system: RetainingSystem | Non
         "governingMembers": sorted(members, key=lambda item: float(item["interactionUtilization"]), reverse=True)[:20],
         "issues": issues,
         "designActions": actions,
-        "hardPass": len(failures) == 0,
+        "screeningPass": screening_pass,
+        "hardPass": screening_pass,
+        "calculationReady": calculation_ready,
+        "formalDesignReady": formal_design_ready,
+        "evidenceGrade": evidence_grade,
+        "evidence": {"forceEnvelope": force_evidence, "geotechnical": geotechnical},
+        "readiness": {
+            "screeningPass": screening_pass,
+            "currentCalculation": bool(force_evidence.get("current")),
+            "stagedForceCoveragePass": staged_coverage >= 0.95,
+            "nodeDetailingPass": node_unchecked == 0,
+            "geotechnicalEvidencePass": geotechnical_ready,
+            "calculationAssurancePass": eligible_for_issue or assurance_status == "pass",
+        },
     }
 
 
@@ -497,7 +651,7 @@ def optimize_support_deep_design(project: Project, *, max_iterations: int | None
     for support in system.supports:
         if support.id in changed_supports:
             support.section_optimization_status = "section_upgraded"
-            support.section_optimization_note = "V3.34 bounded support deep-design iteration; final staged member and node checks remain required."
+            support.section_optimization_note = "V3.35 evidence-gated support deep-design iteration; final staged member and node checks remain required."
         elif result.get("requiresTopologyUpgrade"):
             support.section_optimization_status = "topology_upgrade_required"
     return result

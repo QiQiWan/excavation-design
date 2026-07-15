@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,8 @@ from app.services.support_scheme_designer_audit import audit_support_scheme_desi
 from app.services.support_deep_design import evaluate_support_deep_design, optimize_support_deep_design
 from app.services.calculation_resource_estimator import estimate_calculation_resources
 from app.services.support_layout_import import import_support_layout_csv
+from app.services.design_qualification import build_design_qualification, build_support_system_options
+from app.services.progressive_design import build_progressive_design_session, merge_progressive_config, normalize_progressive_config
 from app.storage.repository import ProjectRepository, get_repository
 
 router = APIRouter(prefix="/api/projects/{project_id}/design", tags=["design"])
@@ -24,6 +27,7 @@ class OptimizeSupportsPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     objective_weights: dict[str, float] = Field(default_factory=dict, alias="objectiveWeights")
     preset: str | None = None
+    topology_family: str | None = Field(default=None, alias="topologyFamily")
 
 
 class AdoptSupportCandidatePayload(BaseModel):
@@ -60,6 +64,16 @@ class LockSupportLinesPayload(BaseModel):
 
 
 
+class ProgressiveDesignPatch(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    current_stage: str | None = Field(default=None, alias="currentStage")
+    decisions: dict[str, Any] = Field(default_factory=dict)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    resource_policy: dict[str, Any] = Field(default_factory=dict, alias="resourcePolicy")
+    action: str | None = None
+    expected_version: int | None = Field(default=None, alias="expectedVersion")
+
+
 def _require_embedded_support_optimization() -> None:
     if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
         raise HTTPException(
@@ -77,9 +91,76 @@ def _require_excavation(project_id: str, repo: ProjectRepository):
     return project
 
 
+def _require_excavation_workspace(project_id: str, repo: ProjectRepository):
+    """Load the bounded workspace projection for read-only design panels."""
+    project = repo.require_workspace(project_id)
+    if project.excavation is None:
+        raise HTTPException(status_code=422, detail="Project has no excavation")
+    return project
+
+
+
+
+@router.get("/qualification")
+def get_design_qualification(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = repo.require_workspace(project_id)
+    storage_info = repo.store.get_payload_info(project_id) or {}
+    return build_design_qualification(project, storage_info=storage_info)
+
+
+@router.get("/progressive")
+def get_progressive_design(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = repo.require_workspace(project_id)
+    persisted = repo.store.get_progressive_design_config(project_id)
+    return build_progressive_design_session(
+        project,
+        persisted=persisted,
+        storage_info=repo.store.get_payload_info(project_id) or {},
+    )
+
+
+@router.put("/progressive")
+def update_progressive_design(
+    project_id: str,
+    payload: ProgressiveDesignPatch,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = repo.require_workspace(project_id)
+    current = normalize_progressive_config(project, repo.store.get_progressive_design_config(project_id))
+    patch = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+    expected = patch.pop("expectedVersion", None)
+    merged = normalize_progressive_config(project, merge_progressive_config(current, patch))
+    try:
+        stored = repo.store.save_progressive_design_config(
+            project_id, merged, expected_version=expected,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return build_progressive_design_session(
+        project,
+        persisted=stored,
+        storage_info=repo.store.get_payload_info(project_id) or {},
+    )
+
+
+@router.get("/candidate-previews")
+def get_candidate_previews(
+    project_id: str,
+    limit: int = 12,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    if repo.store.get_payload_info(project_id) is None:
+        raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+    return repo.store.get_candidate_preview_bundle(project_id, limit=max(1, min(limit, 20)))
+
+
+@router.get("/system-options")
+def get_support_system_options(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return build_support_system_options(repo.require_workspace(project_id))
+
 @router.get("/plan-shape-diagnostics")
 def get_plan_shape_diagnostics(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = _require_excavation(project_id, repo)
+    project = _require_excavation_workspace(project_id, repo)
     excavation = project.excavation
     return plan_shape_diagnostics(
         list(excavation.outline.points),
@@ -93,13 +174,13 @@ def get_plan_shape_diagnostics(project_id: str, repo: ProjectRepository = Depend
 
 @router.get("/support-designer-audit")
 def get_support_designer_audit(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = _require_excavation(project_id, repo)
+    project = _require_excavation_workspace(project_id, repo)
     return audit_support_scheme_designer(project)
 
 
 @router.get("/support-deep-design")
 def get_support_deep_design(project_id: str, include_members: bool = False, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = _require_excavation(project_id, repo)
+    project = _require_excavation_workspace(project_id, repo)
     return evaluate_support_deep_design(project, include_members=bool(include_members))
 
 
@@ -118,7 +199,7 @@ def get_calculation_resource_estimate(
     candidate_count: int = 0,
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
-    project = _require_excavation(project_id, repo)
+    project = _require_excavation_workspace(project_id, repo)
     return estimate_calculation_resources(project, candidate_count=max(0, min(candidate_count, 3)))
 
 
@@ -213,7 +294,7 @@ def optimize_supports(project_id: str, payload: OptimizeSupportsPayload | None =
     _require_embedded_support_optimization()
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
-    result = auto_repair_support_layout(project, objective_weights=(payload.objective_weights if payload else None), preset=(payload.preset if payload else None))
+    result = auto_repair_support_layout(project, objective_weights=(payload.objective_weights if payload else None), preset=(payload.preset if payload else None), topology_family=(payload.topology_family if payload else None))
     invalidate_calculation_state(project, reason="support optimization candidate set regenerated and best topology applied", rebuild_cases=True)
     repo.save(project)
     return result

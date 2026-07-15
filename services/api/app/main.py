@@ -7,6 +7,7 @@ from uuid import uuid4
 import logging
 import os
 import sqlite3
+import shutil
 import sys
 
 from fastapi import Depends, FastAPI, Request
@@ -18,6 +19,7 @@ from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
 from app.services.runtime_observability import runtime_observability
+from app.services.runtime_resource_policy import adaptive_resource_policy, mb
 from app.services.access_control import AccessIdentity, public_access_allowed, required_role, resolve_identity, role_allows, security_status
 from app.storage.database import DEFAULT_DB_PATH
 from app.storage.repository import ProjectRepository, get_repository
@@ -28,7 +30,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.34.0 horizontal-support deep design, stability-aware optimization and controlled delivery.",
+    description="PitGuard V3.37.0 progressive design, adaptive resource governance and workspace-first delivery.",
 )
 
 app.add_middleware(
@@ -60,6 +62,7 @@ async def enforce_access_control(request: Request, call_next):
 @app.middleware("http")
 async def observe_http_requests(request: Request, call_next):
     started = perf_counter()
+    runtime_observability.begin()
     status_code = 500
     request_id = request.headers.get("X-PitGuard-Client-Request-Id") or f"srv-{uuid4().hex[:12]}"
     try:
@@ -73,7 +76,12 @@ async def observe_http_requests(request: Request, call_next):
             logger.warning("slow request id=%s method=%s path=%s status=%s duration_ms=%.1f", request_id, request.method, request.url.path, status_code, elapsed_ms)
         return response
     finally:
-        runtime_observability.record(request.url.path, status_code, (perf_counter() - started) * 1000.0)
+        runtime_observability.record(
+            request.url.path,
+            status_code,
+            (perf_counter() - started) * 1000.0,
+            slow_threshold_ms=float(os.getenv("PITGUARD_SLOW_REQUEST_MS", "1200")),
+        )
 
 app.include_router(auth.router)
 app.include_router(projects.router)
@@ -166,6 +174,26 @@ def system_diagnostics() -> dict:
     }
 
 
+@app.get("/api/system/resource-policy")
+def system_resource_policy() -> dict:
+    policy = adaptive_resource_policy(role=os.getenv("PITGUARD_PROCESS_ROLE", "api"))
+    return {
+        **policy,
+        "effectiveTotalMB": mb(policy.get("effectiveTotalBytes")),
+        "effectiveAvailableMB": mb(policy.get("effectiveAvailableBytes")),
+        "reserveMB": mb(policy.get("reserveBytes")),
+        "apiFullLoadLimitMB": mb(policy.get("apiFullLoadLimitBytes")),
+        "workspaceLimitMB": mb(policy.get("workspaceLimitBytes")),
+        "workerSoftLimitMB": mb(policy.get("workerSoftLimitBytes")),
+        "workerHardLimitMB": mb(policy.get("workerHardLimitBytes")),
+        "diskTotalMB": mb(policy.get("diskTotalBytes")),
+        "diskFreeMB": mb(policy.get("diskFreeBytes")),
+        "diskReserveMB": mb(policy.get("diskReserveBytes")),
+        "diskUsableMB": mb(policy.get("diskUsableBytes")),
+        "cpuLoadPercent": round(float(policy.get("cpuLoadRatio") or 0.0) * 100.0, 1),
+    }
+
+
 @app.get("/api/system/metrics")
 def system_metrics() -> dict:
     return {
@@ -189,13 +217,43 @@ def system_readiness() -> dict:
         db_error = str(exc)
     diagnostics = system_diagnostics()
     missing = list(diagnostics.get("missingModules") or [])
-    ready = db_ok and not missing
+    task_metrics = task_manager.metrics()
+    disk_total = disk_free = 0
+    try:
+        disk = shutil.disk_usage(db_path.parent)
+        disk_total, disk_free = int(disk.total), int(disk.free)
+    except OSError:
+        pass
+    disk_free_ratio = disk_free / disk_total if disk_total else 0.0
+    process_memory = float(task_metrics.get("processMemoryMb") or 0.0)
+    memory_limit = float(task_metrics.get("memorySoftLimitMb") or 0.0)
+    memory_ratio = process_memory / memory_limit if memory_limit > 0 else 0.0
+    status_counts = dict(task_metrics.get("statusCounts") or {})
+    degraded_reasons: list[str] = []
+    blocking_reasons: list[str] = []
+    if disk_total and (disk_free < 1024 ** 3 or disk_free_ratio < 0.05):
+        degraded_reasons.append("数据库所在磁盘剩余空间低于 1 GiB 或 5%")
+    if disk_total and disk_free < 256 * 1024 ** 2:
+        blocking_reasons.append("数据库所在磁盘剩余空间低于 256 MiB")
+    if memory_ratio >= 0.80:
+        degraded_reasons.append("API 进程内存已超过软限制的 80%")
+    if memory_ratio >= 0.98:
+        blocking_reasons.append("API 进程内存接近软限制")
+    if int(status_counts.get("queued") or 0) > 3:
+        degraded_reasons.append("后台任务排队超过 3 个")
+    ready = db_ok and not missing and not blocking_reasons
+    status = "not_ready" if not ready else "degraded" if degraded_reasons else "ready"
     return {
-        "status": "ready" if ready else "not_ready",
+        "status": status,
         "ready": ready,
+        "degraded": bool(degraded_reasons),
+        "degradedReasons": degraded_reasons,
+        "blockingReasons": blocking_reasons,
         "database": {"path": str(db_path), "available": db_ok, "error": db_error},
+        "storage": {"totalBytes": disk_total, "freeBytes": disk_free, "freeRatio": round(disk_free_ratio, 6) if disk_total else None},
+        "memory": {"processMb": process_memory, "softLimitMb": memory_limit, "ratio": round(memory_ratio, 6) if memory_limit else None},
         "missingModules": missing,
-        "tasks": task_manager.metrics(),
+        "tasks": task_metrics,
         "security": security_status(),
         "backup": {"directory": str(Path(os.getenv("PITGUARD_BACKUP_DIR", db_path.parent / "backups"))), "retention": max(1, int(os.getenv("PITGUARD_BACKUP_RETENTION", "20")))},
         "version": version_manifest(),

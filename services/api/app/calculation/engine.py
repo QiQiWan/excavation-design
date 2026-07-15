@@ -2112,18 +2112,24 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     if getattr(project.retaining_system, "support_nodes", None):
         node_checks = update_support_node_design(project.retaining_system.support_nodes, project.retaining_system.supports)
         support_checks.extend(node_checks)
-    support_deep_design = evaluate_support_deep_design(project, project.retaining_system, include_members=False)
+    support_deep_design = evaluate_support_deep_design(
+        project,
+        project.retaining_system,
+        include_members=False,
+        stage_results_override=stage_results,
+        calculation_current_override=True,
+    )
     deep_metrics = dict(support_deep_design.get("metrics") or {})
     support_checks.append({
         "ruleId": "PITGUARD-SUPPORT-DEEP-DESIGN-STABILITY",
         "objectId": project.retaining_system.id,
         "objectType": "RetainingSystem",
-        "status": "pass" if support_deep_design.get("hardPass") else "fail",
+        "status": "pass" if support_deep_design.get("screeningPass") else "fail",
         "calculatedValue": deep_metrics.get("maximumInteractionUtilization"),
         "limitValue": 1.0,
         "unit": "utilization",
         "message": support_deep_design.get("summary"),
-        "clauseReference": "JGJ120 internal-support load path and construction-stage design; GB 50017/GB 50010 member stability subset; project-specific applicability to verify",
+        "clauseReference": "JGJ120 internal-support load path and construction-stage design; GB 50017/GB/T 50010 member stability subset; project-specific applicability to verify",
         "formula": "N_eff=N+0.5N_pre+N_T+N_gap; eta=N_eff/N_b,Rd+M_e/M_Rd",
     })
     if int(deep_metrics.get("supportNodeUncheckedCount", 0) or 0):
@@ -2438,7 +2444,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         formal_report_gate=formal_gate,
         standards=[
             "JGJ120-2012 建筑基坑支护技术规程：水平荷载、土/水压力、弹性支点法、嵌固/抗隆起/渗透稳定、整体稳定圆弧搜索、内支撑布置筛查子集",
-            "GB50010-2010(2024局部修订) 混凝土结构设计规范：矩形截面受弯、受剪、轴压、裂缝、锚固搭接和最小配筋率筛查子集",
+            "GB/T 50010-2010(2024局部修订) 混凝土结构设计标准：矩形截面受弯、受剪、轴压、裂缝、锚固搭接和最小配筋率筛查子集",
             "GB55008-2021 混凝土结构通用规范：混凝土构件强制性约束提示和复核入口",
             "GB55003-2021 建筑与市政地基基础通用规范：地基、基坑、地下水控制通用要求提示子集",
             "GB50009-2012 建筑结构荷载规范：作用组合参数记录子集",
@@ -2455,6 +2461,22 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         input_audit=calculation_input_audit,
         contract=calculation_contract,
     )
+    # Re-evaluate evidence after the immutable calculation contract and assurance
+    # have been attached. This prevents a current run from being downgraded to a
+    # historical/stale result and exposes formal-design readiness separately.
+    support_deep_design = evaluate_support_deep_design(
+        project,
+        project.retaining_system,
+        include_members=False,
+        calculation_result=result,
+        stage_results_override=stage_results,
+        calculation_current_override=True,
+    )
+    result.design_iteration_summary = dict(result.design_iteration_summary or {})
+    result.design_iteration_summary["p39EvidenceGatedSupportReadiness"] = True
+    result.design_iteration_summary["supportDeepDesign"] = support_deep_design
+    result.report_diagram_data = dict(result.report_diagram_data or {})
+    result.report_diagram_data["supportDeepDesign"] = support_deep_design
     result.formal_report_gate = build_formal_report_gate(
         project, result.support_layout_quality, result.ifc_compatibility, latest_result=result
     )

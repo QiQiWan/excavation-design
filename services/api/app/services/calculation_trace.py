@@ -243,7 +243,7 @@ def build_calculation_trace(project: Project) -> dict[str, Any]:
                 capacity_value=capacity,
                 unit="kN·m",
                 formula="M_d = envelope(continuous_beam_reaction, elastic_supports, stage_load)",
-                code_reference="GB 50010-2010（2024 局部修订）受弯构件承载力子集",
+                code_reference="GB/T 50010-2010（2024 局部修订）受弯构件承载力子集",
                 method=wale.method,
                 input_parameters={"faceCode": wale.face_code, "levelIndex": wale.level_index, "beamLength": wale.beam_length, "supportNodeCount": wale.support_node_count},
                 result_path=f"calculationResults[-1].stageResults[{sidx}].waleBeamResults[{bidx}]",

@@ -5,7 +5,7 @@ from app.rules.gb50010.rc_section_rules import as_per_m_for_spacing
 
 MIN_REINFORCEMENT_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-MINREBAR-001",
-    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
+    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="构造配筋与最小配筋率要求（软件简化诊断）",
     name="最小配筋率快速诊断",

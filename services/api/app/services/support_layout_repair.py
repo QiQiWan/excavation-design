@@ -194,7 +194,14 @@ def _apply_lock_item(project: Project, item: dict[str, Any], locked: bool, reaso
     return changed
 
 
-def auto_repair_support_layout(project: Project, objective_weights: dict[str, float] | None = None, preset: str | None = None) -> SupportLayoutRepairSummary:
+def auto_repair_support_layout(
+    project: Project,
+    objective_weights: dict[str, float] | None = None,
+    preset: str | None = None,
+    topology_family: str | None = None,
+    max_candidates: int = 5,
+    search_config: dict | None = None,
+) -> SupportLayoutRepairSummary:
     """Optimize and repair the support layout using an explicit objective function.
 
     V2.0.9 keeps the V2.0.8 candidate search and adds local operator locks.
@@ -204,6 +211,14 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
     """
     if not project.excavation:
         return SupportLayoutRepairSummary(status="manual_review", summary="缺少基坑轮廓，无法自动修复支撑布置。")
+    if topology_family and topology_family not in {"direct_grid", "hybrid_diagonal", "ring_radial", "zoned_direct"}:
+        return SupportLayoutRepairSummary(
+            status="manual_review",
+            summary=(
+                f"结构体系 {topology_family} 尚未接入自动线位生成器；请先定义构件、节点和施工阶段模型，"
+                "系统不会将未实现的体系降级为普通直撑。"
+            ),
+        )
     before = evaluate_support_layout_quality(project)
     before_counts = _issue_counts(before.issues)
     actions: list[dict] = []
@@ -219,6 +234,7 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
         and before.status not in {"fail", "manual_review"}
         and not objective_weights
         and not preset
+        and not topology_family
     ):
         # V2.6.0: normal calculation should not repeatedly re-enumerate every
         # support candidate.  Large projects with many stored calculation results
@@ -234,7 +250,14 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
 
     weights = normalize_objective_weights(objective_weights)
     lock_summary = _current_lock_summary(project)
-    best_system, candidates = optimize_support_layout_candidates(project, objective_weights=weights, preset=preset)
+    best_system, candidates = optimize_support_layout_candidates(
+        project,
+        max_candidates=max(1, min(8, int(max_candidates))),
+        objective_weights=weights,
+        preset=preset,
+        topology_family=topology_family,
+        search_config=search_config or {},
+    )
     if best_system is not None and candidates:
         project.retaining_system = best_system
         actions.append({
@@ -247,6 +270,7 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
             "bestColumnMaxSpan": candidates[0].column_max_span,
             "objectiveWeights": weights,
             "objectivePreset": preset or "custom",
+            "requestedTopologyFamily": topology_family,
             "lockSummary": lock_summary,
         })
     else:
@@ -256,7 +280,7 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
             or any(issue.category in REPAIRABLE_CATEGORIES for issue in before.issues)
         )
         if should_regenerate:
-            project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings))
+            project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings, topology_strategy=topology_family or "balanced_grid"))
             actions.append({
                 "action": "fallback_regenerate_dense_bays_and_repair_layout",
                 "description": "优化器未生成候选方案，退回 3-6m 分仓规则修复。",

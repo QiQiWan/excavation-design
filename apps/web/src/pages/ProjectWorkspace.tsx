@@ -7,6 +7,8 @@ import DrawingRuleSetPanel from '../components/DrawingRuleSetPanel';
 import CalculationRecoveryPanel from '../components/CalculationRecoveryPanel';
 import SchemeComparisonPanel from '../components/SchemeComparisonPanel';
 import ProjectDataWorkspacePanel from '../components/ProjectDataWorkspacePanel';
+import DesignQualificationPanel from '../components/DesignQualificationPanel';
+import ProgressiveDesignPanel from '../components/ProgressiveDesignPanel';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 import { effectiveGeologicalSurfaces, hasGeologicalSurfacePreview } from '../utils/geology';
 import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult, StandardsProcessMatrix, StandardsProcessStep } from '../types/domain';
@@ -32,7 +34,64 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'support_layout_optimization' | 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+type BackendTaskOperation = 'storage_compaction' | 'support_layout_optimization' | 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+
+function SystemReliabilityStrip({ project }: { project: Project }) {
+  const [snapshot, setSnapshot] = useState<{ readiness?: Record<string, any>; metrics?: Record<string, any>; error?: string }>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    const load = async () => {
+      setRefreshing(true);
+      const [readiness, metrics] = await Promise.allSettled([api.systemReadiness(), api.systemMetrics()]);
+      if (!cancelled) {
+        setSnapshot({
+          readiness: readiness.status === 'fulfilled' ? readiness.value : undefined,
+          metrics: metrics.status === 'fulfilled' ? metrics.value : undefined,
+          error: readiness.status === 'rejected' && metrics.status === 'rejected' ? '系统健康数据暂不可用' : undefined,
+        });
+        setRefreshing(false);
+      }
+    };
+    void load();
+    timer = window.setInterval(() => { if (!document.hidden) void load(); }, 30000);
+    return () => { cancelled = true; if (timer) window.clearInterval(timer); };
+  }, [project.id, project.updatedAt, refreshToken]);
+
+  const readiness = snapshot.readiness ?? {};
+  const metrics = snapshot.metrics ?? {};
+  const http = (metrics.http ?? {}) as Record<string, any>;
+  const tasks = (metrics.tasks ?? readiness.tasks ?? {}) as Record<string, any>;
+  const latency = (http.latencyMs ?? {}) as Record<string, any>;
+  const p95 = Number(latency.p95 ?? 0);
+  const errorRate = Number(http.serverErrorRate ?? 0);
+  const active = Number(http.activeRequestCount ?? 0);
+  const taskStatuses = (tasks.statusCounts ?? {}) as Record<string, any>;
+  const running = Number(tasks.running ?? tasks.runningCount ?? taskStatuses.running ?? 0);
+  const queued = Number(tasks.queued ?? tasks.queuedCount ?? taskStatuses.queued ?? 0);
+  const processMemory = Number(tasks.processMemoryMb ?? tasks.processResidentMemoryMB ?? 0);
+  const memoryLimit = Number(tasks.memorySoftLimitMb ?? 0);
+  const ready = readiness.ready !== false && !snapshot.error;
+  const degraded = Boolean(readiness.degraded) || readiness.status === 'degraded';
+  const memoryRatio = memoryLimit > 0 ? processMemory / memoryLimit : 0;
+  const tone = !ready || errorRate > 0.03 || memoryRatio > 0.95 ? 'fail' : degraded || p95 > 2500 || errorRate > 0.01 || queued > 3 || memoryRatio > 0.8 ? 'warn' : 'pass';
+  const label = tone === 'fail' ? '需处置' : tone === 'warn' ? '负载偏高' : '运行正常';
+  return <section className={`systemReliabilityStrip ${tone}`} aria-label="系统运行可靠性">
+    <div className="reliabilityHeadline"><strong>系统可靠性 · {label}</strong><span>{snapshot.error ?? (degraded ? String((readiness.degradedReasons ?? []).join('；') || '系统可用，但资源状态需要关注') : ready ? '数据库、运行依赖与任务服务可用' : '系统就绪检查未通过')}</span></div>
+    <div className="reliabilityMetrics">
+      <span>API P95 <b>{p95 ? `${Math.round(p95)} ms` : '-'}</b></span>
+      <span>服务端错误率 <b>{(errorRate * 100).toFixed(2)}%</b></span>
+      <span>并发请求 <b>{active}</b></span>
+      <span>任务 运行/排队 <b>{running}/{queued}</b></span>
+      <span>进程内存 <b>{processMemory ? `${processMemory.toFixed(0)} MB` : '-'}</b></span>
+      <span>路径聚合 <b>{Number(http.pathCardinality ?? 0)}/{Number(http.pathAggregationBound ?? 0) || '-'}</b></span>
+    </div>
+    <button className="secondary" onClick={() => setRefreshToken((value) => value + 1)} disabled={refreshing} title="健康数据每30秒自动刷新">{refreshing ? '刷新中' : '自动监测'}</button>
+  </section>;
+}
 
 function DeferredDetails({ summary, defaultOpen = false, children }: { summary: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -310,6 +369,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
         </div>
       </div>
 
+      <SystemReliabilityStrip project={current} />
       <ProjectDataWorkspacePanel project={current} />
 
       {(error || busy || operation) && (
@@ -968,11 +1028,13 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   }).sort((a, b) => b.previewScore - a.previewScore).slice(0, 5);
   return (
     <div>
-      <div className="actionStrip simplifiedActions">
-        <button onClick={runAuto} disabled={!project.excavation}>识别形状并生成围护体系</button>
-        <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
-        <span className="small">系统先识别局部主轴、凸凹特征、走廊分区和转接区，再选择短跨对撑、斜向墙对、内环径向撑或异形分区方案。</span>
+      <ProgressiveDesignPanel project={project} runTask={runTask} onRefresh={onRefresh} />
+      <div className="actionStrip simplifiedActions progressiveQuickActions">
+        <button className="secondary" title="识别形状并生成围护体系" onClick={runAuto} disabled={!project.excavation}>按默认配置快速生成</button>
+        <button className="secondary" onClick={() => setOpen(true)}>高级操作与人工锁定</button>
+        <span className="small">快捷生成会采用当前渐进式配置的默认值；正式设计建议逐步确认坐标、施工组织、围护体系、支撑体系和计算范围。</span>
       </div>
+      <DesignQualificationPanel project={project} runTask={runTask} />
       {activeShape && <section className="shapeStrategyPanel">
         <div className="shapeStrategyHeader">
           <div><h3>平面形状识别与支撑体系决策</h3><p className="small">识别结果用于候选生成和计算门禁；异形交汇区未形成明确转接体系时只允许方案设计。</p></div>
@@ -1044,8 +1106,8 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
       </section>}
       {deepDesign && <section className="summaryPanel supportDeepDesignPanel">
         <div className="panelTitleRow">
-          <div><h3>水平支撑深化设计筛查</h3><p className="small">将构件稳定、施工预加轴力、温度约束、节点间隙、安装偏心、节点完整性与传力冗余纳入候选评价。正式结论仍以完整分阶段计算为准。</p></div>
-          <span className={`statusTag ${deepDesign.status === 'pass' ? 'pass' : deepDesign.status === 'warning' ? 'warning' : 'error'}`}>{String(deepDesign.status)} · {deepDesign.hardPass ? '候选可进入完整计算' : '候选受控阻断'}</span>
+          <div><h3>水平支撑深化设计筛查</h3><p className="small">将构件稳定、施工预加轴力、温度约束、节点间隙、安装偏心、节点完整性与传力冗余纳入候选评价。系统区分候选筛查、完整计算就绪和正式设计就绪，禁止用过期或低等级证据替代正式结论。</p></div>
+          <span className={`statusTag ${deepDesign.formalDesignReady ? 'pass' : deepDesign.screeningPass ? 'warning' : 'error'}`}>证据 {String(deepDesign.evidenceGrade ?? 'D')} · {deepDesign.formalDesignReady ? '可进入正式交付闸门' : deepDesign.calculationReady ? '计算证据已形成' : deepDesign.screeningPass ? '仅候选筛查通过' : '候选受控阻断'}</span>
         </div>
         <div className="shapeMetricGrid">
           <div><strong>{Number(deepDesign.metrics?.maximumInteractionUtilization ?? 0).toFixed(3)}</strong><span>最大轴压-偏心组合利用率</span></div>
@@ -1056,6 +1118,10 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
           <div><strong>{Number(deepDesign.metrics?.memberFailCount ?? 0)} / {Number(deepDesign.metrics?.memberWarningCount ?? 0)}</strong><span>构件失败 / 预警</span></div>
           <div><strong>{Number(deepDesign.metrics?.supportNodeUncheckedCount ?? 0)}</strong><span>未闭环节点</span></div>
           <div><strong>{Number(deepDesign.metrics?.singleMemberWallPairCount ?? 0)}</strong><span>单构件墙对路径</span></div>
+          <div><strong>{(Number(deepDesign.metrics?.stagedCalculationCoverageRatio ?? 0) * 100).toFixed(0)}%</strong><span>本方案分阶段轴力覆盖</span></div>
+          <div><strong>{deepDesign.evidence?.forceEnvelope?.current ? '当前' : '缺失/过期'}</strong><span>计算合同状态</span></div>
+          <div><strong>{deepDesign.readiness?.geotechnicalEvidencePass ? '通过' : '待补齐'}</strong><span>地质参数证据</span></div>
+          <div><strong>{deepDesign.formalDesignReady ? '就绪' : '未就绪'}</strong><span>正式设计就绪度</span></div>
         </div>
         <details open={viewMode === 'professional'}><summary>查看控制构件、数学模型与整改动作</summary>
           <p className="small">{String(deepDesign.summary ?? '')}</p>
@@ -1147,15 +1213,41 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
 
 function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
   const [open, setOpen] = useState(false);
-  const runAll = () => runTask('一键计算校核', 'calculation_full', { topN: 0 });
+  const [qualification, setQualification] = useState<Record<string, any>>();
+  const [qualificationError, setQualificationError] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    setQualificationError(undefined);
+    void api.getDesignQualification(project.id).then((value) => {
+      if (!cancelled) setQualification(value);
+    }).catch((error) => {
+      if (!cancelled) setQualificationError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { cancelled = true; };
+  }, [project.id, project.updatedAt, project.retainingSystem?.supportLayoutRepair?.checkedAt]);
+
+  const rawCandidates = project.retainingSystem?.supportLayoutRepair?.candidates ?? [];
+  const localControlledBlock = rawCandidates.length > 0
+    && !rawCandidates.some((candidate) => Boolean(candidate.hardConstraints?.passed))
+    && rawCandidates.some((candidate) => String(candidate.variableSummary?.capabilityOutcome ?? '') === 'controlled_block');
+  const calculationAllowed = qualification
+    ? Boolean(qualification.calculationAllowed)
+    : Boolean(project.retainingSystem) && !localControlledBlock;
+  const calculationBlockers = ((qualification?.gates ?? []) as Record<string, any>[])
+    .filter((gate) => ((gate.blocks ?? []) as string[]).includes('calculation'))
+    .map((gate) => `${String(gate.title ?? gate.code)}：${String(gate.message ?? '')}`);
+  const runAll = () => calculationAllowed ? runTask('一键计算校核', 'calculation_full', { topN: 0 }) : Promise.resolve();
+  const calculationDisabled = !project.retainingSystem || !calculationAllowed;
   return (
     <div>
+      {!calculationAllowed ? <div className="warning calculationQualificationBlock" role="alert"><strong>完整计算入口已由设计资格门禁锁定。</strong><span>{calculationBlockers.join('；') || (localControlledBlock ? '当前支撑体系仅形成诊断候选，需先完成体系选择与传力拓扑闭合。' : '请先完成围护结构和支撑体系资格检查。')}</span></div> : null}
+      {qualificationError ? <div className="mutedNote">设计资格状态暂未刷新：{qualificationError}</div> : null}
       <div className="actionStrip simplifiedActions">
-        <button onClick={runAll} disabled={!project.retainingSystem}>一键计算校核</button>
+        <button onClick={runAll} disabled={calculationDisabled}>一键计算校核</button>
         <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
         
       </div>
-      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={!project.retainingSystem}>仅生成工况</button><button onClick={() => runTask('正在由独立计算进程运行当前方案', 'calculation_full', { topN: 0 })} disabled={!project.retainingSystem}>仅运行当前方案</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={!project.retainingSystem}>并行计算前 3 个候选方案</button></aside></div>}
+      {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={calculationDisabled}>仅生成工况</button><button onClick={() => runTask('正在由独立计算进程运行当前方案', 'calculation_full', { topN: 0 })} disabled={calculationDisabled}>仅运行当前方案</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={calculationDisabled}>并行计算前 3 个候选方案</button></aside></div>}
       <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
       <CalculationRecoveryPanel project={project} runStep={runStep} />
       <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />

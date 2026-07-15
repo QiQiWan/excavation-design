@@ -18,6 +18,7 @@ type RequestActivityOptions = {
 type RequestOptions = RequestInit & {
   timeoutMs?: number;
   timeoutMessage?: string;
+  retryCount?: number;
   activity?: RequestActivityOptions;
 };
 
@@ -64,52 +65,91 @@ function requestKey(path: string, method: string, body: BodyInit | null | undefi
   return `${method}:${path}:${bodyKey}`;
 }
 
+
+function formatStructuredApiError(status: number, statusText: string, payload: unknown): string {
+  const root = payload && typeof payload === 'object' ? payload as Record<string, any> : {};
+  const detail = root.detail && typeof root.detail === 'object' ? root.detail as Record<string, any> : root;
+  if (String(detail.code ?? '') === 'PROJECT_FULL_LOAD_BLOCKED') {
+    const payloadMb = Number(detail.payloadBytes ?? 0) / 1048576;
+    const limitMb = Number(detail.limitBytes ?? 0) / 1048576;
+    const sizeText = payloadMb > 0 && limitMb > 0 ? `（${payloadMb.toFixed(1)} MB / 限值 ${limitMb.toFixed(1)} MB）` : '';
+    const needsCompaction = Boolean(detail.compactionRecommended);
+    return `完整快照当前不进入 API 进程${sizeText}。网页继续使用轻量工作区，完整计算与导出由独立 worker 按实时内存余量执行${needsCompaction ? '；当前工作区或历史数据存在冗余，建议运行“优化项目存储”' : ''}。`;
+  }
+  const message = typeof root.detail === 'string'
+    ? root.detail
+    : String(detail.message ?? root.message ?? `${status} ${statusText}`);
+  const recommendation = detail.recommendation ?? root.recommendation;
+  const code = detail.code ?? root.code;
+  return `${code ? `[${String(code)}] ` : ''}${message}${recommendation ? `；建议：${String(recommendation)}` : ''}`;
+}
+
 function dispatchActivity(name: string, detail: Record<string, unknown>) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
 async function executeRequest<T>(path: string, init: RequestOptions, activityId: string, activity: Required<Pick<RequestActivityOptions, 'label' | 'expectedMs' | 'blocking' | 'quiet'>>): Promise<T> {
-  const controller = new AbortController();
+  const method = String(init.method ?? 'GET').toUpperCase();
   const timeoutMs = Math.max(1000, init.timeoutMs ?? 30000);
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const retryCount = Math.max(0, Math.min(init.retryCount ?? (method === 'GET' ? 1 : 0), 3));
   const externalSignal = init.signal;
-  const abortFromExternal = () => controller.abort();
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener('abort', abortFromExternal, { once: true });
-  }
-  const { timeoutMs: _timeoutMs, timeoutMessage, activity: _activity, ...fetchInit } = init;
+  const { timeoutMs: _timeoutMs, timeoutMessage, retryCount: _retryCount, activity: _activity, signal: _signal, ...fetchInit } = init;
   const headers = new Headers(fetchInit.headers);
   headers.set('X-PitGuard-Client-Request-Id', activityId);
-  let response: Response;
-  try {
-    dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在连接服务器' });
-    response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, headers, signal: controller.signal });
-    dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在接收并整理数据' });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，后端可能正在恢复或不可用。`);
+  const transientStatuses = new Set([429, 502, 503, 504]);
+
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    const abortFromExternal = () => controller.abort();
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort();
+      else externalSignal.addEventListener('abort', abortFromExternal, { once: true });
     }
-    throw new Error(error instanceof Error ? error.message : '网络请求失败');
-  } finally {
-    window.clearTimeout(timeout);
-    externalSignal?.removeEventListener('abort', abortFromExternal);
-  }
-  if (!response.ok) {
-    if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/bootstrap' && path !== '/api/auth/status') {
-      window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
-    }
-    let message = `${response.status} ${response.statusText}`;
+    let response: Response;
     try {
-      const data = await response.json();
-      message = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? data);
-    } catch {
-      // Keep the HTTP status when the proxy returned HTML/plain text.
+      dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: attempt ? `服务器暂时繁忙，正在第 ${attempt} 次自动重试` : '正在连接服务器' });
+      response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, headers, signal: controller.signal });
+      if (transientStatuses.has(response.status) && attempt < retryCount) {
+        window.clearTimeout(timeout);
+        externalSignal?.removeEventListener('abort', abortFromExternal);
+        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在接收并整理数据' });
+    } catch (error) {
+      window.clearTimeout(timeout);
+      externalSignal?.removeEventListener('abort', abortFromExternal);
+      if (externalSignal?.aborted && !timedOut) throw new Error('请求已取消。');
+      if (timedOut) throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，后端可能正在恢复或不可用。`);
+      if (attempt < retryCount) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      throw new Error(error instanceof Error ? error.message : '网络请求失败');
+    } finally {
+      window.clearTimeout(timeout);
+      externalSignal?.removeEventListener('abort', abortFromExternal);
     }
-    throw new Error(message);
+    if (!response.ok) {
+      if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/bootstrap' && path !== '/api/auth/status') {
+        window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
+      }
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const data = await response.json();
+        message = formatStructuredApiError(response.status, response.statusText, data);
+      } catch {
+        // Keep the HTTP status when the proxy returned HTML/plain text.
+      }
+      const serverRequestId = response.headers.get('X-PitGuard-Request-Id');
+      throw new Error(serverRequestId ? `${message}（请求追踪号：${serverRequestId}）` : message);
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  throw new Error('请求重试次数已耗尽。');
 }
 
 function request<T>(path: string, init?: RequestOptions): Promise<T> {
@@ -184,6 +224,7 @@ export const api = {
   health: () => request<{ status: string; service: string }>('/health', { timeoutMs: 4000 }),
   systemMetrics: () => request<Record<string, unknown>>('/api/system/metrics'),
   systemReadiness: () => request<Record<string, unknown>>('/api/system/readiness'),
+  resourcePolicy: () => request<Record<string, unknown>>('/api/system/resource-policy', { timeoutMs: 5000 }),
   diagnostics: () => request<{ version: string; softwareVersion?: string; algorithmVersion?: string; ruleSetVersion?: string; exportSchemaVersion?: string; pythonVersion: string; databaseConfigured?: boolean; missingModules: string[]; modules: { importName: string; packageName: string; available: boolean; version?: string }[] }>('/api/system/diagnostics'),
   units: () => request<Record<string, any>>('/api/system/units'),
   getStandardsMatrix: () => request<StandardsProcessMatrix>('/api/standards/process-matrix'),
@@ -225,6 +266,11 @@ export const api = {
     request<ExcavationModel>(`/api/projects/${projectId}/excavation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   autoWall: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-diaphragm-wall`, { method: 'POST' }),
   autoSupports: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-supports`, { method: 'POST' }),
+  getDesignQualification: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/qualification`, { timeoutMs: 8000 }),
+  getProgressiveDesign: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { timeoutMs: 8000 }),
+  updateProgressiveDesign: (projectId: string, payload: Record<string, unknown>) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在保存渐进式设计配置', expectedMs: 1000 } }),
+  getSupportCandidatePreviews: (projectId: string, limit = 12) => request<{ projectId: string; source: string; previews: { candidateId?: string; rank?: number; planGeometry?: Record<string, any> }[] }>(`/api/projects/${projectId}/design/candidate-previews?limit=${Math.max(1, Math.min(limit, 20))}`, { timeoutMs: 12000 }),
+  getSupportSystemOptions: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/system-options`, { timeoutMs: 8000 }),
   getPlanShapeDiagnostics: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/plan-shape-diagnostics`),
   getSupportDesignerAudit: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-designer-audit`),
   getSupportDeepDesign: (projectId: string, includeMembers = false) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-deep-design?include_members=${includeMembers ? 'true' : 'false'}`),
@@ -233,7 +279,7 @@ export const api = {
   autoSupportsByShape: (projectId: string) => request<{ diagnostics: Record<string, any>; selectedTopologyFamily: string; retainingSystem: RetainingSystem }>(`/api/projects/${projectId}/design/auto-supports-by-shape`, { method: 'POST' }),
   importSupportLayoutCsv: (projectId: string, file: File, replace = true) => { const form = new FormData(); form.append('file', file); return request<Record<string, any>>(`/api/projects/${projectId}/design/import-support-layout?replace=${replace}`, { method: 'POST', body: form }); },
   autoRepairSupports: (projectId: string) => request<unknown>(`/api/projects/${projectId}/design/auto-repair-supports`, { method: 'POST' }),
-  optimizeSupports: (projectId: string, payload?: { objectiveWeights?: Record<string, number>; preset?: string }) => request<unknown>(`/api/projects/${projectId}/design/optimize-supports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload ?? {}) }),
+  optimizeSupports: (projectId: string, payload?: { objectiveWeights?: Record<string, number>; preset?: string; topologyFamily?: string }) => request<unknown>(`/api/projects/${projectId}/design/optimize-supports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload ?? {}) }),
   adoptSupportCandidate: (projectId: string, candidateId: string) => request<unknown>(`/api/projects/${projectId}/design/adopt-support-candidate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId }) }),
   lockSupportLines: (projectId: string, supportIds: string[], locked = true, reason?: string) => request<unknown>(`/api/projects/${projectId}/design/lock-support-lines`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ supportIds, locked, reason }) }),
   setSupportOptimizationLocks: (projectId: string, payload: { supportIds?: string[]; lockItems?: Record<string, unknown>[]; levelIndices?: number[]; obstacleIds?: string[]; locked?: boolean; reason?: string; replace?: boolean }) => request<unknown>(`/api/projects/${projectId}/design/lock-support-lines`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),

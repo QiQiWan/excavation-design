@@ -19,7 +19,7 @@ function toRecord(value: unknown): Record<string, any> {
 }
 
 type XY = { x: number; y: number };
-type SchemeGeometry = { outline: XY[]; supports: Record<string, any>[]; columns: Record<string, any>[]; bounds: { x: number; y: number; width: number; height: number } };
+type SchemeGeometry = { outline: XY[]; supports: Record<string, any>[]; columns: Record<string, any>[]; hasData: boolean; bounds: { x: number; y: number; width: number; height: number } };
 
 function schemeGeometry(candidate: SupportLayoutOptimizationCandidate): SchemeGeometry {
   const geom = toRecord(candidate.planGeometry);
@@ -47,6 +47,7 @@ function schemeGeometry(candidate: SupportLayoutOptimizationCandidate): SchemeGe
     outline,
     supports,
     columns,
+    hasData: outline.length >= 3 && supports.length > 0,
     bounds: { x: minX - padding, y: -(maxY + padding), width: spanX + 2 * padding, height: spanY + 2 * padding },
   };
 }
@@ -90,12 +91,15 @@ function SchemeSvgContent({ geometry, showLabels = false }: { geometry: SchemeGe
   </>;
 }
 
-function SchemePreview({ candidate }: { candidate: SupportLayoutOptimizationCandidate }) {
+function SchemePreview({ candidate, loading = false }: { candidate: SupportLayoutOptimizationCandidate; loading?: boolean }) {
   const geometry = useMemo(() => schemeGeometry(candidate), [candidate]);
   const b = geometry.bounds;
+  const emptyFontSize = Math.max(b.width, b.height) * 0.08;
   return <svg className="schemeOverviewSvg" viewBox={`${b.x} ${b.y} ${b.width} ${b.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`方案 ${letter(candidate.rank)} 支撑平面预览`}>
-    <SchemeSvgContent geometry={geometry} />
-    <JunctionMarkers candidate={candidate} />
+    {geometry.hasData ? <>
+      <SchemeSvgContent geometry={geometry} />
+      <JunctionMarkers candidate={candidate} />
+    </> : <g className="schemePreviewEmpty"><rect x={b.x} y={b.y} width={b.width} height={b.height} /><text x={b.x + b.width / 2} y={b.y + b.height / 2} fontSize={emptyFontSize}>{loading ? '正在按需读取方案几何…' : '方案几何尚未写入工作区'}</text></g>}
   </svg>;
 }
 
@@ -112,6 +116,7 @@ function InteractiveSchemeViewer({ candidate }: { candidate: SupportLayoutOptimi
   const viewWidth = b.width / zoom;
   const viewHeight = b.height / zoom;
   const viewBox = `${b.x + pan.x + (b.width - viewWidth) / 2} ${b.y + pan.y + (b.height - viewHeight) / 2} ${viewWidth} ${viewHeight}`;
+  const emptyFontSize = Math.max(b.width, b.height) * 0.055;
 
   function zoomBy(factor: number) {
     setZoom((value) => Math.max(0.8, Math.min(8, value * factor)));
@@ -148,8 +153,10 @@ function InteractiveSchemeViewer({ candidate }: { candidate: SupportLayoutOptimi
       role="img"
       aria-label={`方案 ${letter(candidate.rank)} 可缩放平移支撑总平面`}
     >
-      <SchemeSvgContent geometry={geometry} showLabels={labels} />
-      <JunctionMarkers candidate={candidate} />
+      {geometry.hasData ? <>
+        <SchemeSvgContent geometry={geometry} showLabels={labels} />
+        <JunctionMarkers candidate={candidate} />
+      </> : <g className="schemePreviewEmpty"><rect x={b.x} y={b.y} width={b.width} height={b.height} /><text x={b.x + b.width / 2} y={b.y + b.height / 2} fontSize={emptyFontSize}>未取得方案几何，请刷新候选预览</text></g>}
     </svg>
     <p className="schemeViewerHint">滚轮缩放，按住拖动平移；模型已按实际外包范围自动居中并最大化利用视口。</p>
   </div>;
@@ -182,7 +189,45 @@ export default function SchemeComparisonPanel({
   onRefresh?: () => Promise<unknown> | void;
   compact?: boolean;
 }) {
-  const candidates = project.retainingSystem?.supportLayoutRepair?.candidates?.slice(0, 3) ?? [];
+  const rawCandidates = project.retainingSystem?.supportLayoutRepair?.candidates?.slice(0, 6) ?? [];
+  const [previewById, setPreviewById] = useState<Map<string, Record<string, any>>>(new Map());
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string>();
+  const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
+  const controlledCandidate = rawCandidates.find((candidate) => String(candidate.variableSummary?.capabilityOutcome ?? '') === 'controlled_block');
+  const baseCandidates = controlledCandidate
+    ? rawCandidates.filter((candidate) => candidate !== controlledCandidate && Boolean(candidate.hardConstraints?.passed)).slice(0, 3)
+    : rawCandidates.slice(0, 3);
+  const missingPreviewIds = baseCandidates
+    .filter((candidate) => !schemeGeometry(candidate).hasData)
+    .map((candidate) => String(candidate.id ?? ''))
+    .filter(Boolean);
+  useEffect(() => {
+    let alive = true;
+    if (!missingPreviewIds.length) {
+      setPreviewLoading(false);
+      setPreviewError(undefined);
+      return () => { alive = false; };
+    }
+    setPreviewLoading(true);
+    api.getSupportCandidatePreviews(project.id, Math.max(3, baseCandidates.length))
+      .then((bundle) => {
+        if (!alive) return;
+        const next = new Map<string, Record<string, any>>();
+        for (const row of bundle.previews ?? []) {
+          if (row.candidateId && row.planGeometry) next.set(String(row.candidateId), row.planGeometry);
+        }
+        setPreviewById(next);
+        setPreviewError(undefined);
+      })
+      .catch((error) => { if (alive) setPreviewError(error instanceof Error ? error.message : String(error)); })
+      .finally(() => { if (alive) setPreviewLoading(false); });
+    return () => { alive = false; };
+  }, [project.id, project.updatedAt, missingPreviewIds.join('|'), previewRefreshToken]);
+  const candidates = useMemo(() => baseCandidates.map((candidate) => {
+    const preview = previewById.get(String(candidate.id ?? ''));
+    return preview ? ({ ...candidate, planGeometry: preview } as SupportLayoutOptimizationCandidate) : candidate;
+  }), [baseCandidates, previewById]);
   const calculationState = toRecord(project.advancedEngineering?.calculationState);
   const requiresRecalculation = Boolean(calculationState.requiresRecalculation);
   const latest = requiresRecalculation || !project.calculationResults.length
@@ -203,7 +248,6 @@ export default function SchemeComparisonPanel({
   const [batchError, setBatchError] = useState<string>();
   const [batchBusy, setBatchBusy] = useState(false);
   const selected = candidates.find((candidate) => String(candidate.id) === selectedId) ?? candidates[0];
-  const controlledCandidate = candidates.find((candidate) => String(candidate.variableSummary?.capabilityOutcome ?? '') === 'controlled_block');
   const controlledAlternatives = (controlledCandidate?.variableSummary?.alternativeSystemRecommendations ?? []) as string[];
   const shapeDiagnostics = toRecord(controlledCandidate?.variableSummary?.shapeDiagnostics);
 
@@ -261,6 +305,8 @@ export default function SchemeComparisonPanel({
       {controlledAlternatives.length ? <span>建议结构体系：{controlledAlternatives.join('、')}。</span> : null}
     </div> : null}
 
+    {previewError ? <div className="warning schemePreviewWarning"><strong>方案预览按需读取失败</strong><span>{previewError}</span><button type="button" className="secondary" onClick={() => { setPreviewById(new Map()); setPreviewRefreshToken((value) => value + 1); }}>重新读取</button></div> : null}
+
     {batchTasks.length ? <div className="schemeBatchProgress" aria-live="polite">
       {batchTasks.map((task, index) => <div key={task.id} className={`schemeTaskRow task-${task.status}`}>
         <span>方案 {letter(index + 1)}</span><progress max={100} value={task.progress} /><strong>{Math.round(task.progress)}%</strong><em>{task.currentStep || task.status}</em>{task.result?.cacheHit ? <b>缓存命中</b> : null}
@@ -269,8 +315,8 @@ export default function SchemeComparisonPanel({
     </div> : null}
 
     {!candidates.length ? <div className="emptyDecisionState">
-      <strong>尚未生成整体候选方案</strong>
-      <p>先生成候选方案，系统将返回斜撑混合、传统直对撑和双向网格等完整方案。</p>
+      <strong>{controlledCandidate ? '当前没有具备计算资格的 A/B/C 方案' : '尚未生成整体候选方案'}</strong>
+      <p>{controlledCandidate ? '诊断候选只用于说明现有轴压杆体系的闭合失败，不再绘制为空白设计方案。请在上方“体系级候选”中选择可自动生成的体系，或先定义环梁、中心岛、分区/框架模型。' : '先生成候选方案，系统将按已识别平面和结构体系返回完整方案。'}</p>
     </div> : <>
       <div className="schemeOverviewGrid">
         {candidates.map((candidate) => {
@@ -280,7 +326,7 @@ export default function SchemeComparisonPanel({
           const isRecommended = Boolean(full.recommendedByFullCalculation);
           return <button key={String(candidate.id ?? candidate.rank)} type="button" className={`schemeOverviewCard ${isSelected ? 'selected' : ''} ${isRecommended ? 'recommended' : ''}`} onClick={() => setSelectedId(String(candidate.id ?? ''))}>
             <div className="schemeCardHeader"><strong>方案 {letter(candidate.rank)}</strong><span>{familyLabel(candidate)}</span>{isRecommended ? <em>推荐</em> : null}</div>
-            <SchemePreview candidate={candidate} />
+            <SchemePreview candidate={candidate} loading={previewLoading} />
             <div className="schemeKeyMetrics">
               <span><small>支撑 / 立柱</small><strong>{candidate.supportCount} / {candidate.columnCount}</strong></span>
               <span><small>非法穿越 / 墙上汇交 / 内部汇交</small><strong>{candidate.crossingCount ?? 0} / {candidate.wallJunctionCount ?? Number(candidate.metrics?.wallJunctionCount ?? 0)} / {Number(candidate.metrics?.internalJunctionCount ?? candidate.junctionCount ?? 0)}</strong></span>

@@ -873,7 +873,31 @@ def _candidate_note(target_spacing: float, column_max_span: float, pattern: str,
     )
 
 
-def optimize_support_layout_candidates(project: Project, max_candidates: int = 5, objective_weights: dict[str, float] | None = None, preset: str | None = None) -> tuple[RetainingSystem | None, list[SupportLayoutOptimizationCandidate]]:
+def _progressive_search_values(minimum: float, maximum: float, preferred: float, *, count: int = 3) -> list[float]:
+    low = float(min(minimum, maximum))
+    high = float(max(minimum, maximum))
+    pref = max(low, min(high, float(preferred)))
+    values = [pref]
+    if count >= 2:
+        values.extend([low, high])
+    if count >= 4:
+        values.append((low + high) / 2.0)
+    output: list[float] = []
+    for value in values:
+        rounded = round(value * 2.0) / 2.0
+        if rounded not in output:
+            output.append(rounded)
+    return output[:max(1, count)]
+
+
+def optimize_support_layout_candidates(
+    project: Project,
+    max_candidates: int = 5,
+    objective_weights: dict[str, float] | None = None,
+    preset: str | None = None,
+    topology_family: str | None = None,
+    search_config: dict[str, Any] | None = None,
+) -> tuple[RetainingSystem | None, list[SupportLayoutOptimizationCandidate]]:
     if not project.excavation:
         return None, []
     weights = preset_objective_weights(preset, objective_weights)
@@ -886,14 +910,32 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
         has_center_island=any(getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True) for item in project.excavation.obstacles or []),
     )
     constrained_shape = int(shape.get("concaveVertexCount") or 0) > 0 or bool(shape.get("nearSquarePlan"))
-    spacing_values = [4.5, 5.5] if constrained_shape else [4.0, 5.0, 6.0]
-    column_values = [15.0, 18.0] if constrained_shape else [12.0, 18.0]
+    search = dict(search_config or {})
+    default_min = 4.5 if constrained_shape else 4.0
+    default_max = 5.5 if constrained_shape else 6.0
+    default_preferred = 5.0
+    spacing_min = max(2.0, min(10.0, float(search.get("spacingMinM", default_min))))
+    spacing_max = max(spacing_min, min(12.0, float(search.get("spacingMaxM", default_max))))
+    spacing_preferred = max(spacing_min, min(spacing_max, float(search.get("preferredSpacingM", default_preferred))))
+    spacing_values = _progressive_search_values(
+        spacing_min, spacing_max, spacing_preferred, count=2 if constrained_shape else 3
+    )
+    column_max = max(8.0, min(30.0, float(search.get("columnSpanMaxM", 18.0))))
+    column_min = max(6.0, min(column_max, float(search.get("columnSpanMinM", 15.0 if constrained_shape else 12.0))))
+    column_values = _progressive_search_values(column_min, column_max, column_max, count=2)
     available_strategies = _available_topology_strategies(project)
+    if topology_family:
+        requested_family = str(topology_family).strip()
+        available_strategies = [item for item in available_strategies if item == requested_family]
+        if not available_strategies:
+            return None, []
     # Candidate generation is an engineering search, not an unbounded geometry
     # fuzzer. Complex imported outlines previously multiplied topology, spacing,
     # column and line-shift combinations until the worker exhausted CPU/RAM.
-    max_trials = max(6, min(120, int(os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT", "36"))))
-    max_support_elements = max(100, min(10000, int(os.getenv("PITGUARD_MAX_SUPPORT_ELEMENTS", "2400"))))
+    configured_trial_limit = int(search.get("maxTrials") or os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT", "36"))
+    max_trials = max(6, min(180, configured_trial_limit))
+    configured_elements = int(search.get("maxSupportElements") or os.getenv("PITGUARD_MAX_SUPPORT_ELEMENTS", "2400"))
+    max_support_elements = max(100, min(12000, configured_elements))
     trial_count = 0
     for topology_strategy in available_strategies:
         for target_spacing in spacing_values:
@@ -957,6 +999,8 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                     warning_count = sum(1 for i in quality.issues if i.severity == "warning") + int(deep_metrics.get("memberWarningCount", 0) or 0)
                     terms = _objective_terms(trial_project, trial_project.retaining_system, target_spacing, metrics, deep_design)
                     hard = _hard_constraints(trial_project, metrics, trial_project.retaining_system, deep_design)
+                    hard["qualityFailCount"] = int(fail_count)
+                    hard["passed"] = bool(hard.get("passed")) and fail_count == 0
                     spans = _span_lengths(trial_project.retaining_system)
                     bay = _bay_spacings(trial_project.retaining_system)
                     score = _candidate_score(quality.score, terms, hard, fail_count, warning_count, weights)
@@ -995,6 +1039,14 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                             "adjustedLineCount": len(adjustments),
                             "targetSpacing": target_spacing,
                             "columnMaxSpan": column_span,
+                            "progressiveSearchConfig": {
+                                "spacingMinM": spacing_min,
+                                "spacingMaxM": spacing_max,
+                                "preferredSpacingM": spacing_preferred,
+                                "columnSpanMinM": column_min,
+                                "columnSpanMaxM": column_max,
+                                "maxTrials": max_trials,
+                            },
                             "lockedSupportCount": locked_count,
                             "lockedSupportIds": locked_ids,
                             "lockSummary": _lock_summary(project),
@@ -1045,10 +1097,11 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
     # Feasible candidates first, then score, geometry diversity, then fewer supports/columns for constructability.
     candidates.sort(key=lambda item: (
         not item[0].hard_constraints.get("passed", False),
+        int(item[0].fail_count or 0),
+        _status_rank(item[0].status),
         *_cleanliness_sort_key(item[0]),
         -item[0].score,
         -float(item[0].variable_summary.get("geometryDifferenceScore", 0.0)),
-        _status_rank(item[0].status),
         item[0].support_count,
         item[0].column_count,
     ))
@@ -1117,7 +1170,7 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
         item = next((pair for pair in candidates if pair[0].hard_constraints.get("passed", False) and str((pair[0].variable_summary or {}).get("topologyFamily")) == family), None)
         if item:
             family_best.append(item)
-    family_best.sort(key=lambda item: (*_cleanliness_sort_key(item[0]), -item[0].score))
+    family_best.sort(key=lambda item: (int(item[0].fail_count or 0), _status_rank(item[0].status), *_cleanliness_sort_key(item[0]), -item[0].score))
     for candidate, system in family_best:
         add_candidate(candidate, system, force=True)
         if len(ranked) >= min(max_candidates, 3):

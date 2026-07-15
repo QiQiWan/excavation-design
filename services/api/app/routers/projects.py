@@ -85,9 +85,13 @@ def get_project_storage_health(project_id: str, repo: ProjectRepository = Depend
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
     payload_mb = float(info["payloadBytes"]) / 1048576.0
     workspace_mb = float(info["workspaceBytes"]) / 1048576.0
-    info["status"] = "large" if payload_mb >= 96 else "elevated" if payload_mb >= 32 else "normal"
+    limit_mb = float(info.get("apiFullLoadLimitBytes") or 0) / 1048576.0
+    workspace_limit_mb = float(info.get("workspaceLimitBytes") or 0) / 1048576.0
+    info["status"] = str(info.get("storageStatus") or "normal")
     info["message"] = (
-        f"Full snapshot {payload_mb:.1f} MB; safe workspace projection {workspace_mb:.1f} MB."
+        f"完整快照 {payload_mb:.1f} MB；当前动态全量加载预算 {limit_mb:.1f} MB；"
+        f"网页工作区 {workspace_mb:.1f}/{workspace_limit_mb:.1f} MB。"
+        "完整快照大小不再直接阻断网页设计，重型操作由独立worker按资源策略执行。"
     )
     return info
 

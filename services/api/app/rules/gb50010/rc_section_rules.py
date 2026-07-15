@@ -26,7 +26,7 @@ REBAR_FY_MPA: dict[str, float] = {
 
 RC_FLEXURE_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-FLEX-RECT-001",
-    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
+    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="矩形截面受弯承载力基本公式（软件实现为常规单筋截面诊断）",
     name="矩形截面受弯配筋诊断",
@@ -37,7 +37,7 @@ RC_FLEXURE_RULE = DesignRule(
 
 RC_SHEAR_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-SHEAR-RECT-001",
-    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
+    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="斜截面受剪承载力基本诊断（软件简化）",
     name="矩形截面受剪承载力诊断",
@@ -48,7 +48,7 @@ RC_SHEAR_RULE = DesignRule(
 
 GB50010_AXIAL_RULE = DesignRule(
     rule_id="GBT50010-2024-RC-AXIAL-RECT-001",
-    standard_name="GB 50010-2010（2024年局部修订）混凝土结构设计规范 / GB 55008-2021",
+    standard_name="GB/T 50010-2010（2024年局部修订）混凝土结构设计标准 / GB 55008-2021",
     standard_version="2010-2024",
     clause_reference="轴压构件承载力基本诊断（软件简化）",
     name="矩形截面轴压承载力诊断",

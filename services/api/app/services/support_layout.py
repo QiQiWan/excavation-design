@@ -2501,6 +2501,61 @@ def _member_has_two_normal_bearings(first, second, direction: tuple[float, float
     return start_inward_dot >= threshold and end_outward_dot >= threshold
 
 
+def _wale_bay_repair_target_markers(
+    excavation,
+    audit: dict[str, object],
+    config: SupportLayoutConfig,
+) -> list[SupportLayoutLine]:
+    """Return deduplicated wall stations that still require a direct bearing.
+
+    A marker is not a structural member.  It records a target station on a
+    failing wale face so the repair engine can search an opposed-wall tie, a
+    terminal wall-to-wall diagonal, or an independent parallel corner brace.
+    Keeping target generation independent from the selected structural family
+    makes the repair applicable to convex, rotated, stepped and general concave
+    plans.
+    """
+    segments = {str(item.name): item for item in getattr(excavation, "segments", []) or []}
+    seen: set[tuple[str, float]] = set()
+    markers: list[SupportLayoutLine] = []
+    for row in audit.get("rows", []) or []:
+        if row.get("status") not in {"warning", "fail"}:
+            continue
+        face_code = str(row.get("faceCode") or "")
+        segment = segments.get(face_code)
+        if segment is None:
+            continue
+        face_length = float(row.get("faceLengthM") or segment.length or 0.0)
+        stations = [0.0, *[float(value) for value in row.get("stationsM", [])], face_length]
+        for left, right in zip(stations[:-1], stations[1:]):
+            bay = right - left
+            if bay <= float(config.max_wale_support_bay_m) + 1e-6:
+                continue
+            insertion_count = max(1, int(math.ceil(bay / float(config.max_wale_support_bay_m))) - 1)
+            for index in range(1, insertion_count + 1):
+                chainage = left + bay * index / (insertion_count + 1)
+                key = (face_code, round(chainage, 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                point = _point_at(segment.start, segment.end, max(0.05, min(face_length - 0.05, chainage)))
+                markers.append(SupportLayoutLine(
+                    role="secondary_strut",
+                    start=point,
+                    end=point,
+                    span_length=0.0,
+                    bay_spacing=None,
+                    layout_note=f"围檩超限跨目标站：墙面 {face_code} 里程 {chainage:.2f}m。",
+                    start_face_code=face_code,
+                    start_wall_connection=point,
+                    topology_family="qualification_target",
+                    station_chainage_m=chainage,
+                    placement_reason="wale_bay_repair_target",
+                    load_path_class="repair_target",
+                ))
+    return markers
+
+
 def _targeted_wale_bay_repair_lines(
     excavation,
     audit: dict[str, object],
@@ -2823,12 +2878,16 @@ def _direct_adjacent_wall_parallel_repair(
         if min_leg < MIN_CORNER_BRACE_LEG_M * 1.5:
             continue
         family_offsets = _corner_family_offsets(min_leg, config, float(config.max_wale_support_bay_m))
-        desired = max(float(config.corner_diagonal_min_offset_m), min(float(target_corner_distance), max(family_offsets or [float(config.corner_diagonal_max_offset_m)])))
+        geometric_max = min(float(config.corner_diagonal_max_offset_m), max(float(config.corner_diagonal_min_offset_m), min_leg - 0.10))
+        desired = max(float(config.corner_diagonal_min_offset_m), min(float(target_corner_distance), geometric_max))
+        spacing = float(config.corner_diagonal_family_spacing_m)
         offset_trials = sorted(
             set(family_offsets + [
                 round(desired, 3),
-                round(desired - float(config.corner_diagonal_family_spacing_m), 3),
-                round(desired + float(config.corner_diagonal_family_spacing_m), 3),
+                round(desired - spacing, 3),
+                round(desired + spacing, 3),
+                round(desired - 2.0 * spacing, 3),
+                round(desired + 2.0 * spacing, 3),
             ]),
             key=lambda value: abs(value - desired),
         )
@@ -2972,6 +3031,21 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
     )
     targeted_lines = _targeted_wale_bay_repair_lines(excavation, before, obstacles, config)
     _attach_faces(targeted_lines, excavation)
+    target_markers = _wale_bay_repair_target_markers(excavation, before, config)
+
+    def _target_already_served(marker: SupportLayoutLine) -> bool:
+        face_code = str(marker.start_face_code or "")
+        target = marker.start_wall_connection or marker.start
+        for line in targeted_lines:
+            for code, point in (
+                (str(line.start_face_code or ""), line.start_wall_connection or line.start),
+                (str(line.end_face_code or ""), line.end_wall_connection or line.end),
+            ):
+                if code == face_code and _distance(point, target) <= max(0.75, float(config.support_min_station_separation_m) * 0.35):
+                    return True
+        return False
+
+    targeted_lines.extend(marker for marker in target_markers if not _target_already_served(marker))
     covered_faces = {
         face
         for line in targeted_lines

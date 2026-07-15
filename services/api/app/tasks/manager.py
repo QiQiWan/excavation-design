@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import RLock, BoundedSemaphore, Event, Thread
+from threading import RLock, Condition, Event, Thread
 from typing import Any, Callable
 from uuid import uuid4
 import traceback
@@ -20,12 +20,16 @@ try:
     import resource
 except ImportError:  # pragma: no cover - Windows compatibility
     resource = None  # type: ignore[assignment]
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 
 from app.storage.repository import ProjectRepository
 from app.storage.task_store import SQLiteTaskStore
 from app.version import SOFTWARE_VERSION
 from app.services.calculation_resource_estimator import estimate_calculation_resources
+from app.services.runtime_resource_policy import adaptive_resource_policy, mb
+
+HEAVY_TASK_CONCURRENCY_ENV = "PITGUARD_HEAVY_TASK_CONCURRENCY"
+TASK_MEMORY_SOFT_LIMIT_ENV = "PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB"
 
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
@@ -163,21 +167,18 @@ class TaskManager:
         self._execution_mode = str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded") or "embedded").strip().lower()
         if self._execution_mode not in {"embedded", "external", "worker"}:
             self._execution_mode = "embedded"
+        startup_policy = adaptive_resource_policy(role="worker" if self._execution_mode == "worker" else "api")
         self._worker_count = _env_int("PITGUARD_TASK_WORKERS", 2, 1, 8)
-        self._heavy_concurrency = _env_int("PITGUARD_HEAVY_TASK_CONCURRENCY", 1, 1, 2)
-        self._memory_soft_limit_mb = _env_int("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB", 5600, 1024, 131072)
+        self._heavy_concurrency = max(1, min(3, int(startup_policy.get("recommendedHeavyConcurrency") or 1)))
+        self._memory_soft_limit_mb = max(192, int(mb(startup_policy.get("workerSoftLimitBytes"))))
         self._task_timeout_seconds = _env_int("PITGUARD_TASK_TIMEOUT_SECONDS", 1800, 60, 86400)
         self._resource_watch_interval_seconds = _env_int("PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS", 3, 1, 30)
-        self._worker_rss_hard_limit_mb = _env_int(
-            "PITGUARD_WORKER_RSS_HARD_LIMIT_MB",
-            max(self._memory_soft_limit_mb + 512, int(self._memory_soft_limit_mb * 1.12)),
-            2048,
-            262144,
-        )
-        self._system_memory_reserve_mb = _env_int("PITGUARD_SYSTEM_MEMORY_RESERVE_MB", 1536, 256, 65536)
+        self._worker_rss_hard_limit_mb = max(256, int(mb(startup_policy.get("workerHardLimitBytes"))))
+        self._system_memory_reserve_mb = max(256, int(mb(startup_policy.get("reserveBytes"))))
         default_heartbeat = Path(os.getenv("PITGUARD_DB_PATH", str(Path(__file__).resolve().parents[2] / "pitguard.sqlite3"))).with_name("worker-heartbeat.json")
         self._worker_heartbeat_path = Path(os.getenv("PITGUARD_WORKER_HEARTBEAT_PATH", str(default_heartbeat)))
-        self._heavy_semaphore = BoundedSemaphore(self._heavy_concurrency)
+        self._heavy_condition = Condition(RLock())
+        self._heavy_active = 0
         self._executor = (
             ThreadPoolExecutor(max_workers=self._worker_count, thread_name_prefix="pitguard-task")
             if self._execution_mode == "embedded" else None
@@ -186,6 +187,7 @@ class TaskManager:
             "calculation_full", "candidate_comparison", "candidate_scheme_calculation", "support_layout_optimization",
             "full_delivery", "industrial_closure", "export_rebar_detailing",
             "export_ifc_detailed", "export_ifc_construction_visual", "export_coordinated_delivery",
+            "storage_compaction",
         }
         for raw in self._store.list(limit=500):
             task = TaskRecord.from_dict(raw)
@@ -201,6 +203,39 @@ class TaskManager:
                 task.logs.append(f"[{_now()}] 服务启动时检测到未完成任务，已标记为 interrupted。")
                 self._store.upsert(task.as_dict(include_logs=True))
             self._tasks[task.id] = task
+
+    @contextmanager
+    def _dynamic_heavy_guard(self, task: TaskRecord):
+        """Admit heavy work using current, not startup-only, memory headroom.
+
+        The configured/startup concurrency is an administrative maximum.  The
+        live policy may reduce it to one while other services consume memory and
+        may raise it again after headroom recovers.  This prevents three A/B/C
+        workers from passing the same preflight instant and overcommitting RAM.
+        """
+        waited = False
+        while True:
+            policy = adaptive_resource_policy(role="worker")
+            allowed = max(1, min(self._heavy_concurrency, int(policy.get("recommendedHeavyConcurrency") or 1)))
+            with self._heavy_condition:
+                if self._heavy_active < allowed:
+                    self._heavy_active += 1
+                    break
+                if task.cancel_requested:
+                    raise RuntimeError("Task cancelled while waiting for the adaptive heavy-task admission gate")
+                if not waited:
+                    self._append_log(
+                        task,
+                        f"当前资源策略允许 {allowed} 个重任务并发；已有 {self._heavy_active} 个，任务进入资源等待队列。",
+                    )
+                    waited = True
+                self._heavy_condition.wait(timeout=1.0)
+        try:
+            yield policy
+        finally:
+            with self._heavy_condition:
+                self._heavy_active = max(0, self._heavy_active - 1)
+                self._heavy_condition.notify_all()
 
     def _write_worker_heartbeat(self, status: str, task_id: str | None = None) -> None:
         if self._execution_mode != "worker":
@@ -270,19 +305,24 @@ class TaskManager:
                         self._store.upsert(raw_task)
                     self._write_worker_heartbeat("running", task.id)
                     last_heartbeat = now_monotonic
-                if rss > self._worker_rss_hard_limit_mb:
+                runtime_policy = adaptive_resource_policy(role="worker")
+                hard_limit_mb = max(256.0, mb(runtime_policy.get("workerHardLimitBytes")))
+                reserve_mb = max(128.0, mb(runtime_policy.get("reserveBytes")))
+                self._worker_rss_hard_limit_mb = int(hard_limit_mb)
+                self._system_memory_reserve_mb = int(reserve_mb)
+                if rss > hard_limit_mb:
                     self._mark_worker_resource_abort(
                         task.id,
-                        f"计算worker RSS达到 {rss:.0f} MB，超过硬上限 {self._worker_rss_hard_limit_mb} MB，已终止当前计算进程。",
+                        f"计算worker RSS达到 {rss:.0f} MB，超过当前动态硬上限 {hard_limit_mb:.0f} MB，已终止当前计算进程。",
                     )
-                if available > 0 and available < self._system_memory_reserve_mb:
+                if available > 0 and available < reserve_mb:
                     consecutive_low_memory += 1
                 else:
                     consecutive_low_memory = 0
                 if consecutive_low_memory >= 2:
                     self._mark_worker_resource_abort(
                         task.id,
-                        f"服务器可用内存仅 {available:.0f} MB，低于保留值 {self._system_memory_reserve_mb} MB，已优先终止计算worker。",
+                        f"服务器可用内存仅 {available:.0f} MB，低于当前动态保留值 {reserve_mb:.0f} MB，已优先终止计算worker。",
                     )
 
         thread = Thread(target=monitor, name=f"pitguard-resource-watch-{task.id}", daemon=True)
@@ -304,19 +344,22 @@ class TaskManager:
 
     def _enforce_memory_budget(self, task: TaskRecord, stage: str) -> None:
         """Fail a heavy task cleanly before the operating system OOM-kills the API."""
+        runtime_policy = adaptive_resource_policy(role="worker")
+        soft_limit_mb = max(192.0, mb(runtime_policy.get("workerSoftLimitBytes")))
+        self._memory_soft_limit_mb = int(soft_limit_mb)
         rss = _process_memory_mb()
-        if rss <= self._memory_soft_limit_mb:
+        if rss <= soft_limit_mb:
             return
         _release_process_memory()
         rss_after = _process_memory_mb()
         self._append_log(
             task,
-            f"{stage}检测到内存压力：RSS {rss_after:.2f} MB，软上限 {self._memory_soft_limit_mb} MB。",
+            f"{stage}检测到内存压力：RSS {rss_after:.2f} MB，当前动态软上限 {soft_limit_mb:.0f} MB。",
         )
-        if rss_after > self._memory_soft_limit_mb:
+        if rss_after > soft_limit_mb:
             raise RuntimeError(
                 f"服务器内存不足，已在{stage}前受控终止任务（RSS {rss_after:.0f} MB > "
-                f"{self._memory_soft_limit_mb} MB）。请关闭并行候选计算、清理旧结果或提高实例内存。"
+                f"动态软上限 {soft_limit_mb:.0f} MB）。系统将保留已完成步骤，可改为逐方案计算或增加worker资源。"
             )
 
     @staticmethod
@@ -368,7 +411,12 @@ class TaskManager:
         return task
 
     def submit_candidate_batch(self, project_id: str, top_n: int = 3, use_cache: bool = True) -> list[TaskRecord]:
-        project = self._repo().require(project_id)
+        # Task orchestration belongs to the lightweight API path. Candidate IDs,
+        # ranks and preview geometry are part of the bounded workspace projection;
+        # the dedicated worker hydrates the full project only when each task runs.
+        # This keeps the A/B/C button usable for projects whose logical snapshot is
+        # hundreds of megabytes.
+        project = self._repo().require_workspace(project_id)
         repair = project.retaining_system.support_layout_repair if project.retaining_system else None
         candidates = list((repair.candidates if repair else [])[: max(1, min(top_n, 3))])
         if not candidates:
@@ -510,7 +558,7 @@ class TaskManager:
             return
         with self._lock:
             project_lock = self._project_locks.setdefault(task.project_id, RLock())
-        heavy_guard = self._heavy_semaphore if task.operation in self._heavy_operations else nullcontext()
+        heavy_guard = self._dynamic_heavy_guard(task) if task.operation in self._heavy_operations else nullcontext()
         memory_before = _process_memory_mb()
         watchdog = self._start_resource_watchdog(task)
         try:
@@ -518,7 +566,13 @@ class TaskManager:
             self._append_log(task, f"任务内存基线 {memory_before:.2f} MB；重任务并发上限 {self._heavy_concurrency}。")
             with heavy_guard:
                 if task.operation in self._heavy_operations:
-                    self._append_log(task, "已进入重计算内存闸门，避免多个完整计算/导出同时占用内存。")
+                    live_policy = adaptive_resource_policy(role="worker")
+                    self._append_log(
+                        task,
+                        "已进入自适应重计算内存闸门；"
+                        f"当前建议并发 {live_policy.get('recommendedHeavyConcurrency', 1)}，"
+                        f"可用内存 {mb(live_policy.get('effectiveAvailableBytes')):.1f} MB。",
+                    )
                     self._enforce_memory_budget(task, "重任务启动")
                 if task.operation == "candidate_scheme_calculation":
                     self._append_log(task, "候选方案采用只读项目快照计算；写回结果时使用短时项目锁。")
@@ -639,12 +693,33 @@ class TaskManager:
             result = self._run_full_delivery(task, payload)
         elif task.operation == "industrial_closure":
             result = self._run_industrial_closure(task, payload)
+        elif task.operation == "storage_compaction":
+            result = self._run_storage_compaction(task, payload)
         else:
             raise ValueError(f"Unsupported task operation: {task.operation}")
         return result
 
     def _repo(self) -> ProjectRepository:
         return ProjectRepository()
+
+    def _assert_calculation_qualified(self, repo: ProjectRepository, project: Any) -> dict[str, Any]:
+        from app.services.design_qualification import build_design_qualification
+
+        qualification = build_design_qualification(
+            project,
+            storage_info=repo.store.get_payload_info(project.id),
+        )
+        if bool(qualification.get("calculationAllowed")):
+            return qualification
+        blockers = []
+        for gate in qualification.get("gates") or []:
+            if "calculation" in (gate.get("blocks") or []):
+                blockers.append(f"{gate.get('title')}: {gate.get('message')}")
+        detail = "；".join(blockers) or "当前设计资格未允许启动完整计算。"
+        raise ValueError(
+            "完整计算已由设计资格门禁阻断。" + detail
+            + " 请先完成几何修复、坐标/地质确认或支撑体系闭合，再重新提交任务。"
+        )
 
     def _run_support_layout_optimization(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         from app.services.support_layout_repair import auto_repair_support_layout
@@ -660,11 +735,20 @@ class TaskManager:
         ensure_geological_model_covers_excavation(project)
         if project.retaining_system is None or not project.retaining_system.diaphragm_walls:
             project.retaining_system = auto_diaphragm_wall(project.excavation, project.retaining_system, project.design_settings)
-        self._stage(task, 28, "按平面类型生成受力可闭合的支撑候选")
+        self._stage(task, 28, "按渐进式设计配置生成受力可闭合的支撑候选")
+        from app.services.progressive_design import task_payload_from_progressive_config
+        session_payload = task_payload_from_progressive_config(
+            repo.store.get_progressive_design_config(task.project_id)
+        )
+        effective_payload = dict(session_payload)
+        effective_payload.update({key: value for key, value in payload.items() if value is not None})
         result = auto_repair_support_layout(
             project,
-            objective_weights=dict(payload.get("objectiveWeights") or payload.get("objective_weights") or {}),
-            preset=str(payload.get("preset") or "balanced"),
+            objective_weights=dict(effective_payload.get("objectiveWeights") or effective_payload.get("objective_weights") or {}),
+            preset=str(effective_payload.get("preset") or "balanced"),
+            topology_family=(str(effective_payload.get("topologyFamily") or effective_payload.get("topology_family") or "").strip() or None),
+            max_candidates=max(1, min(8, int(effective_payload.get("maxCandidates") or 5))),
+            search_config=dict(effective_payload.get("searchConfig") or {}),
         )
         self._stage(task, 82, "执行零非法交叉、墙—墙传力与围檩跨审查")
         invalidate_calculation_state(
@@ -681,6 +765,7 @@ class TaskManager:
             "candidateCount": len(result.candidates or []),
             "status": result.status,
             "selectedCandidateId": result.selected_candidate_id,
+            "progressiveDesignConfigApplied": effective_payload,
             "refreshProject": True,
         }
 
@@ -692,6 +777,7 @@ class TaskManager:
         from app.services.wall_length_optimizer import mark_wall_length_recalculated
         repo = self._repo()
         project = repo.require(task.project_id)
+        self._assert_calculation_qualified(repo, project)
         requested_top_n = max(0, min(3, int(payload.get("topN") if payload.get("topN") is not None else payload.get("top_n") or 0)))
         resource_estimate = self._resource_preflight(task, project, candidate_count=requested_top_n)
         if resource_estimate.get("safeModeRequired") and requested_top_n > 0:
@@ -741,6 +827,7 @@ class TaskManager:
         from app.quality.formal_gate import build_formal_report_gate
         repo = self._repo()
         project = repo.require(task.project_id)
+        self._assert_calculation_qualified(repo, project)
         top_n = int(payload.get("topN") or payload.get("top_n") or 3)
         estimate = self._resource_preflight(task, project, candidate_count=top_n)
         if estimate.get("safeModeRequired"):
@@ -768,6 +855,7 @@ class TaskManager:
         from app.calculation.engine import run_single_candidate_calculation
         repo = self._repo()
         project = repo.require(task.project_id)
+        self._assert_calculation_qualified(repo, project)
         self._resource_preflight(task, project, candidate_count=1)
         candidate_id = str(payload.get("candidateId") or "")
         candidate_index = int(payload.get("candidateIndex") or 0)
@@ -1024,6 +1112,39 @@ class TaskManager:
         )
         return {"projectId": project.id, "readiness": readiness, "refreshProject": True}
 
+    def _run_storage_compaction(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        repo = self._repo()
+        self._stage(task, 12, "读取项目存储索引，不在 API 进程中反序列化完整工程对象")
+        before = repo.store.get_payload_info(task.project_id)
+        if before is None:
+            raise ValueError(f"Project not found: {task.project_id}")
+        self._stage(task, 38, "外部化地质曲面、计算结果、候选完整计算和钢筋重型数据")
+        result = repo.store.compact_project_storage(
+            task.project_id,
+            include_revisions=bool(payload.get("includeRevisions") or payload.get("include_revisions")),
+        )
+        self._stage(task, 82, "重建受限工作区投影并校验存储体积")
+        after = repo.store.get_payload_info(task.project_id) or result.get("after") or {}
+        repo.store.append_audit(
+            task.project_id,
+            action="project.storage_compaction",
+            summary="Project heavy payload externalized and workspace projection rebuilt",
+            actor="task-worker",
+            metadata={
+                "beforePayloadBytes": int((before or {}).get("payloadBytes") or 0),
+                "afterPayloadBytes": int((after or {}).get("payloadBytes") or 0),
+                "beforeWorkspaceBytes": int((before or {}).get("workspaceBytes") or 0),
+                "afterWorkspaceBytes": int((after or {}).get("workspaceBytes") or 0),
+            },
+        )
+        return {
+            "projectId": task.project_id,
+            "before": before,
+            "after": after,
+            "compaction": result,
+            "refreshProject": True,
+        }
+
     def _file_result(self, path: Path, media_type: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         digest = None
         size = path.stat().st_size if path.exists() else 0
@@ -1063,6 +1184,7 @@ class TaskManager:
             "export_benchmark_cases": "导出公开论文典型基坑回归算例包",
             "full_delivery": "全流程计算与成果生成",
             "industrial_closure": "P0-P3 工业闭环计算与资格评估",
+            "storage_compaction": "压缩项目存储与重建工作区",
         }.get(operation, operation)
 
     def _stage(self, task: TaskRecord, progress: int, step: str) -> None:

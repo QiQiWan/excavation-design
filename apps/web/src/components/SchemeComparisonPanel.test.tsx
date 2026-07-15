@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import SchemeComparisonPanel from './SchemeComparisonPanel';
 import type { Project } from '../types/domain';
 
@@ -70,6 +70,33 @@ describe('SchemeComparisonPanel', () => {
     expect(screen.getByText(/当前支撑拓扑已变更/)).toBeInTheDocument();
     expect(screen.queryByText('503.95 mm')).not.toBeInTheDocument();
     expect(screen.queryByText('Fail 33')).not.toBeInTheDocument();
+  });
+
+  it('loads missing candidate geometry through the lightweight preview endpoint', async () => {
+    const lightweight = {
+      ...project,
+      retainingSystem: {
+        ...project.retainingSystem,
+        supportLayoutRepair: {
+          ...project.retainingSystem?.supportLayoutRepair,
+          candidates: project.retainingSystem?.supportLayoutRepair?.candidates?.map((candidate) => ({ ...candidate, planGeometry: {} })),
+        },
+      },
+    } as unknown as Project;
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      projectId: project.id, source: 'preview_cache', previews: ['A', 'B', 'C'].map((candidateId, index) => ({
+        candidateId, rank: index + 1, planGeometry: {
+          outline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }],
+          supports: [{ id: `${candidateId}-S1`, start: { x: 5, y: 0 }, end: { x: 5, y: 10 }, role: 'main_strut' }], columns: [],
+        },
+      })),
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<SchemeComparisonPanel project={lightweight} compact />);
+    await waitFor(() => expect(container.querySelectorAll('.schemeLine').length).toBeGreaterThanOrEqual(3));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/design/candidate-previews'), expect.anything());
+    expect(screen.queryByText('方案几何尚未写入工作区')).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 
 });

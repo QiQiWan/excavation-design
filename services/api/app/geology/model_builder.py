@@ -121,11 +121,14 @@ def required_geological_design_bounds(project: Project) -> Bounds | None:
 
 
 def _model_bounds(model: GeologicalModel | None) -> Bounds | None:
-    if model is None or not model.surfaces:
+    if model is None:
+        return None
+    surfaces = list(model.surfaces or model.surface_previews or [])
+    if not surfaces:
         return None
     xs: list[float] = []
     ys: list[float] = []
-    for surface in model.surfaces:
+    for surface in surfaces:
         xs.extend(surface.grid.x_values)
         ys.extend(surface.grid.y_values)
     if not xs or not ys:

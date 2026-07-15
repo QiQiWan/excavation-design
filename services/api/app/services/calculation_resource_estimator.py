@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from app.schemas.domain import Project
+from app.services.runtime_resource_policy import adaptive_resource_policy, mb
 
 
 def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 1_000_000) -> int:
@@ -52,9 +53,14 @@ def estimate_calculation_resources(project: Project, *, candidate_count: int = 0
                          + borehole_count * 0.25) * copy_multiplier
     estimated_peak_mb = round(max(384.0, estimated_peak_mb), 1)
 
-    worker_limit = _env_int("PITGUARD_WORKER_MEMORY_MAX_MB", 8192, 2048, 262144)
-    soft_limit = _env_int("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB", max(2048, int(worker_limit * 0.82)), 1024, 262144)
-    ratio = estimated_peak_mb / max(worker_limit, 1)
+    runtime_policy = adaptive_resource_policy(role="worker")
+    worker_limit = max(256, int(mb(runtime_policy.get("workerHardLimitBytes"))))
+    soft_limit = max(192, int(mb(runtime_policy.get("workerSoftLimitBytes"))))
+    available_mb = max(0.0, mb(runtime_policy.get("effectiveAvailableBytes")))
+    reserve_mb = max(0.0, mb(runtime_policy.get("reserveBytes")))
+    immediate_headroom_mb = max(0.0, available_mb - reserve_mb)
+    effective_task_budget_mb = max(192.0, min(float(worker_limit), immediate_headroom_mb + mb(runtime_policy.get("processRssBytes"))))
+    ratio = estimated_peak_mb / max(effective_task_budget_mb, 1.0)
     if ratio >= 0.92 or support_count > 2400 or stage_count * segment_count > 1200:
         risk = "blocked"
     elif ratio >= 0.72 or support_count > 1200 or stage_count * segment_count > 650:
@@ -81,6 +87,11 @@ def estimate_calculation_resources(project: Project, *, candidate_count: int = 0
         "estimatedPeakMemoryMb": estimated_peak_mb,
         "workerMemoryMaxMb": worker_limit,
         "workerSoftLimitMb": soft_limit,
+        "runtimeAvailableMemoryMb": available_mb,
+        "runtimeReserveMemoryMb": reserve_mb,
+        "effectiveTaskBudgetMb": round(effective_task_budget_mb, 1),
+        "recommendedHeavyConcurrency": int(runtime_policy.get("recommendedHeavyConcurrency") or 1),
+        "resourcePolicyMode": runtime_policy.get("mode"),
         "budgetRatio": round(ratio, 4),
         "stageCount": stage_count,
         "segmentCount": segment_count,
@@ -94,5 +105,6 @@ def estimate_calculation_resources(project: Project, *, candidate_count: int = 0
         "safeModeRequired": risk in {"high", "blocked"},
         "calculationAllowed": risk != "blocked",
         "recommendations": recommendations,
-        "method": "conservative stage-face payload and dense-subsystem memory upper-bound estimator",
+        "method": "adaptive runtime-headroom and conservative stage-face/dense-subsystem memory estimator",
+        "resourcePolicy": runtime_policy,
     }

@@ -142,6 +142,7 @@ class ProjectRepository:
         try:
             data = self.store.get(project_id)
         except ProjectPayloadTooLarge as exc:
+            storage = self.store.get_payload_info(exc.project_id) or {}
             raise HTTPException(
                 status_code=413,
                 detail={
@@ -150,7 +151,11 @@ class ProjectRepository:
                     "projectId": exc.project_id,
                     "payloadBytes": exc.payload_bytes,
                     "limitBytes": exc.limit_bytes,
-                    "recommendation": "Use the workspace profile, run the isolated worker, or compact legacy project storage.",
+                    "workspaceBytes": storage.get("workspaceBytes"),
+                    "workspaceLoadAllowed": storage.get("workspaceLoadAllowed", True),
+                    "compactionRecommended": storage.get("compactionRecommended", False),
+                    "resourcePolicy": storage.get("resourcePolicy", {}),
+                    "recommendation": "Use the workspace profile; execute full calculations and exports in the isolated worker.",
                 },
             ) from exc
         if not data:
