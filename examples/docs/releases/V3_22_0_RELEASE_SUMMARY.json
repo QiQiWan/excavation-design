@@ -1,0 +1,47 @@
+{
+  "release": "PitGuard V3.22.0",
+  "softwareVersion": "3.22.0",
+  "algorithmVersion": "3.22.0-p0-p3-industrial-closure",
+  "ruleSetVersion": "2026.07-v3.22-qualification-clean-topology-audit-monitoring",
+  "generatedAt": "2026-07-14T04:45:14.886097+00:00",
+  "scope": {
+    "P0": [
+      "general-shape qualification",
+      "calculation contract",
+      "finite-value gate",
+      "traceability and geometry consistency",
+      "screening-only geology fallback"
+    ],
+    "P1": [
+      "clean support topology as primary objective",
+      "A/B/C full calculation evidence",
+      "individual rebar and node hardware blocking checks"
+    ],
+    "P2": [
+      "immutable revisions",
+      "optimistic concurrency",
+      "audit events",
+      "task retry and metrics",
+      "API-key RBAC",
+      "online SQLite backup"
+    ],
+    "P3": [
+      "project-defined monitoring thresholds",
+      "trend projection",
+      "five-level alerts",
+      "digital twin snapshot",
+      "controlled calibration workflow"
+    ]
+  },
+  "verification": {
+    "criticalBackendTestsPassed": 47,
+    "finalReleaseGateTestsPassed": 14,
+    "frontendTestFilesPassed": 9,
+    "frontendTestsPassed": 13,
+    "typescriptBuild": "pass",
+    "viteProductionBuild": "pass",
+    "pythonCompileall": "pass",
+    "knownWarning": "Three.js vendor chunk is about 524 kB after minification; functional build is valid."
+  },
+  "industrialBoundary": "Software-internal P0-P3 closure is implemented. Formal project issue still requires verified investigation data, external benchmark validation, design-organization QA and registered professional signoff."
+}

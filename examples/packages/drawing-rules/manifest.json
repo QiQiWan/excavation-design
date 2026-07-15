@@ -1,0 +1,24 @@
+{
+  "packageId": "pitguard-core-drawing-rules",
+  "version": "3.5.0",
+  "schemaVersion": "1.0",
+  "presets": [
+    {
+      "id": "compact",
+      "file": "presets/compact.json"
+    },
+    {
+      "id": "balanced",
+      "file": "presets/balanced.json"
+    },
+    {
+      "id": "construction",
+      "file": "presets/construction.json"
+    },
+    {
+      "id": "enterprise-minimal",
+      "file": "presets/enterprise-minimal.json"
+    }
+  ],
+  "description": "PitGuard core configurable drawing rule packs. Enterprise packs may override this directory through PITGUARD_DRAWING_RULE_DIR."
+}

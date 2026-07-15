@@ -1,19 +1,32 @@
-# PitGuard BIM Designer V3.29.0
+# PitGuard BIM Designer V3.31.0
 
 面向基坑围护结构方案设计、分阶段计算、规范审查、配筋与构造深化、三维复核以及 IFC/CAD/PDF 交付的工程设计辅助系统。
 
 
-## V3.29.0 布设方案设计器审计与运行韧性
 
-- 增加布设方案设计器完整性审计：形状识别、体系兼容、传力闭合、候选多样性、施工阶段、资源预算和交付门禁。
-- 计算、候选搜索和重型导出继续由独立 worker 执行；新增 RSS/系统可用内存看门狗、任务硬超时和进程级资源隔离。
-- 候选搜索增加试算次数与杆件数量上限，避免异形轮廓导致候选组合爆炸。
-- 项目列表读取独立轻量摘要，计算任务仅在完成时写入一次不可变项目修订，降低 SQLite/WAL 和序列化峰值。
-- 登录状态检查缩短至 5 秒，API 不可用时进入可重试离线登录页；增加前端错误边界和任务断线重连。
-- 生产部署增加 auth-status 快速代理、API/worker 独立健康探针、动态内存保护、CPU/IO 降优先级和无交换 worker。
-- 浏览器刷新后自动恢复正在运行的任务；导出任务将 `interrupted` 作为终态，不再因 worker 受控退出而无限轮询。
+## V3.31.0 外部数据对象与小内存工作集
 
-详细审查和运行边界见 [`docs/releases/V3_29_0_RESILIENT_SCHEME_DESIGNER.md`](docs/releases/V3_29_0_RESILIENT_SCHEME_DESIGNER.md)。
+- 项目主快照只保存设计核心、计算摘要和外部对象引用；完整施工阶段结果、地质网格、候选完整计算、逐根钢筋及工业深化缓存迁移到 `runtime/artifacts`。
+- 外部对象采用 SHA-256 内容寻址和 gzip 压缩；计算阶段结果按默认 100 条记录分片，worker 读取时自动重组。
+- 网页打开项目继续使用有上限的 `workspace_data`；计算明细在用户展开后读取单个分片，不再一次进入浏览器内存。
+- 大型数据下载由认证 API 返回 `X-Accel-Redirect`，Nginx 使用 `sendfile` 直接传输，Python API 不读取完整文件。
+- 一键部署自动备份数据库、迁移当前项目及保留修订、清理孤立对象，并配置 Nginx 内部对象路径。
+- 新增 `backup-production.sh`，同时生成 SQLite 一致性备份和对象校验清单；可选打包全部对象文件。
+
+详细说明见 [`docs/releases/V3_31_0_EXTERNAL_DATASET_WORKING_SET.md`](docs/releases/V3_31_0_EXTERNAL_DATASET_WORKING_SET.md)。
+
+## V3.30.0 大型项目安全打开与API内存隔离
+
+- 项目详情默认读取独立的 `workspace_data` 投影，不再把完整计算矩阵、VTU网格、逐根钢筋和候选完整计算装入API进程。
+- `GET /api/projects/{id}` 直接返回SQLite中已持久化的工作区JSON，跳过 `json.loads → Pydantic → 再序列化` 的多重内存复制。
+- 完整项目快照继续保存在 `projects.data` 和不可变修订中，仅隔离worker或显式 `profile=full` 使用。
+- 数据库自动增加 `workspace_data`、`payload_bytes` 和 `workspace_bytes`；旧数据库通过SQLite JSON1在独立部署进程中安全回填。
+- 项目打开改为只读操作，不再在GET请求中执行历史迁移、结果失效写回或创建新修订。
+- API对完整项目加载增加默认96 MB硬门禁；超限返回HTTP 413诊断，避免冲破systemd内存上限。
+- 项目列表显示完整快照体积，新增 `/api/projects/{id}/storage-health`；`status-production.sh` 输出最大项目及工作区体积。
+- 一键部署会在启动API前执行工作区投影准备，API和worker分别设置 `PITGUARD_PROCESS_ROLE=api/worker`。
+
+详细说明见 [`docs/releases/V3_30_0_PROJECT_OPEN_MEMORY_SAFETY.md`](docs/releases/V3_30_0_PROJECT_OPEN_MEMORY_SAFETY.md)。
 
 ## V3.28.0 异形轮廓智能识别与体系选型
 

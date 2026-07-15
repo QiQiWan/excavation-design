@@ -11,6 +11,43 @@ function conclusion(status?: string) {
   return '尚未运行计算。';
 }
 
+
+function OnDemandResultDetails({ project, latest, highlightLocator, children }: { project: Project; latest: CalculationResult; highlightLocator?: Record<string, unknown>; children?: (hydrated: CalculationResult) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [hydrated, setHydrated] = useState<CalculationResult>(latest);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    setHydrated(latest);
+    setError(undefined);
+  }, [latest.id]);
+  useEffect(() => {
+    if (!open || hydrated.stageResults.length || loading) return;
+    let alive = true;
+    setLoading(true);
+    api.getCalculationStageChunks(project.id, latest.id)
+      .then(async (manifest) => {
+        const count = Number(manifest.chunkCount ?? 0);
+        if (!count) return [] as Record<string, unknown>[];
+        // Load only the first bounded chunk. Additional stage groups remain on
+        // disk and can be requested later, preventing browser heap spikes.
+        return api.getCalculationStageChunk(project.id, latest.id, 0);
+      })
+      .then((rows) => { if (alive && rows.length) setHydrated({ ...latest, stageResults: rows as any[] }); })
+      .catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [open, project.id, latest.id, hydrated.stageResults.length, loading]);
+  return <details className="focusDetails" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>查看控制云图与内力包络（按需加载）</summary>
+    {open ? <>
+      {loading ? <div className="infoBox">正在读取首个计算结果分片…</div> : null}
+      {error ? <div className="warning">结果分片读取失败：{error}</div> : null}
+      {children ? children(hydrated) : <><InternalForceVisualization latest={hydrated} highlightLocator={highlightLocator} /><WallCloud3DViewer project={project} latest={hydrated} highlightLocator={highlightLocator} /></>}
+    </> : null}
+  </details>;
+}
+
 function DeferredResultDetails({ summary, className = "engineeringDetails", children }: { summary: string; className?: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return <details className={className} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
@@ -492,7 +529,7 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
           <section className="summaryPanel"><h4>校核数量</h4><CheckSummaryPills summary={latest.checkSummary} /></section>
           <section className="summaryPanel"><h4>施工图闸门</h4><div className="metricLine"><span>状态</span><strong>{latest.formalReportGate?.status ?? '未评估'}</strong></div><div className="metricLine"><span>正式发行</span><strong>{latest.formalReportGate?.allowedForOfficialIssue ? '允许' : '暂不允许'}</strong></div><p className="small">{latest.formalReportGate?.headline ?? '完成计算后自动评估。'}</p></section>
         </div>
-        <DeferredResultDetails className="focusDetails" summary="查看控制云图与内力包络"><InternalForceVisualization latest={latest} highlightLocator={highlightLocator} /><WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} /></DeferredResultDetails>
+        <OnDemandResultDetails project={project} latest={latest} highlightLocator={highlightLocator} />
       </>}
     </div>;
   }
@@ -510,12 +547,12 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
             <div><strong>{latest.governingValues.maxDisplacement ?? '-'}</strong><span>最大位移 mm</span></div>
           </div>
           <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
-          <DeferredResultDetails summary="查看内力包络、墙体云图与设计面局部优化">
-            <InternalForceVisualization latest={latest} highlightLocator={highlightLocator} />
-            <WallCloud3DViewer project={project} latest={latest} highlightLocator={highlightLocator} />
+          <OnDemandResultDetails project={project} latest={latest} highlightLocator={highlightLocator}>{(hydrated) => <>
+            <InternalForceVisualization latest={hydrated} highlightLocator={highlightLocator} />
+            <WallCloud3DViewer project={project} latest={hydrated} highlightLocator={highlightLocator} />
             <ExpertDesignPanel project={project} runStep={runStep} />
             <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} />
-          </DeferredResultDetails>
+          </>}</OnDemandResultDetails>
           <p>专业复核：{latest.professionalReviewRequired ? '需要' : '否'}</p>
           <h4>校核汇总</h4>
           <CheckSummaryPills summary={latest.checkSummary} />

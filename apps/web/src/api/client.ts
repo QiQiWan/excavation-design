@@ -67,7 +67,12 @@ export const api = {
   createProject: (payload: { name: string; location?: string }) => request<Project>('/api/projects', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   }),
-  getProject: (id: string) => request<Project>(`/api/projects/${id}`),
+  getProject: (id: string) => request<Project>(`/api/projects/${id}?profile=workspace`, { timeoutMs: 20000, timeoutMessage: '项目工作区 20 秒内未加载完成。后端已阻止全量大对象进入 API；请检查项目存储健康状态。' }),
+  getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 5000 }),
+  listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 8000 }),
+  projectArtifactDownloadUrl: (id: string, artifactId: string) => `${API_BASE}/api/projects/${id}/artifacts/${artifactId}/download`,
+  getCalculationStageChunks: (id: string, resultId: string) => request<Record<string, unknown>>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks`),
+  getCalculationStageChunk: (id: string, resultId: string, chunkIndex: number) => request<Record<string, unknown>[]>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks/${chunkIndex}`, { timeoutMs: 15000 }),
   deleteProject: (id: string) => request<{ deleted: boolean; projectId: string; projectName: string; deletedTaskCount: number; deletedArtifactCount: number }>(`/api/projects/${id}`, { method: 'DELETE' }),
   updateProject: (id: string, payload: Partial<Project>, expectedRevision?: number, actor = 'web-user') => request<Project>(`/api/projects/${id}${expectedRevision == null ? `?actor=${encodeURIComponent(actor)}` : `?expectedRevision=${expectedRevision}&actor=${encodeURIComponent(actor)}`}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   getStorageRevision: (id: string) => request<{ projectId: string; revision: number }>(`/api/projects/${id}/storage-revision`),

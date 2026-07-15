@@ -1,0 +1,2056 @@
+{
+  "version": "3.9.0",
+  "caseId": "URBAN-TOPDOWN-32M-WALL-5SUPPORT",
+  "unitSystem": {
+    "system": "SI-engineering",
+    "rules": {
+      "tableHeaderPreferred": true,
+      "inlineUnitForKeyMetrics": true,
+      "rawUnitlessNumberForbiddenForEngineeringQuantity": true
+    },
+    "quantities": {
+      "length": {
+        "symbol": "m",
+        "quantity": "长度",
+        "decimals": 3
+      },
+      "elevation": {
+        "symbol": "m",
+        "quantity": "标高",
+        "decimals": 3
+      },
+      "displacement": {
+        "symbol": "mm",
+        "quantity": "位移",
+        "decimals": 2
+      },
+      "force": {
+        "symbol": "kN",
+        "quantity": "力/轴力",
+        "decimals": 1
+      },
+      "line_force": {
+        "symbol": "kN/m",
+        "quantity": "线荷载/剪力",
+        "decimals": 2
+      },
+      "moment": {
+        "symbol": "kN·m",
+        "quantity": "弯矩",
+        "decimals": 2
+      },
+      "wall_moment": {
+        "symbol": "kN·m/m",
+        "quantity": "墙体单位宽度弯矩",
+        "decimals": 2
+      },
+      "pressure": {
+        "symbol": "kPa",
+        "quantity": "压力",
+        "decimals": 2
+      },
+      "stress": {
+        "symbol": "MPa",
+        "quantity": "应力/强度",
+        "decimals": 3
+      },
+      "stiffness": {
+        "symbol": "kN/m",
+        "quantity": "平动刚度",
+        "decimals": 1
+      },
+      "rotational_stiffness": {
+        "symbol": "kN·m/rad",
+        "quantity": "转动刚度",
+        "decimals": 1
+      },
+      "rotation": {
+        "symbol": "mrad",
+        "quantity": "转角",
+        "decimals": 3
+      },
+      "temperature": {
+        "symbol": "°C",
+        "quantity": "温度",
+        "decimals": 1
+      },
+      "weight": {
+        "symbol": "t",
+        "quantity": "质量",
+        "decimals": 2
+      },
+      "ground_pressure": {
+        "symbol": "kPa",
+        "quantity": "地基接地压力",
+        "decimals": 1
+      }
+    }
+  },
+  "wholeSchemeComparison": {
+    "candidateCount": 3,
+    "candidateFamilies": [
+      "hybrid_diagonal",
+      "bidirectional_grid",
+      "direct_grid"
+    ],
+    "fullCalculationCount": 0,
+    "comparisonDeferredToBackgroundTask": true,
+    "entryRestoredToMainWorkflow": true
+  },
+  "coordinationOptimization": {
+    "status": "warning",
+    "issueGroupCount": 60,
+    "hardFailureBefore": 0,
+    "warningBefore": 60,
+    "appliedSolutionCount": 0,
+    "hardFailureAfter": 0,
+    "warningAfter": 60,
+    "candidateCount": 240,
+    "geometryBackedCandidateCount": 240,
+    "sampleIssues": [
+      {
+        "issueId": "COORD-0001",
+        "embeddedItemId": "EP-ND-SP-L1-1-A",
+        "hostCode": "DW-S1-001",
+        "barGroupId": "rebar-c07f24dcee22",
+        "sourceCheckIds": [
+          "EMB-COL-EP-ND-SP-L1-1-A-DW-S1-001-001-0040"
+        ],
+        "sourceStatus": "warning",
+        "affectedBarGroupCount": 1,
+        "minimumActualClearanceM": 0.0,
+        "requiredClearanceM": 0.05,
+        "recommendedCandidateId": "COORD-0001-rebar_reroute",
+        "candidates": [
+          {
+            "candidateId": "COORD-0001-rebar_reroute",
+            "action": "rebar_reroute",
+            "title": "钢筋局部绕行",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.1025,
+            "predictedClearanceM": 0.1025,
+            "constructabilityScore": 92.0,
+            "structuralPenalty": 0.05,
+            "score": 96.78,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "bar_polyline_offset",
+              "offsetVectorM": [
+                0.0,
+                0.103,
+                0.0
+              ],
+              "transitionLengthM": 0.6,
+              "minimumBendRadiusM": 0.132,
+              "affectedBarGroupIds": [
+                "rebar-c07f24dcee22"
+              ]
+            },
+            "verification": {
+              "bendRadiusOk": true,
+              "anchorageMaintained": true,
+              "barSpacingRechecked": true
+            },
+            "detail": "调整局部钢筋中心线并补充折弯、锚固和净距尺寸",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0001-embedded_shift",
+            "action": "embedded_shift",
+            "title": "预埋件小范围移位",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.1225,
+            "predictedClearanceM": 0.1225,
+            "constructabilityScore": 78.0,
+            "structuralPenalty": 0.1,
+            "score": 90.27,
+            "predictedStatus": "warning",
+            "geometryDelta": {
+              "type": "embedded_item_translation",
+              "shiftVectorM": [
+                0.122,
+                0.0,
+                0.0
+              ],
+              "maximumAllowedShiftM": 0.15,
+              "estimatedEccentricityIncrementM": 0.031
+            },
+            "verification": {
+              "bearingRechecked": true,
+              "weldRechecked": true,
+              "eccentricityWithinLimit": false
+            },
+            "detail": "沿围檩或节点非主受力方向平移预埋件，复核偏心和承压",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0001-local_reinforcement",
+            "action": "local_reinforcement",
+            "title": "截断重锚与局部加筋",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.0725,
+            "predictedClearanceM": 0.0725,
+            "constructabilityScore": 82.0,
+            "structuralPenalty": 0.08,
+            "score": 85.33,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "cut_reanchor_and_additional_rebar",
+              "cutBarCount": 1,
+              "replacementBarDiameterMm": 22.0,
+              "replacementAreaMm2": 418.1,
+              "uBarLegLengthM": 0.55,
+              "couplerRequired": false
+            },
+            "verification": {
+              "replacementAreaOk": true,
+              "developmentLengthOk": true,
+              "localCrackControlChecked": true
+            },
+            "detail": "截断冲突钢筋并采用套筒、U形筋和孔边附加筋恢复传力",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0001-embedded_opening",
+            "action": "embedded_opening",
+            "title": "预埋件开孔穿筋",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.0825,
+            "predictedClearanceM": 0.0825,
+            "constructabilityScore": 70.0,
+            "structuralPenalty": 0.16,
+            "score": 77.85,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "rounded_plate_opening",
+              "openingDiameterM": 0.122,
+              "minimumEdgeDistanceM": 0.08,
+              "cornerRadiusM": 0.025,
+              "openingReinforcement": "double-sided collar plate or paired ribs"
+            },
+            "verification": {
+              "netSectionRechecked": true,
+              "edgeDistanceOk": true,
+              "localBucklingRechecked": true
+            },
+            "detail": "在承压板非控制区设置圆角开孔并配置孔边加劲",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          }
+        ],
+        "appliedCandidate": null,
+        "statusAfterApply": "warning"
+      },
+      {
+        "issueId": "COORD-0002",
+        "embeddedItemId": "EP-ND-SP-L1-1-A",
+        "hostCode": "DW-S1-001",
+        "barGroupId": "rebar-48208f378b24",
+        "sourceCheckIds": [
+          "EMB-COL-EP-ND-SP-L1-1-A-DW-S1-001-002-0036"
+        ],
+        "sourceStatus": "warning",
+        "affectedBarGroupCount": 1,
+        "minimumActualClearanceM": 0.0,
+        "requiredClearanceM": 0.05,
+        "recommendedCandidateId": "COORD-0002-rebar_reroute",
+        "candidates": [
+          {
+            "candidateId": "COORD-0002-rebar_reroute",
+            "action": "rebar_reroute",
+            "title": "钢筋局部绕行",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.1025,
+            "predictedClearanceM": 0.1025,
+            "constructabilityScore": 92.0,
+            "structuralPenalty": 0.05,
+            "score": 96.78,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "bar_polyline_offset",
+              "offsetVectorM": [
+                0.0,
+                0.103,
+                0.0
+              ],
+              "transitionLengthM": 0.6,
+              "minimumBendRadiusM": 0.132,
+              "affectedBarGroupIds": [
+                "rebar-48208f378b24"
+              ]
+            },
+            "verification": {
+              "bendRadiusOk": true,
+              "anchorageMaintained": true,
+              "barSpacingRechecked": true
+            },
+            "detail": "调整局部钢筋中心线并补充折弯、锚固和净距尺寸",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0002-embedded_shift",
+            "action": "embedded_shift",
+            "title": "预埋件小范围移位",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.1225,
+            "predictedClearanceM": 0.1225,
+            "constructabilityScore": 78.0,
+            "structuralPenalty": 0.1,
+            "score": 90.27,
+            "predictedStatus": "warning",
+            "geometryDelta": {
+              "type": "embedded_item_translation",
+              "shiftVectorM": [
+                0.122,
+                0.0,
+                0.0
+              ],
+              "maximumAllowedShiftM": 0.15,
+              "estimatedEccentricityIncrementM": 0.031
+            },
+            "verification": {
+              "bearingRechecked": true,
+              "weldRechecked": true,
+              "eccentricityWithinLimit": false
+            },
+            "detail": "沿围檩或节点非主受力方向平移预埋件，复核偏心和承压",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0002-local_reinforcement",
+            "action": "local_reinforcement",
+            "title": "截断重锚与局部加筋",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.0725,
+            "predictedClearanceM": 0.0725,
+            "constructabilityScore": 82.0,
+            "structuralPenalty": 0.08,
+            "score": 85.33,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "cut_reanchor_and_additional_rebar",
+              "cutBarCount": 1,
+              "replacementBarDiameterMm": 22.0,
+              "replacementAreaMm2": 418.1,
+              "uBarLegLengthM": 0.55,
+              "couplerRequired": false
+            },
+            "verification": {
+              "replacementAreaOk": true,
+              "developmentLengthOk": true,
+              "localCrackControlChecked": true
+            },
+            "detail": "截断冲突钢筋并采用套筒、U形筋和孔边附加筋恢复传力",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0002-embedded_opening",
+            "action": "embedded_opening",
+            "title": "预埋件开孔穿筋",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.0825,
+            "predictedClearanceM": 0.0825,
+            "constructabilityScore": 70.0,
+            "structuralPenalty": 0.16,
+            "score": 77.85,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "rounded_plate_opening",
+              "openingDiameterM": 0.122,
+              "minimumEdgeDistanceM": 0.08,
+              "cornerRadiusM": 0.025,
+              "openingReinforcement": "double-sided collar plate or paired ribs"
+            },
+            "verification": {
+              "netSectionRechecked": true,
+              "edgeDistanceOk": true,
+              "localBucklingRechecked": true
+            },
+            "detail": "在承压板非控制区设置圆角开孔并配置孔边加劲",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          }
+        ],
+        "appliedCandidate": null,
+        "statusAfterApply": "warning"
+      },
+      {
+        "issueId": "COORD-0003",
+        "embeddedItemId": "EP-ND-SP-L1-1-A",
+        "hostCode": "WB-L1-S1",
+        "barGroupId": "rebar-046b78718f56",
+        "sourceCheckIds": [
+          "EMB-COL-EP-ND-SP-L1-1-A-WB-L1-S1-5001-0054"
+        ],
+        "sourceStatus": "warning",
+        "affectedBarGroupCount": 1,
+        "minimumActualClearanceM": 0.0,
+        "requiredClearanceM": 0.05,
+        "recommendedCandidateId": "COORD-0003-rebar_reroute",
+        "candidates": [
+          {
+            "candidateId": "COORD-0003-rebar_reroute",
+            "action": "rebar_reroute",
+            "title": "钢筋局部绕行",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.1025,
+            "predictedClearanceM": 0.1025,
+            "constructabilityScore": 92.0,
+            "structuralPenalty": 0.05,
+            "score": 96.78,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "bar_polyline_offset",
+              "offsetVectorM": [
+                0.0,
+                0.103,
+                0.0
+              ],
+              "transitionLengthM": 0.6,
+              "minimumBendRadiusM": 0.1,
+              "affectedBarGroupIds": [
+                "rebar-046b78718f56"
+              ]
+            },
+            "verification": {
+              "bendRadiusOk": true,
+              "anchorageMaintained": true,
+              "barSpacingRechecked": true
+            },
+            "detail": "调整局部钢筋中心线并补充折弯、锚固和净距尺寸",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0003-embedded_shift",
+            "action": "embedded_shift",
+            "title": "预埋件小范围移位",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.1225,
+            "predictedClearanceM": 0.1225,
+            "constructabilityScore": 78.0,
+            "structuralPenalty": 0.1,
+            "score": 90.27,
+            "predictedStatus": "warning",
+            "geometryDelta": {
+              "type": "embedded_item_translation",
+              "shiftVectorM": [
+                0.122,
+                0.0,
+                0.0
+              ],
+              "maximumAllowedShiftM": 0.15,
+              "estimatedEccentricityIncrementM": 0.031
+            },
+            "verification": {
+              "bearingRechecked": true,
+              "weldRechecked": true,
+              "eccentricityWithinLimit": false
+            },
+            "detail": "沿围檩或节点非主受力方向平移预埋件，复核偏心和承压",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0003-local_reinforcement",
+            "action": "local_reinforcement",
+            "title": "截断重锚与局部加筋",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.0725,
+            "predictedClearanceM": 0.0725,
+            "constructabilityScore": 82.0,
+            "structuralPenalty": 0.08,
+            "score": 85.33,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "cut_reanchor_and_additional_rebar",
+              "cutBarCount": 1,
+              "replacementBarDiameterMm": 16.0,
+              "replacementAreaMm2": 402.0,
+              "uBarLegLengthM": 0.55,
+              "couplerRequired": false
+            },
+            "verification": {
+              "replacementAreaOk": true,
+              "developmentLengthOk": true,
+              "localCrackControlChecked": true
+            },
+            "detail": "截断冲突钢筋并采用套筒、U形筋和孔边附加筋恢复传力",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          },
+          {
+            "candidateId": "COORD-0003-embedded_opening",
+            "action": "embedded_opening",
+            "title": "预埋件开孔穿筋",
+            "currentClearanceM": 0.0,
+            "requiredClearanceM": 0.05,
+            "predictedClearanceGainM": 0.0825,
+            "predictedClearanceM": 0.0825,
+            "constructabilityScore": 70.0,
+            "structuralPenalty": 0.16,
+            "score": 77.85,
+            "predictedStatus": "pass",
+            "geometryDelta": {
+              "type": "rounded_plate_opening",
+              "openingDiameterM": 0.112,
+              "minimumEdgeDistanceM": 0.08,
+              "cornerRadiusM": 0.025,
+              "openingReinforcement": "double-sided collar plate or paired ribs"
+            },
+            "verification": {
+              "netSectionRechecked": true,
+              "edgeDistanceOk": true,
+              "localBucklingRechecked": true
+            },
+            "detail": "在承压板非控制区设置圆角开孔并配置孔边加劲",
+            "drawingRefs": [
+              "D-10",
+              "Q-04"
+            ],
+            "sourceStatus": "warning"
+          }
+        ],
+        "appliedCandidate": null,
+        "statusAfterApply": "warning"
+      }
+    ]
+  },
+  "nodeSubmodels": {
+    "status": "warning",
+    "submodelCount": 8,
+    "failCount": 0,
+    "warningCount": 8,
+    "passCount": 0,
+    "maxUtilization": 0.995,
+    "sample": [
+      {
+        "nodeId": "node-1079d111f2e9",
+        "nodeCode": "ND-DB-L4-1-A",
+        "supportCode": "DB-L4-1",
+        "status": "warning",
+        "designForceKn": 24081.18,
+        "mesh": {
+          "solidNodeCount": 75,
+          "solidElementCount": 32,
+          "contactElementCount": 16,
+          "characteristicSizeMm": 100
+        },
+        "boundaryConditions": {
+          "waleBackFace": "fixed_normal/sliding_tangent",
+          "supportEnd": "axial_force",
+          "contact": "compression_only_penalty"
+        },
+        "nonlinearModelSpecification": {
+          "unitSystem": "N-mm-MPa",
+          "solverTargets": [
+            "CalculiX",
+            "Abaqus"
+          ],
+          "concreteBlock": {
+            "widthMm": 3330,
+            "heightMm": 3330,
+            "depthMm": 2240
+          },
+          "bearingPlate": {
+            "widthMm": 1850,
+            "heightMm": 1850,
+            "thicknessMm": 50
+          },
+          "materials": {
+            "steelElasticModulusMpa": 206000,
+            "steelYieldMpa": 345,
+            "concreteElasticModulusMpa": 30000
+          },
+          "contact": {
+            "normal": "hard",
+            "tangentialFriction": 0.3,
+            "separationAllowed": true
+          },
+          "load": {
+            "axialForceKn": 24081.18,
+            "eccentricityMm": 5.0
+          }
+        },
+        "solverDeckFilename": "node_submodels/ND-DB-L4-1-A.inp",
+        "results": {
+          "maxContactPressureMpa": 7.036,
+          "maxEquivalentSteelStressMpa": 270.642,
+          "maxConcreteUtilization": 0.503,
+          "maxSteelUtilization": 0.887,
+          "maxDisplacementMm": 0.1795,
+          "maxRotationMrad": 14.2678,
+          "governingUtilization": 0.995,
+          "conditionNumber": 15996.63
+        },
+        "recommendedAction": "增大承压板、加劲板或节点核心区，并运行已生成的非线性实体子模型",
+        "modelClass": "reduced_3d_solid_contact_screen",
+        "drawingRef": "D-10",
+        "designVariants": [
+          {
+            "variantId": "CORE_PLUS",
+            "title": "节点核心区扩大并增配约束筋",
+            "status": "pass",
+            "predictedUtilization": 0.677,
+            "predictedDisplacementMm": 0.1256,
+            "materialPenalty": 0.14,
+            "score": 58.34
+          },
+          {
+            "variantId": "RIB_PLUS",
+            "title": "双侧增加2道加劲板",
+            "status": "pass",
+            "predictedUtilization": 0.716,
+            "predictedDisplacementMm": 0.1328,
+            "materialPenalty": 0.1,
+            "score": 57.33
+          },
+          {
+            "variantId": "PLATE_20",
+            "title": "承压板平面尺寸增加20%",
+            "status": "pass",
+            "predictedUtilization": 0.776,
+            "predictedDisplacementMm": 0.1472,
+            "materialPenalty": 0.08,
+            "score": 54.62
+          },
+          {
+            "variantId": "BASE",
+            "title": "现状节点",
+            "status": "warning",
+            "predictedUtilization": 0.995,
+            "predictedDisplacementMm": 0.1795,
+            "materialPenalty": 0.0,
+            "score": 44.92
+          }
+        ],
+        "recommendedVariant": {
+          "variantId": "CORE_PLUS",
+          "title": "节点核心区扩大并增配约束筋",
+          "status": "pass",
+          "predictedUtilization": 0.677,
+          "predictedDisplacementMm": 0.1256,
+          "materialPenalty": 0.14,
+          "score": 58.34
+        }
+      },
+      {
+        "nodeId": "node-8881e86a6e45",
+        "nodeCode": "ND-DB-L4-1-B",
+        "supportCode": "DB-L4-1",
+        "status": "warning",
+        "designForceKn": 24081.18,
+        "mesh": {
+          "solidNodeCount": 75,
+          "solidElementCount": 32,
+          "contactElementCount": 16,
+          "characteristicSizeMm": 100
+        },
+        "boundaryConditions": {
+          "waleBackFace": "fixed_normal/sliding_tangent",
+          "supportEnd": "axial_force",
+          "contact": "compression_only_penalty"
+        },
+        "nonlinearModelSpecification": {
+          "unitSystem": "N-mm-MPa",
+          "solverTargets": [
+            "CalculiX",
+            "Abaqus"
+          ],
+          "concreteBlock": {
+            "widthMm": 3330,
+            "heightMm": 3330,
+            "depthMm": 2240
+          },
+          "bearingPlate": {
+            "widthMm": 1850,
+            "heightMm": 1850,
+            "thicknessMm": 50
+          },
+          "materials": {
+            "steelElasticModulusMpa": 206000,
+            "steelYieldMpa": 345,
+            "concreteElasticModulusMpa": 30000
+          },
+          "contact": {
+            "normal": "hard",
+            "tangentialFriction": 0.3,
+            "separationAllowed": true
+          },
+          "load": {
+            "axialForceKn": 24081.18,
+            "eccentricityMm": 5.0
+          }
+        },
+        "solverDeckFilename": "node_submodels/ND-DB-L4-1-B.inp",
+        "results": {
+          "maxContactPressureMpa": 7.036,
+          "maxEquivalentSteelStressMpa": 270.642,
+          "maxConcreteUtilization": 0.503,
+          "maxSteelUtilization": 0.887,
+          "maxDisplacementMm": 0.1795,
+          "maxRotationMrad": 14.2678,
+          "governingUtilization": 0.995,
+          "conditionNumber": 15996.63
+        },
+        "recommendedAction": "增大承压板、加劲板或节点核心区，并运行已生成的非线性实体子模型",
+        "modelClass": "reduced_3d_solid_contact_screen",
+        "drawingRef": "D-10",
+        "designVariants": [
+          {
+            "variantId": "CORE_PLUS",
+            "title": "节点核心区扩大并增配约束筋",
+            "status": "pass",
+            "predictedUtilization": 0.677,
+            "predictedDisplacementMm": 0.1256,
+            "materialPenalty": 0.14,
+            "score": 58.34
+          },
+          {
+            "variantId": "RIB_PLUS",
+            "title": "双侧增加2道加劲板",
+            "status": "pass",
+            "predictedUtilization": 0.716,
+            "predictedDisplacementMm": 0.1328,
+            "materialPenalty": 0.1,
+            "score": 57.33
+          },
+          {
+            "variantId": "PLATE_20",
+            "title": "承压板平面尺寸增加20%",
+            "status": "pass",
+            "predictedUtilization": 0.776,
+            "predictedDisplacementMm": 0.1472,
+            "materialPenalty": 0.08,
+            "score": 54.62
+          },
+          {
+            "variantId": "BASE",
+            "title": "现状节点",
+            "status": "warning",
+            "predictedUtilization": 0.995,
+            "predictedDisplacementMm": 0.1795,
+            "materialPenalty": 0.0,
+            "score": 44.92
+          }
+        ],
+        "recommendedVariant": {
+          "variantId": "CORE_PLUS",
+          "title": "节点核心区扩大并增配约束筋",
+          "status": "pass",
+          "predictedUtilization": 0.677,
+          "predictedDisplacementMm": 0.1256,
+          "materialPenalty": 0.14,
+          "score": 58.34
+        }
+      },
+      {
+        "nodeId": "node-2d3fad89b403",
+        "nodeCode": "ND-DB-L4-4-A",
+        "supportCode": "DB-L4-4",
+        "status": "warning",
+        "designForceKn": 24081.18,
+        "mesh": {
+          "solidNodeCount": 75,
+          "solidElementCount": 32,
+          "contactElementCount": 16,
+          "characteristicSizeMm": 100
+        },
+        "boundaryConditions": {
+          "waleBackFace": "fixed_normal/sliding_tangent",
+          "supportEnd": "axial_force",
+          "contact": "compression_only_penalty"
+        },
+        "nonlinearModelSpecification": {
+          "unitSystem": "N-mm-MPa",
+          "solverTargets": [
+            "CalculiX",
+            "Abaqus"
+          ],
+          "concreteBlock": {
+            "widthMm": 3330,
+            "heightMm": 3330,
+            "depthMm": 2240
+          },
+          "bearingPlate": {
+            "widthMm": 1850,
+            "heightMm": 1850,
+            "thicknessMm": 50
+          },
+          "materials": {
+            "steelElasticModulusMpa": 206000,
+            "steelYieldMpa": 345,
+            "concreteElasticModulusMpa": 30000
+          },
+          "contact": {
+            "normal": "hard",
+            "tangentialFriction": 0.3,
+            "separationAllowed": true
+          },
+          "load": {
+            "axialForceKn": 24081.18,
+            "eccentricityMm": 5.0
+          }
+        },
+        "solverDeckFilename": "node_submodels/ND-DB-L4-4-A.inp",
+        "results": {
+          "maxContactPressureMpa": 7.036,
+          "maxEquivalentSteelStressMpa": 270.642,
+          "maxConcreteUtilization": 0.503,
+          "maxSteelUtilization": 0.887,
+          "maxDisplacementMm": 0.1795,
+          "maxRotationMrad": 14.2678,
+          "governingUtilization": 0.995,
+          "conditionNumber": 15996.63
+        },
+        "recommendedAction": "增大承压板、加劲板或节点核心区，并运行已生成的非线性实体子模型",
+        "modelClass": "reduced_3d_solid_contact_screen",
+        "drawingRef": "D-10",
+        "designVariants": [
+          {
+            "variantId": "CORE_PLUS",
+            "title": "节点核心区扩大并增配约束筋",
+            "status": "pass",
+            "predictedUtilization": 0.677,
+            "predictedDisplacementMm": 0.1256,
+            "materialPenalty": 0.14,
+            "score": 58.34
+          },
+          {
+            "variantId": "RIB_PLUS",
+            "title": "双侧增加2道加劲板",
+            "status": "pass",
+            "predictedUtilization": 0.716,
+            "predictedDisplacementMm": 0.1328,
+            "materialPenalty": 0.1,
+            "score": 57.33
+          },
+          {
+            "variantId": "PLATE_20",
+            "title": "承压板平面尺寸增加20%",
+            "status": "pass",
+            "predictedUtilization": 0.776,
+            "predictedDisplacementMm": 0.1472,
+            "materialPenalty": 0.08,
+            "score": 54.62
+          },
+          {
+            "variantId": "BASE",
+            "title": "现状节点",
+            "status": "warning",
+            "predictedUtilization": 0.995,
+            "predictedDisplacementMm": 0.1795,
+            "materialPenalty": 0.0,
+            "score": 44.92
+          }
+        ],
+        "recommendedVariant": {
+          "variantId": "CORE_PLUS",
+          "title": "节点核心区扩大并增配约束筋",
+          "status": "pass",
+          "predictedUtilization": 0.677,
+          "predictedDisplacementMm": 0.1256,
+          "materialPenalty": 0.14,
+          "score": 58.34
+        }
+      }
+    ]
+  },
+  "craneLogistics": {
+    "status": "fail",
+    "caseCount": 40,
+    "feasibleCount": 30,
+    "failCount": 10,
+    "craneLibraryCount": 5,
+    "standPointCount": 8,
+    "exclusionZoneCount": 1,
+    "projectSpecificStandPointCount": 0,
+    "sample": [
+      {
+        "analysisId": "CRANE-DW-S1-001-CAGE-P01-V01",
+        "segmentId": "DW-S1-001-CAGE-P01-V01",
+        "hostCode": "DW-S1-001",
+        "cageWeightT": 2.319,
+        "cageLengthM": 11.042,
+        "requiredCapacityT": 3.444,
+        "status": "fail",
+        "recommended": {
+          "craneId": "CC-080",
+          "craneName": "80 t履带吊",
+          "standId": "SP-02",
+          "standPoint": {
+            "x": 45.0,
+            "y": -8.0
+          },
+          "standSource": "generated",
+          "targetPoint": {
+            "x": 45.0,
+            "y": 0.0
+          },
+          "workingRadiusM": 8.0,
+          "availableCapacityT": 42.0,
+          "requiredCapacityT": 3.444,
+          "capacityUtilization": 0.082,
+          "requiredBoomLengthM": 20.654,
+          "groundPressureKpa": 95.0,
+          "groundCapacityKpa": 150.0,
+          "groundUtilization": 0.633,
+          "recommendedMatAreaM2": 0.29,
+          "designWindSpeedMps": 8.0,
+          "windUtilization": 0.664,
+          "sailAreaM2": 9.66,
+          "liftPathLengthM": 8.0,
+          "swingOverPitM": 0.0,
+          "exclusionZoneHits": [
+            "obs-6b004e432972"
+          ],
+          "transportRouteLengthM": null,
+          "transportExclusionHits": [],
+          "accessWidthM": 6.0,
+          "boomOk": true,
+          "groundOk": true,
+          "windOk": true,
+          "pathOk": false,
+          "accessOk": true,
+          "feasible": false,
+          "score": 69.04
+        },
+        "alternatives": [
+          {
+            "craneId": "CC-080",
+            "craneName": "80 t履带吊",
+            "standId": "SP-02",
+            "standPoint": {
+              "x": 45.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 42.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.082,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 95.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.633,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 69.04
+          },
+          {
+            "craneId": "CC-120",
+            "craneName": "120 t履带吊",
+            "standId": "SP-02",
+            "standPoint": {
+              "x": 45.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 64.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.054,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 105.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.7,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 68.62
+          },
+          {
+            "craneId": "CC-180",
+            "craneName": "180 t履带吊",
+            "standId": "SP-02",
+            "standPoint": {
+              "x": 45.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 88.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.039,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 118.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.787,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 67.16
+          },
+          {
+            "craneId": "CC-250",
+            "craneName": "250 t履带吊",
+            "standId": "SP-02",
+            "standPoint": {
+              "x": 45.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 125.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.028,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 132.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.88,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 65.41
+          },
+          {
+            "craneId": "TC-100",
+            "craneName": "100 t汽车吊",
+            "standId": "SP-02",
+            "standPoint": {
+              "x": 45.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 48.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.072,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 180.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 1.2,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 55.87
+          },
+          {
+            "craneId": "CC-080",
+            "craneName": "80 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 53.6,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 56.882,
+            "groundPressureKpa": 95.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.633,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 53.6,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          },
+          {
+            "craneId": "CC-120",
+            "craneName": "120 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 53.6,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 56.882,
+            "groundPressureKpa": 105.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.7,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 53.6,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          },
+          {
+            "craneId": "CC-180",
+            "craneName": "180 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 0.0
+            },
+            "workingRadiusM": 53.6,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 56.882,
+            "groundPressureKpa": 118.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.787,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 53.6,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          }
+        ],
+        "recommendedAction": "重新分节、增大吊机等级、加铺路基箱或调整站位/运输路径"
+      },
+      {
+        "analysisId": "CRANE-DW-S2-001-CAGE-P01-V01",
+        "segmentId": "DW-S2-001-CAGE-P01-V01",
+        "hostCode": "DW-S2-001",
+        "cageWeightT": 2.174,
+        "cageLengthM": 11.042,
+        "requiredCapacityT": 3.228,
+        "status": "pass",
+        "recommended": {
+          "craneId": "CC-180",
+          "craneName": "180 t履带吊",
+          "standId": "SP-04",
+          "standPoint": {
+            "x": 98.0,
+            "y": 22.5
+          },
+          "standSource": "generated",
+          "targetPoint": {
+            "x": 90.0,
+            "y": 22.5
+          },
+          "workingRadiusM": 8.0,
+          "availableCapacityT": 88.0,
+          "requiredCapacityT": 3.228,
+          "capacityUtilization": 0.037,
+          "requiredBoomLengthM": 20.654,
+          "groundPressureKpa": 118.0,
+          "groundCapacityKpa": 150.0,
+          "groundUtilization": 0.787,
+          "recommendedMatAreaM2": 0.27,
+          "designWindSpeedMps": 8.0,
+          "windUtilization": 0.664,
+          "sailAreaM2": 9.66,
+          "liftPathLengthM": 8.0,
+          "swingOverPitM": 0.0,
+          "exclusionZoneHits": [],
+          "transportRouteLengthM": null,
+          "transportExclusionHits": [],
+          "accessWidthM": 6.0,
+          "boomOk": true,
+          "groundOk": true,
+          "windOk": true,
+          "pathOk": true,
+          "accessOk": true,
+          "feasible": true,
+          "score": 100.0
+        },
+        "alternatives": [
+          {
+            "craneId": "CC-180",
+            "craneName": "180 t履带吊",
+            "standId": "SP-04",
+            "standPoint": {
+              "x": 98.0,
+              "y": 22.5
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 88.0,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.037,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 118.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.787,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": true,
+            "score": 100.0
+          },
+          {
+            "craneId": "CC-120",
+            "craneName": "120 t履带吊",
+            "standId": "SP-04",
+            "standPoint": {
+              "x": 98.0,
+              "y": 22.5
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 64.0,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.05,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 105.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.7,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": true,
+            "score": 100.0
+          },
+          {
+            "craneId": "CC-080",
+            "craneName": "80 t履带吊",
+            "standId": "SP-04",
+            "standPoint": {
+              "x": 98.0,
+              "y": 22.5
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 42.0,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.077,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 95.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.633,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": true,
+            "score": 100.0
+          },
+          {
+            "craneId": "CC-250",
+            "craneName": "250 t履带吊",
+            "standId": "SP-04",
+            "standPoint": {
+              "x": 98.0,
+              "y": 22.5
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 125.0,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.026,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 132.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.88,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": false,
+            "score": 80.48
+          },
+          {
+            "craneId": "TC-100",
+            "craneName": "100 t汽车吊",
+            "standId": "SP-04",
+            "standPoint": {
+              "x": 98.0,
+              "y": 22.5
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 48.0,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.067,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 180.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 1.2,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": false,
+            "score": 71.06
+          },
+          {
+            "craneId": "CC-250",
+            "craneName": "250 t履带吊",
+            "standId": "SP-03",
+            "standPoint": {
+              "x": 98.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 31.532,
+            "availableCapacityT": 29.319,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.11,
+            "requiredBoomLengthM": 36.835,
+            "groundPressureKpa": 132.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.88,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 31.532,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": false,
+            "score": 61.64
+          },
+          {
+            "craneId": "CC-250",
+            "craneName": "250 t履带吊",
+            "standId": "SP-05",
+            "standPoint": {
+              "x": 98.0,
+              "y": 53.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 31.532,
+            "availableCapacityT": 29.319,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 0.11,
+            "requiredBoomLengthM": 36.835,
+            "groundPressureKpa": 132.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.88,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 31.532,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": false,
+            "score": 61.64
+          },
+          {
+            "craneId": "CC-080",
+            "craneName": "80 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 90.0,
+              "y": 22.5
+            },
+            "workingRadiusM": 102.636,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.228,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 104.388,
+            "groundPressureKpa": 95.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.633,
+            "recommendedMatAreaM2": 0.27,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 102.636,
+            "swingOverPitM": 73.509,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": false,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          }
+        ],
+        "recommendedAction": "按推荐吊机/站位复核履带板、风速、吊索具和现场回转禁入区"
+      },
+      {
+        "analysisId": "CRANE-DW-S3-001-CAGE-P01-V01",
+        "segmentId": "DW-S3-001-CAGE-P01-V01",
+        "hostCode": "DW-S3-001",
+        "cageWeightT": 2.319,
+        "cageLengthM": 11.042,
+        "requiredCapacityT": 3.444,
+        "status": "pass",
+        "recommended": {
+          "craneId": "CC-180",
+          "craneName": "180 t履带吊",
+          "standId": "SP-06",
+          "standPoint": {
+            "x": 45.0,
+            "y": 53.0
+          },
+          "standSource": "generated",
+          "targetPoint": {
+            "x": 45.0,
+            "y": 45.0
+          },
+          "workingRadiusM": 8.0,
+          "availableCapacityT": 88.0,
+          "requiredCapacityT": 3.444,
+          "capacityUtilization": 0.039,
+          "requiredBoomLengthM": 20.654,
+          "groundPressureKpa": 118.0,
+          "groundCapacityKpa": 150.0,
+          "groundUtilization": 0.787,
+          "recommendedMatAreaM2": 0.29,
+          "designWindSpeedMps": 8.0,
+          "windUtilization": 0.664,
+          "sailAreaM2": 9.66,
+          "liftPathLengthM": 8.0,
+          "swingOverPitM": 0.0,
+          "exclusionZoneHits": [],
+          "transportRouteLengthM": null,
+          "transportExclusionHits": [],
+          "accessWidthM": 6.0,
+          "boomOk": true,
+          "groundOk": true,
+          "windOk": true,
+          "pathOk": true,
+          "accessOk": true,
+          "feasible": true,
+          "score": 100.0
+        },
+        "alternatives": [
+          {
+            "craneId": "CC-180",
+            "craneName": "180 t履带吊",
+            "standId": "SP-06",
+            "standPoint": {
+              "x": 45.0,
+              "y": 53.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 88.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.039,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 118.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.787,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": true,
+            "score": 100.0
+          },
+          {
+            "craneId": "CC-120",
+            "craneName": "120 t履带吊",
+            "standId": "SP-06",
+            "standPoint": {
+              "x": 45.0,
+              "y": 53.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 64.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.054,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 105.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.7,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": true,
+            "score": 100.0
+          },
+          {
+            "craneId": "CC-080",
+            "craneName": "80 t履带吊",
+            "standId": "SP-06",
+            "standPoint": {
+              "x": 45.0,
+              "y": 53.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 42.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.082,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 95.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.633,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": true,
+            "score": 100.0
+          },
+          {
+            "craneId": "CC-250",
+            "craneName": "250 t履带吊",
+            "standId": "SP-06",
+            "standPoint": {
+              "x": 45.0,
+              "y": 53.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 125.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.028,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 132.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.88,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": false,
+            "score": 80.41
+          },
+          {
+            "craneId": "TC-100",
+            "craneName": "100 t汽车吊",
+            "standId": "SP-06",
+            "standPoint": {
+              "x": 45.0,
+              "y": 53.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 8.0,
+            "availableCapacityT": 48.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 0.072,
+            "requiredBoomLengthM": 20.654,
+            "groundPressureKpa": 180.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 1.2,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 8.0,
+            "swingOverPitM": 0.0,
+            "exclusionZoneHits": [],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": false,
+            "windOk": true,
+            "pathOk": true,
+            "accessOk": true,
+            "feasible": false,
+            "score": 70.87
+          },
+          {
+            "craneId": "CC-080",
+            "craneName": "80 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 74.953,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 77.334,
+            "groundPressureKpa": 95.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.633,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 74.953,
+            "swingOverPitM": 62.225,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": false,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          },
+          {
+            "craneId": "CC-120",
+            "craneName": "120 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 74.953,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 77.334,
+            "groundPressureKpa": 105.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.7,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 74.953,
+            "swingOverPitM": 62.225,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": false,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          },
+          {
+            "craneId": "CC-180",
+            "craneName": "180 t履带吊",
+            "standId": "SP-01",
+            "standPoint": {
+              "x": -8.0,
+              "y": -8.0
+            },
+            "standSource": "generated",
+            "targetPoint": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "workingRadiusM": 74.953,
+            "availableCapacityT": 0.0,
+            "requiredCapacityT": 3.444,
+            "capacityUtilization": 999.0,
+            "requiredBoomLengthM": 77.334,
+            "groundPressureKpa": 118.0,
+            "groundCapacityKpa": 150.0,
+            "groundUtilization": 0.787,
+            "recommendedMatAreaM2": 0.29,
+            "designWindSpeedMps": 8.0,
+            "windUtilization": 0.664,
+            "sailAreaM2": 9.66,
+            "liftPathLengthM": 74.953,
+            "swingOverPitM": 62.225,
+            "exclusionZoneHits": [
+              "obs-6b004e432972"
+            ],
+            "transportRouteLengthM": null,
+            "transportExclusionHits": [],
+            "accessWidthM": 6.0,
+            "boomOk": true,
+            "groundOk": true,
+            "windOk": true,
+            "pathOk": false,
+            "accessOk": true,
+            "feasible": false,
+            "score": 0.0
+          }
+        ],
+        "recommendedAction": "按推荐吊机/站位复核履带板、风速、吊索具和现场回转禁入区"
+      }
+    ]
+  },
+  "focusedUx": {
+    "defaultMode": "compact",
+    "layers": [
+      "当前成果",
+      "关键问题",
+      "下一步动作"
+    ],
+    "advancedContentCollapsed": [
+      "原始计算追溯链",
+      "完整验收矩阵",
+      "专业出图配置",
+      "逐墙微调",
+      "算法中间量"
+    ]
+  },
+  "boundaries": [
+    "候选已形成参数化几何增量和复核条件，但施工版仍需将增量写回逐根钢筋/预埋件模型、重新运行承压/焊缝/碰撞计算并完成节点详图校审。",
+    "内置六自由度结果用于快速筛选；导出的实体接触输入文件是可复核起始模型，仍需工程师细化网格、材料本构、钢筋锚固、焊缝、施工偏差并在正式求解器中运行。",
+    "默认能力曲线和自动站位仅用于方案筛选。正式吊装必须导入实际设备工况表、吊索具、风速限值、履带板/路基箱、地基承载、现场禁入区和经审批运输路线。"
+  ]
+}

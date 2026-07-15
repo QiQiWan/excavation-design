@@ -1,0 +1,72 @@
+PitGuard API service:
+● pitguard-api.service - PitGuard FastAPI Backend
+     Loaded: loaded (/etc/systemd/system/pitguard-api.service; enabled; vendor preset: enabled)
+     Active: active (running) since Tue 2026-07-14 22:54:30 CST; 1min 20s ago
+   Main PID: 77270 (python3)
+      Tasks: 7 (limit: 256)
+     Memory: 2.0G (high: 2.0G max: 4.0G available: 0B)
+        CPU: 8.969s
+     CGroup: /system.slice/pitguard-api.service
+             └─77270 /root/miniconda3/envs/ifc/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8002 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+
+Jul 14 22:54:45 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "GET /api/projects HTTP/1.1" 200 OK
+Jul 14 22:54:45 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "GET /api/system/diagnostics HTTP/1.1" 200 OK
+Jul 14 22:54:46 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "POST /api/auth/logout HTTP/1.1" 200 OK
+Jul 14 22:54:50 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "POST /api/auth/login HTTP/1.1" 200 OK
+Jul 14 22:54:50 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "GET /health HTTP/1.1" 200 OK
+Jul 14 22:54:50 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "GET /api/projects HTTP/1.1" 200 OK
+Jul 14 22:54:50 VM-4-6-ubuntu python3[77270]: INFO:     117.163.93.61:0 - "GET /api/system/diagnostics HTTP/1.1" 200 OK
+Jul 14 22:54:58 VM-4-6-ubuntu python3[77270]: INFO:     127.0.0.1:51062 - "GET /health/live HTTP/1.1" 200 OK
+Jul 14 22:54:58 VM-4-6-ubuntu python3[77270]: INFO:     127.0.0.1:51078 - "GET /health/ready HTTP/1.1" 200 OK
+Jul 14 22:54:58 VM-4-6-ubuntu python3[77270]: INFO:     127.0.0.1:51094 - "GET /health HTTP/1.1" 200 OK
+
+Calculation worker:
+● pitguard-worker.service - PitGuard Isolated Calculation Worker
+     Loaded: loaded (/etc/systemd/system/pitguard-worker.service; enabled; vendor preset: enabled)
+     Active: active (running) since Tue 2026-07-14 22:54:30 CST; 1min 20s ago
+   Main PID: 77275 (python3)
+      Tasks: 1 (limit: 128)
+     Memory: 35.1M (high: 5.6G max: 7.5G swap max: 0B available: 5.6G)
+        CPU: 790ms
+     CGroup: /system.slice/pitguard-worker.service
+             └─77275 /root/miniconda3/envs/ifc/bin/python3 -m app.tasks.worker_daemon
+
+Jul 14 22:54:30 VM-4-6-ubuntu systemd[1]: Started PitGuard Isolated Calculation Worker.
+
+API liveness:
+
+
+API readiness:
+
+
+Compatibility health endpoint:
+
+
+Worker heartbeat:
+{"status":"idle","taskId":null,"updatedAt":"2026-07-14T14:55:55.888915+00:00","pid":77275,"rssMb":50.9,"systemAvailableMemoryMb":11560.84}
+
+Cgroup resource snapshot:
+MainPID=77270
+MemoryCurrent=2233090048
+CPUUsageNSec=9008911000
+MemoryHigh=2147483648
+MemoryMax=4294967296
+ActiveState=active
+SubState=running
+
+MainPID=77275
+MemoryCurrent=36839424
+CPUUsageNSec=794374000
+MemoryHigh=6084886528
+MemoryMax=8113881088
+ActiveState=active
+SubState=running
+
+Listening production ports:
+LISTEN 0      511          0.0.0.0:80         0.0.0.0:*    users:(("nginx",pid=77323,fd=10),("nginx",pid=77322,fd=10),("nginx",pid=77320,fd=10),("nginx",pid=77319,fd=10),("nginx",pid=1168,fd=10))
+LISTEN 0      511          0.0.0.0:443        0.0.0.0:*    users:(("nginx",pid=77323,fd=9),("nginx",pid=77322,fd=9),("nginx",pid=77320,fd=9),("nginx",pid=77319,fd=9),("nginx",pid=1168,fd=9))     
+LISTEN 13     2048       127.0.0.1:8002       0.0.0.0:*    users:(("python3",pid=77270,fd=13))                                                                                                     
+LISTEN 0      511             [::]:80            [::]:*    users:(("nginx",pid=77323,fd=11),("nginx",pid=77322,fd=11),("nginx",pid=77320,fd=11),("nginx",pid=77319,fd=11),("nginx",pid=1168,fd=11))
+LISTEN 0      511             [::]:443           [::]:*    users:(("nginx",pid=77323,fd=12),("nginx",pid=77322,fd=12),("nginx",pid=77320,fd=12),("nginx",pid=77319,fd=12),("nginx",pid=1168,fd=12))
+
+Port 5173 is outside the production architecture and is not inspected.

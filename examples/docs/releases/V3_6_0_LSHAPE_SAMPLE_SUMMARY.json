@@ -1,0 +1,397 @@
+{
+  "version": "3.6.0",
+  "case": {
+    "name": "L-shaped pit 50m x 30m with return wall",
+    "outline": [
+      {
+        "x": 75,
+        "y": 85
+      },
+      {
+        "x": 125,
+        "y": 85
+      },
+      {
+        "x": 125,
+        "y": 115
+      },
+      {
+        "x": 100,
+        "y": 115
+      },
+      {
+        "x": 100,
+        "y": 100
+      },
+      {
+        "x": 75,
+        "y": 100
+      }
+    ],
+    "excavationDepthM": 12.0
+  },
+  "implementedTracks": [
+    "support_centerline_wall_clearance",
+    "hybrid_diagonal_and_short_strut_topology",
+    "whole_scheme_abc_3d_comparison",
+    "replacement_slab_stiffness_state_semantics",
+    "compact_progressive_disclosure_workflow"
+  ],
+  "recommendedScheme": {
+    "candidateId": "slopt-hybrid-diagonal-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+    "topologyFamily": "hybrid_diagonal",
+    "name": "斜撑+短对撑混合",
+    "supportCount": 39,
+    "columnCount": 9,
+    "supportRoleCounts": {
+      "main_strut": 24,
+      "secondary_strut": 6,
+      "corner_diagonal": 9
+    },
+    "topologyFamilyCounts": {
+      "hybrid_diagonal": 39
+    },
+    "minimumWallClearanceM": 1.0,
+    "targetWallClearanceM": 1.0
+  },
+  "calculation": {
+    "checkSummary": {
+      "pass": 260,
+      "fail": 0,
+      "warning": 9,
+      "manualReview": 0
+    },
+    "governingValues": {
+      "maxTotalPressure": 145.855,
+      "maxSupportAxialForce": 5711.062,
+      "maxWallMoment": 267.278,
+      "maxWallShear": 200.809,
+      "maxDisplacement": 2.511,
+      "governingCheckStatus": "warning",
+      "embedmentSafetyFactorMin": 1.918,
+      "heaveSafetyFactorMin": 7.762,
+      "seepageSafetyFactorMin": 0.0,
+      "strengthCheckStatus": "warning",
+      "stiffnessCheckStatus": "warning",
+      "stabilityCheckStatus": "pass"
+    },
+    "professionalReviewRequired": true
+  },
+  "candidateComparison": [
+    {
+      "scheme": "A",
+      "candidateId": "slopt-hybrid-diagonal-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+      "name": "斜撑+短对撑混合",
+      "topologyFamily": "hybrid_diagonal",
+      "rank": 1,
+      "score": 37.55,
+      "supportCount": 39,
+      "columnCount": 9,
+      "maxSpanM": 30.0,
+      "minWallClearanceM": 1.0,
+      "excessiveDirectStrutCount": 9,
+      "hardConstraintsPassed": true,
+      "constructabilityNote": "角部采用短斜撑并减少靠角超长对撑；目标分仓 5.0m，立柱最大服务跨 18.0m，支撑线变量策略 global_shift_minus_1p0；硬约束满足。目标函数包含间距偏差、跨长、障碍冲突、交叉、立柱数量、出土路径、轴力峰值代理和对称性。",
+      "completeCalculation": {
+        "schemeLabel": "A",
+        "candidateId": "slopt-hybrid-diagonal-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+        "rank": 1,
+        "score": 37.55,
+        "targetSpacing": 5.0,
+        "columnMaxSpan": 18.0,
+        "positionPattern": "global_shift_minus_1p0",
+        "supportCount": 39,
+        "columnCount": 9,
+        "maxSpanLength": 30.0,
+        "excessiveDirectStrutCount": 9,
+        "minSupportWallClearance": 1.0,
+        "maxSupportAxialForce": 5711.062,
+        "maxDisplacement": 2.511,
+        "maxWallMoment": 267.278,
+        "maxWallShear": 200.809,
+        "maxWaleMoment": 107456.732,
+        "maxWaleShear": 13187.769,
+        "maxWaleDeflection": 0.074207,
+        "minStabilitySafetyFactor": 0.0,
+        "strengthStatus": "warning",
+        "stiffnessStatus": "warning",
+        "stabilityStatus": "pass",
+        "ifcStatus": "pass",
+        "ifcRisk": "medium",
+        "formalGateStatus": "warning",
+        "formalGateAllowed": false,
+        "checkSummary": {
+          "pass": 260,
+          "fail": 0,
+          "warning": 9,
+          "manualReview": 0
+        },
+        "failCount": 0,
+        "warningCount": 9,
+        "manualReviewCount": 0,
+        "governingCheckStatus": "warning",
+        "calculationResultId": "calc-b8ef19fda5e5",
+        "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+        "changedSupportCount": 24,
+        "topologyFamily": "hybrid_diagonal",
+        "schemeName": "斜撑+短对撑混合",
+        "decisionScore": 69.42,
+        "decisionComponents": {
+          "maxSupportAxialForce": 59.56,
+          "maxDisplacement": 66.64,
+          "maxWallMoment": 72.53,
+          "maxWallShear": 100.0,
+          "maxWaleMoment": 100.0,
+          "maxWaleDeflection": 100.0,
+          "supportCount": 100.0,
+          "columnCount": 37.5,
+          "maxSpanLength": 0.0,
+          "excessiveDirectStrutCount": 100.0,
+          "score": 100.0
+        },
+        "decisionPenalty": 3.15,
+        "decisionRank": 1,
+        "recommendedByFullCalculation": true,
+        "decisionReason": "完整计算综合排名第 1；优势指标：墙体剪力、围檩弯矩、围檩挠度。Fail=0，Warning=9；采用后仍须重新计算并通过正式发行闸门。"
+      }
+    },
+    {
+      "scheme": "B",
+      "candidateId": "slopt-direct-grid-t6p0-c18p0-as_generated-0p0",
+      "name": "传统直对撑",
+      "topologyFamily": "direct_grid",
+      "rank": 2,
+      "score": 25.44,
+      "supportCount": 45,
+      "columnCount": 12,
+      "maxSpanM": 28.0,
+      "minWallClearanceM": 1.0,
+      "excessiveDirectStrutCount": 12,
+      "hardConstraintsPassed": true,
+      "constructabilityNote": "传统短跨直对撑，构造直观；目标分仓 6.0m，立柱最大服务跨 18.0m，支撑线变量策略 as_generated；硬约束满足。目标函数包含间距偏差、跨长、障碍冲突、交叉、立柱数量、出土路径、轴力峰值代理和对称性。",
+      "completeCalculation": {
+        "schemeLabel": "B",
+        "candidateId": "slopt-direct-grid-t6p0-c18p0-as_generated-0p0",
+        "rank": 2,
+        "score": 25.44,
+        "targetSpacing": 6.0,
+        "columnMaxSpan": 18.0,
+        "positionPattern": "as_generated",
+        "supportCount": 45,
+        "columnCount": 12,
+        "maxSpanLength": 28.0,
+        "excessiveDirectStrutCount": 12,
+        "minSupportWallClearance": 1.0,
+        "maxSupportAxialForce": 4967.124,
+        "maxDisplacement": 2.066,
+        "maxWallMoment": 235.656,
+        "maxWallShear": 201.092,
+        "maxWaleMoment": 144981.577,
+        "maxWaleShear": 15326.987,
+        "maxWaleDeflection": 0.12207,
+        "minStabilitySafetyFactor": 0.0,
+        "strengthStatus": "warning",
+        "stiffnessStatus": "warning",
+        "stabilityStatus": "pass",
+        "ifcStatus": "pass",
+        "ifcRisk": "medium",
+        "formalGateStatus": "warning",
+        "formalGateAllowed": false,
+        "checkSummary": {
+          "pass": 287,
+          "fail": 0,
+          "warning": 9,
+          "manualReview": 0
+        },
+        "failCount": 0,
+        "warningCount": 9,
+        "manualReviewCount": 0,
+        "governingCheckStatus": "warning",
+        "calculationResultId": "calc-1ca0d24835c3",
+        "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+        "changedSupportCount": 0,
+        "topologyFamily": "direct_grid",
+        "schemeName": "传统直对撑",
+        "decisionScore": 49.39,
+        "decisionComponents": {
+          "maxSupportAxialForce": 100.0,
+          "maxDisplacement": 100.0,
+          "maxWallMoment": 100.0,
+          "maxWallShear": 0.0,
+          "maxWaleMoment": 0.0,
+          "maxWaleDeflection": 89.51,
+          "supportCount": 0.0,
+          "columnCount": 0.0,
+          "maxSpanLength": 100.0,
+          "excessiveDirectStrutCount": 0.0,
+          "score": 3.2
+        },
+        "decisionPenalty": 3.15,
+        "decisionRank": 2,
+        "recommendedByFullCalculation": false,
+        "decisionReason": "完整计算综合排名第 2；优势指标：支撑轴力、墙体位移、墙体弯矩。Fail=0，Warning=9；采用后仍须重新计算并通过正式发行闸门。"
+      }
+    },
+    {
+      "scheme": "C",
+      "candidateId": "slopt-bidirectional-grid-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+      "name": "双向网格",
+      "topologyFamily": "bidirectional_grid",
+      "rank": 3,
+      "score": 25.04,
+      "supportCount": 42,
+      "columnCount": 4,
+      "maxSpanM": 30.0,
+      "minWallClearanceM": 1.0,
+      "excessiveDirectStrutCount": 12,
+      "hardConstraintsPassed": true,
+      "constructabilityNote": "双向网格直接约束长边与回墙；目标分仓 5.0m，立柱最大服务跨 18.0m，支撑线变量策略 global_shift_minus_1p0；硬约束满足。目标函数包含间距偏差、跨长、障碍冲突、交叉、立柱数量、出土路径、轴力峰值代理和对称性。",
+      "completeCalculation": {
+        "schemeLabel": "C",
+        "candidateId": "slopt-bidirectional-grid-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+        "rank": 3,
+        "score": 25.04,
+        "targetSpacing": 5.0,
+        "columnMaxSpan": 18.0,
+        "positionPattern": "global_shift_minus_1p0",
+        "supportCount": 42,
+        "columnCount": 4,
+        "maxSpanLength": 30.0,
+        "excessiveDirectStrutCount": 12,
+        "minSupportWallClearance": 1.0,
+        "maxSupportAxialForce": 6806.789,
+        "maxDisplacement": 3.4,
+        "maxWallMoment": 350.757,
+        "maxWallShear": 200.809,
+        "maxWaleMoment": 111085.009,
+        "maxWaleShear": 14082.256,
+        "maxWaleDeflection": 0.530578,
+        "minStabilitySafetyFactor": 0.0,
+        "strengthStatus": "warning",
+        "stiffnessStatus": "warning",
+        "stabilityStatus": "pass",
+        "ifcStatus": "pass",
+        "ifcRisk": "medium",
+        "formalGateStatus": "warning",
+        "formalGateAllowed": false,
+        "checkSummary": {
+          "pass": 267,
+          "fail": 0,
+          "warning": 9,
+          "manualReview": 0
+        },
+        "failCount": 0,
+        "warningCount": 9,
+        "manualReviewCount": 0,
+        "governingCheckStatus": "warning",
+        "calculationResultId": "calc-e57d04b09ecf",
+        "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+        "changedSupportCount": 27,
+        "topologyFamily": "bidirectional_grid",
+        "schemeName": "双向网格",
+        "decisionScore": 16.27,
+        "decisionComponents": {
+          "maxSupportAxialForce": 0.0,
+          "maxDisplacement": 0.0,
+          "maxWallMoment": 0.0,
+          "maxWallShear": 100.0,
+          "maxWaleMoment": 90.33,
+          "maxWaleDeflection": 0.0,
+          "supportCount": 50.0,
+          "columnCount": 100.0,
+          "maxSpanLength": 0.0,
+          "excessiveDirectStrutCount": 0.0,
+          "score": 0.0
+        },
+        "decisionPenalty": 3.15,
+        "decisionRank": 3,
+        "recommendedByFullCalculation": false,
+        "decisionReason": "完整计算综合排名第 3；优势指标：墙体剪力、立柱数量、围檩弯矩。Fail=0，Warning=9；采用后仍须重新计算并通过正式发行闸门。"
+      }
+    }
+  ],
+  "replacementSlabStages": [
+    {
+      "stageId": "stage-0b926530cf01",
+      "statuses": [
+        "not_active"
+      ],
+      "display": "—",
+      "minStiffnessKnM": null,
+      "maxStiffnessKnM": null,
+      "segmentCount": 6,
+      "source": "stage does not activate replacement slab"
+    },
+    {
+      "stageId": "stage-f8bf38636d22",
+      "statuses": [
+        "not_active"
+      ],
+      "display": "—",
+      "minStiffnessKnM": null,
+      "maxStiffnessKnM": null,
+      "segmentCount": 6,
+      "source": "stage does not activate replacement slab"
+    },
+    {
+      "stageId": "stage-2058a05382c4",
+      "statuses": [
+        "not_active"
+      ],
+      "display": "—",
+      "minStiffnessKnM": null,
+      "maxStiffnessKnM": null,
+      "segmentCount": 6,
+      "source": "stage does not activate replacement slab"
+    },
+    {
+      "stageId": "stage-fb51916ae6ac",
+      "statuses": [
+        "active"
+      ],
+      "display": "active",
+      "minStiffnessKnM": 585000.0,
+      "maxStiffnessKnM": 1950000.0,
+      "segmentCount": 6,
+      "source": "EA/L equivalent in-plane slab/frame transfer stiffness with connection reduction"
+    },
+    {
+      "stageId": "stage-3bfd1df6360b",
+      "statuses": [
+        "active"
+      ],
+      "display": "active",
+      "minStiffnessKnM": 585000.0,
+      "maxStiffnessKnM": 1950000.0,
+      "segmentCount": 6,
+      "source": "EA/L equivalent in-plane slab/frame transfer stiffness with connection reduction"
+    },
+    {
+      "stageId": "stage-6139dd06adb8",
+      "statuses": [
+        "active"
+      ],
+      "display": "active",
+      "minStiffnessKnM": 585000.0,
+      "maxStiffnessKnM": 1950000.0,
+      "segmentCount": 6,
+      "source": "EA/L equivalent in-plane slab/frame transfer stiffness with connection reduction"
+    },
+    {
+      "stageId": "stage-ae0d545513dc",
+      "statuses": [
+        "active"
+      ],
+      "display": "active",
+      "minStiffnessKnM": 585000.0,
+      "maxStiffnessKnM": 1950000.0,
+      "segmentCount": 6,
+      "source": "EA/L equivalent in-plane slab/frame transfer stiffness with connection reduction"
+    }
+  ],
+  "notes": [
+    "未激活换撑阶段显示“—”，不再显示数值 0。",
+    "换撑阶段刚度按 E*A/L 与连接折减计算，并按墙段传力长度不同显示区间。",
+    "A/B/C 为完整支撑体系候选，采用后必须重新计算并通过发行闸门。"
+  ]
+}

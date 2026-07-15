@@ -6,6 +6,7 @@ import RebarDesignPanel from '../components/RebarDesignPanel';
 import DrawingRuleSetPanel from '../components/DrawingRuleSetPanel';
 import CalculationRecoveryPanel from '../components/CalculationRecoveryPanel';
 import SchemeComparisonPanel from '../components/SchemeComparisonPanel';
+import ProjectDataWorkspacePanel from '../components/ProjectDataWorkspacePanel';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult, StandardsProcessMatrix, StandardsProcessStep } from '../types/domain';
 
@@ -307,6 +308,8 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
           <StatusPill label="人工复核" value={String(manualReviewCount)} tone="review" />
         </div>
       </div>
+
+      <ProjectDataWorkspacePanel project={current} />
 
       {(error || busy || operation) && (
         <div className="workflowMessageStack">

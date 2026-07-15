@@ -13,6 +13,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$ROOT_DIR/services/api"
 WEB_DIR="$ROOT_DIR/apps/web"
 RUNTIME_DIR="$ROOT_DIR/runtime"
+ARTIFACT_DIR="${PITGUARD_ARTIFACT_ROOT:-$RUNTIME_DIR/artifacts}"
 DOMAIN="${PITGUARD_DOMAIN:-designer.eatrice.cn}"
 BACKEND_PORT="${PITGUARD_BACKEND_PORT:-8002}"
 PYTHON_BIN="${PYTHON_BIN:-}"
@@ -38,6 +39,7 @@ CANDIDATE_WORKERS="${PITGUARD_CANDIDATE_WORKERS:-1}"
 CALC_RESULT_RETENTION="${PITGUARD_CALCULATION_RESULT_RETENTION:-1}"
 API_MEMORY_HIGH="${PITGUARD_API_MEMORY_HIGH:-2G}"
 API_MEMORY_MAX="${PITGUARD_API_MEMORY_MAX:-4G}"
+API_FULL_PROJECT_LIMIT_MB="${PITGUARD_API_FULL_PROJECT_LIMIT_MB:-96}"
 WORKER_CPU_QUOTA="${PITGUARD_WORKER_CPU_QUOTA:-300%}"
 
 if [ -z "$PYTHON_BIN" ]; then
@@ -93,7 +95,7 @@ if [ "$TASK_MEMORY_SOFT_LIMIT_MB" -lt 2048 ]; then TASK_MEMORY_SOFT_LIMIT_MB=204
 WORKER_RSS_HARD_LIMIT_MB="${PITGUARD_WORKER_RSS_HARD_LIMIT_MB:-$((WORKER_MEMORY_MAX_MB * 90 / 100))}"
 RESOURCE_WATCH_INTERVAL_SECONDS="${PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS:-3}"
 
-mkdir -p "$RUNTIME_DIR/backups" "$RUNTIME_DIR/cache" "$RUNTIME_DIR/matplotlib" \
+mkdir -p "$RUNTIME_DIR/backups" "$RUNTIME_DIR/cache" "$RUNTIME_DIR/matplotlib" "$ARTIFACT_DIR" \
   "$RUNTIME_DIR/cache-worker" "$RUNTIME_DIR/matplotlib-worker" \
   "$API_DIR/exports" "$API_DIR/runtime_cache" "$ENV_DIR"
 chmod 750 "$ENV_DIR"
@@ -146,6 +148,9 @@ chmod 600 "$WEB_CREDENTIAL_FILE"
 
 cat > "$ENV_FILE" <<ENVEOF
 PITGUARD_DB_PATH=$RUNTIME_DIR/pitguard.sqlite3
+PITGUARD_ARTIFACT_ROOT=$ARTIFACT_DIR
+PITGUARD_ARTIFACT_THRESHOLD_MB=${PITGUARD_ARTIFACT_THRESHOLD_MB:-1}
+PITGUARD_STAGE_RESULT_CHUNK_SIZE=${PITGUARD_STAGE_RESULT_CHUNK_SIZE:-100}
 PITGUARD_BACKUP_DIR=$RUNTIME_DIR/backups
 PITGUARD_BACKUP_RETENTION=${PITGUARD_BACKUP_RETENTION:-30}
 PITGUARD_REVISION_RETENTION=${PITGUARD_REVISION_RETENTION:-30}
@@ -171,6 +176,8 @@ PITGUARD_CANDIDATE_WORKERS=$CANDIDATE_WORKERS
 PITGUARD_CALCULATION_RESULT_RETENTION=$CALC_RESULT_RETENTION
 PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT=${PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT:-36}
 PITGUARD_MAX_SUPPORT_ELEMENTS=${PITGUARD_MAX_SUPPORT_ELEMENTS:-2400}
+PITGUARD_API_FULL_PROJECT_LIMIT_MB=$API_FULL_PROJECT_LIMIT_MB
+PITGUARD_MIGRATE_ON_FULL_LOAD=0
 PITGUARD_CORS_ORIGINS=https://$DOMAIN
 PITGUARD_USERS='$PITGUARD_USERS_JSON'
 PITGUARD_SESSION_SECRET=$SESSION_SECRET
@@ -179,6 +186,34 @@ PITGUARD_COOKIE_SECURE=true
 PITGUARD_API_KEYS='{"$API_KEY":{"role":"admin","actor":"automation-api","keyId":"automation-1"}}'
 ENVEOF
 chmod 600 "$ENV_FILE"
+
+if [ -s "$RUNTIME_DIR/pitguard.sqlite3" ]; then
+  "$PYTHON_BIN" - "$RUNTIME_DIR/pitguard.sqlite3" "$RUNTIME_DIR/backups" <<'PYBACKUP'
+import sqlite3, sys
+from datetime import datetime, timezone
+from pathlib import Path
+source_path = Path(sys.argv[1])
+backup_dir = Path(sys.argv[2])
+backup_dir.mkdir(parents=True, exist_ok=True)
+destination = backup_dir / f"pre_v331_artifact_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.sqlite3"
+with sqlite3.connect(source_path, timeout=60.0) as source, sqlite3.connect(destination, timeout=60.0) as target:
+    source.backup(target)
+    target.commit()
+print(f"[PitGuard] pre-migration database backup: {destination}")
+PYBACKUP
+fi
+
+PYTHONPATH="$API_DIR" PITGUARD_DB_PATH="$RUNTIME_DIR/pitguard.sqlite3" \
+  "$PYTHON_BIN" "$ROOT_DIR/scripts/prepare-project-workspace-storage.py" \
+  --database "$RUNTIME_DIR/pitguard.sqlite3"
+
+PYTHONPATH="$API_DIR" PITGUARD_DB_PATH="$RUNTIME_DIR/pitguard.sqlite3" PITGUARD_ARTIFACT_ROOT="$ARTIFACT_DIR" \
+  "$PYTHON_BIN" "$ROOT_DIR/scripts/prepare-project-artifact-storage.py" \
+  --database "$RUNTIME_DIR/pitguard.sqlite3"
+
+PYTHONPATH="$API_DIR" PITGUARD_DB_PATH="$RUNTIME_DIR/pitguard.sqlite3" PITGUARD_ARTIFACT_ROOT="$ARTIFACT_DIR" \
+  "$PYTHON_BIN" "$ROOT_DIR/scripts/garbage-collect-artifacts.py" \
+  --database "$RUNTIME_DIR/pitguard.sqlite3" --delete
 
 cat > "$SYSTEMD_UNIT" <<UNITEOF
 [Unit]
@@ -200,8 +235,9 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MPLCONFIGDIR=$RUNTIME_DIR/matplotlib
 Environment=XDG_CACHE_HOME=$RUNTIME_DIR/cache
 Environment=PITGUARD_TASK_EXECUTION_MODE=external
+Environment=PITGUARD_PROCESS_ROLE=api
 ExecStart=$PYTHON_BIN -m uvicorn app.main:app --host 127.0.0.1 --port $BACKEND_PORT --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
-Restart=on-failure
+Restart=always
 RestartSec=5s
 TimeoutStartSec=60s
 TimeoutStopSec=45s
@@ -210,17 +246,19 @@ UMask=0027
 LimitNOFILE=65535
 MemoryHigh=$API_MEMORY_HIGH
 MemoryMax=$API_MEMORY_MAX
+MemorySwapMax=0
 CPUQuota=200%
 CPUWeight=100
 IOWeight=100
 TasksMax=256
 OOMScoreAdjust=-500
-OOMPolicy=continue
+OOMPolicy=stop
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
 ReadWritePaths=$RUNTIME_DIR
+ReadWritePaths=$ARTIFACT_DIR
 ReadWritePaths=$API_DIR/exports
 ReadWritePaths=$API_DIR/runtime_cache
 
@@ -248,6 +286,8 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MPLCONFIGDIR=$RUNTIME_DIR/matplotlib-worker
 Environment=XDG_CACHE_HOME=$RUNTIME_DIR/cache-worker
 Environment=PITGUARD_TASK_EXECUTION_MODE=worker
+Environment=PITGUARD_PROCESS_ROLE=worker
+Environment=PITGUARD_MIGRATE_ON_FULL_LOAD=1
 ExecStart=$PYTHON_BIN -m app.tasks.worker_daemon
 Restart=always
 RestartSec=1s
@@ -274,6 +314,7 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
 ReadWritePaths=$RUNTIME_DIR
+ReadWritePaths=$ARTIFACT_DIR
 ReadWritePaths=$API_DIR/exports
 ReadWritePaths=$API_DIR/runtime_cache
 
@@ -400,6 +441,19 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    # Authenticated API responses use X-Accel-Redirect so large
+    # engineering datasets are transferred by Nginx/sendfile without entering
+    # the Python heap. This location cannot be requested directly.
+    location /protected-artifacts/ {
+        internal;
+        alias $ARTIFACT_DIR/;
+        sendfile on;
+        tcp_nopush on;
+        directio 8m;
+        output_buffers 2 1m;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
     location /assets/ {
         try_files \$uri =404;
         expires 1y;
@@ -496,6 +550,7 @@ Backend       : http://127.0.0.1:$BACKEND_PORT (HTTP only)
 Calc worker    : $WORKER_SERVICE_NAME (isolated process, MemoryMax=${WORKER_MEMORY_MAX_MB}M, CPUQuota=$WORKER_CPU_QUOTA)
 Frontend dist : $WEB_DIR/dist
 Database      : $RUNTIME_DIR/pitguard.sqlite3
+Artifact store : $ARTIFACT_DIR (Nginx direct transfer)
 Service       : $SERVICE_NAME.service
 Backend log   : journalctl -u $SERVICE_NAME -f
 Nginx log     : /var/log/nginx/pitguard_error.log

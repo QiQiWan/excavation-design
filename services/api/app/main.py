@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import advanced, assurance, auth, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, industrial, issues, projects, rebar, standards, tasks, wall_optimization
+from app.routers import advanced, artifacts, assurance, auth, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, industrial, issues, projects, rebar, standards, tasks, wall_optimization
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
@@ -24,7 +24,7 @@ from app.tasks.manager import task_manager
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.29.0 resilient scheme designer, isolated calculation worker and controlled delivery.",
+    description="PitGuard V3.31.0 external dataset storage, bounded workspace loading, isolated worker and controlled delivery.",
 )
 
 app.add_middleware(
@@ -66,6 +66,7 @@ async def observe_http_requests(request: Request, call_next):
 
 app.include_router(auth.router)
 app.include_router(projects.router)
+app.include_router(artifacts.router)
 app.include_router(standards.router)
 app.include_router(benchmarks.router)
 app.include_router(cad_template.router)

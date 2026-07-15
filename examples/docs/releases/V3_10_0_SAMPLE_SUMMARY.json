@@ -1,0 +1,506 @@
+{
+  "version": "3.10.0",
+  "projectId": "project-3728c2fc4dc1",
+  "candidateCount": 3,
+  "candidateFamilies": [
+    "hybrid_diagonal",
+    "direct_grid",
+    "bidirectional_grid"
+  ],
+  "firstBatchSeconds": 17.55,
+  "firstBatch": [
+    {
+      "status": "success",
+      "progress": 100,
+      "cacheHit": false,
+      "inputHash": "b6afd88f61f571e1c49d5a6e7a5d41ea4f6e1f3933c8b80b5a0a9f5935ce1395"
+    },
+    {
+      "status": "success",
+      "progress": 100,
+      "cacheHit": false,
+      "inputHash": "7e5c5c0a446f2b0bcc579a9066875fc2f20953be21f21047753043a4a34846fc"
+    },
+    {
+      "status": "success",
+      "progress": 100,
+      "cacheHit": false,
+      "inputHash": "7413e842c39ba8e119075df4b5509f55596d8b0c80a32375681732434aff374c"
+    }
+  ],
+  "secondBatchSeconds": 2.24,
+  "secondBatch": [
+    {
+      "status": "success",
+      "cacheHit": true,
+      "inputHash": "b6afd88f61f571e1c49d5a6e7a5d41ea4f6e1f3933c8b80b5a0a9f5935ce1395"
+    },
+    {
+      "status": "success",
+      "cacheHit": true,
+      "inputHash": "7e5c5c0a446f2b0bcc579a9066875fc2f20953be21f21047753043a4a34846fc"
+    },
+    {
+      "status": "success",
+      "cacheHit": true,
+      "inputHash": "7413e842c39ba8e119075df4b5509f55596d8b0c80a32375681732434aff374c"
+    }
+  ],
+  "moduleOverallCompleteness": 74.3,
+  "moduleBlockingCount": 0,
+  "moduleCompletionReview": [
+    {
+      "id": "M01",
+      "name": "项目与地勘输入",
+      "ownerRole": "designer",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 3,
+      "totalItemCount": 3,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "项目控制参数",
+        "钻孔资料",
+        "地层与物理力学参数"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M02",
+      "name": "三维地质模型",
+      "ownerRole": "designer",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 3,
+      "totalItemCount": 3,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "地层面",
+        "代表性剖面能力",
+        "地质范围覆盖"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M03",
+      "name": "基坑几何与一致性",
+      "ownerRole": "designer",
+      "completion": 66.7,
+      "status": "warning",
+      "completedItemCount": 2,
+      "totalItemCount": 3,
+      "blocking": false,
+      "gaps": [
+        {
+          "item": "计算/三维/出图几何一致",
+          "recommendation": "重新生成几何并执行几何哈希对账"
+        }
+      ],
+      "evidence": [
+        "闭合开挖轮廓",
+        "坑顶/坑底标高"
+      ],
+      "nextAction": "重新生成几何并执行几何哈希对账"
+    },
+    {
+      "id": "M04",
+      "name": "围护与支撑设计",
+      "ownerRole": "designer",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 4,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "地下连续墙",
+        "围檩/冠梁",
+        "支撑与临时立柱",
+        "支撑净距和拓扑质量"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M05",
+      "name": "A/B/C方案优化",
+      "ownerRole": "designer",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 4,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "三个整体候选",
+        "三个候选完整计算",
+        "已选择整体方案",
+        "候选结果缓存"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M06",
+      "name": "施工阶段与结构计算",
+      "ownerRole": "calculator",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 4,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "施工阶段",
+        "最新计算结果",
+        "墙-围檩-支撑联立",
+        "无硬性工程失败"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M07",
+      "name": "配筋与加工深化",
+      "ownerRole": "detailer",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 4,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "墙体分区配筋",
+        "支撑/围檩/节点配筋",
+        "逐根钢筋和BBS能力",
+        "构造协调几何写回"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M08",
+      "name": "节点、碰撞与吊装深化",
+      "ownerRole": "detailer",
+      "completion": 25.0,
+      "status": "gap",
+      "completedItemCount": 1,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [
+        {
+          "item": "节点局部筛查",
+          "recommendation": "运行节点局部复核"
+        },
+        {
+          "item": "碰撞与净距",
+          "recommendation": "运行碰撞、净距和钢筋拥挤检查"
+        },
+        {
+          "item": "吊机与场地路线",
+          "recommendation": "配置场地边界、道路、禁入区和吊机站位"
+        }
+      ],
+      "evidence": [
+        "施工顺序与停检点"
+      ],
+      "nextAction": "运行节点局部复核"
+    },
+    {
+      "id": "M09",
+      "name": "出图规则与CAD/PDF",
+      "ownerRole": "publisher",
+      "completion": 0.0,
+      "status": "gap",
+      "completedItemCount": 0,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [
+        {
+          "item": "出图规则集",
+          "recommendation": "选择或优化出图规则集"
+        },
+        {
+          "item": "企业CAD模板",
+          "recommendation": "配置企业图框、字体、图层和签审栏"
+        },
+        {
+          "item": "正式图纸计划",
+          "recommendation": "生成图纸计划并校验必需图种"
+        },
+        {
+          "item": "图纸派生几何有效",
+          "recommendation": "协调几何变化后重新生成图纸计划"
+        }
+      ],
+      "evidence": [],
+      "nextAction": "选择或优化出图规则集"
+    },
+    {
+      "id": "M10",
+      "name": "BIM与模型交付",
+      "ownerRole": "publisher",
+      "completion": 100.0,
+      "status": "pass",
+      "completedItemCount": 3,
+      "totalItemCount": 3,
+      "blocking": false,
+      "gaps": [],
+      "evidence": [
+        "IFC模型可生成",
+        "IFC兼容性检查",
+        "稳定对象ID和几何哈希"
+      ],
+      "nextAction": "模块数据、计算与交付证据已形成。"
+    },
+    {
+      "id": "M11",
+      "name": "监测、校准与审签",
+      "ownerRole": "reviewer",
+      "completion": 75.0,
+      "status": "warning",
+      "completedItemCount": 3,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [
+        {
+          "item": "岗位分离",
+          "recommendation": "使用不同人员完成设计、校核、审核和批准"
+        }
+      ],
+      "evidence": [
+        "监测数据入口",
+        "参数反演记录",
+        "四级审签流程"
+      ],
+      "nextAction": "使用不同人员完成设计、校核、审核和批准"
+    },
+    {
+      "id": "M12",
+      "name": "正式发行与归档",
+      "ownerRole": "publisher",
+      "completion": 25.0,
+      "status": "gap",
+      "completedItemCount": 1,
+      "totalItemCount": 4,
+      "blocking": false,
+      "gaps": [
+        {
+          "item": "当前快照批准",
+          "recommendation": "完成当前设计快照四级批准"
+        },
+        {
+          "item": "当前施工版修订",
+          "recommendation": "创建绑定当前快照的施工版修订"
+        },
+        {
+          "item": "正式发行闸门允许",
+          "recommendation": "完成计算、深化、审签和修订闭环"
+        }
+      ],
+      "evidence": [
+        "无正式发行阻断"
+      ],
+      "nextAction": "完成当前设计快照四级批准"
+    }
+  ],
+  "acceptanceMatrixCount": 13,
+  "latestCheckSummary": {
+    "pass": 288,
+    "fail": 0,
+    "warning": 9,
+    "manualReview": 0
+  },
+  "candidateFullCalculations": [
+    {
+      "schemeLabel": "A",
+      "candidateId": "slopt-hybrid-diagonal-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+      "rank": 1,
+      "score": 37.55,
+      "targetSpacing": 5.0,
+      "columnMaxSpan": 18.0,
+      "positionPattern": "global_shift_minus_1p0",
+      "supportCount": 39,
+      "columnCount": 9,
+      "maxSpanLength": 30.0,
+      "excessiveDirectStrutCount": 9,
+      "minSupportWallClearance": 1.0,
+      "maxSupportAxialForce": 5711.062,
+      "maxDisplacement": 2.511,
+      "maxWallMoment": 267.278,
+      "maxWallShear": 200.809,
+      "maxWaleMoment": 107456.732,
+      "maxWaleShear": 13187.769,
+      "maxWaleDeflection": 0.074207,
+      "minStabilitySafetyFactor": 0.0,
+      "strengthStatus": "warning",
+      "stiffnessStatus": "warning",
+      "stabilityStatus": "pass",
+      "ifcStatus": "pass",
+      "ifcRisk": "medium",
+      "formalGateStatus": "warning",
+      "formalGateAllowed": false,
+      "checkSummary": {
+        "pass": 260,
+        "fail": 0,
+        "warning": 9,
+        "manualReview": 0
+      },
+      "failCount": 0,
+      "warningCount": 9,
+      "manualReviewCount": 0,
+      "governingCheckStatus": "warning",
+      "calculationResultId": "calc-20adba3bdee9",
+      "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+      "changedSupportCount": 24,
+      "topologyFamily": "hybrid_diagonal",
+      "schemeName": "斜撑+短对撑混合",
+      "cacheHit": false,
+      "inputHash": "b6afd88f61f571e1c49d5a6e7a5d41ea4f6e1f3933c8b80b5a0a9f5935ce1395",
+      "decisionScore": 69.42,
+      "decisionComponents": {
+        "maxSupportAxialForce": 59.56,
+        "maxDisplacement": 66.64,
+        "maxWallMoment": 72.53,
+        "maxWallShear": 100.0,
+        "maxWaleMoment": 100.0,
+        "maxWaleDeflection": 100.0,
+        "supportCount": 100.0,
+        "columnCount": 37.5,
+        "maxSpanLength": 0.0,
+        "excessiveDirectStrutCount": 100.0,
+        "score": 100.0
+      },
+      "decisionPenalty": 3.15,
+      "decisionRank": 1,
+      "recommendedByFullCalculation": true,
+      "decisionReason": "完整计算综合排名第 1；优势指标：墙体剪力、围檩弯矩、围檩挠度。Fail=0，Warning=9；采用后仍须重新计算并通过正式发行闸门。"
+    },
+    {
+      "schemeLabel": "B",
+      "candidateId": "slopt-direct-grid-t6p0-c18p0-as_generated-0p0",
+      "rank": 2,
+      "score": 25.44,
+      "targetSpacing": 6.0,
+      "columnMaxSpan": 18.0,
+      "positionPattern": "as_generated",
+      "supportCount": 45,
+      "columnCount": 12,
+      "maxSpanLength": 28.0,
+      "excessiveDirectStrutCount": 12,
+      "minSupportWallClearance": 1.0,
+      "maxSupportAxialForce": 4967.124,
+      "maxDisplacement": 2.066,
+      "maxWallMoment": 235.656,
+      "maxWallShear": 201.092,
+      "maxWaleMoment": 144981.577,
+      "maxWaleShear": 15326.987,
+      "maxWaleDeflection": 0.12207,
+      "minStabilitySafetyFactor": 0.0,
+      "strengthStatus": "warning",
+      "stiffnessStatus": "warning",
+      "stabilityStatus": "pass",
+      "ifcStatus": "pass",
+      "ifcRisk": "medium",
+      "formalGateStatus": "warning",
+      "formalGateAllowed": false,
+      "checkSummary": {
+        "pass": 287,
+        "fail": 0,
+        "warning": 9,
+        "manualReview": 0
+      },
+      "failCount": 0,
+      "warningCount": 9,
+      "manualReviewCount": 0,
+      "governingCheckStatus": "warning",
+      "calculationResultId": "calc-af775cfaa4d3",
+      "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+      "changedSupportCount": 0,
+      "topologyFamily": "direct_grid",
+      "schemeName": "传统直对撑",
+      "cacheHit": false,
+      "inputHash": "7e5c5c0a446f2b0bcc579a9066875fc2f20953be21f21047753043a4a34846fc",
+      "decisionScore": 49.39,
+      "decisionComponents": {
+        "maxSupportAxialForce": 100.0,
+        "maxDisplacement": 100.0,
+        "maxWallMoment": 100.0,
+        "maxWallShear": 0.0,
+        "maxWaleMoment": 0.0,
+        "maxWaleDeflection": 89.51,
+        "supportCount": 0.0,
+        "columnCount": 0.0,
+        "maxSpanLength": 100.0,
+        "excessiveDirectStrutCount": 0.0,
+        "score": 3.2
+      },
+      "decisionPenalty": 3.15,
+      "decisionRank": 2,
+      "recommendedByFullCalculation": false,
+      "decisionReason": "完整计算综合排名第 2；优势指标：支撑轴力、墙体位移、墙体弯矩。Fail=0，Warning=9；采用后仍须重新计算并通过正式发行闸门。"
+    },
+    {
+      "schemeLabel": "C",
+      "candidateId": "slopt-bidirectional-grid-t5p0-c18p0-global_shift_minus_1p0-m1p0",
+      "rank": 3,
+      "score": 25.04,
+      "targetSpacing": 5.0,
+      "columnMaxSpan": 18.0,
+      "positionPattern": "global_shift_minus_1p0",
+      "supportCount": 42,
+      "columnCount": 4,
+      "maxSpanLength": 30.0,
+      "excessiveDirectStrutCount": 12,
+      "minSupportWallClearance": 1.0,
+      "maxSupportAxialForce": 6806.789,
+      "maxDisplacement": 3.4,
+      "maxWallMoment": 350.757,
+      "maxWallShear": 200.809,
+      "maxWaleMoment": 111085.009,
+      "maxWaleShear": 14082.256,
+      "maxWaleDeflection": 0.530578,
+      "minStabilitySafetyFactor": 0.0,
+      "strengthStatus": "warning",
+      "stiffnessStatus": "warning",
+      "stabilityStatus": "pass",
+      "ifcStatus": "pass",
+      "ifcRisk": "medium",
+      "formalGateStatus": "warning",
+      "formalGateAllowed": false,
+      "checkSummary": {
+        "pass": 267,
+        "fail": 0,
+        "warning": 9,
+        "manualReview": 0
+      },
+      "failCount": 0,
+      "warningCount": 9,
+      "manualReviewCount": 0,
+      "governingCheckStatus": "warning",
+      "calculationResultId": "calc-52e2e672b839",
+      "note": "该候选已使用完整计算链路复算：施工工况、支撑轴力、墙体位移/内力、围檩内力、稳定性、IFC 兼容性和正式化闸门。",
+      "changedSupportCount": 27,
+      "topologyFamily": "bidirectional_grid",
+      "schemeName": "双向网格",
+      "cacheHit": false,
+      "inputHash": "7413e842c39ba8e119075df4b5509f55596d8b0c80a32375681732434aff374c",
+      "decisionScore": 16.27,
+      "decisionComponents": {
+        "maxSupportAxialForce": 0.0,
+        "maxDisplacement": 0.0,
+        "maxWallMoment": 0.0,
+        "maxWallShear": 100.0,
+        "maxWaleMoment": 90.33,
+        "maxWaleDeflection": 0.0,
+        "supportCount": 50.0,
+        "columnCount": 100.0,
+        "maxSpanLength": 0.0,
+        "excessiveDirectStrutCount": 0.0,
+        "score": 0.0
+      },
+      "decisionPenalty": 3.15,
+      "decisionRank": 3,
+      "recommendedByFullCalculation": false,
+      "decisionReason": "完整计算综合排名第 3；优势指标：墙体剪力、立柱数量、围檩弯矩。Fail=0，Warning=9；采用后仍须重新计算并通过正式发行闸门。"
+    }
+  ]
+}

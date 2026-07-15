@@ -8,6 +8,7 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
   const [location, setLocation] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [deletingId, setDeletingId] = useState<string | undefined>();
+  const [openingId, setOpeningId] = useState<string | undefined>();
 
   const refresh = () => {
     void api.listProjects().then(setProjects).catch((err) => setError(err.message));
@@ -22,6 +23,20 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
       onOpen(project);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+
+  async function openProject(project: ProjectSummary) {
+    try {
+      setError(undefined);
+      setOpeningId(project.id);
+      const loaded = await api.getProject(project.id);
+      onOpen(loaded);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOpeningId(undefined);
     }
   }
 
@@ -54,16 +69,17 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
       </section>
       <section className="card">
         <table className="table">
-          <thead><tr><th>名称</th><th>地点</th><th>更新时间</th><th>操作</th></tr></thead>
+          <thead><tr><th>名称</th><th>地点</th><th>存储</th><th>更新时间</th><th>操作</th></tr></thead>
           <tbody>
             {projects.map((project) => (
               <tr key={project.id}>
                 <td>{project.name}</td>
                 <td>{project.location ?? '-'}</td>
+                <td><span className={`statusTag ${project.storageStatus === 'large' ? 'warning' : project.storageStatus === 'elevated' ? 'info' : 'pass'}`}>{project.payloadBytes ? `核心 ${(project.payloadBytes / 1048576).toFixed(1)} MB${project.externalBytes ? ` · 外部 ${(project.externalBytes / 1048576).toFixed(1)} MB` : ''}` : '常规'}</span></td>
                 <td>{new Date(project.updatedAt).toLocaleString()}</td>
                 <td>
                   <div className="table-actions">
-                    <button disabled={deletingId === project.id} onClick={() => void api.getProject(project.id).then(onOpen).catch((err) => setError(err.message))}>打开</button>
+                    <button disabled={deletingId === project.id || openingId === project.id} onClick={() => void openProject(project)}>{openingId === project.id ? '安全加载中…' : '打开'}</button>
                     <button className="danger" disabled={deletingId === project.id} onClick={() => void deleteProject(project)}>
                       {deletingId === project.id ? '删除中…' : '删除'}
                     </button>
@@ -71,7 +87,7 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
                 </td>
               </tr>
             ))}
-            {projects.length === 0 && <tr><td colSpan={4}>暂无项目</td></tr>}
+            {projects.length === 0 && <tr><td colSpan={5}>暂无项目</td></tr>}
           </tbody>
         </table>
       </section>

@@ -1,6 +1,6 @@
 [project]
 name = "pitguard-api"
-version = "3.29.0"
+version = "3.31.0"
 description = "FastAPI backend for PitGuard BIM Designer engineering design-assist prototype"
 requires-python = ">=3.11"
 dependencies = [

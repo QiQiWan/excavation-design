@@ -443,6 +443,11 @@ export interface ProjectSummary {
   latestCalculationId?: string;
   governingStatus?: string;
   geometryConsistent?: boolean;
+  payloadBytes?: number;
+  workspaceBytes?: number;
+  externalBytes?: number;
+  artifactCount?: number;
+  storageStatus?: 'normal' | 'elevated' | 'large';
 }
 
 export interface Project {

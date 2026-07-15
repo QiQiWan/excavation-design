@@ -1157,6 +1157,11 @@ class ProjectSummary(DomainModel):
     latest_calculation_id: str | None = None
     governing_status: str | None = None
     geometry_consistent: bool | None = None
+    payload_bytes: int = 0
+    workspace_bytes: int = 0
+    external_bytes: int = 0
+    artifact_count: int = 0
+    storage_status: Literal["normal", "elevated", "large"] = "normal"
 
 
 class Project(DomainModel):

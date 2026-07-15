@@ -9,7 +9,225 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.storage.artifact_store import ProjectArtifactStore, artifact_refs, externalize_project_payload, rehydrate_project_payload
+
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "pitguard.sqlite3"
+
+
+class ProjectPayloadTooLarge(RuntimeError):
+    """Raised before a full project JSON document is copied into the API heap."""
+
+    def __init__(self, project_id: str, payload_bytes: int, limit_bytes: int) -> None:
+        self.project_id = project_id
+        self.payload_bytes = int(payload_bytes)
+        self.limit_bytes = int(limit_bytes)
+        super().__init__(
+            f"Project {project_id} payload is {payload_bytes / 1048576:.1f} MB; "
+            f"the API full-load limit is {limit_bytes / 1048576:.1f} MB. "
+            "Open the workspace profile or run storage compaction before a full load."
+        )
+
+
+def _process_role() -> str:
+    return str(os.getenv("PITGUARD_PROCESS_ROLE", "api")).strip().lower() or "api"
+
+
+def _api_full_load_limit_bytes() -> int:
+    try:
+        value = float(os.getenv("PITGUARD_API_FULL_PROJECT_LIMIT_MB", "96"))
+    except (TypeError, ValueError):
+        value = 96.0
+    return max(16, min(2048, int(value))) * 1024 * 1024
+
+
+def _compact_result_for_workspace(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    keep = {
+        "id", "projectId", "caseId", "supportTopologyHash", "inputSnapshotHash",
+        "adoptedDesignSnapshotHash", "calculationContractId", "resultHash",
+        "calculationAssurance", "deliveryReadiness", "governingValues", "warnings",
+        "checkSummary", "designIterationSummary", "designReviewSummary",
+        "supportLayoutQuality", "ifcCompatibility", "formalReportGate", "standards",
+        "professionalReviewRequired", "calculatedAt",
+    }
+    compact = {key: value[key] for key in keep if key in value}
+    # Preserve the schema while excluding stage arrays, diagrams and duplicated
+    # candidate calculations from the project-opening payload.
+    compact.setdefault("stageResults", [])
+    compact.setdefault("checks", [])
+    compact.setdefault("optimizationActions", [])
+    compact.setdefault("reportDiagramData", {})
+    compact.setdefault("drawingSheets", [])
+    compact.setdefault("supportLayoutRepair", None)
+    compact.setdefault("stabilityDetailedResult", None)
+    return compact
+
+
+def _downsample_surface_grid(grid: Any, max_axis: int = 64) -> Any:
+    if not isinstance(grid, dict):
+        return grid
+    xs = list(grid.get("xValues") or [])
+    ys = list(grid.get("yValues") or [])
+    zs = list(grid.get("zValues") or [])
+    if len(xs) <= max_axis and len(ys) <= max_axis:
+        return grid
+    x_step = max(1, (len(xs) + max_axis - 1) // max_axis)
+    y_step = max(1, (len(ys) + max_axis - 1) // max_axis)
+    x_idx = list(range(0, len(xs), x_step))
+    y_idx = list(range(0, len(ys), y_step))
+    if xs and x_idx[-1] != len(xs) - 1:
+        x_idx.append(len(xs) - 1)
+    if ys and y_idx[-1] != len(ys) - 1:
+        y_idx.append(len(ys) - 1)
+    sampled_rows: list[list[Any]] = []
+    for yi in y_idx:
+        row = zs[yi] if yi < len(zs) and isinstance(zs[yi], list) else []
+        sampled_rows.append([row[xi] if xi < len(row) else None for xi in x_idx])
+    return {
+        **grid,
+        "xValues": [xs[i] for i in x_idx],
+        "yValues": [ys[i] for i in y_idx],
+        "zValues": sampled_rows,
+        "workspaceDownsampled": True,
+        "sourceShape": [len(ys), len(xs)],
+    }
+
+
+def _workspace_limit_bytes() -> int:
+    try:
+        value = float(os.getenv("PITGUARD_WORKSPACE_PAYLOAD_LIMIT_MB", "24"))
+    except (TypeError, ValueError):
+        value = 24.0
+    return max(4, min(256, int(value))) * 1024 * 1024
+
+
+def _aggressively_compact_workspace(workspace: dict[str, Any]) -> dict[str, Any]:
+    bounded = dict(workspace)
+    geological = bounded.get("geologicalModel")
+    if isinstance(geological, dict):
+        geo = dict(geological)
+        geo["surfaces"] = []
+        geo["volumes"] = []
+        geo["vtuMesh"] = None
+        warnings = list(geo.get("warnings") or [])
+        warnings.append("工作区采用轻量地质摘要；进入地质页后按需读取完整模型。")
+        geo["warnings"] = warnings
+        bounded["geologicalModel"] = geo
+    excavation = bounded.get("excavation")
+    if isinstance(excavation, dict):
+        exc = dict(excavation)
+        exc["drawingLayers"] = []
+        bounded["excavation"] = exc
+    retaining = bounded.get("retainingSystem")
+    if isinstance(retaining, dict):
+        ret = dict(retaining)
+        repair = ret.get("supportLayoutRepair")
+        if isinstance(repair, dict):
+            rep = dict(repair)
+            candidates = []
+            for candidate in list(rep.get("candidates") or [])[:8]:
+                if not isinstance(candidate, dict):
+                    continue
+                item = dict(candidate)
+                item["planGeometry"] = {}
+                item["deltaGeometry"] = {}
+                item["lineAdjustments"] = list(item.get("lineAdjustments") or [])[:32]
+                item["fullCalculation"] = {}
+                candidates.append(item)
+            rep["candidates"] = candidates
+            rep["candidateFullCalculations"] = []
+            ret["supportLayoutRepair"] = rep
+        bounded["retainingSystem"] = ret
+    bounded["monitoringRecords"] = []
+    advanced = dict(bounded.get("advancedEngineering") or {})
+    workspace_meta = dict(advanced.get("workspaceStorage") or {})
+    workspace_meta["aggressivelyCompacted"] = True
+    workspace_meta["workspaceLimitBytes"] = _workspace_limit_bytes()
+    bounded["advancedEngineering"] = {
+        key: value for key, value in advanced.items()
+        if key in {
+            "calculationState", "requiresRecalculation", "invalidationReason",
+            "wallLengthOptimization", "supportDesignerAudit", "planShapeDiagnostics",
+            "industrialReadiness", "workspaceStorage", "artifactStorage",
+        }
+    }
+    bounded["advancedEngineering"]["workspaceStorage"] = workspace_meta
+    return bounded
+
+
+def _compact_project_for_workspace(project: dict[str, Any]) -> dict[str, Any]:
+    """Build a bounded project payload for opening the web workspace.
+
+    The full engineering snapshot remains in ``projects.data`` and immutable
+    revisions.  This projection deliberately excludes result matrices, raw VTU
+    meshes, repeated candidate calculations and detailed manufacturing caches.
+    """
+    workspace = dict(project)
+    results = list(project.get("calculationResults") or [])
+    workspace["calculationResults"] = [_compact_result_for_workspace(results[-1])] if results else []
+    workspace["messages"] = list(project.get("messages") or [])[-100:]
+    workspace["monitoringRecords"] = list(project.get("monitoringRecords") or [])[-500:]
+    workspace["calibrationRuns"] = list(project.get("calibrationRuns") or [])[-20:]
+    workspace["drawingRevisions"] = list(project.get("drawingRevisions") or [])[-50:]
+
+    geological = project.get("geologicalModel")
+    if isinstance(geological, dict):
+        compact_geo = dict(geological)
+        compact_geo["vtuMesh"] = None
+        surfaces = []
+        for surface in list(geological.get("surfaces") or [])[:64]:
+            if not isinstance(surface, dict):
+                continue
+            item = dict(surface)
+            item["grid"] = _downsample_surface_grid(surface.get("grid"))
+            surfaces.append(item)
+        compact_geo["surfaces"] = surfaces
+        compact_geo["volumes"] = list(geological.get("volumes") or [])[:128]
+        workspace["geologicalModel"] = compact_geo
+
+    retaining = project.get("retainingSystem")
+    if isinstance(retaining, dict):
+        compact_retaining = dict(retaining)
+        repair = retaining.get("supportLayoutRepair")
+        if isinstance(repair, dict):
+            compact_repair = dict(repair)
+            candidates = []
+            for candidate in list(repair.get("candidates") or [])[:12]:
+                if not isinstance(candidate, dict):
+                    continue
+                item = dict(candidate)
+                item["fullCalculation"] = {}
+                candidates.append(item)
+            compact_repair["candidates"] = candidates
+            compact_repair["candidateFullCalculations"] = []
+            compact_retaining["supportLayoutRepair"] = compact_repair
+        rebar_scheme = compact_retaining.get("rebarDesignScheme")
+        if isinstance(rebar_scheme, dict):
+            rebar_compact = dict(rebar_scheme)
+            for key in ("bars", "barInstances", "fullGeometry", "manufacturingRows", "bbsRows"):
+                if key in rebar_compact:
+                    rebar_compact[key] = []
+            compact_retaining["rebarDesignScheme"] = rebar_compact
+        workspace["retainingSystem"] = compact_retaining
+
+    advanced = dict(project.get("advancedEngineering") or {})
+    omitted: list[str] = []
+    for key in (
+        "latestSuite", "industrialDetailing", "qualificationSuite",
+        "detailGeometryPatches", "fullRebarGeometry", "manufacturingData",
+        "renderCache", "ifcEntityCache", "calculationResultArchive",
+    ):
+        if key in advanced:
+            advanced.pop(key, None)
+            omitted.append(f"advancedEngineering.{key}")
+    advanced["workspaceStorage"] = {
+        "profile": "workspace",
+        "fullCalculationResultCount": len(results),
+        "omittedPaths": omitted,
+    }
+    workspace["advancedEngineering"] = advanced
+    return workspace
 
 
 def _now() -> str:
@@ -73,6 +291,11 @@ class SQLiteProjectStore:
                     revision INTEGER NOT NULL DEFAULT 0,
                     content_hash TEXT NOT NULL DEFAULT '',
                     summary TEXT NOT NULL DEFAULT '{}',
+                    workspace_data TEXT NOT NULL DEFAULT '{}',
+                    payload_bytes INTEGER NOT NULL DEFAULT 0,
+                    workspace_bytes INTEGER NOT NULL DEFAULT 0,
+                    external_bytes INTEGER NOT NULL DEFAULT 0,
+                    artifact_count INTEGER NOT NULL DEFAULT 0,
                     data TEXT NOT NULL
                 )
                 """
@@ -84,6 +307,16 @@ class SQLiteProjectStore:
                 conn.execute("ALTER TABLE projects ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''")
             if "summary" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN summary TEXT NOT NULL DEFAULT '{}'")
+            if "workspace_data" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN workspace_data TEXT NOT NULL DEFAULT '{}'")
+            if "payload_bytes" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN payload_bytes INTEGER NOT NULL DEFAULT 0")
+            if "workspace_bytes" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN workspace_bytes INTEGER NOT NULL DEFAULT 0")
+            if "external_bytes" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN external_bytes INTEGER NOT NULL DEFAULT 0")
+            if "artifact_count" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN artifact_count INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS project_revisions (
@@ -114,7 +347,118 @@ class SQLiteProjectStore:
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_project_revisions_updated ON project_revisions(project_id, revision DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_project_created ON audit_events(project_id, created_at DESC)")
+            self._backfill_workspace_columns(conn)
             conn.commit()
+
+    def _backfill_workspace_columns(self, conn: sqlite3.Connection) -> None:
+        """Create safe workspace projections for databases produced by older releases.
+
+        The transformation is executed by SQLite JSON1 so a legacy multi-hundred
+        megabyte document is never copied into the API Python heap during startup.
+        The latest full result is intentionally omitted for the initial backfill;
+        the next normal save writes a compact current-result summary.
+        """
+        conn.execute(
+            "UPDATE projects SET payload_bytes = length(CAST(data AS BLOB)) "
+            "WHERE payload_bytes <= 0"
+        )
+        try:
+            conn.execute(
+                """
+                UPDATE projects
+                SET workspace_data = json_set(
+                    json_remove(
+                        data,
+                        '$.calculationResults',
+                        '$.geologicalModel.vtuMesh',
+                        '$.geologicalModel.surfaces',
+                        '$.geologicalModel.volumes',
+                        '$.retainingSystem.supportLayoutRepair.candidateFullCalculations',
+                        '$.retainingSystem.rebarDesignScheme.bars',
+                        '$.retainingSystem.rebarDesignScheme.barInstances',
+                        '$.retainingSystem.rebarDesignScheme.fullGeometry',
+                        '$.advancedEngineering.latestSuite',
+                        '$.advancedEngineering.industrialDetailing',
+                        '$.advancedEngineering.qualificationSuite',
+                        '$.advancedEngineering.detailGeometryPatches',
+                        '$.advancedEngineering.fullRebarGeometry',
+                        '$.advancedEngineering.manufacturingData',
+                        '$.advancedEngineering.renderCache',
+                        '$.advancedEngineering.ifcEntityCache',
+                        '$.advancedEngineering.calculationResultArchive',
+                        '$.monitoringRecords'
+                    ),
+                    '$.calculationResults', json('[]'),
+                    '$.geologicalModel.surfaces', json('[]'),
+                    '$.geologicalModel.volumes', json('[]'),
+                    '$.monitoringRecords', json('[]'),
+                    '$.advancedEngineering.workspaceStorage',
+                    json_object('profile', 'workspace', 'legacyBackfill', 1)
+                )
+                WHERE (workspace_data IS NULL OR workspace_data = '' OR workspace_data = '{}')
+                  AND json_valid(data)
+                """
+            )
+            # Remove repeated full candidate calculations from each candidate.
+            conn.execute(
+                """
+                UPDATE projects
+                SET workspace_data = json_set(
+                    workspace_data,
+                    '$.retainingSystem.supportLayoutRepair.candidates',
+                    COALESCE((
+                        SELECT json_group_array(json(json_remove(value, '$.fullCalculation')))
+                        FROM json_each(workspace_data, '$.retainingSystem.supportLayoutRepair.candidates')
+                    ), json('[]'))
+                )
+                WHERE json_type(workspace_data, '$.retainingSystem.supportLayoutRepair.candidates') = 'array'
+                  AND json_array_length(workspace_data, '$.retainingSystem.supportLayoutRepair.candidates') > 0
+                """
+            )
+        except sqlite3.OperationalError:
+            # JSON1 is built into supported Python/SQLite releases.  Retaining a
+            # minimal payload still keeps the service alive on unusual builds.
+            conn.execute(
+                "UPDATE projects SET workspace_data = json_object("
+                "'id', id, 'name', name, 'updatedAt', updated_at, "
+                "'advancedEngineering', json_object('workspaceStorage', json_object('profile','minimal'))) "
+                "WHERE workspace_data IS NULL OR workspace_data = '' OR workspace_data = '{}'"
+            )
+        conn.execute(
+            "UPDATE projects SET workspace_bytes = length(CAST(workspace_data AS BLOB)) "
+            "WHERE workspace_bytes <= 0 OR workspace_bytes IS NULL"
+        )
+        # If a legacy candidate preview is still unusually large, remove only
+        # preview/delta geometry.  Engineering metrics and the complete snapshot
+        # remain available in projects.data for the isolated worker.
+        try:
+            conn.execute(
+                """
+                UPDATE projects
+                SET workspace_data = json_set(
+                    workspace_data,
+                    '$.retainingSystem.supportLayoutRepair.candidates',
+                    COALESCE((
+                        SELECT json_group_array(json(json_remove(
+                            value, '$.fullCalculation', '$.planGeometry',
+                            '$.deltaGeometry', '$.lineAdjustments'
+                        )))
+                        FROM json_each(workspace_data, '$.retainingSystem.supportLayoutRepair.candidates')
+                    ), json('[]')),
+                    '$.advancedEngineering.workspaceStorage.aggressivelyCompacted', 1
+                )
+                WHERE workspace_bytes > ?
+                  AND json_type(workspace_data, '$.retainingSystem.supportLayoutRepair.candidates') = 'array'
+                """,
+                (_workspace_limit_bytes(),),
+            )
+            conn.execute(
+                "UPDATE projects SET workspace_bytes = length(CAST(workspace_data AS BLOB)) "
+                "WHERE workspace_bytes > ?",
+                (_workspace_limit_bytes(),),
+            )
+        except sqlite3.OperationalError:
+            pass
 
     def upsert(
         self,
@@ -125,7 +469,23 @@ class SQLiteProjectStore:
         action: str = "project.save",
         summary: str = "Project snapshot saved",
     ) -> int:
+        # V3.31 stores large arrays as immutable content-addressed objects.
+        # ``project`` is a fresh model_dump dictionary, so it is safe to compact
+        # it in place without mutating the caller's Pydantic model.
+        artifact_store = ProjectArtifactStore()
+        project = externalize_project_payload(project, artifact_store)
+        refs = artifact_refs(project)
+        external_bytes = sum(int(item.get("storedBytes") or 0) for item in refs)
+        artifact_count = len(refs)
         encoded = _canonical_json(project)
+        workspace_project = _compact_project_for_workspace(project)
+        workspace_encoded = _canonical_json(workspace_project)
+        payload_bytes = len(encoded.encode("utf-8"))
+        workspace_bytes = len(workspace_encoded.encode("utf-8"))
+        if workspace_bytes > _workspace_limit_bytes():
+            workspace_project = _aggressively_compact_workspace(workspace_project)
+            workspace_encoded = _canonical_json(workspace_project)
+            workspace_bytes = len(workspace_encoded.encode("utf-8"))
         content_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         updated_at = str(project.get("updatedAt") or project.get("updated_at") or _now())
         with self._connect() as conn:
@@ -142,17 +502,22 @@ class SQLiteProjectStore:
             summary_encoded = json.dumps(_project_summary_payload(project, revision), ensure_ascii=False, separators=(",", ":"))
             conn.execute(
                 """
-                INSERT INTO projects (id, name, updated_at, revision, content_hash, summary, data)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (id, name, updated_at, revision, content_hash, summary, workspace_data, payload_bytes, workspace_bytes, external_bytes, artifact_count, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     updated_at=excluded.updated_at,
                     revision=excluded.revision,
                     content_hash=excluded.content_hash,
                     summary=excluded.summary,
+                    workspace_data=excluded.workspace_data,
+                    payload_bytes=excluded.payload_bytes,
+                    workspace_bytes=excluded.workspace_bytes,
+                    external_bytes=excluded.external_bytes,
+                    artifact_count=excluded.artifact_count,
                     data=excluded.data
                 """,
-                (project["id"], project.get("name", "Untitled"), updated_at, revision, content_hash, summary_encoded, encoded),
+                (project["id"], project.get("name", "Untitled"), updated_at, revision, content_hash, summary_encoded, workspace_encoded, payload_bytes, workspace_bytes, external_bytes, artifact_count, encoded),
             )
             conn.execute(
                 """
@@ -212,7 +577,7 @@ class SQLiteProjectStore:
         # Summaries are persisted separately so the project list never asks
         # SQLite JSON1 to parse multi-megabyte calculation payloads.
         with self._connect() as conn:
-            rows = conn.execute("SELECT id, name, updated_at, revision, summary FROM projects ORDER BY updated_at DESC").fetchall()
+            rows = conn.execute("SELECT id, name, updated_at, revision, summary, payload_bytes, workspace_bytes, external_bytes, artifact_count FROM projects ORDER BY updated_at DESC").fetchall()
         output: list[dict[str, Any]] = []
         for row in rows:
             try:
@@ -233,13 +598,101 @@ class SQLiteProjectStore:
                 "latest_calculation_id": item.get("latestCalculationId"),
                 "governing_status": item.get("governingStatus"),
                 "geometry_consistent": item.get("geometryConsistent"),
+                "payload_bytes": int(row["payload_bytes"] or 0),
+                "workspace_bytes": int(row["workspace_bytes"] or 0),
+                "external_bytes": int(row["external_bytes"] or 0),
+                "artifact_count": int(row["artifact_count"] or 0),
+                "storage_status": (
+                    "large" if int(row["payload_bytes"] or 0) + int(row["external_bytes"] or 0) >= 96 * 1024 * 1024
+                    else "elevated" if int(row["payload_bytes"] or 0) + int(row["external_bytes"] or 0) >= 32 * 1024 * 1024
+                    else "normal"
+                ),
             })
         return output
 
+    def get_payload_info(self, project_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, name, revision, updated_at, payload_bytes, workspace_bytes, external_bytes, artifact_count, "
+                "length(CAST(data AS BLOB)) AS measured_payload_bytes, "
+                "length(CAST(workspace_data AS BLOB)) AS measured_workspace_bytes "
+                "FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload_bytes = int(row["payload_bytes"] or row["measured_payload_bytes"] or 0)
+        workspace_bytes = int(row["workspace_bytes"] or row["measured_workspace_bytes"] or 0)
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "revision": int(row["revision"] or 0),
+            "updatedAt": row["updated_at"],
+            "payloadBytes": payload_bytes,
+            "workspaceBytes": workspace_bytes,
+            "externalBytes": int(row["external_bytes"] or 0),
+            "artifactCount": int(row["artifact_count"] or 0),
+            "totalLogicalBytes": payload_bytes + int(row["external_bytes"] or 0),
+            "compressionRatio": round(workspace_bytes / max(payload_bytes + int(row["external_bytes"] or 0), 1), 6),
+            "apiFullLoadLimitBytes": _api_full_load_limit_bytes(),
+            "fullLoadAllowed": _process_role() != "api" or payload_bytes <= _api_full_load_limit_bytes(),
+            "processRole": _process_role(),
+        }
+
+    def get_workspace_json(self, project_id: str) -> tuple[str, dict[str, Any]] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT workspace_data, payload_bytes, workspace_bytes, revision, updated_at "
+                "FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = str(row["workspace_data"] or "{}")
+        metadata = {
+            "revision": int(row["revision"] or 0),
+            "updatedAt": row["updated_at"],
+            "payloadBytes": int(row["payload_bytes"] or 0),
+            "workspaceBytes": int(row["workspace_bytes"] or len(payload.encode("utf-8"))),
+        }
+        return payload, metadata
+
+    def get_workspace(self, project_id: str) -> dict[str, Any] | None:
+        result = self.get_workspace_json(project_id)
+        return json.loads(result[0]) if result else None
+
     def get(self, project_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
+            meta = conn.execute(
+                "SELECT payload_bytes, length(CAST(data AS BLOB)) AS measured FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            if meta is None:
+                return None
+            payload_bytes = int(meta["payload_bytes"] or meta["measured"] or 0)
+            if _process_role() == "api" and payload_bytes > _api_full_load_limit_bytes():
+                raise ProjectPayloadTooLarge(project_id, payload_bytes, _api_full_load_limit_bytes())
             row = conn.execute("SELECT data FROM projects WHERE id = ?", (project_id,)).fetchone()
-        return json.loads(row["data"]) if row else None
+        if row is None:
+            return None
+        project = json.loads(row["data"])
+        if _process_role() == "worker" or str(os.getenv("PITGUARD_REHYDRATE_FULL_PROJECT", "0")).strip().lower() in {"1", "true", "yes"}:
+            project = rehydrate_project_payload(project, ProjectArtifactStore())
+        return project
+
+    def list_artifacts(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT data FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if row is None:
+            return []
+        project = json.loads(row["data"])
+        return ProjectArtifactStore().list_existing(artifact_refs(project))
+
+    def get_artifact(self, project_id: str, artifact_id: str) -> dict[str, Any] | None:
+        for ref in self.list_artifacts(project_id):
+            if str(ref.get("artifactId")) == artifact_id:
+                return ref
+        return None
 
     def get_revision_number(self, project_id: str) -> int | None:
         with self._connect() as conn:
@@ -282,7 +735,10 @@ class SQLiteProjectStore:
             cur = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
             conn.execute("DELETE FROM project_revisions WHERE project_id = ?", (project_id,))
             conn.commit()
-            return cur.rowcount > 0
+            deleted = cur.rowcount > 0
+        if deleted:
+            ProjectArtifactStore().delete_project(project_id)
+        return deleted
 
 
     def backup(self, destination_dir: str | os.PathLike[str] | None = None) -> dict[str, Any]:
