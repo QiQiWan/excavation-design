@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, AxesHelper, Box3, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, GridHelper, Group, Intersection, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Points, PointsMaterial, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { ExcavationSegment, Point2D, Project, VtuMesh } from '../types/domain';
+import { effectiveGeologicalSurfaces } from '../utils/geology';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'supports' | 'results';
 
@@ -40,7 +41,7 @@ function projectBounds(project: Project): { center: Vector3; radius: number } {
     points.push(toScenePoint(bh.x, bh.y, bh.collarElevation));
     points.push(toScenePoint(bh.x, bh.y, bh.collarElevation - bh.depth));
   });
-  project.geologicalModel?.surfaces.forEach((surface) => {
+  effectiveGeologicalSurfaces(project).forEach((surface) => {
     surface.grid.xValues.forEach((x, ix) => surface.grid.yValues.forEach((y, iy) => {
       points.push(toScenePoint(x, y, surface.grid.zValues[iy]?.[ix] ?? 0));
     }));
@@ -110,7 +111,7 @@ function addBoreholes(scene: Scene, project: Project) {
 }
 
 function addGeologicalSurfaces(scene: Scene, project: Project) {
-  project.geologicalModel?.surfaces.forEach((surface) => {
+  effectiveGeologicalSurfaces(project).forEach((surface) => {
     const nx = surface.grid.xValues.length;
     const ny = surface.grid.yValues.length;
     if (nx < 2 || ny < 2) return;

@@ -12,6 +12,7 @@ from app.services.support_layout import plan_shape_diagnostics
 from app.services.support_layout_repair import adopt_support_layout_candidate, auto_repair_support_layout, set_support_optimization_locks
 from app.services.calculation_state import invalidate_calculation_state
 from app.services.support_scheme_designer_audit import audit_support_scheme_designer
+from app.services.support_deep_design import evaluate_support_deep_design, optimize_support_deep_design
 from app.services.calculation_resource_estimator import estimate_calculation_resources
 from app.services.support_layout_import import import_support_layout_csv
 from app.storage.repository import ProjectRepository, get_repository
@@ -28,6 +29,11 @@ class OptimizeSupportsPayload(BaseModel):
 class AdoptSupportCandidatePayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     candidate_id: str = Field(alias="candidateId")
+
+
+class SupportDeepDesignPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    max_iterations: int | None = Field(default=None, alias="maxIterations", ge=1, le=6)
 
 
 class SupportLockItem(BaseModel):
@@ -89,6 +95,21 @@ def get_plan_shape_diagnostics(project_id: str, repo: ProjectRepository = Depend
 def get_support_designer_audit(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
     project = _require_excavation(project_id, repo)
     return audit_support_scheme_designer(project)
+
+
+@router.get("/support-deep-design")
+def get_support_deep_design(project_id: str, include_members: bool = False, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = _require_excavation(project_id, repo)
+    return evaluate_support_deep_design(project, include_members=bool(include_members))
+
+
+@router.post("/support-deep-design/optimize")
+def run_support_deep_design(project_id: str, payload: SupportDeepDesignPayload | None = Body(default=None), repo: ProjectRepository = Depends(get_repository)) -> dict:
+    project = _require_excavation(project_id, repo)
+    result = optimize_support_deep_design(project, max_iterations=(payload.max_iterations if payload else None))
+    invalidate_calculation_state(project, reason="support member/column deep-design iteration changed adopted member properties", rebuild_cases=False)
+    repo.save(project)
+    return result
 
 
 @router.get("/calculation-resource-estimate")

@@ -57,6 +57,7 @@ from app.services.calculation_assurance import audit_calculation_inputs, build_c
 from app.services.wall_restraint import build_effective_wall_restraints
 from app.services.candidate_result_cache import candidate_input_hash, get_cached_candidate_result, put_cached_candidate_result
 from app.services.wall_embedment_design import auto_design_wall_embedment
+from app.services.support_deep_design import evaluate_support_deep_design
 
 LOAD_FACTOR_RETAINING = 1.25
 
@@ -1367,7 +1368,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "support_outside_excavation", "obstacle_clearance", "temporary_column",
                 "replacement_path", "support_to_support_terminal",
                 "unsupported_internal_endpoint", "corner_brace_fan_geometry",
-                "corner_brace_wall_node_congestion",
+                "corner_brace_wall_node_congestion", "support_station_cluster",
             }
             for issue in current_quality.issues
         )
@@ -2111,6 +2112,32 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     if getattr(project.retaining_system, "support_nodes", None):
         node_checks = update_support_node_design(project.retaining_system.support_nodes, project.retaining_system.supports)
         support_checks.extend(node_checks)
+    support_deep_design = evaluate_support_deep_design(project, project.retaining_system, include_members=False)
+    deep_metrics = dict(support_deep_design.get("metrics") or {})
+    support_checks.append({
+        "ruleId": "PITGUARD-SUPPORT-DEEP-DESIGN-STABILITY",
+        "objectId": project.retaining_system.id,
+        "objectType": "RetainingSystem",
+        "status": "pass" if support_deep_design.get("hardPass") else "fail",
+        "calculatedValue": deep_metrics.get("maximumInteractionUtilization"),
+        "limitValue": 1.0,
+        "unit": "utilization",
+        "message": support_deep_design.get("summary"),
+        "clauseReference": "JGJ120 internal-support load path and construction-stage design; GB 50017/GB 50010 member stability subset; project-specific applicability to verify",
+        "formula": "N_eff=N+0.5N_pre+N_T+N_gap; eta=N_eff/N_b,Rd+M_e/M_Rd",
+    })
+    if int(deep_metrics.get("supportNodeUncheckedCount", 0) or 0):
+        support_checks.append({
+            "ruleId": "PITGUARD-SUPPORT-NODE-DETAILING-READINESS",
+            "objectId": project.retaining_system.id,
+            "objectType": "RetainingSystem",
+            "status": "warning",
+            "calculatedValue": deep_metrics.get("supportNodeUncheckedCount"),
+            "limitValue": 0,
+            "unit": "node",
+            "message": "支撑—围檩节点仍有未闭环项；正式成果需完成承压板、节点区、加劲肋、锚固和局部配筋设计。",
+            "clauseReference": "temporary bracing connection detailing and local load-transfer review",
+        })
     wale_results_all = [wale for sr in stage_results for wale in getattr(sr, "wale_beam_results", [])]
     support_checks.extend(_design_wale_beams(project, wale_results_all, gamma0))
     if support_checks and stage_results:
@@ -2329,6 +2356,8 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "p32CandidateStateAndStageSynchronization": True,
             "p33GeologicalDesignDomainCoverage": True,
             "p34WallEmbedmentStrengthDesign": True,
+            "p35SupportDeepDesignScreening": True,
+            "supportDeepDesign": support_deep_design,
             "autoStrengthDesignEnabled": strength_auto_enabled,
             "maxDesignIterations": int(getattr(project.design_settings, "max_design_iterations", 3) or 3),
             "topologyPreflight": topology_preflight,
@@ -2354,6 +2383,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             {"target": "replacement_load_path", "action": "retain_transferred_slab_waler_levels_in_vertical_tributary_partition", "count": len([s for s in case.stages if s.transferred_support_levels])},
             {"target": "wale_beam_section", "action": "auto_size_width_height", "count": len([b for b in project.retaining_system.wale_beams if b.design_result])},
             {"target": "support_lifecycle", "action": "preload_temperature_gap_eccentricity_screening", "count": len(project.retaining_system.supports)},
+            {"target": "support_deep_design", "action": "stability_eccentricity_node_redundancy_screening", "count": len(project.retaining_system.supports)},
             {"target": "temporary_column", "action": "pile_foundation_screening", "count": len(project.retaining_system.columns)},
         ],
         report_diagram_data={
@@ -2385,6 +2415,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "ifcCompatibility": ifc_quality.model_dump(mode="json", by_alias=True),
             "formalReportGate": formal_gate.model_dump(mode="json", by_alias=True),
             "supportLayoutRepair": support_repair.model_dump(mode="json", by_alias=True) if support_repair else None,
+            "supportDeepDesign": support_deep_design,
             "candidateFullCalculationComparison": candidate_full_calculations,
             "waleEnvelopes": [
                 b.design_result.envelope.model_dump(mode="json", by_alias=True)

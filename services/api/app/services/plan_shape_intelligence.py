@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Any, Iterable
 
 from shapely import affinity
-from shapely.geometry import GeometryCollection, MultiPolygon, Point, Polygon, box
+from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 
 from app.schemas.domain import Point2D
 
@@ -140,6 +140,65 @@ def _void_signatures(local: Polygon) -> list[dict[str, Any]]:
             "centroid": [round(component.centroid.x, 4), round(component.centroid.y, 4)],
         })
     return sorted(rows, key=lambda item: float(item["area"]), reverse=True)
+
+
+def _single_corridor_profile(local: Polygon, sample_count: int = 41) -> dict[str, Any]:
+    """Describe whether a concave plan remains one continuous strip.
+
+    Long pits with local widenings have reflex vertices but every station along
+    the principal axis still cuts one continuous excavation interval.  Treating
+    them as generic L/U/T shapes disables valid terminal braces and creates
+    dense transition stations.  This profile separates a stepped strip from a
+    branched or re-entrant corridor.
+    """
+    min_x, min_y, max_x, max_y = local.bounds
+    span = max(max_x - min_x, EPS)
+    pad = max(max_y - min_y, 1.0)
+    widths: list[float] = []
+    centers: list[float] = []
+    single = 0
+    valid = 0
+    for index in range(sample_count):
+        x = min_x + (index + 0.5) * span / sample_count
+        intersection = local.intersection(LineString([(x, min_y - pad), (x, max_y + pad)]))
+        parts: list[LineString] = []
+        if isinstance(intersection, LineString):
+            parts = [intersection]
+        elif isinstance(intersection, MultiLineString):
+            parts = [part for part in intersection.geoms if part.length > EPS]
+        elif isinstance(intersection, GeometryCollection):
+            parts = [part for part in intersection.geoms if isinstance(part, LineString) and part.length > EPS]
+        if not parts:
+            continue
+        valid += 1
+        if len(parts) != 1:
+            continue
+        part = parts[0]
+        ys = [float(coord[1]) for coord in part.coords]
+        if not ys:
+            continue
+        y0, y1 = min(ys), max(ys)
+        width = y1 - y0
+        if width <= EPS:
+            continue
+        single += 1
+        widths.append(width)
+        centers.append(0.5 * (y0 + y1))
+    ratio = single / max(valid, 1)
+    mean_width = sum(widths) / max(len(widths), 1)
+    width_variation = (max(widths) - min(widths)) / max(mean_width, EPS) if widths else 0.0
+    center_drift = (max(centers) - min(centers)) / max(mean_width, EPS) if centers else 1.0
+    return {
+        "sampleCount": sample_count,
+        "validSampleCount": valid,
+        "singleIntervalRatio": round(ratio, 4),
+        "meanWidthM": round(mean_width, 4),
+        "minimumWidthM": round(min(widths), 4) if widths else 0.0,
+        "maximumWidthM": round(max(widths), 4) if widths else 0.0,
+        "widthVariationRatio": round(width_variation, 4),
+        "centerlineDriftRatio": round(center_drift, 4),
+        "singleCorridor": bool(ratio >= 0.92 and center_drift <= 0.22),
+    }
 
 
 def _orthogonal_archetype(voids: list[dict[str, Any]], reflex_count: int) -> str:
@@ -281,6 +340,7 @@ def _strategy(archetype: str, aspect: float, short_span: float, compactness: flo
         "parallelogram": ("principal_axis_oblique_direct_grid", ["direct_grid", "hybrid_diagonal"]),
         "irregular_quadrilateral": ("visibility_wall_pair_grid", ["direct_grid"]),
         "elongated_convex_polygon": ("visibility_wall_pair_grid", ["direct_grid", "hybrid_diagonal"]),
+        "elongated_stepped_strip": ("adaptive_short_span_grid_with_terminal_parallel_braces", ["direct_grid", "hybrid_diagonal"]),
     }
     if archetype in automatic:
         primary, families = automatic[archetype]
@@ -342,6 +402,14 @@ def _strategy(archetype: str, aspect: float, short_span: float, compactness: flo
 def _engineering_scheme(archetype: str) -> dict[str, Any]:
     key = archetype.replace("_with_center_island", "")
     schemes: dict[str, dict[str, Any]] = {
+        "elongated_stepped_strip": {
+            "name": "变宽长条形短跨对撑+端部平行角撑",
+            "zoning": "沿局部长轴识别连续单走廊和宽度台阶；场区按短跨布置直撑，真实端墙采用独立墙节点的平行角撑族。",
+            "layoutRules": ["支撑站位按局部宽度自适应", "台阶两侧最多各设一个过渡站位", "端部保留角撑作用区", "每根角撑两端落墙"],
+            "forbidden": ["每个轮廓顶点两侧重复加密", "端部用密集短跨直撑代替角撑", "角撑共用墙节点或止于其他支撑"],
+            "calculationModel": "墙—围檩—短跨轴压撑+端部平行角撑",
+            "construction": "按宽度分区控制预加轴力，端部角撑先形成闭合传力路径。",
+        },
         "slender_rectangle": {
             "name": "短跨直对撑+端部平行角撑",
             "zoning": "沿长轴按3-6m分仓；两端短墙按围檩允许跨反算平行角撑数量。",
@@ -505,9 +573,12 @@ def classify_excavation_plan(points: Iterable[Point2D], *, local_pit_count: int 
     orthogonal_ratio, direction_count = _orthogonal_ratio(poly, angle)
     orthogonal = orthogonal_ratio >= 0.90
     voids = _void_signatures(local) if reflex else []
+    corridor_profile = _single_corridor_profile(local) if reflex and orthogonal and aspect >= 2.20 else {}
 
     vertex_count = len(pts)
-    if reflex:
+    if reflex and bool(corridor_profile.get("singleCorridor")):
+        archetype = "elongated_stepped_strip"
+    elif reflex:
         archetype = _orthogonal_archetype(voids, reflex) if orthogonal else "general_concave_polygon"
     elif vertex_count == 3:
         archetype = "triangle"
@@ -581,12 +652,15 @@ def classify_excavation_plan(points: Iterable[Point2D], *, local_pit_count: int 
         "ellipse": "circular_or_multisided_shaft",
         "regular_multisided_shaft": "circular_or_multisided_shaft",
         "elongated_convex_polygon": "slender_convex_polygon",
+        "elongated_stepped_strip": "slender_stepped_strip",
     }.get(strategy_key, "general_convex_polygon")
 
     if strategy_key in {"rectangle", "slender_rectangle", "near_square_rectangle"}:
         recognition_confidence = min(0.99, 0.55 + 0.25 * rectangularity + 0.20 * orthogonal_ratio)
     elif strategy_key in {"circle", "ellipse", "regular_multisided_shaft"}:
         recognition_confidence = min(0.97, 0.45 + 0.45 * circularity + 0.10 * convexity)
+    elif strategy_key == "elongated_stepped_strip":
+        recognition_confidence = min(0.98, 0.60 + 0.20 * orthogonal_ratio + 0.18 * float(corridor_profile.get("singleIntervalRatio") or 0.0))
     elif reflex and orthogonal:
         recognition_confidence = min(0.95, 0.50 + 0.30 * orthogonal_ratio + 0.03 * min(len(voids), 5))
     elif convexity >= 0.98:
@@ -623,6 +697,7 @@ def classify_excavation_plan(points: Iterable[Point2D], *, local_pit_count: int 
         "orthogonalEdgeRatio": round(orthogonal_ratio, 4),
         "orthogonalPlan": orthogonal,
         "edgeDirectionClusterCount": direction_count,
+        "corridorProfile": corridor_profile,
         "slenderPlan": aspect >= 2.20,
         "nearSquarePlan": aspect <= 1.35,
         "circularShaftLike": strategy_key in {"circle", "regular_multisided_shaft"},

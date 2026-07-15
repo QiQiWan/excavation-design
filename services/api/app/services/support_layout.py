@@ -1060,6 +1060,90 @@ def _assign_tributary_widths(supports: list[SupportElement], excavation) -> None
             support.force_distribution_note = "V1.6 支撑轴力由围檩连续梁-弹性支座节点反力计算；tributary width 仅作为节点位置和结果解释的参考。"
 
 
+def _local_section_width(points: list[Point2D], axes: PlanAxes, coordinate: float) -> float:
+    local = [_local_coordinates(point, axes) for point in _dedup_points(points)]
+    intervals = _vertical_line_intervals(local, coordinate)
+    if len(intervals) != 1:
+        return 0.0
+    return max(0.0, float(intervals[0][1] - intervals[0][0]))
+
+
+def _stepped_strip_station_coordinates(
+    points: list[Point2D],
+    axes: PlanAxes,
+    target_spacing: float,
+    config: SupportLayoutConfig,
+) -> list[tuple[float, str]]:
+    """Place short-span struts without vertex-driven station clustering.
+
+    The station spacing approximately keeps ``local width * longitudinal bay``
+    uniform.  Terminal zones are reserved for parallel wall-to-wall corner
+    braces, while each internal width step receives at most one nearby anchor.
+    """
+    span = max(axes.long_span, EPS)
+    minimum = float(config.support_min_station_separation_m)
+    field_min = max(MIN_PRACTICAL_MAIN_SUPPORT_SPACING_M, minimum)
+    field_max = min(MAX_PRACTICAL_MAIN_SUPPORT_SPACING_M, max(target_spacing * 1.20, field_min))
+    terminal_reserve = min(
+        0.18 * span,
+        max(float(config.corner_diagonal_max_offset_m) + 0.45 * target_spacing, 1.25 * target_spacing),
+    ) if config.prefer_diagonal_braces else 0.55 * target_spacing
+    start = axes.long_min + terminal_reserve
+    end = axes.long_max - terminal_reserve
+    if end - start < 2.0 * field_min:
+        start = axes.long_min + 0.55 * target_spacing
+        end = axes.long_max - 0.55 * target_spacing
+    if end <= start:
+        return []
+
+    widths = [
+        _local_section_width(points, axes, axes.long_min + (index + 0.5) * span / 31.0)
+        for index in range(31)
+    ]
+    positive = sorted(width for width in widths if width > EPS)
+    reference_width = positive[len(positive) // 2] if positive else max(axes.short_span, 1.0)
+    stations: list[tuple[float, str]] = []
+    coordinate = start
+    guard = 0
+    while coordinate <= end + EPS and guard < MAX_AUTO_MAIN_STRUTS_PER_LEVEL * 3:
+        width = _local_section_width(points, axes, coordinate) or reference_width
+        spacing = target_spacing * math.sqrt(max(reference_width, EPS) / max(width, EPS))
+        spacing = max(field_min, min(field_max, spacing))
+        candidate = min(end, coordinate + 0.5 * spacing)
+        if not stations or candidate - stations[-1][0] >= minimum:
+            stations.append((candidate, "adaptive_field"))
+        coordinate = candidate + 0.5 * spacing
+        guard += 1
+        if end - coordinate < 0.45 * field_min:
+            break
+
+    # At a true width transition, move the nearest field station toward the
+    # step instead of inserting two extra lines on both sides of every vertex.
+    local = [_local_coordinates(point, axes) for point in _dedup_points(points)]
+    transition_coordinates: list[float] = []
+    for point in local:
+        if start + minimum <= point.x <= end - minimum:
+            before = _local_section_width(points, axes, point.x - 0.25)
+            after = _local_section_width(points, axes, point.x + 0.25)
+            if min(before, after) > EPS and abs(after - before) >= max(1.5, 0.12 * reference_width):
+                transition_coordinates.append(point.x)
+    for transition in sorted(set(round(value, 4) for value in transition_coordinates)):
+        if not stations:
+            break
+        nearest = min(range(len(stations)), key=lambda index: abs(stations[index][0] - transition))
+        left = stations[nearest - 1][0] if nearest > 0 else start - minimum
+        right = stations[nearest + 1][0] if nearest + 1 < len(stations) else end + minimum
+        bounded = max(left + minimum, min(right - minimum, transition))
+        if start <= bounded <= end:
+            stations[nearest] = (bounded, "width_transition")
+    stations.sort(key=lambda row: row[0])
+    output: list[tuple[float, str]] = []
+    for station in stations:
+        if not output or station[0] - output[-1][0] >= minimum - EPS:
+            output.append(station)
+    return output[:MAX_AUTO_MAIN_STRUTS_PER_LEVEL]
+
+
 def _design_station_coordinates(points: list[Point2D], axes: PlanAxes, target_spacing: float, config: SupportLayoutConfig | None = None) -> list[tuple[float, str]]:
     """Generate support stations with denser transition zones at plan steps.
 
@@ -1071,6 +1155,9 @@ def _design_station_coordinates(points: list[Point2D], axes: PlanAxes, target_sp
     """
     cfg = (config or SupportLayoutConfig()).normalized()
     span = max(axes.long_span, EPS)
+    shape = plan_shape_diagnostics(points)
+    if str(shape.get("archetype") or "") == "elongated_stepped_strip":
+        return _stepped_strip_station_coordinates(points, axes, target_spacing, cfg)
     base_count = _main_support_count(span, target_spacing)
     base = [axes.long_min + (i + 1) * span / (base_count + 1) for i in range(base_count)] if base_count > 0 else []
     local = [_local_coordinates(p, axes) for p in _dedup_points(points)]
@@ -1149,10 +1236,10 @@ def _main_strut_layout(points: list[Point2D], obstacles: list[tuple[Construction
                     round(_distance(start, end), 3),
                     round(bay_spacing, 3),
                     note,
-                    design_zone="transition" if station_kind == "transition" else "field",
+                    design_zone="transition" if "transition" in station_kind else "field",
                     station_chainage_m=round(float(used - axes.long_min), 3),
                     local_clear_span_m=round(_distance(start, end), 3),
-                    placement_reason=("平面台阶/颈缩过渡区加密" if station_kind == "transition" else "规则场区短跨对撑"),
+                    placement_reason=("平面台阶/颈缩过渡区自适应站位" if "transition" in station_kind else "规则场区短跨对撑"),
                     load_path_class="wall_to_wall",
                 )
             )
@@ -1272,7 +1359,7 @@ def _corner_family_offsets(min_leg: float, config: SupportLayoutConfig, target_b
     requested = int(config.corner_diagonal_family_count)
     needed = 1 + int(math.ceil(max(0.0, required_outer - min_offset) / max(spacing, EPS)))
     available = 1 + int(max(0.0, max_offset - min_offset) // spacing)
-    count = max(1, min(max(requested, needed), available))
+    count = max(1, min(needed, requested, available))
     if count == 1:
         return [round(max(min_offset, min(0.60 * target_bay, max_offset)), 3)]
     first = max(min_offset, min(0.55 * target_bay, max_offset - spacing * (count - 1)))
@@ -1298,9 +1385,12 @@ def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[Constru
     # but structurally unrelated braces in returns and recesses.  Concave plans
     # are handled only by visible wall-pair direct members; unresolved branches
     # become a controlled block instead of an arbitrary diagonal fan.
-    if _concave_vertex_indices(points):
-        return []
+    concave_vertices = _concave_vertex_indices(points)
     axes = _plan_axes(points)
+    shape = plan_shape_diagnostics(points)
+    elongated_stepped_strip = str(shape.get("archetype") or "") == "elongated_stepped_strip"
+    if concave_vertices and not elongated_stepped_strip:
+        return []
     short_span, long_span = axes.short_span, axes.long_span
     if short_span < 12.0:
         return []
@@ -1322,6 +1412,11 @@ def _corner_diagonal_layout(points: list[Point2D], obstacles: list[tuple[Constru
     for idx, curr in enumerate(points):
         prev = points[(idx - 1) % n]
         nxt = points[(idx + 1) % n]
+        if elongated_stepped_strip:
+            local_curr = _local_coordinates(curr, axes)
+            terminal_band = max(1.5 * target_bay, 0.10 * axes.long_span)
+            if min(abs(local_curr.x - axes.long_min), abs(local_curr.x - axes.long_max)) > terminal_band:
+                continue
         edge_prev = (curr.x - prev.x, curr.y - prev.y)
         edge_next = (nxt.x - curr.x, nxt.y - curr.y)
         cross = edge_prev[0] * edge_next[1] - edge_prev[1] * edge_next[0]
@@ -1977,13 +2072,20 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
                 "双向T/Y网格候选已停用：当前求解器不支持水平支撑中部横向受力；已改用墙—墙直撑/斜撑体系。"
             )
         warnings.extend(secondary_warnings)
-        return_wall_lines, return_wall_warnings = _concave_return_wall_layout(
-            points,
-            obstacles,
-            excavation,
-            [*main_lines, *secondary_lines],
-            config.target_main_support_spacing_m,
-        )
+        if str(shape.get("archetype") or "") == "elongated_stepped_strip":
+            return_wall_lines = []
+            return_wall_warnings = [
+                "连续变宽长条形已按单走廊处理：台阶回墙由相邻围檩刚域和短跨直撑共同约束，"
+                "不生成会与主支撑相交的局部回墙短撑。"
+            ]
+        else:
+            return_wall_lines, return_wall_warnings = _concave_return_wall_layout(
+                points,
+                obstacles,
+                excavation,
+                [*main_lines, *secondary_lines],
+                config.target_main_support_spacing_m,
+            )
         _attach_faces(return_wall_lines, excavation)
         direct_returns: list[SupportLayoutLine] = []
         return_blockers = [*main_lines, *secondary_lines]
@@ -2862,8 +2964,11 @@ def repair_wale_support_bays(project, config: SupportLayoutConfig | None = None,
     obstacles = _active_obstacle_polygons(getattr(excavation, "obstacles", []))
     shape = plan_shape_diagnostics(points)
     allow_oblique_terminal_repair = (
-        int(shape.get("concaveVertexCount") or 0) == 0
-        and float(shape.get("aspectRatio") or 0.0) > 1.35
+        float(shape.get("aspectRatio") or 0.0) > 1.35
+        and (
+            int(shape.get("concaveVertexCount") or 0) == 0
+            or str(shape.get("archetype") or "") == "elongated_stepped_strip"
+        )
     )
     targeted_lines = _targeted_wale_bay_repair_lines(excavation, before, obstacles, config)
     _attach_faces(targeted_lines, excavation)

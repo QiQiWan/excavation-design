@@ -1,5 +1,6 @@
 import type { Project } from '../types/domain';
 import Engineering3DViewer from './Engineering3DViewer';
+import { effectiveGeologicalSurfaces } from '../utils/geology';
 
 function formatMapping(mapping: Record<string, unknown> | undefined) {
   if (!mapping || !Object.keys(mapping).length) return '-';
@@ -7,7 +8,7 @@ function formatMapping(mapping: Record<string, unknown> | undefined) {
 }
 
 export default function GeologyViewer({ project }: { project: Project }) {
-  const surfaces = project.geologicalModel?.surfaces ?? [];
+  const surfaces = effectiveGeologicalSurfaces(project);
   const mesh = project.geologicalModel?.vtuMesh;
   return (
     <div>

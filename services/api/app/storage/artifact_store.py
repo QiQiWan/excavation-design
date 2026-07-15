@@ -35,6 +35,56 @@ def _item_count(value: Any) -> int | None:
     return None
 
 
+def _sample_indices(length: int, maximum: int) -> list[int]:
+    if length <= 0:
+        return []
+    if length <= maximum:
+        return list(range(length))
+    if maximum <= 1:
+        return [0]
+    return sorted({round(index * (length - 1) / (maximum - 1)) for index in range(maximum)})
+
+
+def geological_surface_previews(value: Any, maximum_axis: int | None = None) -> list[dict[str, Any]]:
+    """Build bounded IDW grids for the interactive workspace.
+
+    Full IDW surfaces remain immutable artifacts.  The preview keeps the same
+    bounds and end nodes while limiting each grid axis, so opening a project and
+    rebuilding Three.js geometry never requires the full engineering dataset.
+    """
+    maximum = max(8, min(64, int(maximum_axis or os.getenv("PITGUARD_GEOLOGY_PREVIEW_AXIS", "36"))))
+    output: list[dict[str, Any]] = []
+    for raw in list(value or []):
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        grid = dict(item.get("grid") or {})
+        xs = list(grid.get("xValues") or grid.get("x_values") or [])
+        ys = list(grid.get("yValues") or grid.get("y_values") or [])
+        zs = list(grid.get("zValues") or grid.get("z_values") or [])
+        x_indices = _sample_indices(len(xs), maximum)
+        y_indices = _sample_indices(len(ys), maximum)
+        if not x_indices or not y_indices or len(zs) < len(ys):
+            continue
+        sampled_z: list[list[Any]] = []
+        valid = True
+        for y_index in y_indices:
+            row = list(zs[y_index] or [])
+            if len(row) < len(xs):
+                valid = False
+                break
+            sampled_z.append([row[x_index] for x_index in x_indices])
+        if not valid:
+            continue
+        item["grid"] = {
+            "xValues": [xs[index] for index in x_indices],
+            "yValues": [ys[index] for index in y_indices],
+            "zValues": sampled_z,
+        }
+        output.append(item)
+    return output
+
+
 class ProjectArtifactStore:
     """Content-addressed project object storage.
 
@@ -267,13 +317,34 @@ def externalize_project_payload(
             geological["vtuMesh"] = None
         else:
             preserve("geology:vtu")
-        for field, kind in (("surfaces", "geology-surfaces"), ("volumes", "geology-volumes")):
-            value = geological.get(field)
-            if value:
-                store_value(f"geology:{field}", kind, value, metadata={"recordCount": len(value) if isinstance(value, list) else None})
-                geological[field] = []
-            else:
-                preserve(f"geology:{field}")
+        surfaces = geological.get("surfaces")
+        if surfaces:
+            previews = geological_surface_previews(surfaces)
+            store_value(
+                "geology:surfaces",
+                "geology-surfaces",
+                surfaces,
+                metadata={"recordCount": len(surfaces) if isinstance(surfaces, list) else None, "previewCount": len(previews)},
+            )
+            geological["surfacePreviews"] = previews
+            geological["surfaces"] = []
+        else:
+            preserve("geology:surfaces")
+            # Backfill V3.31/V3.32 projects whose full surfaces were already
+            # externalized before a bounded preview was introduced.
+            if not geological.get("surfacePreviews") and refs_by_key.get("geology:surfaces"):
+                try:
+                    geological["surfacePreviews"] = geological_surface_previews(
+                        store.read_json(refs_by_key["geology:surfaces"])
+                    )
+                except (FileNotFoundError, RuntimeError, OSError, ValueError, TypeError):
+                    geological["surfacePreviews"] = []
+        volumes = geological.get("volumes")
+        if volumes:
+            store_value("geology:volumes", "geology-volumes", volumes, metadata={"recordCount": len(volumes) if isinstance(volumes, list) else None})
+            geological["volumes"] = []
+        else:
+            preserve("geology:volumes")
 
     retaining = project.get("retainingSystem")
     if isinstance(retaining, dict):

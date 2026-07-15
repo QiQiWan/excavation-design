@@ -8,6 +8,7 @@ import CalculationRecoveryPanel from '../components/CalculationRecoveryPanel';
 import SchemeComparisonPanel from '../components/SchemeComparisonPanel';
 import ProjectDataWorkspacePanel from '../components/ProjectDataWorkspacePanel';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
+import { effectiveGeologicalSurfaces, hasGeologicalSurfacePreview } from '../utils/geology';
 import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult, StandardsProcessMatrix, StandardsProcessStep } from '../types/domain';
 
 const AdvancedEngineeringPanel = lazy(() => import('../components/AdvancedEngineeringPanel'));
@@ -552,7 +553,7 @@ function EngineeringDecisionBoard({ project, steps, onJump }: { project: Project
   const warningItems = latest?.formalReportGate?.warningItems?.length ?? latest?.checkSummary?.warning ?? 0;
   const readiness = [
     { label: '地勘资料', value: `${project.boreholes.length} 钻孔 / ${project.strata.length} 地层`, done: project.boreholes.length > 0 && project.strata.length > 0, key: 'boreholes' as const },
-    { label: '地质模型', value: project.geologicalModel?.surfaces?.length ? `${project.geologicalModel.surfaces.length} 个地层面${project.geologicalModel.coverageAudit?.autoExtended ? ' / 已外扩' : ''}` : '未生成', done: Boolean(project.geologicalModel?.surfaces?.length && project.geologicalModel?.coverageAudit?.designDomainCovered !== false), key: 'geology' as const },
+    { label: '地质模型', value: hasGeologicalSurfacePreview(project) ? `${effectiveGeologicalSurfaces(project).length} 个地层面${project.geologicalModel?.coverageAudit?.autoExtended ? ' / 已外扩' : ''}` : '未生成', done: Boolean(hasGeologicalSurfacePreview(project) && project.geologicalModel?.coverageAudit?.designDomainCovered !== false), key: 'geology' as const },
     { label: '基坑轮廓', value: project.excavation ? `${project.excavation.segments.length} 边段 / ${project.excavation.depth}m` : '未录入', done: Boolean(project.excavation?.segments?.length), key: 'excavation' as const },
     { label: '围护体系', value: ret ? `${ret.diaphragmWalls.length} 墙 / ${ret.supports.length} 支撑 / ${ret.columns.length} 立柱` : '未生成', done: Boolean(ret?.diaphragmWalls?.length && ret?.supports?.length), key: 'retaining' as const },
     { label: '计算结果', value: latest ? `${latest.stageResults?.length ?? 0} 工况结果` : '未计算', done: Boolean(latest), key: 'calculation' as const },
@@ -604,11 +605,11 @@ function buildWorkflowSteps(project: Project): WorkflowStep[] {
     {
       key: 'geology', index: 3, title: '三维地质模型', subtitle: '生成 IDW 地层面，必要时导入 VTU 非结构网格。',
       required: ['已导入钻孔', '已生成地层面', '可提取代表性剖面'],
-      status: project.geologicalModel?.surfaces?.length
+      status: hasGeologicalSurfacePreview(project)
         ? (project.geologicalModel?.coverageAudit?.designDomainCovered === false ? 'error' : (project.geologicalModel?.warnings?.length || project.geologicalModel?.coverageAudit?.autoExtended ? 'warning' : 'done'))
         : (project.boreholes.length ? 'ready' : 'blocked'),
-      message: project.geologicalModel?.surfaces?.length
-        ? `${project.geologicalModel.surfaces.length} 个地层面；${project.geologicalModel.coverageAudit?.message ?? '等待覆盖检查'}`
+      message: hasGeologicalSurfacePreview(project)
+        ? `${effectiveGeologicalSurfaces(project).length} 个地层面；${project.geologicalModel?.coverageAudit?.message ?? '等待覆盖检查'}`
         : '需要先导入钻孔并生成模型'
     },
     {
@@ -791,6 +792,13 @@ function SettingsStep({ project, onChanged, viewMode }: { project: Project; onCh
           <label>每个转角平行角撑数<input type="number" min="1" max="6" step="1" value={draft.cornerDiagonalFamilyCount ?? 4} onChange={(e) => numberValue('cornerDiagonalFamilyCount', e.target.value)} /></label>
           <label>平行角撑墙节点间距（m）<input type="number" min="2.5" max="6" step="0.25" value={draft.cornerDiagonalFamilySpacingM ?? 3} onChange={(e) => numberValue('cornerDiagonalFamilySpacingM', e.target.value)} /></label>
           <label>角撑平行角度容差（°）<input type="number" min="2" max="12" step="1" value={draft.cornerDiagonalParallelToleranceDeg ?? 5} onChange={(e) => numberValue('cornerDiagonalParallelToleranceDeg', e.target.value)} /></label>
+          <label>支撑目标利用率<input type="number" min="0.4" max="1" step="0.05" value={draft.supportTargetUtilization ?? 0.85} onChange={(e) => numberValue('supportTargetUtilization', e.target.value)} /></label>
+          <label>长细比筛查限值<input type="number" min="40" max="300" step="5" value={draft.supportScreeningSlendernessLimit ?? 150} onChange={(e) => numberValue('supportScreeningSlendernessLimit', e.target.value)} /></label>
+          <label>预加轴力比例<input type="number" min="0" max="0.6" step="0.05" value={draft.supportPreloadRatio ?? 0.2} onChange={(e) => numberValue('supportPreloadRatio', e.target.value)} /></label>
+          <label>温度约束系数<input type="number" min="0" max="1" step="0.05" value={draft.supportThermalRestraintFactor ?? 0.15} onChange={(e) => numberValue('supportThermalRestraintFactor', e.target.value)} /></label>
+          <label>节点安装间隙（mm）<input type="number" min="0" max="30" step="1" value={draft.supportJointGapMm ?? 3} onChange={(e) => numberValue('supportJointGapMm', e.target.value)} /></label>
+          <label>安装偏差（mm）<input type="number" min="0" max="100" step="5" value={draft.supportInstallationDeviationMm ?? 20} onChange={(e) => numberValue('supportInstallationDeviationMm', e.target.value)} /></label>
+          <label className="settingCheck"><input type="checkbox" checked={draft.supportDeepDesignRequiredForCandidate ?? true} onChange={(e) => setDraft((v) => ({ ...v, supportDeepDesignRequiredForCandidate: e.target.checked }))} /><span>候选方案必须通过支撑稳定与施工效应深化筛查</span></label>
           <label className="settingCheck"><input type="checkbox" checked={draft.preferDiagonalBraces ?? true} onChange={(e) => setDraft((v) => ({ ...v, preferDiagonalBraces: e.target.checked }))} /><span>端部转角采用独立墙节点的平行角撑族，禁止V形扇撑</span></label>
           <label>换撑楼板有效宽度（m）<input type="number" min="0.5" max="30" step="0.5" value={draft.replacementSlabEffectiveWidthM ?? 6} onChange={(e) => numberValue('replacementSlabEffectiveWidthM', e.target.value)} /></label>
           <label>换撑楼板厚度（m）<input type="number" min="0.1" max="2" step="0.05" value={draft.replacementSlabThicknessM ?? 0.25} onChange={(e) => numberValue('replacementSlabThicknessM', e.target.value)} /></label>
@@ -859,6 +867,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   const [open, setOpen] = useState(false);
   const [shapeDiagnostics, setShapeDiagnostics] = useState<Record<string, any> | null>(null);
   const [designerAudit, setDesignerAudit] = useState<Record<string, any> | null>(null);
+  const [deepDesign, setDeepDesign] = useState<Record<string, any> | null>(null);
   const [resourceEstimate, setResourceEstimate] = useState<Record<string, any> | null>(null);
   const [weightPreset, setWeightPreset] = useState<'balanced' | 'clean_support_layout' | 'fewer_columns' | 'low_axial_force' | 'muck_path_priority'>('clean_support_layout');
   const defaultWeights: Record<string, number> = {
@@ -872,16 +881,23 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
     axialPeakProxy: 11,
     symmetry: 10,
     endpointValidity: 18,
-    replacementContinuity: 8
+    replacementContinuity: 8,
+    memberUtilization: 30,
+    bucklingRisk: 26,
+    constructionEffects: 14,
+    materialVolume: 8,
+    nodeReadiness: 16,
+    loadPathRedundancy: 12,
+    forceUniformity: 14
   };
   const objectiveMeta = [
-    ['spacingDeviation', '间距偏差'], ['spanLength', '跨长'], ['obstacleConflict', '障碍冲突'], ['supportCrossing', '非法穿越'], ['junctionComplexity', '汇交节点复杂度'], ['columnCount', '立柱数量'], ['muckPathContinuity', '出土通道'], ['axialPeakProxy', '轴力峰值'], ['symmetry', '平面对称'], ['endpointValidity', '端点有效'], ['replacementContinuity', '换撑连续']
+    ['spacingDeviation', '间距偏差'], ['spanLength', '跨长'], ['obstacleConflict', '障碍冲突'], ['supportCrossing', '非法穿越'], ['junctionComplexity', '汇交节点复杂度'], ['columnCount', '立柱数量'], ['muckPathContinuity', '出土通道'], ['axialPeakProxy', '轴力峰值'], ['symmetry', '平面对称'], ['endpointValidity', '端点有效'], ['replacementContinuity', '换撑连续'], ['memberUtilization', '构件利用率'], ['bucklingRisk', '稳定风险'], ['constructionEffects', '施工效应'], ['materialVolume', '材料量'], ['nodeReadiness', '节点完整性'], ['loadPathRedundancy', '传力冗余'], ['forceUniformity', '轴力均衡']
   ] as const;
   const presetWeights: Record<string, Record<string, number>> = {
     balanced: {},
-    clean_support_layout: { supportCrossing: 80, junctionComplexity: 80, symmetry: 18, spanLength: 18 },
-    fewer_columns: { columnCount: 28, spanLength: 18 },
-    low_axial_force: { axialPeakProxy: 32, spanLength: 25, spacingDeviation: 20 },
+    clean_support_layout: { supportCrossing: 80, junctionComplexity: 80, symmetry: 18, spanLength: 18, memberUtilization: 30, bucklingRisk: 28 },
+    fewer_columns: { columnCount: 28, spanLength: 18, bucklingRisk: 30 },
+    low_axial_force: { axialPeakProxy: 32, spanLength: 25, spacingDeviation: 20, memberUtilization: 42, constructionEffects: 24 },
     muck_path_priority: { muckPathContinuity: 34, obstacleConflict: 48, supportCrossing: 80, junctionComplexity: 64 }
   };
   const presetToWeights = (preset: keyof typeof presetWeights) => ({ ...defaultWeights, ...presetWeights[preset] });
@@ -904,17 +920,20 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
     if (!project.excavation) {
       setShapeDiagnostics(null);
       setDesignerAudit(null);
+      setDeepDesign(null);
       setResourceEstimate(null);
       return () => { active = false; };
     }
     Promise.allSettled([
       api.getPlanShapeDiagnostics(project.id),
       api.getSupportDesignerAudit(project.id),
+      api.getSupportDeepDesign(project.id, false),
       api.getCalculationResourceEstimate(project.id, 0),
-    ]).then(([shapeResult, auditResult, resourceResult]) => {
+    ]).then(([shapeResult, auditResult, deepResult, resourceResult]) => {
       if (!active) return;
       setShapeDiagnostics(shapeResult.status === 'fulfilled' ? shapeResult.value : null);
       setDesignerAudit(auditResult.status === 'fulfilled' ? auditResult.value : null);
+      setDeepDesign(deepResult.status === 'fulfilled' ? deepResult.value : null);
       setResourceEstimate(resourceResult.status === 'fulfilled' ? resourceResult.value : null);
     });
     return () => { active = false; };
@@ -1016,12 +1035,38 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
         </details>}
         <div className="buttonRow">
           <button className="secondary" onClick={() => {
-            Promise.all([api.getSupportDesignerAudit(project.id), api.getCalculationResourceEstimate(project.id, 0)])
-              .then(([audit, resource]) => { setDesignerAudit(audit); setResourceEstimate(resource); })
+            Promise.all([api.getSupportDesignerAudit(project.id), api.getSupportDeepDesign(project.id, false), api.getCalculationResourceEstimate(project.id, 0)])
+              .then(([audit, deep, resource]) => { setDesignerAudit(audit); setDeepDesign(deep); setResourceEstimate(resource); })
               .catch(() => undefined);
           }}>重新审计</button>
           <span className="small">资源等级为 high/blocked 时，系统强制逐方案计算或阻断任务，避免计算拖垮API与登录服务。</span>
         </div>
+      </section>}
+      {deepDesign && <section className="summaryPanel supportDeepDesignPanel">
+        <div className="panelTitleRow">
+          <div><h3>水平支撑深化设计筛查</h3><p className="small">将构件稳定、施工预加轴力、温度约束、节点间隙、安装偏心、节点完整性与传力冗余纳入候选评价。正式结论仍以完整分阶段计算为准。</p></div>
+          <span className={`statusTag ${deepDesign.status === 'pass' ? 'pass' : deepDesign.status === 'warning' ? 'warning' : 'error'}`}>{String(deepDesign.status)} · {deepDesign.hardPass ? '候选可进入完整计算' : '候选受控阻断'}</span>
+        </div>
+        <div className="shapeMetricGrid">
+          <div><strong>{Number(deepDesign.metrics?.maximumInteractionUtilization ?? 0).toFixed(3)}</strong><span>最大轴压-偏心组合利用率</span></div>
+          <div><strong>{Number(deepDesign.metrics?.maximumSlenderness ?? 0).toFixed(1)}</strong><span>最大长细比</span></div>
+          <div><strong>{Number(deepDesign.metrics?.maximumEffectiveUnbracedLengthM ?? 0).toFixed(2)} m</strong><span>最大有效无侧向支承长度</span></div>
+          <div><strong>{Number(deepDesign.metrics?.maximumConstructionEffectRatio ?? 0).toFixed(3)}</strong><span>施工附加效应比</span></div>
+          <div><strong>{Number(deepDesign.metrics?.supportMaterialVolumeM3 ?? 0).toFixed(1)} m³</strong><span>支撑材料体积</span></div>
+          <div><strong>{Number(deepDesign.metrics?.memberFailCount ?? 0)} / {Number(deepDesign.metrics?.memberWarningCount ?? 0)}</strong><span>构件失败 / 预警</span></div>
+          <div><strong>{Number(deepDesign.metrics?.supportNodeUncheckedCount ?? 0)}</strong><span>未闭环节点</span></div>
+          <div><strong>{Number(deepDesign.metrics?.singleMemberWallPairCount ?? 0)}</strong><span>单构件墙对路径</span></div>
+        </div>
+        <details open={viewMode === 'professional'}><summary>查看控制构件、数学模型与整改动作</summary>
+          <p className="small">{String(deepDesign.summary ?? '')}</p>
+          <div className="shapeRuleColumns">
+            <div><h4>控制构件</h4><ol>{(deepDesign.governingMembers ?? []).slice(0, 8).map((item: any) => <li key={String(item.supportId)}>{String(item.supportCode)} · η={Number(item.interactionUtilization ?? 0).toFixed(3)} · λ={Number(item.slenderness ?? 0).toFixed(1)} · {String(item.status)}</li>)}</ol></div>
+            <div><h4>主要问题</h4><ul>{(deepDesign.issues ?? []).map((item: unknown, index: number) => <li key={`deep-issue-${index}`}>{String(item)}</li>)}</ul></div>
+            <div><h4>建议动作</h4><ul>{(deepDesign.designActions ?? []).map((item: unknown, index: number) => <li key={`deep-action-${index}`}>{String(item)}</li>)}</ul></div>
+          </div>
+          <p className="small">计算模型：{String(deepDesign.model?.constructionEffects ?? '-')}；{String(deepDesign.model?.stability ?? '-')}；{String(deepDesign.model?.interaction ?? '-')}</p>
+        </details>
+        <div className="buttonRow"><button onClick={() => runStep('正在迭代支撑截面、稳定和临时立柱', async () => { const result = await api.optimizeSupportDeepDesign(project.id, 3); setDeepDesign(result); await onRefresh(); return result; })} disabled={!project.retainingSystem?.supports?.length}>执行支撑深化迭代</button><span className="small">固定现有拓扑，优先缩短有效计算长度并升级截面；仍不满足时要求返回平面体系优化。</span></div>
       </section>}
       {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer wideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>围护结构高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div>
         <button onClick={() => runStep('正在生成地下连续墙', () => api.autoWall(project.id))} disabled={!project.excavation}>仅生成地连墙</button>
@@ -1414,7 +1459,7 @@ function ProjectTreeSummary({ project }: { project: Project }) {
       <ul>
         <li>钻孔：{project.boreholes.length}</li>
         <li>地层：{project.strata.length}</li>
-        <li>地质面：{project.geologicalModel?.surfaces?.length ?? 0}</li>
+        <li>地质面：{effectiveGeologicalSurfaces(project).length}</li>
         <li>设计域覆盖：{project.geologicalModel?.coverageAudit?.designDomainCovered === false ? '不足' : (project.geologicalModel?.coverageAudit?.designDomainCovered ? '已覆盖' : '未检查')}</li>
         <li>平面外扩：{project.geologicalModel?.coverageAudit?.autoExtended ? `${project.geologicalModel.coverageAudit.maximumExtrapolationDistanceM ?? 0} m` : '未外扩'}</li>
         <li>VTU：{project.geologicalModel?.vtuMesh ? '已导入' : '未导入'}</li>
@@ -1608,9 +1653,9 @@ function requirementStatuses(key: WorkflowStepKey, project: Project): { label: s
   ];
   if (key === 'geology') return [
     { label: '已导入钻孔', done: project.boreholes.length > 0 },
-    { label: '已生成地层面', done: Boolean(project.geologicalModel?.surfaces?.length) },
-    { label: '可提取代表性剖面', done: Boolean(project.geologicalModel?.surfaces?.length || project.geologicalModel?.vtuMesh) },
-    { label: '覆盖围护结构及施工影响区', done: project.geologicalModel?.coverageAudit?.designDomainCovered !== false && Boolean(project.geologicalModel?.surfaces?.length) }
+    { label: '已生成地层面', done: hasGeologicalSurfacePreview(project) },
+    { label: '可提取代表性剖面', done: Boolean(hasGeologicalSurfacePreview(project) || project.geologicalModel?.vtuMesh) },
+    { label: '覆盖围护结构及施工影响区', done: project.geologicalModel?.coverageAudit?.designDomainCovered !== false && hasGeologicalSurfacePreview(project) }
   ];
   if (key === 'excavation') return [
     { label: '轮廓闭合', done: Boolean(project.excavation?.outline?.closed) },

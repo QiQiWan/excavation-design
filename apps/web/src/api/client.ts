@@ -227,6 +227,8 @@ export const api = {
   autoSupports: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-supports`, { method: 'POST' }),
   getPlanShapeDiagnostics: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/plan-shape-diagnostics`),
   getSupportDesignerAudit: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-designer-audit`),
+  getSupportDeepDesign: (projectId: string, includeMembers = false) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-deep-design?include_members=${includeMembers ? 'true' : 'false'}`),
+  optimizeSupportDeepDesign: (projectId: string, maxIterations = 3) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-deep-design/optimize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxIterations }), activity: { label: '正在迭代支撑截面、稳定和临时立柱', expectedMs: 4500 } }),
   getCalculationResourceEstimate: (projectId: string, candidateCount = 0) => request<Record<string, any>>(`/api/projects/${projectId}/design/calculation-resource-estimate?candidate_count=${candidateCount}`),
   autoSupportsByShape: (projectId: string) => request<{ diagnostics: Record<string, any>; selectedTopologyFamily: string; retainingSystem: RetainingSystem }>(`/api/projects/${projectId}/design/auto-supports-by-shape`, { method: 'POST' }),
   importSupportLayoutCsv: (projectId: string, file: File, replace = true) => { const form = new FormData(); form.append('file', file); return request<Record<string, any>>(`/api/projects/${projectId}/design/import-support-layout?replace=${replace}`, { method: 'POST', body: form }); },

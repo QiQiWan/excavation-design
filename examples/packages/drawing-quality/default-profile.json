@@ -1,7 +1,0 @@
-{
-  "profileId": "pitguard-default-drawing-quality",
-  "version": "1.0.0",
-  "weights": {"coverage": 0.30, "readability": 0.24, "traceability": 0.18, "constructability": 0.16, "consistency": 0.12},
-  "minimumConstructionScore": 85,
-  "minimumTextHeightMm": 2.5
-}

@@ -169,6 +169,17 @@ class DesignSettings(DomainModel):
     support_transition_zone_spacing_factor: float = 0.72
     support_transition_zone_influence_m: float = 8.0
     support_min_station_separation_m: float = 2.8
+    # V3.34 preliminary deep-design controls. These are transparent screening
+    # parameters used during candidate ranking; final member and node checks
+    # remain governed by the staged calculation and the project standard set.
+    support_target_utilization: float = Field(default=0.85, ge=0.40, le=1.0)
+    support_screening_slenderness_limit: float = Field(default=150.0, ge=40.0, le=300.0)
+    support_preload_ratio: float = Field(default=0.20, ge=0.0, le=0.60)
+    support_thermal_restraint_factor: float = Field(default=0.15, ge=0.0, le=1.0)
+    support_joint_gap_mm: float = Field(default=3.0, ge=0.0, le=30.0)
+    support_gap_force_factor: float = Field(default=0.10, ge=0.0, le=1.0)
+    support_installation_deviation_mm: float = Field(default=20.0, ge=0.0, le=100.0)
+    support_deep_design_required_for_candidate: bool = True
     # A calculation wall can contain several construction panels / reinforcement
     # cages.  Panelization is preserved through IFC, CAD and detailing exports.
     wall_panel_target_length_m: float = 6.0
@@ -259,6 +270,9 @@ class GeologicalSurface(DomainModel):
 
 class GeologicalModel(DomainModel):
     surfaces: list[GeologicalSurface] = Field(default_factory=list)
+    # Bounded grids retained in the API workspace after full IDW surfaces are
+    # externalized.  The isolated worker rehydrates ``surfaces`` for calculation.
+    surface_previews: list[GeologicalSurface] = Field(default_factory=list)
     volumes: list[dict[str, Any]] = Field(default_factory=list)
     vtu_mesh: dict[str, Any] | None = None
     warnings: list[str] = Field(default_factory=list)

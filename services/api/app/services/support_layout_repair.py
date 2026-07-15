@@ -19,6 +19,11 @@ REPAIRABLE_CATEGORIES = {
     "obstacle_clearance",
     "temporary_column",
     "replacement_path",
+    "support_station_cluster",
+    "corner_brace_fan_geometry",
+    "corner_brace_wall_node_congestion",
+    "support_to_support_terminal",
+    "unsupported_internal_endpoint",
 }
 
 
@@ -287,11 +292,13 @@ def auto_repair_support_layout(project: Project, objective_weights: dict[str, fl
             "支撑不得交叉",
             "支撑不得穿越出土口/坡道/保护区",
             "支撑端点必须落在围檩/环梁/节点上",
+            "同族支撑站位满足最小净距且不得在折点处聚集",
             "立柱不得落入障碍区",
             "换撑路径不得中断",
         ],
         soft_objective_labels=[
             "平面交叉点与内部汇交节点尽可能少",
+            "支撑站位避免局部过密与重复分仓",
             "支撑间距接近 3-6m",
             "支撑体系尽量对称",
             "支撑跨长尽量短",

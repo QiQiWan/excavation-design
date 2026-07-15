@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, AxesHelper, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, GridHelper, Line, LineBasicMaterial, LineSegments, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Raycaster, Scene, SphereGeometry, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { GeologicalSurface, Point2D, Project, VtuCellBlock } from '../types/domain';
+import { effectiveGeologicalSurfaces } from '../utils/geology';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'beams' | 'supports' | 'columns' | 'results';
 
@@ -194,7 +195,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
 
   const stats = useMemo(() => ({
     boreholes: project.boreholes.length,
-    surfaces: project.geologicalModel?.surfaces.length ?? 0,
+    surfaces: effectiveGeologicalSurfaces(project).length,
     vtuCells: project.geologicalModel?.vtuMesh?.summary?.cellCount ?? project.geologicalModel?.vtuMesh?.cellBlocks?.length ?? 0,
     walls: project.retainingSystem?.diaphragmWalls.length ?? 0,
     supports: project.retainingSystem?.supports.length ?? 0,
@@ -253,7 +254,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     scene.add(axes);
 
     if (layers.surfaces) {
-      project.geologicalModel?.surfaces.forEach((surface) => {
+      effectiveGeologicalSurfaces(project).forEach((surface) => {
         const mesh = makeSurfaceMesh(project, surface, opacity, clippingPlanes);
         if (mesh) { scene.add(mesh); addObjectInfo(mesh, mesh.userData.info, pickables); }
       });

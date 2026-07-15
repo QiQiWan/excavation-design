@@ -135,13 +135,13 @@ def build_calculation_diagnostics(
             "围檩支点间距已按强度前置规则修复",
             (
                 f"墙面 {', '.join(faces) or '局部墙面'} 的围檩有效支点间距超过硬上限，"
-                f"已增补 {int(wale_repair.get('addedSupportCount') or 0)} 根角部扇形支撑；"
+                f"已增补 {int(wale_repair.get('addedSupportCount') or 0)} 根两端落墙的平行角撑、端部长斜撑或直接对撑；"
                 f"最大间距由 {float(audit_before.get('maxBayM') or 0.0):.2f} m 调整为 "
                 f"{float(audit_after.get('maxBayM') or 0.0):.2f} m。"
             ),
             severity="warning",
             objects=faces,
-            action="复核角部扇形支撑节点、交叉立柱和出土通道后，将修复后的围檩支点作为设计基准。",
+            action="复核新增墙—墙支撑的端部节点、斜向分力、临时立柱服务范围和出土通道后，将修复后的围檩支点作为设计基准。",
         ))
     if not concave_repair and topology_preflight.get("changed") and not wale_repair:
         faces = list(topology_preflight.get("missingFacesBefore") or topology_preflight.get("missingFaces") or [])
@@ -230,7 +230,7 @@ def build_calculation_diagnostics(
             "普通水平支撑存在平面穿越",
             "同层非环形支撑在跨中相互穿越。即使交点附近存在立柱，连续杆件穿越仍会造成节点构造、施工顺序和内力模型不一致。",
             severity="fail",
-            action="将次对撑或角撑截断至主对撑节点，形成带临时立柱的 T/Y 节点；重新生成支撑并同步施工工况。",
+            action="重新生成两端落在围护墙、围檩或闭合环梁上的直撑/长斜撑；普通轴压支撑禁止终止于另一根支撑跨中。",
         ))
     if any("QUALITY-SUPPORT_OUTSIDE_EXCAVATION" in rule for rule in fail_rules):
         roots.append(_root_cause(
@@ -246,7 +246,15 @@ def build_calculation_diagnostics(
             "围檩直接支点间距超过硬上限",
             "局部墙面缺少可追溯的直接支点，截面放大不能替代清晰传力路径。",
             severity="fail",
-            action="采用非交叉短对撑、角部 Y 节点或调整主对撑站位，直至每层每面墙的直接支点间距满足上限。",
+            action="采用非交叉直对撑、平行角撑族、端部长斜撑或调整主对撑站位，直至每层每面墙的直接支点间距满足上限。",
+        ))
+    if any("QUALITY-SUPPORT_STATION_CLUSTER" in rule or "SUPPORT_STATION_CLUSTER" in rule for rule in fail_rules):
+        roots.append(_root_cause(
+            "SUPPORT_STATION_CLUSTER",
+            "支撑站位在局部变宽或折点附近过度聚集",
+            "多个支撑站位被重复插入到同一宽度突变区，导致围檩节点拥挤、工程量增加，且不能有效降低端墙围檩控制跨。",
+            severity="fail",
+            action="按局部短跨和等效分担面积重新生成自适应站位；折点附近只移动最近站位，端部围檩由平行角撑族或墙—墙长斜撑闭合。",
         ))
     if any("QUALITY-SUPPORT_WALL_CLEARANCE" in rule for rule in fail_rules):
         roots.append(_root_cause(
@@ -260,9 +268,9 @@ def build_calculation_diagnostics(
         roots.append(_root_cause(
             "TEMPORARY_COLUMN_LOAD_PATH",
             "长跨或支撑节点缺少临时立柱",
-            "支撑有效无侧向支承长度或 T/Y 节点没有明确竖向传力构件。",
+            "支撑有效无侧向支承长度超过控制值，或长跨构件缺少明确的竖向承托与平面外稳定体系。",
             severity="fail",
-            action="在内部支撑节点和长跨控制点生成临时立柱/立柱桩，并将服务构件编号写入节点记录。",
+            action="在长跨控制点生成临时立柱/立柱桩并记录服务构件；临时立柱不得用于掩盖普通支撑跨中承受平面内横向集中力的问题。",
         ))
 
     # Never leave a hard failure without an engineering diagnosis.  Unknown

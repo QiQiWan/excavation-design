@@ -9,6 +9,7 @@ from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.schemas.domain import Project, RetainingSystem, SupportElement, SupportLayoutOptimizationCandidate, Point2D
 from app.services import design_service
 from app.services import support_layout as layout_mod
+from app.services.support_deep_design import evaluate_support_deep_design
 
 OBJECTIVE_WEIGHTS: dict[str, float] = {
     "spacingDeviation": 20.0,
@@ -31,6 +32,13 @@ OBJECTIVE_WEIGHTS: dict[str, float] = {
     "symmetry": 10.0,
     "endpointValidity": 18.0,
     "replacementContinuity": 8.0,
+    "memberUtilization": 30.0,
+    "bucklingRisk": 26.0,
+    "constructionEffects": 14.0,
+    "materialVolume": 8.0,
+    "nodeReadiness": 16.0,
+    "loadPathRedundancy": 12.0,
+    "forceUniformity": 14.0,
 }
 
 
@@ -57,9 +65,12 @@ def preset_objective_weights(preset: str | None, overrides: dict[str, float] | N
     if preset == "fewer_columns":
         weights["columnCount"] = max(weights["columnCount"], 22.0)
         weights["spanLength"] = max(weights["spanLength"], 18.0)
+        weights["bucklingRisk"] = max(weights["bucklingRisk"], 28.0)
     elif preset == "low_axial_force":
         weights["axialPeakProxy"] = max(weights["axialPeakProxy"], 28.0)
         weights["spanLength"] = max(weights["spanLength"], 22.0)
+        weights["memberUtilization"] = max(weights["memberUtilization"], 38.0)
+        weights["constructionEffects"] = max(weights["constructionEffects"], 20.0)
     elif preset == "muck_path_priority":
         weights["muckPathContinuity"] = max(weights["muckPathContinuity"], 30.0)
         weights["obstacleConflict"] = max(weights["obstacleConflict"], 44.0)
@@ -69,6 +80,8 @@ def preset_objective_weights(preset: str | None, overrides: dict[str, float] | N
         weights["wallJunctionComplexity"] = 80.0
         weights["symmetry"] = max(weights["symmetry"], 18.0)
         weights["spanLength"] = max(weights["spanLength"], 18.0)
+        weights["memberUtilization"] = max(weights["memberUtilization"], 30.0)
+        weights["bucklingRisk"] = max(weights["bucklingRisk"], 26.0)
     elif preset == "balanced":
         pass
     return weights
@@ -78,11 +91,15 @@ HARD_CONSTRAINT_LABELS = [
     "support_no_muck_ramp_protected_crossing",
     "support_endpoints_on_wale_or_ring",
     "support_no_support_to_support_terminal",
+    "support_station_minimum_separation",
     "temporary_columns_outside_obstacles",
     "replacement_path_continuity",
+    "support_member_preliminary_stability",
+    "support_construction_effect_envelope",
 ]
 SOFT_OBJECTIVE_LABELS = [
     "minimum_plan_intersection_and_junction_count",
+    "minimum_support_station_clustering",
     "minimum_wall_connection_convergence_count",
     "spacing_close_to_3_6m",
     "short_span_length",
@@ -90,6 +107,13 @@ SOFT_OBJECTIVE_LABELS = [
     "low_axial_peak_proxy",
     "continuous_muck_path",
     "plan_symmetry",
+    "low_member_interaction_utilization",
+    "low_buckling_risk",
+    "low_construction_effect_ratio",
+    "low_material_volume",
+    "node_detailing_readiness",
+    "load_path_redundancy",
+    "balanced_support_force_distribution",
 ]
 
 TARGET_SPACING_VALUES = [3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
@@ -403,17 +427,22 @@ def _replacement_path_penalty(project: Project) -> float:
     return max(0.0, min(1.0, missing_ratio))
 
 
-def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system: RetainingSystem) -> dict[str, Any]:
+def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system: RetainingSystem, deep_design: dict[str, Any] | None = None) -> dict[str, Any]:
     endpoint_missing = _endpoint_validity_penalty(system)
     obstacle_count = int(quality_metrics.get("obstacleConflictCount", 0) or 0)
     crossing_count = int(quality_metrics.get("supportCrossingCount", 0) or 0)
     outside_count = int(quality_metrics.get("supportOutsideExcavationCount", 0) or 0)
     wale_fail_count = int(quality_metrics.get("waleSupportBayFailCount", 0) or 0)
+    station_cluster_count = int(quality_metrics.get("supportStationClusterCount", 0) or 0)
     corner_parallelism_issues = int(quality_metrics.get("cornerBraceParallelismIssueCount", 0) or 0)
     corner_endpoint_congestion = int(quality_metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
     support_to_support_terminals = int(quality_metrics.get("supportToSupportTerminalCount", 0) or 0)
     unsupported_internal_endpoints = int(quality_metrics.get("unsupportedInternalEndpointCount", 0) or 0)
     repl_penalty = _replacement_path_penalty(project)
+    deep_design = deep_design or {}
+    deep_metrics = dict(deep_design.get("metrics") or {})
+    deep_required = bool(getattr(project.design_settings, "support_deep_design_required_for_candidate", True))
+    deep_hard_pass = bool(deep_design.get("hardPass", True)) if deep_required else True
     shape_diagnostics = layout_mod.plan_shape_diagnostics(
         list(project.excavation.outline.points) if project.excavation else [],
         local_pit_count=len(project.excavation.local_pits or []) if project.excavation else 0,
@@ -438,6 +467,7 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         and obstacle_count == 0
         and outside_count == 0
         and wale_fail_count == 0
+        and station_cluster_count == 0
         and corner_parallelism_issues == 0
         and corner_endpoint_congestion == 0
         and support_to_support_terminals == 0
@@ -446,6 +476,7 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         and col_obstacle_hits == 0
         and repl_penalty < 0.75
         and transfer_system_present
+        and deep_hard_pass
     )
     return {
         "passed": passed,
@@ -453,6 +484,7 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "supportNoObstacleConflict": obstacle_count == 0,
         "supportInsideExcavation": outside_count == 0,
         "waleSupportBayWithinHardLimit": wale_fail_count == 0,
+        "supportStationsMeetMinimumSeparation": station_cluster_count == 0,
         "cornerBracesAreParallelFamilies": corner_parallelism_issues == 0,
         "cornerBraceWallNodesAreIndependent": corner_endpoint_congestion == 0,
         "endpointsOnWaleOrRingNodes": endpoint_missing == 0,
@@ -463,12 +495,18 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "replacementPathContinuity": repl_penalty < 0.75,
         "shapeTransferSystemComplete": transfer_system_present,
         "shapeTransferSystemRequired": transfer_required,
+        "supportDeepDesignHardPass": deep_hard_pass,
+        "supportDeepDesignRequired": deep_required,
+        "supportMemberScreeningFailCount": int(deep_metrics.get("memberFailCount", 0) or 0),
+        "supportMaximumInteractionUtilization": float(deep_metrics.get("maximumInteractionUtilization", 0.0) or 0.0),
+        "supportMaximumSlenderness": float(deep_metrics.get("maximumSlenderness", 0.0) or 0.0),
         "shapeArchetype": shape_diagnostics.get("archetype"),
         "shapePrimarySystem": shape_diagnostics.get("primarySystem"),
         "supportCrossingCount": crossing_count,
         "obstacleConflictCount": obstacle_count,
         "supportOutsideExcavationCount": outside_count,
         "waleSupportBayFailCount": wale_fail_count,
+        "supportStationClusterCount": station_cluster_count,
         "cornerBraceParallelismIssueCount": corner_parallelism_issues,
         "cornerBraceEndpointCongestionCount": corner_endpoint_congestion,
         "supportToSupportTerminalCount": support_to_support_terminals,
@@ -479,7 +517,7 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
     }
 
 
-def _objective_terms(project: Project, system: RetainingSystem, target_spacing: float, issue_metrics: dict[str, Any]) -> dict[str, float]:
+def _objective_terms(project: Project, system: RetainingSystem, target_spacing: float, issue_metrics: dict[str, Any], deep_design: dict[str, Any] | None = None) -> dict[str, float]:
     bay = _bay_spacings(system)
     spans = _span_lengths(system)
     spacing_deviation = mean([abs(v - 5.0) / 5.0 for v in bay]) if bay else 1.0
@@ -501,6 +539,18 @@ def _objective_terms(project: Project, system: RetainingSystem, target_spacing: 
     ) / support_count
     corner_family_issues = float(issue_metrics.get("cornerBraceParallelismIssueCount", 0) or 0) + float(issue_metrics.get("cornerBraceEndpointCongestionCount", 0) or 0)
     wall_junction_complexity = (wall_junctions + 2.0 * high_degree_wall_junctions + 3.0 * corner_family_issues) / support_count
+    deep_metrics = dict((deep_design or {}).get("metrics") or {})
+    target_util = max(float(getattr(project.design_settings, "support_target_utilization", 0.85)), 0.1)
+    max_util = float(deep_metrics.get("maximumInteractionUtilization", 0.0) or 0.0)
+    slender_limit = max(float(getattr(project.design_settings, "support_screening_slenderness_limit", 150.0)), 1.0)
+    max_slenderness = float(deep_metrics.get("maximumSlenderness", 0.0) or 0.0)
+    effect_ratio = float(deep_metrics.get("maximumConstructionEffectRatio", 0.0) or 0.0)
+    volume = float(deep_metrics.get("supportMaterialVolumeM3", 0.0) or 0.0)
+    node_count = max(int(deep_metrics.get("supportNodeCount", 0) or 0), 1)
+    node_unchecked = float(deep_metrics.get("supportNodeUncheckedCount", 0) or 0)
+    single_pairs = float(deep_metrics.get("singleMemberWallPairCount", 0) or 0)
+    force_cv = float(deep_metrics.get("maximumSupportForceCoefficientOfVariation", 0.0) or 0.0)
+    force_peak_ratio = float(deep_metrics.get("maximumSupportForcePeakToMeanRatio", 1.0) or 1.0)
     return {
         "spacingDeviation": round(max(0.0, spacing_deviation + bay_cv * 0.5), 4),
         "spanLength": round(max(0.0, span_penalty), 4),
@@ -514,6 +564,13 @@ def _objective_terms(project: Project, system: RetainingSystem, target_spacing: 
         "symmetry": round(max(0.0, 1.0 - symmetry), 4),
         "endpointValidity": round(_endpoint_validity_penalty(system), 4),
         "replacementContinuity": round(_replacement_path_penalty(project), 4),
+        "memberUtilization": round(max(0.0, max_util / target_util), 4),
+        "bucklingRisk": round(max(0.0, max_slenderness / slender_limit), 4),
+        "constructionEffects": round(max(0.0, effect_ratio), 4),
+        "materialVolume": round(max(0.0, volume / max(support_count * 20.0, 1.0)), 4),
+        "nodeReadiness": round(max(0.0, node_unchecked / node_count), 4),
+        "loadPathRedundancy": round(max(0.0, single_pairs / support_count), 4),
+        "forceUniformity": round(max(0.0, force_cv + max(0.0, force_peak_ratio - 1.0) * 0.5), 4),
     }
 
 
@@ -537,6 +594,8 @@ def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tupl
         int(metrics.get("supportToSupportTerminalCount", 0) or 0),
         int(metrics.get("unsupportedInternalEndpointCount", 0) or 0),
         float(metrics.get("supportCrossingCount", candidate.crossing_count) or 0.0),
+        int(metrics.get("supportStationClusterCount", 0) or 0),
+        int(metrics.get("supportMemberScreeningFailCount", 0) or 0),
         int(metrics.get("cornerBraceParallelismIssueCount", 0) or 0),
         int(metrics.get("cornerBraceEndpointCongestionCount", 0) or 0),
         int(metrics.get("highDegreeWallJunctionCount", 0) or 0),
@@ -544,6 +603,8 @@ def _cleanliness_sort_key(candidate: SupportLayoutOptimizationCandidate) -> tupl
         int(metrics.get("totalHighDegreeJunctionCount", metrics.get("highDegreeJunctionCount", 0)) or 0),
         int(metrics.get("totalJunctionCount", metrics.get("internalJunctionCount", 0)) or 0),
         float(metrics.get("planIntersectionComplexity", 0.0) or 0.0),
+        float(metrics.get("supportMaximumInteractionUtilization", 0.0) or 0.0),
+        float(metrics.get("supportMaximumSlenderness", 0.0) or 0.0),
         auxiliary_count,
         int(candidate.support_count or 0),
     )
@@ -877,10 +938,25 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                     wale_preflight = layout_mod.repair_wale_support_bays(trial_project, layout_config)
                     quality = evaluate_support_layout_quality(trial_project)
                     metrics = dict(quality.metrics or {})
-                    fail_count = sum(1 for i in quality.issues if i.severity == "fail")
-                    warning_count = sum(1 for i in quality.issues if i.severity == "warning")
-                    terms = _objective_terms(trial_project, trial_project.retaining_system, target_spacing, metrics)
-                    hard = _hard_constraints(trial_project, metrics, trial_project.retaining_system)
+                    deep_design = evaluate_support_deep_design(trial_project, trial_project.retaining_system, include_members=False)
+                    deep_metrics = dict(deep_design.get("metrics") or {})
+                    metrics.update({
+                        "supportMemberScreeningFailCount": int(deep_metrics.get("memberFailCount", 0) or 0),
+                        "supportMemberScreeningWarningCount": int(deep_metrics.get("memberWarningCount", 0) or 0),
+                        "supportMaximumInteractionUtilization": float(deep_metrics.get("maximumInteractionUtilization", 0.0) or 0.0),
+                        "supportMaximumSlenderness": float(deep_metrics.get("maximumSlenderness", 0.0) or 0.0),
+                        "supportMaximumEffectiveUnbracedLengthM": float(deep_metrics.get("maximumEffectiveUnbracedLengthM", 0.0) or 0.0),
+                        "supportMaximumConstructionEffectRatio": float(deep_metrics.get("maximumConstructionEffectRatio", 0.0) or 0.0),
+                        "supportMaximumForceCoefficientOfVariation": float(deep_metrics.get("maximumSupportForceCoefficientOfVariation", 0.0) or 0.0),
+                        "supportMaximumForcePeakToMeanRatio": float(deep_metrics.get("maximumSupportForcePeakToMeanRatio", 1.0) or 1.0),
+                        "supportMaterialVolumeM3": float(deep_metrics.get("supportMaterialVolumeM3", 0.0) or 0.0),
+                        "supportNodeUncheckedCount": int(deep_metrics.get("supportNodeUncheckedCount", 0) or 0),
+                        "supportSingleMemberWallPairCount": int(deep_metrics.get("singleMemberWallPairCount", 0) or 0),
+                    })
+                    fail_count = sum(1 for i in quality.issues if i.severity == "fail") + int(deep_metrics.get("memberFailCount", 0) or 0)
+                    warning_count = sum(1 for i in quality.issues if i.severity == "warning") + int(deep_metrics.get("memberWarningCount", 0) or 0)
+                    terms = _objective_terms(trial_project, trial_project.retaining_system, target_spacing, metrics, deep_design)
+                    hard = _hard_constraints(trial_project, metrics, trial_project.retaining_system, deep_design)
                     spans = _span_lengths(trial_project.retaining_system)
                     bay = _bay_spacings(trial_project.retaining_system)
                     score = _candidate_score(quality.score, terms, hard, fail_count, warning_count, weights)
@@ -902,6 +978,12 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                             "lowAxialPeakProxy": 1.0 - min(1.0, terms.get("axialPeakProxy", 1.0)),
                             "continuousMuckPath": 1.0 - min(1.0, terms.get("muckPathContinuity", 1.0)),
                             "planSymmetry": 1.0 - min(1.0, terms.get("symmetry", 1.0)),
+                            "memberUtilization": 1.0 - min(1.0, terms.get("memberUtilization", 1.0)),
+                            "bucklingResistance": 1.0 - min(1.0, terms.get("bucklingRisk", 1.0)),
+                            "constructionEffectControl": 1.0 - min(1.0, terms.get("constructionEffects", 1.0)),
+                            "nodeDetailingReadiness": 1.0 - min(1.0, terms.get("nodeReadiness", 1.0)),
+                            "loadPathRedundancy": 1.0 - min(1.0, terms.get("loadPathRedundancy", 1.0)),
+                            "forceUniformity": 1.0 - min(1.0, terms.get("forceUniformity", 1.0)),
                         },
                         hard_constraints=hard,
                         variable_summary={
@@ -919,6 +1001,13 @@ def optimize_support_layout_candidates(project: Project, max_candidates: int = 5
                             "geometryFingerprint": ";".join(["-".join(map(str, row)) for row in fingerprint[:80]]),
                             "geometryDifferenceScore": difference_score,
                             "materiallyDifferent": difference_score >= 0.03 or pattern == "as_generated",
+                            "deepDesignScreening": {
+                                "status": deep_design.get("status"),
+                                "summary": deep_design.get("summary"),
+                                "metrics": deep_metrics,
+                                "governingMembers": deep_design.get("governingMembers", [])[:8],
+                                "designActions": deep_design.get("designActions", []),
+                            },
                             "strengthTopologyPreflight": {
                                 "concaveReturnRepair": concave_preflight,
                                 "waleSupportBayRepair": wale_preflight,

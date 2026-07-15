@@ -32,6 +32,14 @@ export interface DesignSettings {
   supportTransitionZoneSpacingFactor?: number;
   supportTransitionZoneInfluenceM?: number;
   supportMinStationSeparationM?: number;
+  supportTargetUtilization?: number;
+  supportScreeningSlendernessLimit?: number;
+  supportPreloadRatio?: number;
+  supportThermalRestraintFactor?: number;
+  supportJointGapMm?: number;
+  supportGapForceFactor?: number;
+  supportInstallationDeviationMm?: number;
+  supportDeepDesignRequiredForCandidate?: boolean;
   wallPanelTargetLengthM?: number;
   wallPanelMinLengthM?: number;
   wallPanelMaxLengthM?: number;
@@ -150,7 +158,7 @@ export interface GeologicalCoverageAudit {
   modelBounds?: Record<string, number>;
   requiredBounds?: Record<string, number>;
 }
-export interface GeologicalModel { surfaces: GeologicalSurface[]; volumes: unknown[]; vtuMesh?: VtuMesh; warnings: string[]; coverageAudit?: GeologicalCoverageAudit }
+export interface GeologicalModel { surfaces: GeologicalSurface[]; surfacePreviews?: GeologicalSurface[]; volumes: unknown[]; vtuMesh?: VtuMesh; warnings: string[]; coverageAudit?: GeologicalCoverageAudit }
 
 export interface ExcavationSegment {
   id: string;

@@ -556,6 +556,29 @@ def _corner_brace_family_diagnostics(project: Project, corners: list[SupportElem
         "cornerBraceEndpointCongestionCount": endpoint_congestion_count,
     }, issues
 
+def _station_spacing_diagnostics(project: Project, by_level: dict[int, list[SupportElement]]) -> dict[str, object]:
+    minimum = float(getattr(project.design_settings, "support_min_station_separation_m", 2.8) or 2.8)
+    gaps: list[float] = []
+    clusters: list[dict[str, object]] = []
+    for level, items in sorted(by_level.items()):
+        stations = sorted({round(_main_support_station(project, item), 4) for item in items})
+        for first, second in zip(stations, stations[1:]):
+            gap = float(second - first)
+            gaps.append(gap)
+            if gap < minimum - 1.0e-6:
+                clusters.append({"levelIndex": level, "startStationM": first, "endStationM": second, "spacingM": round(gap, 4)})
+    mean = sum(gaps) / len(gaps) if gaps else 0.0
+    variance = sum((value - mean) ** 2 for value in gaps) / len(gaps) if gaps and mean > 0 else 0.0
+    return {
+        "supportStationMinSpacingM": round(min(gaps), 4) if gaps else None,
+        "supportStationMaxSpacingM": round(max(gaps), 4) if gaps else None,
+        "supportStationSpacingCv": round(math.sqrt(variance) / mean, 4) if mean > 0 else None,
+        "supportStationClusterCount": len(clusters),
+        "supportStationClusters": clusters,
+        "supportStationMinimumAllowedM": round(minimum, 3),
+    }
+
+
 def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySummary:
     ret = project.retaining_system
     if not ret or not ret.supports:
@@ -570,8 +593,19 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
     by_level: dict[int, list[SupportElement]] = defaultdict(list)
     for s in main:
         by_level[s.level_index].append(s)
+    station_metrics = _station_spacing_diagnostics(project, by_level)
 
     issues: list[QualityGateIssue] = list(corner_family_issues)
+    for cluster in list(station_metrics.get("supportStationClusters") or []):
+        issues.append(_issue(
+            "support_station_cluster",
+            "fail",
+            f"第 {cluster['levelIndex']} 道主支撑在桩号 {cluster['startStationM']:.2f}~{cluster['endStationM']:.2f}m 的净间距仅 {cluster['spacingM']:.2f}m，形成局部支撑簇。",
+            object_type="SupportStation",
+            recommendation="合并过近站位；长条形台阶段采用宽度自适应分仓，端部预留平行角撑区，禁止围绕每个轮廓顶点重复加密。",
+            geometry={"kind": "support_station_cluster", **cluster},
+            hint="support_station_cluster",
+        ))
     highlights: list[dict] = []
     crossing_pairs: list[dict] = []
     bay_spacings: list[float] = []
@@ -779,6 +813,7 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
     metrics = {
         "mainSupportCountByLevel": main_counts,
         "mainSupportCount": len(main),
+        **station_metrics,
         "secondaryGridSupportCount": len(secondary),
         "cornerDiagonalCount": len(corners),
         **corner_family_metrics,
@@ -820,7 +855,8 @@ def evaluate_support_layout_quality(project: Project) -> SupportLayoutQualitySum
         f"{int(load_path_metrics.get('supportToSupportTerminalCount', 0))} 处，无边界支承端点 "
         f"{int(load_path_metrics.get('unsupportedInternalEndpointCount', 0))} 处，总高度汇交节点 "
         f"{int(topology_intersections.get('totalHighDegreeJunctionCount', 0))} 处，角撑平行族异常 "
-        f"{int(corner_family_metrics.get('cornerBraceParallelismIssueCount', 0))} 组，角撑墙节点拥挤 "
+        f"{int(corner_family_metrics.get('cornerBraceParallelismIssueCount', 0))} 组，主支撑站位簇 "
+        f"{int(station_metrics.get('supportStationClusterCount', 0))} 处，角撑墙节点拥挤 "
         f"{int(corner_family_metrics.get('cornerBraceEndpointCongestionCount', 0))} 处，越界支撑 {support_outside_count} 根，"
         f"最大无支承长度 {max_unbraced_span:.2f}m{min_clearance_text}。"
     )
