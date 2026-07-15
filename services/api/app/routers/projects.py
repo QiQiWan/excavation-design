@@ -115,13 +115,13 @@ DESIGN_AFFECTING_KEYS = {
 }
 
 
-@router.put("/{project_id}", response_model=Project)
-def update_project(
+def _apply_project_patch(
     project_id: str,
     payload: dict[str, Any],
-    repo: ProjectRepository = Depends(get_repository),
-    expected_revision: int | None = Query(default=None, alias="expectedRevision", ge=0),
-    actor: str = Query(default="system", min_length=1, max_length=80),
+    repo: ProjectRepository,
+    *,
+    expected_revision: int | None,
+    actor: str,
 ) -> Project:
     project = repo.require(project_id)
     data = project.model_dump(mode="json", by_alias=True)
@@ -147,22 +147,64 @@ def update_project(
         message = "设计输入已变更，原计算结果与正式发行状态已失效，请重新建立工况并计算。"
         if not updated.messages or updated.messages[-1] != message:
             updated.messages.append(message)
-    # Preserve direct service-level calls used by engineering regression tests
-    # while the HTTP path supplies concrete Query values and a full repository.
+    return repo.save(
+        updated,
+        expected_revision=expected_revision,
+        actor=actor,
+        action="project.update",
+        summary="Project updated" + (f"; invalidated: {', '.join(changed_design_keys)}" if changed_design_keys else ""),
+    )
+
+
+@router.put("/{project_id}", response_model=Project)
+def update_project(
+    project_id: str,
+    payload: dict[str, Any],
+    repo: ProjectRepository = Depends(get_repository),
+    expected_revision: int | None = Query(default=None, alias="expectedRevision", ge=0),
+    actor: str = Query(default="system", min_length=1, max_length=80),
+) -> Project:
+    # Preserve direct service-level calls used by engineering regression tests.
     if not isinstance(expected_revision, (int, type(None))):
         expected_revision = None
     if not isinstance(actor, str):
         actor = "system"
     try:
-        return repo.save(
-            updated,
-            expected_revision=expected_revision,
-            actor=actor,
-            action="project.update",
-            summary="Project updated" + (f"; invalidated: {', '.join(changed_design_keys)}" if changed_design_keys else ""),
-        )
+        return _apply_project_patch(project_id, payload, repo, expected_revision=expected_revision, actor=actor)
     except TypeError:
-        return repo.save(updated)
+        project = repo.require(project_id)
+        data = project.model_dump(mode="json", by_alias=True)
+        data.update(payload)
+        return repo.save(Project.model_validate(data))
+
+
+@router.patch("/{project_id}/workspace")
+def update_project_workspace(
+    project_id: str,
+    payload: dict[str, Any],
+    repo: ProjectRepository = Depends(get_repository),
+    expected_revision: int | None = Query(default=None, alias="expectedRevision", ge=0),
+    actor: str = Query(default="web-user", min_length=1, max_length=80),
+) -> Response:
+    """Persist a partial edit and return the bounded workspace JSON directly.
+
+    This avoids a second GET, response-model reconstruction and duplicate JSON
+    serialization for ordinary editor saves.
+    """
+    _apply_project_patch(project_id, payload, repo, expected_revision=expected_revision, actor=actor)
+    stored = repo.store.get_workspace_json(project_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+    body, metadata = stored
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store",
+            "X-PitGuard-Project-Profile": "workspace",
+            "X-PitGuard-Project-Revision": str(metadata.get("revision", 0)),
+        },
+    )
 
 
 @router.get("/{project_id}/storage-revision")

@@ -3,6 +3,8 @@ from __future__ import annotations
 from importlib import metadata, util
 from pathlib import Path
 from time import perf_counter
+from uuid import uuid4
+import logging
 import os
 import sqlite3
 import sys
@@ -21,10 +23,12 @@ from app.storage.database import DEFAULT_DB_PATH
 from app.storage.repository import ProjectRepository, get_repository
 from app.tasks.manager import task_manager
 
+logger = logging.getLogger("pitguard.performance")
+
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.31.0 external dataset storage, bounded workspace loading, isolated worker and controlled delivery.",
+    description="PitGuard V3.32.0 fast interaction, bounded workspace loading, isolated worker and controlled delivery.",
 )
 
 app.add_middleware(
@@ -57,9 +61,16 @@ async def enforce_access_control(request: Request, call_next):
 async def observe_http_requests(request: Request, call_next):
     started = perf_counter()
     status_code = 500
+    request_id = request.headers.get("X-PitGuard-Client-Request-Id") or f"srv-{uuid4().hex[:12]}"
     try:
         response = await call_next(request)
         status_code = response.status_code
+        elapsed_ms = (perf_counter() - started) * 1000.0
+        response.headers["X-PitGuard-Request-Id"] = request_id
+        response.headers["X-PitGuard-Duration-Ms"] = f"{elapsed_ms:.1f}"
+        response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+        if elapsed_ms >= float(os.getenv("PITGUARD_SLOW_REQUEST_MS", "1200")):
+            logger.warning("slow request id=%s method=%s path=%s status=%s duration_ms=%.1f", request_id, request.method, request.url.path, status_code, elapsed_ms)
         return response
     finally:
         runtime_observability.record(request.url.path, status_code, (perf_counter() - started) * 1000.0)

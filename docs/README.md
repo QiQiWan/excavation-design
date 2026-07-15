@@ -1,3 +1,4 @@
+- [V3.32.0 即时交互与全局进度反馈](releases/V3_32_0_FAST_INTERACTION_PROGRESS.md)
 - [V3.31.0 外部数据对象与小内存工作集](releases/V3_31_0_EXTERNAL_DATASET_WORKING_SET.md)
 # PitGuard 文档中心
 

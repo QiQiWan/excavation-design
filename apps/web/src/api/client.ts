@@ -1,3 +1,4 @@
+import { requestActivityEvents } from '../app/GlobalRequestProgress';
 import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult } from '../types/domain';
 
 const CONFIGURED_API_BASE = import.meta.env.VITE_API_BASE_URL;
@@ -5,22 +6,86 @@ const API_BASE = CONFIGURED_API_BASE !== undefined
   ? CONFIGURED_API_BASE
   : (import.meta.env.DEV ? 'http://127.0.0.1:8002' : '');
 
-type RequestOptions = RequestInit & { timeoutMs?: number; timeoutMessage?: string };
+type RequestActivityOptions = {
+  label?: string;
+  expectedMs?: number;
+  blocking?: boolean;
+  quiet?: boolean;
+  cacheTtlMs?: number;
+  deduplicate?: boolean;
+};
 
-async function request<T>(path: string, init?: RequestOptions): Promise<T> {
+type RequestOptions = RequestInit & {
+  timeoutMs?: number;
+  timeoutMessage?: string;
+  activity?: RequestActivityOptions;
+};
+
+type CacheEntry = { expiresAt: number; value: unknown };
+const responseCache = new Map<string, CacheEntry>();
+const inFlight = new Map<string, Promise<unknown>>();
+
+function requestLabel(path: string, method: string): string {
+  if (path.includes('/auth/login')) return '正在登录系统';
+  if (path.includes('/auth/logout')) return '正在退出登录';
+  if (path.includes('/auth/bootstrap') || path.includes('/auth/status') || path.includes('/auth/me')) return '正在验证登录状态';
+  if (path === '/api/projects' && method === 'GET') return '正在刷新项目列表';
+  if (path === '/api/projects' && method === 'POST') return '正在创建项目';
+  if (/\/api\/projects\/[^/]+\?profile=workspace/.test(path)) return '正在打开项目工作区';
+  if (/\/api\/projects\/[^/]+/.test(path) && ['PUT', 'PATCH'].includes(method)) return '正在保存项目修改';
+  if (/\/api\/projects\/[^/]+/.test(path) && method === 'DELETE') return '正在删除项目';
+  if (path.includes('/tasks') && method === 'POST') return '正在提交后台任务';
+  if (path.includes('/import-')) return '正在上传并解析文件';
+  if (path.includes('/export/')) return '正在准备工程成果';
+  if (method === 'GET') return '正在加载数据';
+  return '正在处理操作';
+}
+
+function expectedDuration(path: string, method: string): number {
+  if (path.includes('/auth/')) return 1600;
+  if (path === '/api/projects' && method === 'GET') return 900;
+  if (path === '/api/projects' && method === 'POST') return 1600;
+  if (path.includes('?profile=workspace')) return 1800;
+  if (['PUT', 'PATCH', 'DELETE'].includes(method)) return 2200;
+  if (path.includes('/tasks/')) return 700;
+  return method === 'GET' ? 1200 : 2500;
+}
+
+function cacheTtl(path: string): number {
+  if (path === '/api/auth/bootstrap' || path === '/api/auth/status') return 1800;
+  if (path === '/api/system/diagnostics') return 60000;
+  if (path === '/api/system/units') return 300000;
+  if (path === '/api/projects') return 1200;
+  return 0;
+}
+
+function requestKey(path: string, method: string, body: BodyInit | null | undefined): string {
+  const bodyKey = typeof body === 'string' ? body : body ? '[binary]' : '';
+  return `${method}:${path}:${bodyKey}`;
+}
+
+function dispatchActivity(name: string, detail: Record<string, unknown>) {
+  window.dispatchEvent(new CustomEvent(name, { detail }));
+}
+
+async function executeRequest<T>(path: string, init: RequestOptions, activityId: string, activity: Required<Pick<RequestActivityOptions, 'label' | 'expectedMs' | 'blocking' | 'quiet'>>): Promise<T> {
   const controller = new AbortController();
-  const timeoutMs = Math.max(1000, init?.timeoutMs ?? 30000);
+  const timeoutMs = Math.max(1000, init.timeoutMs ?? 30000);
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  const externalSignal = init?.signal;
+  const externalSignal = init.signal;
   const abortFromExternal = () => controller.abort();
   if (externalSignal) {
     if (externalSignal.aborted) controller.abort();
     else externalSignal.addEventListener('abort', abortFromExternal, { once: true });
   }
-  const { timeoutMs: _timeoutMs, timeoutMessage, ...fetchInit } = init ?? {};
+  const { timeoutMs: _timeoutMs, timeoutMessage, activity: _activity, ...fetchInit } = init;
+  const headers = new Headers(fetchInit.headers);
+  headers.set('X-PitGuard-Client-Request-Id', activityId);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, signal: controller.signal });
+    dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在连接服务器' });
+    response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, headers, signal: controller.signal });
+    dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在接收并整理数据' });
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，后端可能正在恢复或不可用。`);
@@ -31,7 +96,7 @@ async function request<T>(path: string, init?: RequestOptions): Promise<T> {
     externalSignal?.removeEventListener('abort', abortFromExternal);
   }
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/status') {
+    if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/bootstrap' && path !== '/api/auth/status') {
       window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
     }
     let message = `${response.status} ${response.statusText}`;
@@ -47,11 +112,72 @@ async function request<T>(path: string, init?: RequestOptions): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function request<T>(path: string, init?: RequestOptions): Promise<T> {
+  const options = init ?? {};
+  const method = String(options.method ?? 'GET').toUpperCase();
+  const key = requestKey(path, method, options.body);
+  const ttl = options.activity?.cacheTtlMs ?? (method === 'GET' ? cacheTtl(path) : 0);
+  if (ttl > 0) {
+    const cached = responseCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+  }
+  const deduplicate = options.activity?.deduplicate ?? (method === 'GET' || ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method));
+  const existing = deduplicate ? inFlight.get(key) : undefined;
+  if (existing) return existing as Promise<T>;
+
+  const activityId = `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const activity = {
+    label: options.activity?.label ?? requestLabel(path, method),
+    expectedMs: options.activity?.expectedMs ?? expectedDuration(path, method),
+    blocking: options.activity?.blocking ?? method !== 'GET',
+    quiet: options.activity?.quiet ?? (path.includes('/api/tasks/') && method === 'GET'),
+  };
+  const startedAt = Date.now();
+  dispatchActivity(requestActivityEvents.start, { id: activityId, method, path, startedAt, ...activity });
+  const promise = executeRequest<T>(path, options, activityId, activity)
+    .then((value) => {
+      if (ttl > 0) responseCache.set(key, { expiresAt: Date.now() + ttl, value });
+      dispatchActivity(requestActivityEvents.end, { id: activityId, method, path, startedAt, ...activity, ok: true });
+      return value;
+    })
+    .catch((error) => {
+      dispatchActivity(requestActivityEvents.end, { id: activityId, method, path, startedAt, ...activity, ok: false, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    })
+    .finally(() => { inFlight.delete(key); });
+  if (deduplicate) inFlight.set(key, promise);
+  return promise;
+}
+
+export function invalidateApiCache(prefix = '') {
+  for (const key of responseCache.keys()) {
+    if (!prefix || key.includes(prefix)) responseCache.delete(key);
+  }
+}
+
 
 export type AuthIdentity = { actor: string; role: string; authenticated: boolean; keyId?: string; username?: string; authMode?: string };
 
 export const api = {
-  authStatus: () => request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status', { timeoutMs: 5000, timeoutMessage: '登录服务 5 秒内未响应。系统已进入离线恢复页。' }),
+  authBootstrap: async () => {
+    const options = { timeoutMs: 5000, timeoutMessage: '登录服务 5 秒内未响应。系统已进入离线恢复页。', activity: { label: '正在恢复登录会话', expectedMs: 1000, cacheTtlMs: 0 } };
+    const bootstrap = await request<{ loginRequired?: boolean; mode?: string; sessionTtlSeconds?: number; authenticated?: boolean; identity?: AuthIdentity }>('/api/auth/bootstrap', options);
+    if (typeof bootstrap.loginRequired === 'boolean') return {
+      loginRequired: bootstrap.loginRequired,
+      mode: bootstrap.mode ?? 'session',
+      sessionTtlSeconds: bootstrap.sessionTtlSeconds ?? 0,
+      authenticated: Boolean(bootstrap.authenticated),
+      identity: bootstrap.identity,
+    };
+    // Rolling-upgrade compatibility with pre-V3.32 API nodes.
+    const status = await request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status', { ...options, activity: { ...options.activity, quiet: true, cacheTtlMs: 0 } });
+    if (!status.loginRequired) return { ...status, authenticated: false, identity: undefined };
+    try {
+      const current = await request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me', { ...options, activity: { ...options.activity, quiet: true, cacheTtlMs: 0 } });
+      return { ...status, authenticated: current.authenticated, identity: current.identity };
+    } catch { return { ...status, authenticated: false, identity: undefined }; }
+  },
+  authStatus: () => request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status', { timeoutMs: 5000, timeoutMessage: '登录服务 5 秒内未响应。系统已进入离线恢复页。', activity: { cacheTtlMs: 0 } }),
   login: (username: string, password: string) => request<{ authenticated: boolean; identity: AuthIdentity; expiresInSeconds: number }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), timeoutMs: 10000 }),
   me: () => request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me', { timeoutMs: 5000 }),
   logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST', timeoutMs: 5000 }),
@@ -63,18 +189,18 @@ export const api = {
   getStandardsMatrix: () => request<StandardsProcessMatrix>('/api/standards/process-matrix'),
   getProjectStandardsMatrix: (projectId: string) => request<StandardsProcessMatrix>(`/api/projects/${projectId}/standards/process-matrix`),
   getDocumentation: () => request<OnlineDocumentation>('/api/documentation'),
-  listProjects: () => request<ProjectSummary[]>('/api/projects'),
+  listProjects: (force = false) => { if (force) invalidateApiCache('GET:/api/projects'); return request<ProjectSummary[]>('/api/projects', { activity: { cacheTtlMs: force ? 0 : 1200, label: force ? '正在刷新项目列表' : '正在加载项目列表' } }); },
   createProject: (payload: { name: string; location?: string }) => request<Project>('/api/projects', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-  }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在创建项目', expectedMs: 1200 }
+  }).then((project) => { invalidateApiCache('GET:/api/projects'); return project; }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}?profile=workspace`, { timeoutMs: 20000, timeoutMessage: '项目工作区 20 秒内未加载完成。后端已阻止全量大对象进入 API；请检查项目存储健康状态。' }),
   getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 5000 }),
   listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 8000 }),
   projectArtifactDownloadUrl: (id: string, artifactId: string) => `${API_BASE}/api/projects/${id}/artifacts/${artifactId}/download`,
   getCalculationStageChunks: (id: string, resultId: string) => request<Record<string, unknown>>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks`),
   getCalculationStageChunk: (id: string, resultId: string, chunkIndex: number) => request<Record<string, unknown>[]>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks/${chunkIndex}`, { timeoutMs: 15000 }),
-  deleteProject: (id: string) => request<{ deleted: boolean; projectId: string; projectName: string; deletedTaskCount: number; deletedArtifactCount: number }>(`/api/projects/${id}`, { method: 'DELETE' }),
-  updateProject: (id: string, payload: Partial<Project>, expectedRevision?: number, actor = 'web-user') => request<Project>(`/api/projects/${id}${expectedRevision == null ? `?actor=${encodeURIComponent(actor)}` : `?expectedRevision=${expectedRevision}&actor=${encodeURIComponent(actor)}`}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+  deleteProject: (id: string) => request<{ deleted: boolean; projectId: string; projectName: string; deletedTaskCount: number; deletedArtifactCount: number }>(`/api/projects/${id}`, { method: 'DELETE', activity: { label: '正在删除项目', expectedMs: 1400 } }).then((result) => { invalidateApiCache('GET:/api/projects'); return result; }),
+  updateProject: (id: string, payload: Partial<Project>, expectedRevision?: number, actor = 'web-user') => request<Project>(`/api/projects/${id}/workspace${expectedRevision == null ? `?actor=${encodeURIComponent(actor)}` : `?expectedRevision=${expectedRevision}&actor=${encodeURIComponent(actor)}`}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在保存项目修改', expectedMs: 1600 } }).then((project) => { invalidateApiCache(`GET:/api/projects/${id}`); invalidateApiCache('GET:/api/projects'); return project; }),
   getStorageRevision: (id: string) => request<{ projectId: string; revision: number }>(`/api/projects/${id}/storage-revision`),
   listStorageRevisions: (id: string, limit = 50) => request<Record<string, unknown>[]>(`/api/projects/${id}/storage-revisions?limit=${limit}`),
   listAuditEvents: (id: string, limit = 100) => request<Record<string, unknown>[]>(`/api/projects/${id}/audit-events?limit=${limit}`),
@@ -145,7 +271,7 @@ export const api = {
   getMonitoringControl: (projectId: string) => request<MonitoringControlResult>(`/api/projects/${projectId}/advanced/monitoring/control`),
   createTask: (projectId: string, operation: string, payload?: Record<string, unknown>) => request<PitTask>(`/api/projects/${projectId}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation, payload: payload ?? {} }) }),
   createCandidateComparisonBatch: (projectId: string, topN = 3, useCache = true) => request<{ projectId: string; taskCount: number; tasks: PitTask[] }>(`/api/projects/${projectId}/tasks/candidate-comparison-batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topN, useCache }) }),
-  getTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}`, { timeoutMs: 10000 }),
+  getTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}`, { timeoutMs: 10000, activity: { quiet: true, cacheTtlMs: 0 } }),
   cancelTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}/cancel`, { method: 'POST' }),
   retryTask: (taskId: string) => request<PitTask>(`/api/tasks/${taskId}/retry`, { method: 'POST' }),
   getTaskMetrics: () => request<Record<string, unknown>>('/api/task-metrics'),

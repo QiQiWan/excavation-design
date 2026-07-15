@@ -145,8 +145,8 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   const warningCount = latestResult?.checkSummary?.warning ?? 0;
   const manualReviewCount = latestResult?.checkSummary?.manualReview ?? latestResult?.checkSummary?.manual_review ?? 0;
 
-  async function refresh() {
-    const updated = await api.getProject(current.id);
+  async function refresh(provided?: Project) {
+    const updated = provided ?? await api.getProject(current.id);
     setCurrent(updated);
     onProjectChange(updated);
   }
@@ -711,7 +711,7 @@ function StepBody({
 }: {
   active: WorkflowStepKey;
   project: Project;
-  onRefresh: () => void;
+  onRefresh: (project?: Project) => void | Promise<void>;
   runStep: (label: string, step: () => Promise<unknown>) => Promise<void>;
   runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>;
   runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>;
@@ -731,7 +731,7 @@ function StepBody({
   return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} onRefresh={onRefresh} viewMode={viewMode} />;
 }
 
-function SettingsStep({ project, onChanged, viewMode }: { project: Project; onChanged: () => void | Promise<void>; viewMode: 'compact' | 'professional' }) {
+function SettingsStep({ project, onChanged, viewMode }: { project: Project; onChanged: (project?: Project) => void | Promise<void>; viewMode: 'compact' | 'professional' }) {
   const [draft, setDraft] = useState(() => ({ ...project.designSettings }));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -746,8 +746,8 @@ function SettingsStep({ project, onChanged, viewMode }: { project: Project; onCh
   async function save() {
     setSaving(true); setError(undefined); setMessage(undefined);
     try {
-      await api.updateProject(project.id, { designSettings: draft } as Partial<Project>);
-      await onChanged();
+      const updated = await api.updateProject(project.id, { designSettings: draft } as Partial<Project>);
+      await onChanged(updated);
       setMessage('设计控制参数已保存。涉及计算模型的参数变更后，请重新计算并重新完成审签。');
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setSaving(false); }

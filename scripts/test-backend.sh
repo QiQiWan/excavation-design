@@ -27,6 +27,7 @@ if [[ "$MODE" == "fast" ]]; then
   python -m compileall -q app tests
   FAST_NODES=(
     "tests/test_v3_31_0_external_dataset_storage.py"
+    "tests/test_v3_32_0_fast_interaction_progress.py"
     "tests/test_v3_30_0_project_open_memory_safety.py"
     "tests/test_v3_29_0_resilient_scheme_designer.py"
     "tests/test_v3_28_0_irregular_shape_intelligence.py"

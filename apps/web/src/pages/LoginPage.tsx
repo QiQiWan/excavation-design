@@ -19,6 +19,7 @@ export default function LoginPage({
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -29,13 +30,19 @@ export default function LoginPage({
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
+    setProgress(10);
     setError(undefined);
+    const timer = window.setInterval(() => setProgress((value) => Math.min(88, value + Math.max(2, Math.round((90 - value) / 7)))), 180);
     try {
+      setProgress(24);
       const result = await api.login(username.trim(), password);
+      setProgress(100);
       onAuthenticated(result.identity);
     } catch (err) {
+      setProgress(0);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      window.clearInterval(timer);
       setBusy(false);
     }
   }
@@ -106,14 +113,15 @@ export default function LoginPage({
 
             {error ? <div className="loginError" role="alert" aria-live="polite">{error}</div> : null}
             <button className="loginSubmit" type="submit" disabled={busy || !username.trim() || !password}>
-              {busy ? <><span className="loginSpinner" />正在验证</> : '登录并进入工作台'}
+              {busy ? <><span className="loginSpinner" />正在验证 {Math.max(1, progress)}%</> : '登录并进入工作台'}
             </button>
+            {busy ? <div className="loginProgressTrack" aria-label="登录进度"><span style={{ width: `${progress}%` }} /></div> : null}
           </form>
 
           {returnLabel ? <p className="loginReturnHint">验证成功后返回：<code>{returnLabel}</code></p> : null}
           <div className="loginSecurityLine"><span aria-hidden="true">●</span> HttpOnly 会话 · 角色权限控制 · 操作审计</div>
         </div>
-        <footer className="loginFooter">PitGuard V3.31.0 · designer.eatrice.cn</footer>
+        <footer className="loginFooter">PitGuard V3.32.0 · designer.eatrice.cn</footer>
       </section>
     </main>
   );

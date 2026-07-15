@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from threading import Lock
 from uuid import uuid4
 
 from app.storage.artifact_store import ProjectArtifactStore, artifact_refs, externalize_project_payload, rehydrate_project_payload
@@ -259,12 +260,26 @@ def _project_summary_payload(project: dict[str, Any], revision: int = 0) -> dict
 
 
 class SQLiteProjectStore:
-    """SQLite project store with WAL, immutable revisions and audit events."""
+    """SQLite project store with WAL, immutable revisions and audit events.
+
+    Schema migration is process-scoped. Earlier releases repeated JSON1
+    backfill and PRAGMA/schema work for every HTTP request because each request
+    constructed a repository. That was a major source of latency and lock
+    contention on create/open/save operations.
+    """
+
+    _schema_lock = Lock()
+    _initialized_paths: set[str] = set()
 
     def __init__(self, db_path: str | os.PathLike[str] | None = None) -> None:
-        self.db_path = Path(db_path or os.getenv("PITGUARD_DB_PATH", DEFAULT_DB_PATH))
+        self.db_path = Path(db_path or os.getenv("PITGUARD_DB_PATH", DEFAULT_DB_PATH)).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        key = str(self.db_path)
+        if key not in self._initialized_paths:
+            with self._schema_lock:
+                if key not in self._initialized_paths:
+                    self._ensure_schema()
+                    self._initialized_paths.add(key)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)

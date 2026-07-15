@@ -5,6 +5,7 @@ const ProjectWorkspace = lazy(() => import('../pages/ProjectWorkspace'));
 const DocsPage = lazy(() => import('../pages/DocsPage'));
 import type { Project } from '../types/domain';
 import LoginPage from '../pages/LoginPage';
+import { GlobalRequestProgress } from './GlobalRequestProgress';
 import {
   buildLoginHref,
   LOGIN_PATH,
@@ -70,12 +71,11 @@ export default function App() {
 
   const checkApi = useCallback(() => {
     setHealth('checking');
-    api.health()
-      .then((data) => {
+    Promise.all([api.health(), api.diagnostics()])
+      .then(([data, details]) => {
         setHealth(`${data.status} / ${data.service}`);
-        return api.diagnostics();
+        setDiagnostics(details);
       })
-      .then(setDiagnostics)
       .catch((err) => {
         setHealth(`offline: ${err.message}`);
         setDiagnostics(undefined);
@@ -86,20 +86,15 @@ export default function App() {
     let active = true;
     setAuthChecking(true);
     setAuthError(undefined);
-    api.authStatus()
-      .then(async (status) => {
+    api.authBootstrap()
+      .then((status) => {
         if (!active) return;
         setAuthPolicy(status);
         if (!status.loginRequired) {
-          setIdentity({ actor: 'local-development', role: 'admin', authenticated: false, authMode: 'local' });
+          setIdentity(status.identity ?? { actor: 'local-development', role: 'admin', authenticated: false, authMode: 'local' });
           return;
         }
-        try {
-          const current = await api.me();
-          if (active) setIdentity(current.identity);
-        } catch {
-          if (active) setIdentity(undefined);
-        }
+        setIdentity(status.authenticated ? status.identity : undefined);
       })
       .catch((error) => {
         if (!active) return;
@@ -164,18 +159,18 @@ export default function App() {
   }
 
   if (authChecking) {
-    return <main className="loginLoading" aria-live="polite"><div className="loginBrandMark">PG</div><p>正在验证登录状态…</p><small>超过 5 秒将进入可重试的离线登录页，不会无限等待。</small></main>;
+    return <><GlobalRequestProgress /><main className="loginLoading" aria-live="polite"><div className="loginBrandMark">PG</div><p>正在验证登录状态…</p><small>超过 5 秒将进入可重试的离线登录页，不会无限等待。</small></main></>;
   }
 
   if (!identity) {
     return (
-      <LoginPage
+      <><GlobalRequestProgress /><LoginPage
         onAuthenticated={authenticated}
         returnTo={requestedReturnPath}
         notice={loginReasonMessage(route.search)}
         serviceError={authError}
         onRetryService={() => setAuthRetryNonce((value) => value + 1)}
-      />
+      /></>
     );
   }
 
@@ -183,10 +178,11 @@ export default function App() {
   const missingModules = diagnostics?.missingModules ?? [];
   const isDocs = route.pathname === '/docs';
 
-  if (isDocs) return <Suspense fallback={<main className="page">正在加载文档…</main>}><DocsPage /></Suspense>;
+  if (isDocs) return <><GlobalRequestProgress /><Suspense fallback={<main className="page">正在加载文档…</main>}><DocsPage /></Suspense></>;
 
   return (
     <div className="appShell">
+      <GlobalRequestProgress />
       <header className="topBar">
         <div>
           <h1>PitGuard BIM Designer</h1>

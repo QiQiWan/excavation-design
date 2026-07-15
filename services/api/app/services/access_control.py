@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import time
+from functools import lru_cache
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,8 +77,8 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def configured_users() -> dict[str, dict[str, str]]:
-    raw = os.getenv("PITGUARD_USERS", "").strip()
+@lru_cache(maxsize=4)
+def _configured_users_from_raw(raw: str) -> dict[str, dict[str, str]]:
     if not raw:
         return {}
     try:
@@ -102,6 +103,10 @@ def configured_users() -> dict[str, dict[str, str]]:
             "userId": str(value.get("userId") or value.get("user_id") or normalized).strip(),
         }
     return users
+
+
+def configured_users() -> dict[str, dict[str, str]]:
+    return _configured_users_from_raw(os.getenv("PITGUARD_USERS", "").strip())
 
 
 def authenticate_user(username: str, password: str) -> AccessIdentity | None:
@@ -252,7 +257,7 @@ def public_access_allowed(path: str) -> bool:
     normalized = path.rstrip("/") or "/"
     return normalized in {
         "/health", "/health/live", "/health/ready",
-        "/api/auth/login", "/api/auth/logout", "/api/auth/status",
+        "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/auth/bootstrap",
     }
 
 

@@ -28,6 +28,22 @@ def _secure_cookie() -> bool:
     return value not in {"0", "false", "no", "off"}
 
 
+@router.get("/bootstrap")
+def bootstrap(request: Request, response: Response) -> dict:
+    """Return auth policy and current identity in one lightweight round trip."""
+    response.headers["Cache-Control"] = "no-store"
+    users = configured_users()
+    status = security_status()
+    identity = resolve_identity(request)
+    return {
+        "loginRequired": bool(users),
+        "mode": status["mode"],
+        "sessionTtlSeconds": status["sessionTtlSeconds"],
+        "authenticated": bool(identity and (identity.authenticated or not users)),
+        "identity": identity.as_dict() if identity else None,
+    }
+
+
 @router.get("/status")
 def auth_status(response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"

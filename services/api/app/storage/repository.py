@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 import os
+from functools import lru_cache
 
 from fastapi import HTTPException, Request
 
@@ -219,7 +220,19 @@ class ProjectRepository:
         return self.save(updated)
 
 
+@lru_cache(maxsize=8)
+def shared_project_store(db_path: str | None = None) -> SQLiteProjectStore:
+    """Reuse one schema-initialized store for each configured database path.
+
+    Connections remain short-lived and thread-safe; only immutable store
+    configuration is shared. The path key also keeps tests and maintenance
+    commands isolated when they temporarily override PITGUARD_DB_PATH.
+    """
+    return SQLiteProjectStore(db_path)
+
+
 def get_repository(request: Request) -> ProjectRepository:
     identity = getattr(request.state, "pitguard_identity", None)
     actor = str(getattr(identity, "actor", None) or "system")
-    return ProjectRepository(default_actor=actor)
+    db_path = os.getenv("PITGUARD_DB_PATH") or None
+    return ProjectRepository(store=shared_project_store(db_path), default_actor=actor)

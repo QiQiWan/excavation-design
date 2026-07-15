@@ -1,8 +1,21 @@
-# PitGuard BIM Designer V3.31.0
+# PitGuard BIM Designer V3.32.0
 
 面向基坑围护结构方案设计、分阶段计算、规范审查、配筋与构造深化、三维复核以及 IFC/CAD/PDF 交付的工程设计辅助系统。
 
 
+
+## V3.32.0 即时交互与全局进度反馈
+
+- 登录会话改为单次 bootstrap 请求，滚动升级时自动兼容旧接口。
+- 项目列表使用本地摘要即时显示并后台刷新。
+- 项目创建采用乐观占位，项目删除采用乐观移除与失败回滚。
+- 项目普通保存直接返回受控 workspace，取消二次 GET 和重复响应序列化。
+- 所有 API 请求统一进入全局进度条，写操作自动屏蔽重复点击。
+- 同一 GET 或同一写请求在进行中自动去重。
+- SQLite schema/JSON1 迁移从“每次请求执行”改为“每进程每数据库一次”。
+- API 响应新增 Server-Timing、请求 ID 和慢请求日志。
+
+详细说明见 [`docs/releases/V3_32_0_FAST_INTERACTION_PROGRESS.md`](docs/releases/V3_32_0_FAST_INTERACTION_PROGRESS.md)。
 
 ## V3.31.0 外部数据对象与小内存工作集
 

@@ -9,3 +9,48 @@
 button.danger { background: #b42318; border-color: #b42318; color: #fff; }
 button.danger:hover:not(:disabled) { background: #912018; border-color: #912018; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* V3.32 global asynchronous interaction feedback */
+.requestInteractionShield {
+  position: fixed; inset: 0; z-index: 2147482998; background: transparent; cursor: progress;
+}
+.globalRequestProgress {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 2147483000;
+  width: min(520px, calc(100vw - 28px)); padding: 11px 13px 10px; border-radius: 12px;
+  color: #eaf4ff; background: rgba(7, 22, 39, .94); border: 1px solid rgba(96, 165, 250, .34);
+  box-shadow: 0 12px 36px rgba(2, 8, 23, .28); backdrop-filter: blur(12px); pointer-events: none;
+}
+.globalRequestProgress.done { border-color: rgba(74, 222, 128, .48); }
+.globalRequestProgress.failed { border-color: rgba(248, 113, 113, .65); }
+.globalRequestHeader { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.globalRequestHeader div { min-width: 0; display: grid; gap: 2px; }
+.globalRequestHeader strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.globalRequestHeader small { color: #9fb5ca; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.globalRequestHeader b { font-size: 12px; color: #93c5fd; font-variant-numeric: tabular-nums; }
+.globalRequestSpinner, .buttonSpinner, .inlineBusy i {
+  width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(148, 197, 255, .36); border-top-color: #60a5fa;
+  animation: pitguardSpin .75s linear infinite; display: inline-block; flex: 0 0 auto;
+}
+.globalRequestProgress.done .globalRequestSpinner { border-color: #4ade80; animation: none; }
+.globalRequestProgress.failed .globalRequestSpinner { border-color: #f87171; animation: none; }
+.globalRequestTrack { height: 3px; margin-top: 9px; overflow: hidden; border-radius: 99px; background: rgba(148, 163, 184, .22); }
+.globalRequestTrack span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #38bdf8, #3b82f6); transition: width .18s ease-out; }
+.globalRequestProgress.done .globalRequestTrack span { background: #4ade80; }
+.globalRequestProgress.failed .globalRequestTrack span { background: #f87171; }
+@keyframes pitguardSpin { to { transform: rotate(360deg); } }
+.buttonSpinner { width: 12px; height: 12px; margin-right: 6px; border-color: rgba(255,255,255,.35); border-top-color: currentColor; vertical-align: -2px; }
+.secondary .buttonSpinner { border-color: rgba(59,130,246,.25); border-top-color: currentColor; }
+.inlineBusy { display: inline-flex; align-items: center; gap: 7px; color: #49647f; font-size: 12px; }
+.inlineBusy i { width: 12px; height: 12px; }
+.inlineOperationProgress { position: relative; margin-top: 10px; padding-top: 6px; height: 25px; overflow: hidden; }
+.inlineOperationProgress::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: #e8eef6; border-radius: 99px; }
+.inlineOperationProgress > span { position: absolute; top: 0; left: 0; height: 4px; border-radius: 99px; background: linear-gradient(90deg,#38bdf8,#2563eb); animation: progressBreathe 1.2s ease-in-out infinite alternate; }
+.inlineOperationProgress small { color: #64748b; font-size: 11px; }
+@keyframes progressBreathe { from { opacity: .62; } to { opacity: 1; } }
+.rowProgress { height: 3px; margin-top: 7px; max-width: 190px; overflow: hidden; border-radius: 99px; background: #e2e8f0; }
+.rowProgress span { display: block; height: 100%; border-radius: inherit; background: #3b82f6; transition: width .18s ease; }
+.optimisticRow { opacity: .76; background: linear-gradient(90deg, rgba(239,246,255,.8), transparent); }
+.pendingLabel { display: inline-block; margin-left: 8px; color: #2563eb; font-size: 10px; }
+@media (max-width: 640px) { .globalRequestProgress { top: 8px; } }
+.loginProgressTrack { height: 4px; margin-top: 9px; overflow: hidden; border-radius: 99px; background: #dbe7f3; }
+.loginProgressTrack span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#38bdf8,#2563eb); transition: width .18s ease; }
