@@ -64,19 +64,25 @@ export function SupportRebarPreview({ rows }: { rows: Record<string, any>[] }) {
   const rightStart = 680 - 610 * endRatio;
   return <div className="rebarDrawingPreview">
     <div className="previewHeader"><strong>支撑端部—跨中分区配筋示意</strong><label>支撑 <select value={code} onChange={(event) => setCode(event.target.value)}>{codes.slice(0, 120).map((item) => <option key={item}>{item}</option>)}</select></label></div>
-    <svg viewBox="0 0 760 250" role="img" aria-label="支撑分区配筋示意">
+    <svg viewBox="0 0 760 285" role="img" aria-label="水平支撑五类钢筋分区配筋示意">
       <rect x="70" y="70" width="610" height="88" rx="4" fill="#f8fafc" stroke="#334155" strokeWidth="2" />
       <rect x="70" y="70" width={leftEnd - 70} height="88" fill="#dbeafe" opacity="0.9" />
       <rect x={rightStart} y="70" width={680 - rightStart} height="88" fill="#dbeafe" opacity="0.9" />
       {[86, 104, 122, 140].map((yy) => <line key={yy} x1="78" x2="672" y1={yy} y2={yy} stroke="#2563eb" strokeWidth="3" />)}
       {Array.from({ length: 22 }).map((_, index) => { const xx = 80 + index * 28; const dense = xx <= leftEnd || xx >= rightStart; return <rect key={xx} x={xx} y="76" width="1" height="76" fill={dense ? '#7c3aed' : '#a78bfa'} />; })}
+      <line x1="78" x2="672" y1="82" y2="146" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="7 5" />
+      <line x1="78" x2="672" y1="146" y2="82" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="7 5" />
+      {[150, 245, 340, 435, 530, 625].map((xx) => <circle key={`tie-${xx}`} cx={xx} cy="114" r="5" fill="none" stroke="#059669" strokeWidth="2" />)}
       <line x1={leftEnd} x2={leftEnd} y1="60" y2="170" stroke="#64748b" strokeDasharray="4 3" />
       <line x1={rightStart} x2={rightStart} y1="60" y2="170" stroke="#64748b" strokeDasharray="4 3" />
       <text x="80" y="48" fontSize="11" fill="#0f172a">端部加密区 {String(row.endZones?.token ?? '-')} / L={num(row.endZones?.lengthM).toFixed(2)}m</text>
       <text x="288" y="48" fontSize="11" fill="#0f172a">跨中区 {String(row.middleZone?.token ?? '-')}</text>
       <text x="470" y="48" fontSize="11" fill="#0f172a">端部加密区</text>
       <text x="70" y="190" fontSize="11" fill="#334155">纵筋 {String(row.longitudinal?.token ?? '-')} · N={num(row.axialForceDesignKn).toFixed(0)} kN · 利用率 {num(row.utilization).toFixed(3)}</text>
-      <text x="70" y="210" fontSize="10" fill="#64748b">搭接区避开端部刚域，采用错开搭接或经核准的机械连接；详见 R-04、D-01、D-07。</text>
+      <text x="70" y="210" fontSize="10" fill="#334155">侧面构造筋 {String(row.distributionBars?.token ?? '-')} · 拉结/架立筋 {String(row.tieBars?.token ?? '-')} · 搭接附加筋 {String(row.lapAdditionalBars?.token ?? '-')}</text>
+      <text x="70" y="231" fontSize="10" fill="#64748b">紫色：端部/跨中箍筋 · 橙色虚线：侧面构造筋 · 绿色圆点：拉结筋。搭接区避开端部刚域。</text>
+      <rect x="70" y="246" width="610" height="25" rx="5" fill={row.rebarContract?.status === 'complete' ? '#ecfdf5' : '#fef2f2'} stroke={row.rebarContract?.status === 'complete' ? '#86efac' : '#fca5a5'} />
+      <text x="82" y="263" fontSize="10" fill={row.rebarContract?.status === 'complete' ? '#166534' : '#991b1b'}>{row.rebarContract?.status === 'complete' ? '五类钢筋合同完整：纵筋、箍筋、侧面构造筋、拉结筋、附加筋均已写入。' : `钢筋合同不完整：缺少 ${(row.rebarContract?.missingBarTypes ?? []).join('、') || '未识别项'}。`}</text>
     </svg>
   </div>;
 }

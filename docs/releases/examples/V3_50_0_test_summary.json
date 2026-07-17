@@ -1,0 +1,59 @@
+{
+  "version": "3.50.0",
+  "backend": {
+    "qualification_and_p0_p3_regression": {
+      "passed": 38
+    },
+    "candidate_memory_rebar_topology_v350": {
+      "passed": 16
+    },
+    "related_total": {
+      "passed": 54
+    }
+  },
+  "frontend": {
+    "testFilesPassed": 21,
+    "testsPassed": 38,
+    "typescriptBuild": "passed",
+    "viteProductionBuild": "passed"
+  },
+  "harvestLakeExactInput": {
+    "candidateSearch": {
+      "status": "success",
+      "elapsedSeconds": 15.651,
+      "candidateCount": 3,
+      "formalCandidateCount": 3,
+      "diagnosticCandidateCount": 0,
+      "supportCount": 208,
+      "columnCount": 40,
+      "payloadMb": 2.72,
+      "workspaceMb": 1.91,
+      "peakRssMb": 446.66
+    },
+    "legacyCandidateRecovery": {
+      "status": "success",
+      "elapsedSeconds": 14.872,
+      "candidateCount": 3,
+      "supportCount": 208,
+      "columnCount": 40,
+      "candidateContractVersion": "3.50-bearing-closure-v2",
+      "calculationAllowed": true,
+      "calculationBlockerCount": 0
+    },
+    "fullCalculation": {
+      "status": "success",
+      "candidateSearchSeconds": 7.082,
+      "calculationSeconds": 21.951,
+      "candidateCount": 3,
+      "supportCount": 208,
+      "columnCount": 40,
+      "calculationResultCount": 1,
+      "taskEndEffectiveMemoryMb": 458.24
+    }
+  },
+  "notes": [
+    "Legacy recovery smoke validates that current-contract regeneration reopens the formal calculation gate.",
+    "A separate exact-input smoke completed one formal 208-support calculation result.",
+    "Three.js remains an on-demand 523.86 kB production chunk."
+  ]
+}

@@ -1,11 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type AuthIdentity } from '../api/client';
 import ProjectsPage from '../pages/ProjectsPage';
-const ProjectWorkspace = lazy(() => import('../pages/ProjectWorkspace'));
+const ProjectWorkspace = lazy(() => import('../pages/CoreProjectWorkspace'));
 const DocsPage = lazy(() => import('../pages/DocsPage'));
 import type { Project } from '../types/domain';
 import LoginPage from '../pages/LoginPage';
-import { GlobalRequestProgress } from './GlobalRequestProgress';
+import { FullPageLoadingFallback, GlobalRequestProgress } from './GlobalRequestProgress';
 import {
   buildLoginHref,
   LOGIN_PATH,
@@ -159,7 +159,7 @@ export default function App() {
   }
 
   if (authChecking) {
-    return <><GlobalRequestProgress /><main className="loginLoading" aria-live="polite"><div className="loginBrandMark">PG</div><p>正在验证登录状态…</p><small>超过 5 秒将进入可重试的离线登录页，不会无限等待。</small></main></>;
+    return <><GlobalRequestProgress /><FullPageLoadingFallback label="正在验证登录状态" detail="超过 5 秒将进入可重试的离线登录页，不会无限等待。" /></>;
   }
 
   if (!identity) {
@@ -178,50 +178,31 @@ export default function App() {
   const missingModules = diagnostics?.missingModules ?? [];
   const isDocs = route.pathname === '/docs';
 
-  if (isDocs) return <><GlobalRequestProgress /><Suspense fallback={<main className="page">正在加载文档…</main>}><DocsPage /></Suspense></>;
+  if (isDocs) return <><GlobalRequestProgress /><Suspense fallback={<FullPageLoadingFallback label="正在加载文档中心" />}><DocsPage /></Suspense></>;
 
   return (
     <div className="appShell">
       <GlobalRequestProgress />
-      <header className="topBar">
-        <div>
-          <h1>PitGuard BIM Designer</h1>
-          <p>基坑围护结构设计 MVP · 结果需注册岩土/结构工程师复核</p>
-        </div>
+      <header className="topBar coreTopBar">
+        <div className="pitGuardBrand"><div><h1>PitGuard</h1><p>基坑围护结构设计</p></div><span className="systemVersionBadge">当前系统版本 V{diagnostics?.softwareVersion ?? diagnostics?.version ?? '检测中'}</span></div>
         <div className="apiStatusGroup">
-          <a className="topLink" href="/docs">设计与计算文档</a>
-          <span className={health.startsWith('ok') ? 'badge ok' : 'badge warn'}>API {health}</span>
-          <span className="userBadge">{identity.username ?? identity.actor} · {identity.role}</span>
-          <button className="secondary compactButton" onClick={checkApi}>重检后端</button>
-          <button className="secondary compactButton" onClick={() => void logout()}>退出登录</button>
+          <span className={health.startsWith('ok') ? 'badge ok' : 'badge warn'}>{health.startsWith('ok') ? '服务正常' : '服务异常'}</span>
+          <details className="coreSystemMenu"><summary>{identity.username ?? identity.actor}</summary><div>
+            <span>角色：{identity.role}</span>
+            {diagnostics ? <span>版本：{diagnostics.version}</span> : null}
+            <a href="/docs">设计说明</a>
+            <button className="secondary compactButton" onClick={checkApi}>检查后端</button>
+            <button className="secondary compactButton" onClick={() => void logout()}>退出</button>
+          </div></details>
         </div>
       </header>
 
-      {(offline || missingModules.length > 0) && (
-        <section className="apiDiagnosticBanner card">
-          <div>
-            <strong>{offline ? '后端未连接' : '后端依赖不完整'}</strong>
-            <p>
-              {offline
-                ? '请先运行根目录 start-linux.sh 或 start-windows.bat。启动脚本现在使用当前 Python 环境，不再创建额外虚拟环境。'
-                : `缺失模块：${missingModules.join('、')}。建议重新运行一键启动脚本，或手动执行 python -m pip install -e services/api[dev]。`}
-            </p>
-          </div>
-          <button onClick={checkApi}>重新检测</button>
-        </section>
-      )}
+      {(offline || missingModules.length > 0) && <section className="apiDiagnosticBanner card compactDiagnostic">
+        <strong>{offline ? '后端未连接' : `缺少依赖：${missingModules.join('、')}`}</strong>
+        <button onClick={checkApi}>重新检测</button>
+      </section>}
 
-      {diagnostics && (
-        <section className="runtimeRibbon">
-          <span>API v{diagnostics.version}</span>
-          <span>算法 {diagnostics.algorithmVersion ?? diagnostics.version}</span>
-          <span>规则集 {diagnostics.ruleSetVersion ?? '-'}</span>
-          <span>Python {diagnostics.pythonVersion}</span>
-          <span>数据库：{diagnostics.databaseConfigured ? '已配置' : '默认本地库'}</span>
-        </section>
-      )}
-
-      {selected ? <Suspense fallback={<main className="page"><section className="card">正在加载工程工作台…</section></main>}><ProjectWorkspace project={selected} onBack={() => setSelected(undefined)} onProjectChange={setSelected} /></Suspense> : <ProjectsPage onOpen={setSelected} />}
+      {selected ? <Suspense fallback={<FullPageLoadingFallback label="正在加载工程工作台" detail="正在读取核心工程数据。" />}><ProjectWorkspace project={selected} onBack={() => setSelected(undefined)} onProjectChange={setSelected} /></Suspense> : <ProjectsPage onOpen={setSelected} />}
     </div>
   );
 }

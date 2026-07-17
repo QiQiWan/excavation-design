@@ -25,16 +25,33 @@ const mb = (value?: number) => `${((value ?? 0) / 1048576).toFixed((value ?? 0) 
 export default function ProjectDataWorkspacePanel({ project }: { project: Project }) {
   const [health, setHealth] = useState<Record<string, unknown>>();
   const [manifest, setManifest] = useState<ArtifactManifest>();
-  const [error, setError] = useState<string>();
+  const [healthError, setHealthError] = useState<string>();
+  const [manifestError, setManifestError] = useState<string>();
+  const [manifestLoading, setManifestLoading] = useState(false);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([api.getProjectStorageHealth(project.id), api.listProjectArtifacts(project.id)])
-      .then(([nextHealth, nextManifest]) => { if (alive) { setHealth(nextHealth); setManifest(nextManifest); } })
-      .catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); });
+    setManifest(undefined);
+    setManifestError(undefined);
+    setHealthError(undefined);
+    api.getProjectStorageHealth(project.id)
+      .then((nextHealth) => { if (alive) setHealth(nextHealth); })
+      .catch((err) => { if (alive) setHealthError(err instanceof Error ? err.message : String(err)); });
     return () => { alive = false; };
   }, [project.id, project.updatedAt]);
+
+  useEffect(() => {
+    if (!open || manifest) return;
+    let alive = true;
+    setManifestLoading(true);
+    setManifestError(undefined);
+    api.listProjectArtifacts(project.id)
+      .then((nextManifest) => { if (alive) setManifest(nextManifest); })
+      .catch((err) => { if (alive) setManifestError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (alive) setManifestLoading(false); });
+    return () => { alive = false; };
+  }, [open, manifest, project.id]);
 
   const resourcePolicy = (health?.resourcePolicy && typeof health.resourcePolicy === 'object' ? health.resourcePolicy : {}) as Record<string, unknown>;
   const workspaceHealthy = Boolean(health?.workspaceLoadAllowed ?? true);
@@ -52,7 +69,6 @@ export default function ProjectDataWorkspacePanel({ project }: { project: Projec
     return [...output.entries()].sort((a, b) => b[1].storedBytes - a[1].storedBytes);
   }, [manifest]);
 
-  if (error) return <div className="warning">数据工作集状态读取失败：{error}</div>;
   return <section className="dataWorkspacePanel card" aria-label="项目冷热数据工作集">
     <div className="dataWorkspaceSummary">
       <div><strong>数据工作集</strong><span>核心设计常驻 · 大型结果按需加载 · 文件由 Nginx 直传</span></div>
@@ -64,6 +80,7 @@ export default function ProjectDataWorkspacePanel({ project }: { project: Projec
       </div>
       <button className="secondary tiny" onClick={() => setOpen((value) => !value)}>{open ? '收起数据索引' : '查看数据索引'}</button>
     </div>
+    {healthError ? <div className="warning">数据工作集状态读取失败：{healthError}</div> : null}
     {open ? <>
       <div className="dataWorkspacePolicy">
         <span>有效可用内存 <b>{mb(Number(resourcePolicy.effectiveAvailableBytes ?? 0))}</b></span>
@@ -73,7 +90,7 @@ export default function ProjectDataWorkspacePanel({ project }: { project: Projec
         <p>{String(resourcePolicy.policyExplanation ?? '网页使用轻量工作区，重型对象由后台任务按需读取。')}</p>
       </div>
       <div className="dataWorkspaceGroups">
-      {groups.length ? groups.map(([kind, value]) => <article key={kind}>
+      {manifestLoading ? <p>正在按需读取外部对象索引…</p> : manifestError ? <p className="error">外部对象索引读取失败：{manifestError}</p> : groups.length ? groups.map(([kind, value]) => <article key={kind}>
         <strong>{kind}</strong><span>{value.count} 个分片</span><em>{mb(value.storedBytes)} / 逻辑 {mb(value.logicalBytes)}</em>
       </article>) : <p>当前项目尚无外部大型数据对象；后续计算、地质和配筋结果会自动分片保存。</p>}
       </div>

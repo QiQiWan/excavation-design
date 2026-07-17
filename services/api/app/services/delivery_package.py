@@ -21,6 +21,7 @@ from app.services.rebar_export import export_rebar_detailing_package
 from app.services.review_workflow import project_snapshot_hash, review_status
 from app.services.wall_length_optimizer import export_wall_length_redundancy_report
 from app.services.delivery_release import evaluate_delivery_release_readiness, build_release_certificate
+from app.services.core_engineering_presentation import build_scheme_comparison, build_stability_distribution
 from app.version import SOFTWARE_VERSION, version_manifest
 
 
@@ -138,22 +139,115 @@ def _write_registers(root: Path, artifacts: list[dict[str, Any]], acceptance: li
             writer.writerow([item.get("category"), item.get("check"), item.get("status"), item.get("evidence"), item.get("responsibleRole"), item.get("action")])
 
 
+
+def _display_status(value: Any) -> str:
+    text = str(value or "—")
+    mapping = {
+        "pass": "通过", "warning": "需关注", "fail": "不通过",
+        "generated": "已生成", "pending": "待完成", "missing": "缺失",
+        "manual_review": "人工复核", "skipped": "未执行",
+        "review_complete": "审查资料完整", "development_only": "仅供设计迭代",
+        "construction_issued": "施工发行",
+    }
+    return mapping.get(text.lower(), text)
+
+
+def _write_manager_summary(root: Path, project: Project, acceptance: list[dict[str, Any]], release_grade: str) -> Path:
+    """Create the first-read document for project managers and discipline leads.
+
+    Machine contracts and complete snapshots remain available for traceability,
+    but the delivery package opens with conclusions, controlling indicators and
+    actions written in engineering language.
+    """
+    latest = project.calculation_results[-1] if project.calculation_results else None
+    gv = latest.governing_values if latest else None
+    schemes = build_scheme_comparison(project)
+    stability = build_stability_distribution(project)
+    scheme_rows = "".join(
+        "<tr>"
+        f"<td>方案 {html.escape(str(row.get('schemeLabel') or '—'))}</td>"
+        f"<td>{html.escape(str(row.get('schemeName') or '—'))}</td>"
+        f"<td>{html.escape(str(row.get('supportCount') or 0))} / {html.escape(str(row.get('columnCount') or 0))}</td>"
+        f"<td>{html.escape(str(row.get('maxDisplacement') if row.get('maxDisplacement') is not None else '待完整计算'))}</td>"
+        f"<td>{html.escape(str(row.get('minStabilitySafetyFactor') if row.get('minStabilitySafetyFactor') is not None else '待完整计算'))}</td>"
+        f"<td>{'推荐' if row.get('recommended') else ('已采用' if str(row.get('candidateId')) == str(schemes.get('selectedCandidateId')) else '备选')}</td>"
+        "</tr>"
+        for row in schemes.get("rows", [])
+    ) or "<tr><td colspan='6'>尚未生成可比选方案。</td></tr>"
+    stability_rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(item.get('label') or item.get('code')))}</td>"
+        f"<td>{html.escape(str(item.get('value') if item.get('value') is not None else '—'))}</td>"
+        f"<td>{html.escape(str(item.get('limit') if item.get('limit') is not None else '—'))}</td>"
+        f"<td>{html.escape(str(item.get('marginRatio') if item.get('marginRatio') is not None else '—'))}</td>"
+        f"<td>{html.escape(_display_status(item.get('status')))}</td>"
+        f"<td>{html.escape(str(item.get('standard') or '—'))}</td>"
+        "</tr>"
+        for item in stability.get("factors", [])
+    ) or "<tr><td colspan='6'>尚未生成稳定性安全系数。</td></tr>"
+    action_rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(item.get('category') or '—'))}</td>"
+        f"<td>{html.escape(str(item.get('check') or '—'))}</td>"
+        f"<td>{html.escape(_display_status(item.get('status')))}</td>"
+        f"<td>{html.escape(str(item.get('action') or '—'))}</td>"
+        "</tr>"
+        for item in acceptance if str(item.get("status") or "").lower() not in {"pass", "generated"}
+    ) or "<tr><td colspan='4'>当前没有新增管理行动项。</td></tr>"
+    key_values = [
+        ("开挖深度", f"{getattr(project.excavation, 'depth', '—')} m" if project.excavation else "—"),
+        ("围护墙数量", str(len(project.retaining_system.diaphragm_walls or [])) if project.retaining_system else "0"),
+        ("支撑 / 立柱", f"{len(project.retaining_system.supports or [])} / {len(project.retaining_system.columns or [])}" if project.retaining_system else "0 / 0"),
+        ("最大墙位移", f"{getattr(gv, 'max_displacement', '—')} mm" if gv else "—"),
+        ("最大支撑轴力", f"{getattr(gv, 'max_support_axial_force', '—')} kN" if gv else "—"),
+        ("最小稳定安全系数", str(stability.get('summary', {}).get('minimumFactor')) if stability.get('summary', {}).get('minimumFactor') is not None else "—"),
+    ]
+    metrics = "".join(f"<div class='metric'><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>" for label, value in key_values)
+    content = f"""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>{html.escape(project.name)} 项目管理摘要</title>
+<style>body{{font-family:Arial,'Microsoft YaHei',sans-serif;margin:28px;color:#1f2937;line-height:1.55}}h1{{font-size:25px}}h2{{font-size:18px;margin-top:28px;border-bottom:2px solid #334155;padding-bottom:7px}}.notice{{padding:14px 16px;background:#eef2ff;border-left:5px solid #334155}}.metrics{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}}.metric{{border:1px solid #cbd5e1;padding:12px}}.metric span{{display:block;color:#64748b;font-size:13px}}.metric strong{{font-size:19px}}table{{border-collapse:collapse;width:100%;margin:12px 0}}th,td{{border:1px solid #cbd5e1;padding:8px;text-align:left;vertical-align:top}}th{{background:#e2e8f0}}.links a{{display:inline-block;margin:4px 12px 4px 0}}@media(max-width:760px){{.metrics{{grid-template-columns:1fr 1fr}}}}</style></head><body>
+<h1>{html.escape(project.name)} · 项目管理摘要</h1>
+<p class='notice'><strong>发行状态：{html.escape(_display_status(release_grade))}</strong><br>本页用于项目经理、专业负责人和审核人员快速掌握方案、控制指标与待办事项。技术细节见计算书，机器数据集中在 50_data 和 90_audit。</p>
+<h2>一、核心指标</h2><div class='metrics'>{metrics}</div>
+<h2>二、多方案比选</h2><table><thead><tr><th>方案</th><th>体系</th><th>支撑/立柱</th><th>最大位移</th><th>最小稳定系数</th><th>结论</th></tr></thead><tbody>{scheme_rows}</tbody></table>
+<h2>三、稳定性安全系数</h2><table><thead><tr><th>检查项目</th><th>计算值</th><th>限值</th><th>裕度比</th><th>状态</th><th>规范</th></tr></thead><tbody>{stability_rows}</tbody></table>
+<h2>四、管理行动项</h2><table><thead><tr><th>类别</th><th>检查内容</th><th>状态</th><th>处理要求</th></tr></thead><tbody>{action_rows}</tbody></table>
+<h2>五、优先阅读</h2><p class='links'><a href='../30_reports/PitGuard_calculation_report.docx'>计算书</a><a href='../10_drawings/quick_review/PitGuard_batch_plot.pdf'>图纸批量预览</a><a href='../10_drawings/PitGuard_formal_drawing_package.zip'>施工图包</a><a href='../40_rebar/PitGuard_rebar_detailing_package.zip'>钢筋深化包</a><a href='index.html'>完整交付索引</a></p>
+<p>审查版不得直接用于施工。现场周边环境、管线、施工组织、降排水和监测条件仍需由项目团队确认。</p>
+</body></html>"""
+    path = root / "00_release/项目管理摘要.html"
+    path.write_text(content, encoding="utf-8")
+    return path
+
 def _write_index(root: Path, project: Project, manifest: dict[str, Any]) -> None:
-    rows = "".join(
-        f"<tr><td>{html.escape(str(x.get('role')))}</td><td><a href='../{html.escape(str(x.get('file')))}'>{html.escape(str(x.get('file')))}</a></td><td>{html.escape(str(x.get('issueLevel')))}</td><td>{html.escape(str(x.get('status')))}</td></tr>"
-        for x in manifest.get("artifacts", [])
-    )
+    artifacts = list(manifest.get("artifacts", []))
+    primary_roles = {
+        "项目管理摘要", "计算书", "施工图发行包", "交付包快速审查文件",
+        "钢筋加工深化包", "IFC轻量协调模型", "IFC施工可视化模型", "发行移交单",
+    }
+    primary = [item for item in artifacts if item.get("role") in primary_roles and not str(item.get("file", "")).endswith((".json", ".csv"))]
+    technical = [item for item in artifacts if item not in primary and not str(item.get("file", "")).endswith(".json")]
+    machine = [item for item in artifacts if str(item.get("file", "")).endswith(".json") or str(item.get("issueLevel")) in {"archive", "audit"}]
+
+    def rows(items: list[dict[str, Any]]) -> str:
+        return "".join(
+            f"<tr><td>{html.escape(str(x.get('role')))}</td><td><a href='../{html.escape(str(x.get('file')))}'>{html.escape(str(x.get('file')))}</a></td><td>{html.escape(str(x.get('issueLevel')))}</td><td>{html.escape(_display_status(x.get('status')))}</td></tr>"
+            for x in items
+        ) or "<tr><td colspan='4'>无</td></tr>"
+
     checks = "".join(
-        f"<tr><td>{html.escape(str(x.get('category')))}</td><td>{html.escape(str(x.get('check')))}</td><td>{html.escape(str(x.get('status')))}</td><td>{html.escape(str(x.get('action')))}</td></tr>"
+        f"<tr><td>{html.escape(str(x.get('category')))}</td><td>{html.escape(str(x.get('check')))}</td><td>{html.escape(_display_status(x.get('status')))}</td><td>{html.escape(str(x.get('action')))}</td></tr>"
         for x in manifest.get("acceptance", [])
     )
     content = f"""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>PitGuard交付索引</title>
-<style>body{{font-family:Arial,'Microsoft YaHei',sans-serif;margin:28px;color:#1f2937}}table{{border-collapse:collapse;width:100%;margin:14px 0 28px}}th,td{{border:1px solid #cbd5e1;padding:8px;text-align:left}}th{{background:#e2e8f0}}.status{{font-size:20px;font-weight:700}}code{{background:#f1f5f9;padding:2px 5px}}</style></head><body>
+<style>body{{font-family:Arial,'Microsoft YaHei',sans-serif;margin:28px;color:#1f2937}}table{{border-collapse:collapse;width:100%;margin:14px 0 28px}}th,td{{border:1px solid #cbd5e1;padding:8px;text-align:left;vertical-align:top}}th{{background:#e2e8f0}}.status{{font-size:20px;font-weight:700}}code{{background:#f1f5f9;padding:2px 5px}}.first{{padding:14px;background:#eef2ff;border-left:5px solid #334155}}details{{margin:18px 0}}</style></head><body>
 <h1>{html.escape(project.name)} · PitGuard V{SOFTWARE_VERSION} 协同成果交付包</h1>
-<p class='status'>发行等级：{html.escape(str(manifest.get('releaseGrade')))}；工程状态：{html.escape(str(manifest.get('engineeringStatus')))}</p>
+<p class='status'>发行等级：{html.escape(_display_status(manifest.get('releaseGrade')))}；工程状态：{html.escape(_display_status(manifest.get('engineeringStatus')))}</p>
 <p>快照：<code>{html.escape(str(manifest.get('snapshotHash')))}</code>；生成时间：{html.escape(str(manifest.get('generatedAt')))}</p>
-<h2>成果文件</h2><table><thead><tr><th>用途</th><th>文件</th><th>发行层级</th><th>状态</th></tr></thead><tbody>{rows}</tbody></table>
+<p class='first'><strong>建议从 <a href='项目管理摘要.html'>项目管理摘要</a> 开始。</strong> 计算书、图纸和钢筋深化包用于专业审查；JSON 文件集中作为系统追溯和二次开发数据。</p>
+<h2>优先阅读成果</h2><table><thead><tr><th>用途</th><th>文件</th><th>发行层级</th><th>状态</th></tr></thead><tbody>{rows(primary)}</tbody></table>
 <h2>验收矩阵</h2><table><thead><tr><th>类别</th><th>检查</th><th>状态</th><th>下一步</th></tr></thead><tbody>{checks}</tbody></table>
+<details><summary>技术附件与交换文件（{len(technical)}项）</summary><table><thead><tr><th>用途</th><th>文件</th><th>层级</th><th>状态</th></tr></thead><tbody>{rows(technical)}</tbody></table></details>
+<details><summary>机器数据与审计文件（{len(machine)}项）</summary><p>该部分用于追溯、归档、系统校验和二次开发，项目管理人员一般无需直接阅读。</p><table><thead><tr><th>用途</th><th>文件</th><th>层级</th><th>状态</th></tr></thead><tbody>{rows(machine)}</tbody></table></details>
 <p>正式施工发行必须同时满足计算、图纸、IFC、钢筋深化、审签、修订和项目现场条件。审查版不得直接用于施工。</p>
 </body></html>"""
     (root / "00_release/index.html").write_text(content, encoding="utf-8")
@@ -260,10 +354,10 @@ def export_coordinated_delivery_package(
     artifacts.append(_artifact_record(root, project_json, "项目完整快照", "归档/迁移/二次开发", "archive"))
 
     latest = project.calculation_results[-1] if project.calculation_results else None
-    contract_json = root / "30_reports/calculation_contract.json"
+    contract_json = root / "90_audit/calculation_contract.json"
     contract_json.write_text(json.dumps(dict((getattr(latest, "calculation_assurance", {}) or {}).get("contract") or {}), ensure_ascii=False, indent=2), encoding="utf-8")
     artifacts.append(_artifact_record(root, contract_json, "计算输入冻结合同", "设计/校核/归档", "audit"))
-    assurance_json = root / "30_reports/calculation_assurance.json"
+    assurance_json = root / "90_audit/calculation_assurance.json"
     assurance_json.write_text(json.dumps(dict(getattr(latest, "calculation_assurance", {}) or {}), ensure_ascii=False, indent=2), encoding="utf-8")
     artifacts.append(_artifact_record(root, assurance_json, "工业计算质量包", "设计/校核/审核", "audit"))
     readiness_json = root / "00_release/delivery_readiness.json"
@@ -278,7 +372,7 @@ def export_coordinated_delivery_package(
 
     acceptance = [
         {"category": "计算", "check": "工程计算无硬失败", "status": "pass" if assurance.get("engineeringCheckStatus") == "pass" else str(assurance.get("engineeringCheckStatus")), "evidence": "计算书/项目快照", "responsibleRole": "设计/校核", "action": "处理fail、warning和人工复核项"},
-        {"category": "计算", "check": "输入冻结、阶段覆盖、数值质量和独立复核", "status": str((getattr(latest, "calculation_assurance", {}) or {}).get("status") or "missing"), "evidence": "30_reports/calculation_contract.json + calculation_assurance.json", "responsibleRole": "设计/校核", "action": "关闭工业计算质量包中的失败、警告和人工复核项"},
+        {"category": "计算", "check": "输入冻结、阶段覆盖、数值质量和独立复核", "status": str((getattr(latest, "calculation_assurance", {}) or {}).get("status") or "missing"), "evidence": "90_audit/calculation_contract.json + calculation_assurance.json", "responsibleRole": "设计/校核", "action": "关闭工业计算质量包中的失败、警告和人工复核项"},
         {"category": "发行", "check": "当前快照发行基线", "status": str(release_readiness.get("status") or "missing"), "evidence": "00_release/delivery_readiness.json", "responsibleRole": "审核/批准", "action": "确保计算合同、审签和施工修订均与当前快照一致"},
         {"category": "图纸", "check": "图种和逐图表达质量", "status": str(sheet_quality.get("status") or "missing"), "evidence": "drawing_sheet_quality.json", "responsibleRole": "设计/校核", "action": "修复失败图纸的图层、尺寸、图签和内容深度"},
         {"category": "图纸", "check": "施工图完整性", "status": str(drawing_completeness.get("status") or "missing"), "evidence": "drawing_completeness.json", "responsibleRole": "专业负责人", "action": "补齐必要图种、表格和节点大样"},
@@ -297,6 +391,8 @@ def export_coordinated_delivery_package(
 
     hard_failed = any(str(item.get("status")) == "fail" for item in acceptance)
     release_grade = "construction_issued" if issue_mode == "construction" and not hard_failed and review.get("approvalValid") else "review_complete" if not hard_failed else "development_only"
+    manager_summary = _write_manager_summary(root, project, acceptance, release_grade)
+    artifacts.append(_artifact_record(root, manager_summary, "项目管理摘要", "项目经理/专业负责人/审核", "review" if issue_mode == "review" else "construction"))
     _write_relationship_matrix(root, artifacts)
     relationship_matrix = root / "90_audit/deliverable_relationship_matrix.csv"
     artifacts.append(_artifact_record(root, relationship_matrix, "成果关系矩阵", "设计/校核/归档", "audit"))
@@ -337,7 +433,7 @@ def export_coordinated_delivery_package(
         "drawingCompleteness": {k: v for k, v in drawing_completeness.items() if k != "checks"},
         "failures": failures,
         "outputCategories": {
-            "humanReview": ["10_drawings", "30_reports", "40_rebar/rebar_detailing_schedules.xlsx"],
+            "humanReview": ["00_release/项目管理摘要.html", "10_drawings", "30_reports", "40_rebar/rebar_detailing_schedules.xlsx"],
             "machineExchange": ["20_bim", "40_rebar", "50_data/project_snapshot.json"],
             "releaseControl": ["00_release", "90_audit"],
         },
@@ -353,12 +449,12 @@ def export_coordinated_delivery_package(
     readme.write_text(
         f"# {project.name} · PitGuard V{SOFTWARE_VERSION} 协同成果交付包\n\n"
         f"- 发行模式：{issue_mode}\n- 发行等级：{release_grade}\n- 设计快照：`{manifest['snapshotHash']}`\n\n"
-        "## 使用顺序\n\n1. 打开 `00_release/index.html` 查看成果和验收矩阵。\n"
-        "2. 在 `10_drawings` 审查CAD/PDF、修订、逐图质量和施工图门禁。\n"
-        "3. 在 `30_reports` 复核计算书、规范映射和控制结果。\n"
-        "4. 在 `20_bim` 使用对应IFC配置进行协调、分析交换或施工可视化。\n"
-        "5. 在 `40_rebar` 处理钢筋加工、净距、套筒、吊装和人工复核项。\n"
-        "6. `50_data/project_snapshot.json` 用于归档、迁移和二次开发。\n"
+        "## 使用顺序\n\n1. 先打开 `00_release/项目管理摘要.html`，查看方案、关键指标和管理行动项。\n"
+        "2. 打开 `30_reports/PitGuard_calculation_report.docx`，复核计算过程、规范依据、稳定性和配筋结论。\n"
+        "3. 在 `10_drawings` 审查CAD/PDF、修订、逐图质量和施工图门禁。\n"
+        "4. 在 `40_rebar` 处理钢筋加工、净距、套筒、吊装和人工复核项。\n"
+        "5. 在 `20_bim` 使用对应IFC配置进行协调、分析交换或施工可视化。\n"
+        "6. `50_data` 和 `90_audit` 中的JSON主要用于系统追溯、归档和二次开发，项目管理人员一般无需直接阅读。\n"
         "7. `90_audit/verify_delivery_package.py` 用于离线校验全部文件哈希。\n\n"
         "审查版不得直接用于施工。施工版必须完成四级审签、当前快照修订以及现场条件复核。\n",
         encoding="utf-8",

@@ -9,6 +9,7 @@ from app.rules.jgj120_2012.retaining_wall_rules import (
     required_embedment_factor,
 )
 from app.schemas.domain import CalculationCase, Project
+from app.services.engineering_templates import safety_targets
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,8 @@ def auto_design_wall_embedment(
         enabled = bool(getattr(settings, "auto_wall_embedment_design_enabled", True))
     limit = required_embedment_factor(settings.safety_grade)
     margin = max(0.0, float(getattr(settings, "wall_embedment_safety_margin", 0.05) or 0.0))
-    target = limit + margin
+    reserve_ratio = max(1.0, float(safety_targets(project).get("embedment", 1.0)))
+    target = max(limit + margin, limit * reserve_ratio)
     increment = max(0.05, float(getattr(settings, "wall_embedment_search_increment_m", 0.25) or 0.25))
     max_additional = max(0.0, float(getattr(settings, "wall_embedment_max_additional_depth_m", 20.0) or 20.0))
 
@@ -161,12 +163,14 @@ def auto_design_wall_embedment(
 
     audit: dict[str, Any] = {
         "enabled": bool(enabled),
-        "status": "pass" if before_min >= limit else "fail",
+        "status": "pass" if before_min >= target else "fail",
+        "codeStatus": "pass" if before_min >= limit else "fail",
         "changed": False,
         "ruleId": "JGJ120-2012-4.2-EMBEDMENT-STABILITY-SCREEN",
         "method": "common wall-toe search using the existing Rankine net-passive moment screening",
         "screeningLimit": round(limit, 3),
         "designTarget": round(target, 3),
+        "projectReserveRatio": round(reserve_ratio, 3),
         "searchIncrementM": round(increment, 3),
         "beforeBottomElevationM": round(common_before, 3),
         "afterBottomElevationM": round(common_before, 3),
@@ -184,8 +188,8 @@ def auto_design_wall_embedment(
         "lockedWallCount": sum(bool(getattr(wall, "bottom_elevation_locked", False)) for wall in walls),
         "rowsBefore": before_rows,
     }
-    if before_min >= limit:
-        audit["message"] = "当前墙趾标高满足嵌固稳定筛查，无需调整。"
+    if before_min >= target:
+        audit["message"] = "当前墙趾标高同时满足规范限值和项目储备目标，无需调整。"
         project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
         project.retaining_system.layout_summary["wallEmbedmentDesign"] = audit
         return audit
@@ -195,11 +199,11 @@ def auto_design_wall_embedment(
         project.retaining_system.layout_summary["wallEmbedmentDesign"] = audit
         return audit
 
-    locked_failures = [row for row in before_rows if row["locked"] and float(row["factor"]) < limit]
+    locked_failures = [row for row in before_rows if row["locked"] and float(row["factor"]) < target]
     if locked_failures:
         audit["status"] = "fail"
         audit["lockedFailureCount"] = len(locked_failures)
-        audit["message"] = "存在锁定墙趾且嵌固筛查未通过；系统未覆盖人工/导入控制值，请解除锁定或专业复核。"
+        audit["message"] = "存在锁定墙趾未达到项目嵌固储备目标；系统不会覆盖人工/导入控制值，请在墙段长度优化中解除锁定、指定分区墙长或提交专业复核。"
         project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
         project.retaining_system.layout_summary["wallEmbedmentDesign"] = audit
         return audit
@@ -250,9 +254,10 @@ def auto_design_wall_embedment(
     common_after = min(float(wall.bottom_elevation) for wall in walls)
     governing_after = min(after_rows, key=lambda row: float(row["factor"])) if after_rows else None
     changed = any(abs(float(wall.bottom_elevation) - original_bottom_by_id[wall.id]) > 1.0e-9 for wall in walls)
-    status = "pass" if after_min >= limit else "fail"
+    status = "pass" if after_min >= target else "fail"
     audit.update({
         "status": status,
+        "codeStatus": "pass" if after_min >= limit else "fail",
         "changed": changed,
         "iterationCount": iteration_count,
         "afterBottomElevationM": round(common_after, 3),

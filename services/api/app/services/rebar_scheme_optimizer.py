@@ -12,6 +12,8 @@ from app.rules.gb50010.rc_section_rules import (
 )
 from app.rules.gb50010.reinforcement_rules import recommend_bar_spacing
 from app.schemas.domain import Project, ReinforcementGroup
+from app.services.rebar_constructability import build_rebar_constructability
+from app.services.runtime_diagnostics import append_event
 
 RebarMode = Literal["conservative", "balanced", "economic"]
 
@@ -682,6 +684,10 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
         span = float(support.span_length or math.hypot(support.end.x - support.start.x, support.end.y - support.start.y))
         end_spacing = 100 if force >= 6500 or mode == "conservative" else 120
         mid_spacing = 150 if force >= 6500 else 180 if mode != "economic" else 200
+        distribution_dia = 16 if min(selected_width, selected_height) >= 0.9 else 14
+        distribution_spacing = 180 if force >= 6500 else 200
+        tie_spacing = 350 if force >= 6500 else 400
+        lap_dia = max(16, dia - 6)
         status = str(optimized["status"])
         row = {
             "hostType": "internal_support", "hostId": support.id, "hostCode": support.code,
@@ -697,6 +703,16 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
             "longitudinal": {"count": count, "diameterMm": dia, "grade": rebar_grade, "token": f"{count}D{dia}"},
             "endZones": {"lengthM": end_length, "stirrupDiameterMm": 14 if force >= 15000 else 12, "stirrupSpacingMm": end_spacing, "token": f"D{14 if force >= 15000 else 12}@{end_spacing}"},
             "middleZone": {"lengthM": round(max(span - 2 * end_length, 0.0), 2), "stirrupDiameterMm": 12, "stirrupSpacingMm": mid_spacing, "token": f"D12@{mid_spacing}"},
+            "distributionBars": {"diameterMm": distribution_dia, "spacingMm": distribution_spacing, "token": f"D{distribution_dia}@{distribution_spacing}", "label": "侧面构造分布筋"},
+            "tieBars": {"diameterMm": 12, "spacingMm": tie_spacing, "token": f"D12@{tie_spacing}", "label": "拉结与架立筋"},
+            "lapAdditionalBars": {"count": 4, "diameterMm": lap_dia, "token": f"4D{lap_dia}", "label": "搭接与锚固区附加筋"},
+            "rebarContract": {
+                "expectedBarTypes": ["纵向主筋", "箍筋", "侧面构造分布筋", "拉结与架立筋", "搭接附加筋"],
+                "presentBarTypes": ["纵向主筋", "箍筋", "侧面构造分布筋", "拉结与架立筋", "搭接附加筋"],
+                "missingBarTypes": [],
+                "status": "complete",
+                "message": "五类水平支撑钢筋均已形成参数化设计记录，箍筋分端部加密区和跨中区。",
+            },
             "lapArrangement": {"type": "mechanical_or_staggered", "maximumSameSectionRatio": 0.5, "recommendedLocation": "middle_third_away_from_node_rigid_zones"},
             "axialCapacityKn": round(float(optimized["capacityKn"]), 2),
             "utilization": round(float(optimized["utilization"]), 3),
@@ -752,7 +768,13 @@ def _beam_and_node_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[
                 "elevation": beam.elevation,
                 "mainBars": {"diameterMm": main_dia, "spacingMm": main_spacing, "token": f"D{main_dia}@{main_spacing}"},
                 "stirrups": {"diameterMm": stirrup_dia, "spacingMm": stirrup_spacing, "nodeSpacingMm": min(stirrup_spacing, 100), "token": f"D{stirrup_dia}@{stirrup_spacing}"},
-                "nodeAdditional": design.node_additional_reinforcement_note if design else "Support-node zones require U-bars, closed ties and local bearing reinforcement.",
+                "distributionBars": {"diameterMm": 14, "spacingMm": 200, "token": "D14@200", "label": "梁侧面构造筋"},
+                "tieBars": {"diameterMm": 12, "spacingMm": 400, "token": "D12@400", "label": "截面拉结筋"},
+                "nodeAdditional": design.node_additional_reinforcement_note if design else "尚缺正式施工阶段设计内力；重新计算后生成转角 U 形筋、封闭箍筋和局部承压附加筋。",
+                "structuralClosure": {
+                    "status": "closed" if design and design.check_status == "pass" else "needs_calculation" if not design else "needs_strengthening",
+                    "message": "承载力和刚度计算已闭合；锚固、接头与预埋件进入专业构造复核。" if design and design.check_status == "pass" else "该梁尚未形成通过的正式设计内力与配筋记录。",
+                },
                 "status": status,
                 "drawingRefs": ["R-05", "D-01", "D-02"],
             }
@@ -823,15 +845,16 @@ def _build_design_diagnostics(
     project: Project,
     checks: list[dict[str, Any]],
     support_rows: list[dict[str, Any]],
+    *,
+    scheme_applied_override: bool | None = None,
 ) -> dict[str, Any]:
+    from app.services.deepening_readiness import build_deepening_readiness, calculation_readiness
+
     latest = _latest_result(project)
     calc_sync = ((latest.design_iteration_summary or {}).get("supportTopologySynchronization") if latest else None) or {}
-    calculation_valid = bool(latest and latest.stage_results)
-    invalid_reasons: list[str] = []
-    if not latest:
-        invalid_reasons.append("尚未完成结构计算，配筋只能作为构造预案。")
-    elif not latest.stage_results:
-        invalid_reasons.append("计算结果缺少施工阶段数据。")
+    calculation_gate = calculation_readiness(project)
+    calculation_valid = bool(calculation_gate.get("valid"))
+    invalid_reasons: list[str] = list(calculation_gate.get("messages") or []) if not calculation_valid else []
     if calc_sync.get("after", {}).get("requiresSynchronization"):
         calculation_valid = False
         invalid_reasons.append("计算工况仍存在失效支撑引用。")
@@ -882,14 +905,26 @@ def _build_design_diagnostics(
         actions.append({"id": "REVIEW_FAILURES", "priority": 2, "label": "查看不满足项", "description": "按原因分组处理承载力、截面上限、节点承压或净距问题。"})
     if warning_count:
         actions.append({"id": "REVIEW_WARNINGS", "priority": 3, "label": "处理复核项", "description": "复核机械连接、锚固、裂缝、吊装、节点拥挤和施工偏差。"})
-    can_apply = calculation_valid and topology_status != "fail"
-    can_issue = can_apply and fail_count == 0
+    deepening_gate = build_deepening_readiness(
+        project,
+        checks=checks,
+        section_change_count=section_change_count,
+        topology_status=topology_status,
+        scheme_applied=scheme_applied_override,
+    )
+    can_apply = bool(deepening_gate.get("canGenerateScheme"))
+    can_issue = bool(deepening_gate.get("canIssueConstructionDrawings"))
+    gate_actions = list(deepening_gate.get("nextActions") or [])
+    if gate_actions:
+        actions = gate_actions
     return {
         "calculation": {
             "status": "pass" if calculation_valid else "fail",
             "valid": calculation_valid,
             "messages": invalid_reasons or ["配筋使用最新施工阶段内力包络。"],
             "topologySynchronization": calc_sync,
+            "contract": calculation_gate.get("contract"),
+            "assuranceStatus": calculation_gate.get("assuranceStatus"),
         },
         "supportTopology": {
             "status": topology_status, "message": topology_message,
@@ -899,37 +934,83 @@ def _build_design_diagnostics(
         "categoryStatusCounts": categories,
         "failureReasons": reason_groups,
         "actions": sorted(actions, key=lambda item: int(item["priority"])),
+        "deepeningGate": deepening_gate,
         "canApply": can_apply,
+        "canEnterDetailing": bool(deepening_gate.get("canEnterDetailing")),
+        "canRunP3": bool(deepening_gate.get("canRunP3")),
         "canIssueConstructionDrawings": can_issue,
         "exportMode": "construction" if can_issue else "review",
         "reviewWatermarkRequired": not can_issue,
         "sectionChangeCount": section_change_count,
-        "headline": "配筋与节点校核通过，可进入施工图复核。" if can_issue else "仍有阻断项，当前仅可输出审查版图纸。",
+        "headline": "配筋与节点校核通过，可进入施工图复核。" if can_issue else str(deepening_gate.get("headline") or "仍有阻断项，当前仅可输出审查版图纸。"),
     }
 
 
-def build_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[str, Any]:
+def build_rebar_design_scheme(
+    project: Project,
+    mode: str = "balanced",
+    *,
+    scheme_applied_override: bool | None = None,
+) -> dict[str, Any]:
     selected_mode = _mode(mode)
     wall_zones, wall_checks = _wall_zone_scheme(project, selected_mode)
     wall_plan_zones, wall_plan_checks = _wall_plan_zones(project, wall_zones)
     supports, support_checks = _support_scheme(project, selected_mode)
     beams_nodes, beam_node_checks = _beam_and_node_scheme(project, selected_mode)
     checks = [*wall_checks, *wall_plan_checks, *support_checks, *beam_node_checks]
+    constructability = build_rebar_constructability(project, {
+        "wallZones": wall_zones,
+        "wallPlanZones": wall_plan_zones,
+        "supportSchemes": supports,
+        "beamNodeSchemes": beams_nodes,
+    })
+    checks.extend(list(constructability.get("checks") or []))
     fail_count = sum(1 for item in checks if item.get("status") == "fail")
     warning_count = sum(1 for item in checks if item.get("status") in {"warning", "manual_review", "preliminary"})
     status = "fail" if fail_count else "warning" if warning_count else "pass"
     quantities = _quantity_summary(wall_zones, supports, beams_nodes)
-    diagnostics = _build_design_diagnostics(project, checks, supports)
+    diagnostics = _build_design_diagnostics(
+        project,
+        checks,
+        supports,
+        scheme_applied_override=scheme_applied_override,
+    )
+    append_event(
+        "rebar-detailing",
+        "rebar_scheme_built",
+        projectId=project.id,
+        mode=selected_mode,
+        wallZoneCount=len(wall_zones),
+        supportSchemeCount=len(supports),
+        nodeSchemeCount=len(beams_nodes),
+        checkCount=len(checks),
+        failCount=fail_count,
+        warningCount=warning_count,
+        constructability=constructability.get("summary"),
+        deepeningGate={
+            "status": (diagnostics.get("deepeningGate") or {}).get("status"),
+            "blockerCount": (diagnostics.get("deepeningGate") or {}).get("blockerCount"),
+            "blockerGroups": [
+                {
+                    "reasonCode": row.get("reasonCode"), "title": row.get("title"),
+                    "count": row.get("count"), "objects": row.get("objects"),
+                    "targetStage": row.get("targetStage"),
+                }
+                for row in list((diagnostics.get("deepeningGate") or {}).get("blockers") or [])[:12]
+            ],
+        },
+    )
     return {
         "projectId": project.id,
         "mode": selected_mode,
         "status": status,
-        "method": "V3.19 expert reinforcement design: synchronized stages, topology-family review, wall depth-and-plan two-direction zoning, RC support sizing and node bearing/detailing",
+        "method": "V3.55 专家配筋设计：同步施工阶段与拓扑，按墙体深度和墙面平面双向分区，完成钢筋混凝土支撑截面、节点承压与构造设计",
         "diagnostics": diagnostics,
         "wallZones": wall_zones,
         "wallPlanZones": wall_plan_zones,
         "supportSchemes": supports,
         "beamNodeSchemes": beams_nodes,
+        "constructability": constructability,
         "checks": checks,
         "summary": {
             **quantities,
@@ -947,24 +1028,26 @@ def build_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
             "supportSectionChangeCount": diagnostics["sectionChangeCount"],
             "canIssueConstructionDrawings": diagnostics["canIssueConstructionDrawings"],
             "reviewWatermarkRequired": diagnostics["reviewWatermarkRequired"],
+            "constructabilityFailCount": int((constructability.get("summary") or {}).get("failCount") or 0),
+            "constructabilityReviewCount": int((constructability.get("summary") or {}).get("warningCount") or 0),
         },
         "drawingIndex": {
-            "R-01": "Diaphragm wall reinforcement general arrangement",
-            "R-02": "Wall reinforcement elevation and design zones",
-            "R-03": "Wall cage section, lap and joint details",
-            "R-04": "Internal support reinforcement general arrangement",
-            "R-05": "Crown/wale/ring beam reinforcement arrangement",
-            "D-01": "Typical support-wale node detail",
-            "D-02": "Corner diagonal brace node detail",
-            "D-03": "Support-column intersection and bearing detail",
-            "D-04": "Wall support-zone local strengthening detail",
-            "D-06": "Wall panel joint, stop-end and cage connector detail",
-            "D-07": "RC support anchorage and staggered lap detail",
+            "R-01": "地下连续墙配筋总图",
+            "R-02": "墙体配筋立面与设计分区图",
+            "R-03": "钢筋笼剖面、搭接与接头详图",
+            "R-04": "水平内支撑配筋总图",
+            "R-05": "冠梁、围檩与环梁配筋图",
+            "D-01": "支撑—围檩典型节点详图",
+            "D-02": "角撑节点详图",
+            "D-03": "支撑—立柱交叉及承压节点详图",
+            "D-04": "墙体支撑区局部加强详图",
+            "D-06": "墙幅接头、接头箱及钢筋笼连接详图",
+            "D-07": "钢筋混凝土支撑锚固与错开搭接详图",
         },
         "limitations": [
             "配筋设计基于最新施工阶段内力包络；缺少计算或支撑拓扑不同步时禁止作为正式施工图依据。",
-            "Crack-width, seismic detailing, coupler selection, mechanical splice qualification, cage lifting analysis and registered-engineer approval remain project-specific checks.",
-            "The scheme is suitable for design-assist and editable CAD generation; sealed construction issue requires professional review and company drawing standards.",
+            "裂缝宽度、抗震构造、套筒选型、机械连接工艺评定、钢筋笼吊装及注册工程师签审仍需结合项目专项复核。",
+            "本方案可用于辅助设计和生成可编辑 CAD；正式施工图仍需完成专业校审并符合企业制图标准。",
         ],
     }
 
@@ -1000,7 +1083,7 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
                     area_per_meter=float(governing["providedAsMm2PerM"]),
                     required_area_per_meter=float(governing["requiredAsMm2PerM"]),
                     check_status="pass" if governing.get("status") == "pass" else "warning",
-                    location_description=f"V3.19 governing envelope for {face} face; utilization target and no-downgrade floor are retained in retainingSystem.rebarDesignScheme",
+                    location_description=f"按施工阶段控制包络配置{'坑内侧' if face == 'inner' else '坑外侧'}主筋；目标利用率及不降级下限已写入正式配筋方案",
                 )
             )
         distribution = min((int(zone.get("horizontalDistribution", {}).get("spacingMm") or 200) for zone in zones), default=200)
@@ -1008,8 +1091,8 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
         tie_spacing = min((int(zone.get("tieBars", {}).get("spacingMm") or 450) for zone in zones), default=450)
         groups.extend(
             [
-                ReinforcementGroup(name="水平分布筋", bar_type="distribution", diameter=distribution_dia, spacing=distribution, grade=wall.rebar_grade, check_status="pass", location_description="V3.19 depth-zone governing two-face horizontal distribution reinforcement"),
-                ReinforcementGroup(name="拉结筋/架立筋", bar_type="tie", diameter=12, spacing=tie_spacing, grade=wall.rebar_grade, check_status="manual_review", location_description="V3.19 cage ties; support-node zones use denser spacing in the plan/depth schedules"),
+                ReinforcementGroup(name="水平分布筋", bar_type="distribution", diameter=distribution_dia, spacing=distribution, grade=wall.rebar_grade, check_status="pass", location_description="按墙体深度分区控制，坑内外两侧连续配置水平分布筋"),
+                ReinforcementGroup(name="拉结筋/架立筋", bar_type="tie", diameter=12, spacing=tie_spacing, grade=wall.rebar_grade, check_status="manual_review", location_description="连接两侧钢筋网并稳定钢筋笼；支撑节点区按平面及深度分区加密"),
             ]
         )
         local_zones = plan_grouped.get(wall.id, [])
@@ -1039,7 +1122,7 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
                 count=count,
                 grade=wall.rebar_grade,
                 check_status="manual_review",
-                location_description=f"V3.19 {'support-node local vertical/U bars' if is_node else 'corner return/diagonal bars'}; CH {start:.3f}~{end:.3f}m; EL {elevation_token or 'full'}; two faces; refs {','.join(local.get('supportRefs') or [])}; see {'D-04' if is_node else 'D-06'}",
+                location_description=f"{'支撑节点局部竖向筋/U 形筋' if is_node else '转角回折筋/斜向附加筋'}；墙面里程 {start:.3f}～{end:.3f}m；标高 {elevation_token or '全高'}；两侧配置；关联支撑 {','.join(local.get('supportRefs') or []) or '无'}；详见 {'D-04' if is_node else 'D-06'}",
             ))
         out[wall.id] = groups
     return out
@@ -1048,7 +1131,7 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
 def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[str, Any]:
     if not project.retaining_system:
         raise ValueError("Project has no retaining system")
-    scheme = build_rebar_design_scheme(project, mode=mode)
+    scheme = build_rebar_design_scheme(project, mode=mode, scheme_applied_override=True)
     wall_groups = _governing_wall_groups(project, scheme)
     for wall in project.retaining_system.diaphragm_walls:
         if wall.id in wall_groups:
@@ -1061,6 +1144,9 @@ def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
         longitudinal = item.get("longitudinal") or {}
         end_zone = item.get("endZones") or {}
         middle = item.get("middleZone") or {}
+        distribution = item.get("distributionBars") or {}
+        ties = item.get("tieBars") or {}
+        lap_additional = item.get("lapAdditionalBars") or {}
         proposed_section = item.get("section") or {}
         if item.get("sectionChanged"):
             support.section.width = float(proposed_section.get("widthM") or support.section.width or 0.8)
@@ -1072,12 +1158,85 @@ def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
             support.section_optimization_status = "pass" if item.get("status") != "fail" else "topology_upgrade_required"
             support.section_optimization_note = str(item.get("recommendedAction") or "")
         support.reinforcement = [
-            ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=str(longitudinal.get("grade") or "HRB400"), check_status="pass" if item.get("status") == "pass" else "warning", location_description="V3.19 axial-capacity and congestion coordinated longitudinal bars"),
-            ReinforcementGroup(name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade="HRB400", check_status="manual_review", location_description=f"end zones length {end_zone.get('lengthM')}m at both ends"),
-            ReinforcementGroup(name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade="HRB400", check_status="manual_review", location_description="middle-zone confinement and shear reinforcement"),
-            ReinforcementGroup(name="支撑拉结/架立筋", bar_type="tie", diameter=12, spacing=400, grade="HRB400", check_status="manual_review", location_description="cage stability and side-face restraint"),
-            ReinforcementGroup(name="搭接加强筋", bar_type="additional", diameter=max(16, float(longitudinal.get("diameterMm") or 25) - 6), count=4, grade="HRB400", check_status="manual_review", location_description="staggered lap zone away from rigid end zones"),
+            ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=str(longitudinal.get("grade") or "HRB400"), check_status="pass" if item.get("status") == "pass" else "warning", location_description="按轴压承载力配置，并与箍筋、侧面构造筋及节点净距协同校核"),
+            ReinforcementGroup(name="支撑侧面构造分布筋", bar_type="distribution", diameter=float(distribution.get("diameterMm") or 14), spacing=float(distribution.get("spacingMm") or 200), grade="HRB400", check_status="manual_review", location_description="支撑四个侧面连续配置；用于裂缝分散、箍筋定位和钢筋骨架稳定"),
+            ReinforcementGroup(name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade="HRB400", check_status="manual_review", location_description=f"支撑两端各 {end_zone.get('lengthM')}m 范围加密配置"),
+            ReinforcementGroup(name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade="HRB400", check_status="manual_review", location_description="支撑跨中普通区抗剪与约束箍筋"),
+            ReinforcementGroup(name="支撑拉结/架立筋", bar_type="tie", diameter=float(ties.get("diameterMm") or 12), spacing=float(ties.get("spacingMm") or 400), grade="HRB400", check_status="manual_review", location_description="约束侧面纵筋并保持钢筋骨架尺寸，端部节点区按大样加密"),
+            ReinforcementGroup(name="搭接与锚固区附加筋", bar_type="additional", diameter=float(lap_additional.get("diameterMm") or max(16, float(longitudinal.get("diameterMm") or 25) - 6)), count=int(lap_additional.get("count") or 4), grade="HRB400", check_status="manual_review", location_description="错开布置于跨中搭接区并避开端部刚域；具体锚固长度由施工图复核"),
         ]
+
+    beam_map = {str(item.get("hostId")): item for item in scheme.get("beamNodeSchemes", []) if item.get("hostType") == "wale_or_crown_beam"}
+    expected_beam_types = {"longitudinal", "distribution", "stirrup", "tie", "additional"}
+    beam_contracts: list[dict[str, Any]] = []
+    for beam in [*project.retaining_system.crown_beams, *project.retaining_system.wale_beams, *(project.retaining_system.ring_beams or [])]:
+        item = beam_map.get(beam.id)
+        if not item:
+            continue
+        main = item.get("mainBars") or {}
+        stirrups = item.get("stirrups") or {}
+        distribution = item.get("distributionBars") or {}
+        ties = item.get("tieBars") or {}
+        status = "pass" if item.get("status") == "pass" else "warning"
+        design = beam.design_result
+        role_label = "冠梁" if beam.beam_role == "crown_beam" else "围檩"
+        beam.reinforcement = [
+            ReinforcementGroup(name=f"{role_label}上/下缘主筋", bar_type="longitudinal", diameter=float(main.get("diameterMm") or 25), spacing=float(main.get("spacingMm") or 150), grade="HRB400", area_per_meter=design.provided_reinforcement_area if design else None, required_area_per_meter=design.required_reinforcement_area if design else None, check_status=status, location_description=f"{beam.code} 沿梁长连续配置，转角与施工缝处按节点大样锚固"),
+            ReinforcementGroup(name=f"{role_label}箍筋", bar_type="stirrup", diameter=float(stirrups.get("diameterMm") or 12), spacing=float(stirrups.get("spacingMm") or 150), grade="HRB400", check_status="manual_review", location_description=f"普通区按计算间距，转角、墙接头和支撑节点两侧采用 {stirrups.get('nodeSpacingMm') or 100}mm 加密"),
+            ReinforcementGroup(name=f"{role_label}侧面构造筋", bar_type="distribution", diameter=float(distribution.get("diameterMm") or 14), spacing=float(distribution.get("spacingMm") or 200), grade="HRB400", check_status="manual_review", location_description="侧面连续构造配置，用于裂缝分散、箍筋定位和钢筋骨架稳定"),
+            ReinforcementGroup(name=f"{role_label}拉结筋", bar_type="tie", diameter=float(ties.get("diameterMm") or 12), spacing=float(ties.get("spacingMm") or 400), grade="HRB400", check_status="manual_review", location_description="拉结上、下缘及侧面钢筋；转角和预埋件区加密"),
+            ReinforcementGroup(name=f"{role_label}节点附加筋", bar_type="additional", diameter=20, spacing=150, grade="HRB400", check_status="manual_review", location_description=str(item.get("nodeAdditional") or "转角、墙接头、支撑节点和预埋件区配置 U 形筋、封闭箍筋和局部抗裂筋")),
+        ]
+        present = sorted({str(group.bar_type) for group in beam.reinforcement})
+        missing = sorted(expected_beam_types.difference(present))
+        beam_contracts.append({
+            "hostId": beam.id, "hostCode": beam.code, "beamRole": beam.beam_role,
+            "structuralStatus": item.get("status"), "expectedBarTypes": sorted(expected_beam_types),
+            "presentBarTypes": present, "missingBarTypes": missing,
+            "status": "complete" if not missing and design is not None else "incomplete",
+        })
+    expected_support_types = {"longitudinal", "distribution", "stirrup", "tie", "additional"}
+    support_contracts: list[dict[str, Any]] = []
+    for support in project.retaining_system.supports:
+        if support.section_type != "rc_rectangular":
+            continue
+        present = sorted({str(item.bar_type) for item in (support.reinforcement or [])})
+        missing = sorted(expected_support_types.difference(present))
+        support_contracts.append({
+            "hostId": support.id, "hostCode": support.code,
+            "expectedBarTypes": sorted(expected_support_types), "presentBarTypes": present,
+            "missingBarTypes": missing, "status": "complete" if not missing else "incomplete",
+        })
+    scheme["supportRebarContracts"] = support_contracts
+    scheme["supportRebarContractSummary"] = {
+        "supportCount": len(support_contracts),
+        "completeCount": sum(1 for item in support_contracts if not item["missingBarTypes"]),
+        "incompleteCount": sum(1 for item in support_contracts if item["missingBarTypes"]),
+        "expectedBarTypes": sorted(expected_support_types),
+    }
+    scheme["beamRebarContracts"] = beam_contracts
+    scheme["beamRebarContractSummary"] = {
+        "beamCount": len(beam_contracts),
+        "completeCount": sum(1 for item in beam_contracts if item["status"] == "complete"),
+        "incompleteCount": sum(1 for item in beam_contracts if item["status"] != "complete"),
+        "expectedBarTypes": sorted(expected_beam_types),
+    }
     scheme["requiresRecalculation"] = bool(scheme.get("diagnostics", {}).get("sectionChangeCount"))
     project.retaining_system.rebar_design_scheme = scheme
+    # Rebuild the gate after the five-family contracts have been written.  The
+    # first preview is intentionally built before mutation; reusing that gate
+    # here made the immediate response carry empty contract summaries and led
+    # the UI to report “structure not closed” until a full page reload.
+    scheme["diagnostics"] = _build_design_diagnostics(
+        project,
+        list(scheme.get("checks") or []),
+        list(scheme.get("supportSchemes") or []),
+        scheme_applied_override=True,
+    )
+    scheme["summary"]["canIssueConstructionDrawings"] = bool(scheme["diagnostics"].get("canIssueConstructionDrawings"))
+    scheme["summary"]["reviewWatermarkRequired"] = bool(scheme["diagnostics"].get("reviewWatermarkRequired"))
+    append_event(
+        "rebar-contract", "support-contract-applied", projectId=project.id, mode=mode,
+        requiresRecalculation=scheme["requiresRecalculation"], **scheme["supportRebarContractSummary"],
+    )
     return scheme

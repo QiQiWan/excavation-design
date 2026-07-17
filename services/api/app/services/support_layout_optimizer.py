@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import math
 import os
+import gc
+import hashlib
+
+from app.services.runtime_diagnostics import append_event, memory_event
 from statistics import mean, pstdev
 from typing import Any
 
@@ -10,6 +14,8 @@ from app.schemas.domain import Project, RetainingSystem, SupportElement, Support
 from app.services import design_service
 from app.services import support_layout as layout_mod
 from app.services.support_deep_design import evaluate_support_deep_design
+
+SUPPORT_CANDIDATE_CONTRACT_VERSION = "3.51-adaptive-topology-search-v3"
 
 OBJECTIVE_WEIGHTS: dict[str, float] = {
     "spacingDeviation": 20.0,
@@ -801,10 +807,52 @@ def _delta_geometry(adjustments: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _candidate_seed_system(project: Project) -> RetainingSystem:
+    """Build a clean geometry-only retaining-system seed.
+
+    Historical projects may carry tens or hundreds of megabytes in
+    ``layout_summary.autoRepair``, candidate calculations and rebar caches. A
+    deep copy of the whole retaining system for every trial multiplied that
+    payload by the search count and was the main cause of 12-18 GB workers.
+    Candidate generation only needs the wall/crown geometry and lock registry;
+    all supports, wales, nodes and columns are regenerated.
+    """
+    source = project.retaining_system
+    if source is None:
+        return RetainingSystem()
+    return RetainingSystem(
+        id=source.id,
+        type=source.type,
+        diaphragm_walls=[item.model_copy(deep=True) for item in source.diaphragm_walls],
+        crown_beams=[item.model_copy(deep=True) for item in source.crown_beams],
+        wale_beams=[],
+        ring_beams=[],
+        supports=[],
+        support_nodes=[],
+        columns=[],
+        layout_summary={},
+        optimization_locks=[dict(item) for item in source.optimization_locks],
+        support_layout_repair=None,
+        rebar_design_scheme={},
+        replacement_path=[],
+        warnings=[],
+    )
+
+
+def _candidate_trial_project(project: Project) -> Project:
+    trial = project.model_copy(deep=False)
+    trial.calculation_results = []
+    trial.calculation_cases = []
+    trial.retaining_system = _candidate_seed_system(project)
+    # Large presentation/audit caches are irrelevant to geometry search. Keep the
+    # shared project object immutable and expose an empty trial-only dictionary.
+    trial.advanced_engineering = {}
+    return trial
+
 def build_support_system_from_candidate(project: Project, target_spacing: float, column_span: float, pattern: str = "as_generated", amplitude: float = 0.0, topology_strategy: str = "balanced_grid") -> tuple[RetainingSystem | None, list[dict[str, Any]]]:
     if not project.excavation:
         return None, []
-    trial_project = project.model_copy(deep=True)
+    trial_project = _candidate_trial_project(project)
     config = design_service.support_layout_config_from_settings(
         project.design_settings,
         topology_strategy=topology_strategy,
@@ -820,14 +868,37 @@ def build_support_system_from_candidate(project: Project, target_spacing: float,
     return trial_project.retaining_system, adjustments
 
 
-def _geometry_fingerprint(system: RetainingSystem, precision: float = 0.25) -> tuple[tuple[int, int, int, int, int], ...]:
+def _geometry_fingerprint(system: RetainingSystem, precision: float = 0.25) -> tuple[tuple[int, int, int, int, int, int], ...]:
+    """Return a force-path fingerprint for every support family.
+
+    Earlier releases only fingerprinted ``main_strut`` members. A genuine
+    terminal-brace or corner-diagonal scheme was therefore collapsed into the
+    direct-grid candidate whenever its primary struts happened to align. The
+    role code and normalized endpoints now preserve meaningful hybrid layouts
+    while still rejecting label-only duplicates.
+    """
     def q(value: float) -> int:
         return int(round(float(value) / precision))
-    rows: list[tuple[int, int, int, int, int]] = []
-    for s in system.supports:
-        if s.support_role != "main_strut":
-            continue
-        rows.append((int(s.level_index), q(s.start.x), q(s.start.y), q(s.end.x), q(s.end.y)))
+
+    role_codes = {
+        "main_strut": 1,
+        "corner_diagonal": 2,
+        "secondary_strut": 3,
+        "ring_strut": 4,
+        "radial_strut": 5,
+        "transfer_strut": 6,
+    }
+    rows: list[tuple[int, int, int, int, int, int]] = []
+    for item in system.supports:
+        start = (q(item.start.x), q(item.start.y))
+        end = (q(item.end.x), q(item.end.y))
+        if end < start:
+            start, end = end, start
+        rows.append((
+            int(item.level_index),
+            int(role_codes.get(str(item.support_role or "main_strut"), 99)),
+            start[0], start[1], end[0], end[1],
+        ))
     return tuple(sorted(rows))
 
 
@@ -877,6 +948,49 @@ def _progressive_search_values(minimum: float, maximum: float, preferred: float,
     low = float(min(minimum, maximum))
     high = float(max(minimum, maximum))
     pref = max(low, min(high, float(preferred)))
+    if count >= 5:
+        # A 0.5 m change can alter the integer number and phase of support bays
+        # on a stepped outline.  Sampling only preferred/minimum/maximum skipped
+        # these transition solutions: both coarse endpoints could fail while an
+        # intermediate layout satisfied station separation and wale-bay limits.
+        # Keep the refinement values immediately after the preferred value so a
+        # bounded/core search reaches them before exhausting its trial budget.
+        def rounded(value: float) -> float:
+            return round(value * 2.0) / 2.0
+
+        local_values: list[float] = []
+        for value in (pref, pref - 0.5, pref + 0.5):
+            item = rounded(max(low, min(high, value)))
+            if item not in local_values:
+                local_values.append(item)
+        endpoints = [
+            item
+            for item in (rounded(low), rounded(high))
+            if item not in local_values
+        ]
+        # If the preferred value sits on a boundary, one of the ±0.5 m values
+        # collapses onto it. Fill the freed slot with the next closest half-metre
+        # value before jumping to the far endpoint.
+        local_slot_count = max(0, count - len(local_values) - len(endpoints))
+        step = 1.0
+        while local_slot_count > 0 and step <= (high - low) + 0.5:
+            added = False
+            for value in (pref - step, pref + step):
+                if value < low - 1.0e-9 or value > high + 1.0e-9:
+                    continue
+                item = rounded(value)
+                if item in local_values or item in endpoints:
+                    continue
+                local_values.append(item)
+                local_slot_count -= 1
+                added = True
+                if local_slot_count <= 0:
+                    break
+            if not added and pref - step < low and pref + step > high:
+                break
+            step += 0.5
+        return (local_values + endpoints)[:max(1, count)]
+
     values = [pref]
     if count >= 2:
         values.extend([low, high])
@@ -897,6 +1011,7 @@ def optimize_support_layout_candidates(
     preset: str | None = None,
     topology_family: str | None = None,
     search_config: dict[str, Any] | None = None,
+    progress_callback: Any | None = None,
 ) -> tuple[RetainingSystem | None, list[SupportLayoutOptimizationCandidate]]:
     if not project.excavation:
         return None, []
@@ -910,19 +1025,36 @@ def optimize_support_layout_candidates(
         has_center_island=any(getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True) for item in project.excavation.obstacles or []),
     )
     constrained_shape = int(shape.get("concaveVertexCount") or 0) > 0 or bool(shape.get("nearSquarePlan"))
+    elongated_shape = bool(shape.get("slenderPlan")) or str(shape.get("archetype") or "") in {
+        "elongated_stepped_strip", "elongated_convex_polygon"
+    }
     search = dict(search_config or {})
-    default_min = 4.5 if constrained_shape else 4.0
-    default_max = 5.5 if constrained_shape else 6.0
+    core_mode = bool(search.get("coreMode"))
+    require_diverse_schemes = bool(search.get("requireDiverseSchemes"))
+    # Long strip pits need at least one denser and one wider-bay direct-path
+    # alternative to create a material A/B/C comparison. Keeping the old
+    # 4.5--5.5 m window made every trial round to the same support stations.
+    default_min = 4.0 if elongated_shape else 4.5 if constrained_shape else 4.0
+    default_max = 6.5 if elongated_shape else 5.5 if constrained_shape else 6.0
     default_preferred = 5.0
     spacing_min = max(2.0, min(10.0, float(search.get("spacingMinM", default_min))))
     spacing_max = max(spacing_min, min(12.0, float(search.get("spacingMaxM", default_max))))
     spacing_preferred = max(spacing_min, min(spacing_max, float(search.get("preferredSpacingM", default_preferred))))
+    # Irregular/elongated plans are discontinuous with respect to target bay
+    # spacing because line counts are integers and transition-zone repairs snap
+    # to wall stations.  Use the available bounded budget for half-metre
+    # refinement instead of testing only the two extremes.  This closes the
+    # observed 4.0/5.0 m controlled block where 4.5 m is feasible.
+    spacing_value_count = 5 if (require_diverse_schemes or constrained_shape or elongated_shape) else 3
     spacing_values = _progressive_search_values(
-        spacing_min, spacing_max, spacing_preferred, count=2 if constrained_shape else 3
+        spacing_min,
+        spacing_max,
+        spacing_preferred,
+        count=spacing_value_count,
     )
     column_max = max(8.0, min(30.0, float(search.get("columnSpanMaxM", 18.0))))
     column_min = max(6.0, min(column_max, float(search.get("columnSpanMinM", 15.0 if constrained_shape else 12.0))))
-    column_values = _progressive_search_values(column_min, column_max, column_max, count=2)
+    column_values = _progressive_search_values(column_min, column_max, column_max, count=3 if require_diverse_schemes else 2)
     available_strategies = _available_topology_strategies(project)
     if topology_family:
         requested_family = str(topology_family).strip()
@@ -932,26 +1064,58 @@ def optimize_support_layout_candidates(
     # Candidate generation is an engineering search, not an unbounded geometry
     # fuzzer. Complex imported outlines previously multiplied topology, spacing,
     # column and line-shift combinations until the worker exhausted CPU/RAM.
-    configured_trial_limit = int(search.get("maxTrials") or os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT", "36"))
-    max_trials = max(6, min(180, configured_trial_limit))
-    configured_elements = int(search.get("maxSupportElements") or os.getenv("PITGUARD_MAX_SUPPORT_ELEMENTS", "2400"))
-    max_support_elements = max(100, min(12000, configured_elements))
+    default_trial_limit = "12" if core_mode and require_diverse_schemes else "9" if core_mode else "24"
+    environment_value = os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT")
+    environment_trial_limit = int(environment_value or default_trial_limit)
+    configured_trial_limit = int(search.get("maxTrials") or environment_trial_limit)
+    if environment_value:
+        configured_trial_limit = min(configured_trial_limit, environment_trial_limit)
+    if require_diverse_schemes and core_mode:
+        configured_trial_limit = max(configured_trial_limit, 12)
+    # A diverse comparison does not require an unbounded 48+ geometry sweep.
+    # The prior lower-bound silently overrode the runtime memory policy and the
+    # task-manager cap whenever a legacy progressive configuration requested
+    # ``requireDiverseSchemes``.  Respect the explicit/environment budget and
+    # let geometry fingerprints decide whether the bounded trials are distinct.
+    if require_diverse_schemes and not core_mode:
+        configured_trial_limit = max(configured_trial_limit, min(18, environment_trial_limit))
+    max_trials = max(3, min(18 if core_mode else 72, configured_trial_limit))
+    default_element_limit = "800" if core_mode else "2400"
+    configured_elements = int(search.get("maxSupportElements") or os.getenv("PITGUARD_MAX_SUPPORT_ELEMENTS", default_element_limit))
+    max_support_elements = max(100, min(4000 if core_mode else 12000, configured_elements))
+    candidate_pool_limit = max(3, min(6 if core_mode else 18, int(search.get("candidatePoolLimit") or os.getenv("PITGUARD_SUPPORT_CANDIDATE_POOL_LIMIT", str(max_candidates * 2 if core_mode else min(max_trials, 18))))))
     trial_count = 0
     for topology_strategy in available_strategies:
         for target_spacing in spacing_values:
             for column_span in column_values:
-                strategy_patterns = POSITION_PATTERNS[:1] if topology_strategy in {"ring_radial", "zoned_direct"} else POSITION_PATTERNS[:3] if topology_strategy != "direct_grid" else POSITION_PATTERNS[:2]
+                if core_mode:
+                    # The second bounded pattern is only admitted for diverse
+                    # comparisons. It changes actual support stations and is
+                    # subsequently filtered by the geometry fingerprint.
+                    strategy_patterns = POSITION_PATTERNS[:2] if require_diverse_schemes and topology_strategy not in {"ring_radial", "zoned_direct"} else POSITION_PATTERNS[:1]
+                else:
+                    strategy_patterns = POSITION_PATTERNS[:1] if topology_strategy in {"ring_radial", "zoned_direct"} else POSITION_PATTERNS[:3] if topology_strategy != "direct_grid" else POSITION_PATTERNS[:2]
                 for pattern, amplitude in strategy_patterns:
                     if trial_count >= max_trials:
                         continue
                     trial_count += 1
+                    if callable(progress_callback):
+                        progress_callback(trial_count, max_trials, topology_strategy)
                     # V2.6.0: avoid deep-copying historical calculation results and large
                     # report payloads for every candidate.  Candidate generation only needs
                     # geometry, settings and the current retaining system.
-                    trial_project = project.model_copy(deep=False)
-                    trial_project.calculation_results = []
-                    trial_project.calculation_cases = []
-                    trial_project.retaining_system = project.retaining_system.model_copy(deep=True) if project.retaining_system else None
+                    trial_project = _candidate_trial_project(project)
+                    memory_event(
+                        "candidate-search",
+                        "trial-start",
+                        trialIndex=trial_count,
+                        trialLimit=max_trials,
+                        topologyFamily=topology_strategy,
+                        targetSpacingM=target_spacing,
+                        columnSpanM=column_span,
+                        positionPattern=pattern,
+                        candidatePoolSize=len(candidates),
+                    )
                     layout_config = design_service.support_layout_config_from_settings(
                         project.design_settings,
                         topology_strategy=topology_strategy,
@@ -966,6 +1130,16 @@ def optimize_support_layout_candidates(
                     if len(trial_project.retaining_system.supports or []) > max_support_elements:
                         # Reject malformed/over-detailed candidates before repair,
                         # quality graph construction and geometry serialization.
+                        memory_event(
+                            "candidate-search",
+                            "trial-rejected-element-limit",
+                            trialIndex=trial_count,
+                            supportCount=len(trial_project.retaining_system.supports or []),
+                            maxSupportElements=max_support_elements,
+                            candidatePoolSize=len(candidates),
+                        )
+                        del trial_project
+                        gc.collect()
                         continue
                     if getattr(project, "retaining_system", None):
                         trial_project.retaining_system.optimization_locks = list(project.retaining_system.optimization_locks or [])
@@ -995,12 +1169,39 @@ def optimize_support_layout_candidates(
                         "supportNodeUncheckedCount": int(deep_metrics.get("supportNodeUncheckedCount", 0) or 0),
                         "supportSingleMemberWallPairCount": int(deep_metrics.get("singleMemberWallPairCount", 0) or 0),
                     })
-                    fail_count = sum(1 for i in quality.issues if i.severity == "fail") + int(deep_metrics.get("memberFailCount", 0) or 0)
+                    quality_fail_categories = sorted({
+                        str(issue.category)
+                        for issue in quality.issues
+                        if issue.severity == "fail"
+                    })
+                    quality_warning_categories = sorted({
+                        str(issue.category)
+                        for issue in quality.issues
+                        if issue.severity in {"warning", "manual_review"}
+                    })
+                    deep_member_fail_count = int(deep_metrics.get("memberFailCount", 0) or 0)
+                    fail_count = sum(1 for i in quality.issues if i.severity == "fail") + deep_member_fail_count
                     warning_count = sum(1 for i in quality.issues if i.severity == "warning") + int(deep_metrics.get("memberWarningCount", 0) or 0)
                     terms = _objective_terms(trial_project, trial_project.retaining_system, target_spacing, metrics, deep_design)
                     hard = _hard_constraints(trial_project, metrics, trial_project.retaining_system, deep_design)
                     hard["qualityFailCount"] = int(fail_count)
+                    hard["qualityFailCategories"] = quality_fail_categories
+                    hard["qualityWarningCategories"] = quality_warning_categories
+                    hard["deepMemberFailCount"] = deep_member_fail_count
                     hard["passed"] = bool(hard.get("passed")) and fail_count == 0
+                    hard_failure_keys = sorted(
+                        key
+                        for key, value in hard.items()
+                        if key != "passed"
+                        and not key.endswith("Required")
+                        and isinstance(value, bool)
+                        and value is False
+                    )
+                    blocking_categories = list(quality_fail_categories)
+                    if deep_member_fail_count:
+                        blocking_categories.append("support_member_screening")
+                    hard["hardFailureKeys"] = hard_failure_keys
+                    hard["blockingCategories"] = sorted(set(blocking_categories))
                     spans = _span_lengths(trial_project.retaining_system)
                     bay = _bay_spacings(trial_project.retaining_system)
                     score = _candidate_score(quality.score, terms, hard, fail_count, warning_count, weights)
@@ -1032,6 +1233,7 @@ def optimize_support_layout_candidates(
                         hard_constraints=hard,
                         variable_summary={
                             "variableType": "whole_scheme_topology_and_line_position",
+                            "candidateContractVersion": SUPPORT_CANDIDATE_CONTRACT_VERSION,
                             "topologyFamily": topology_strategy,
                             "schemeLabel": {"hybrid_diagonal": "转角墙—墙斜撑+对撑混合", "bidirectional_grid": "近方形双向框架", "direct_grid": "传统直对撑", "ring_radial": "闭合内环梁+径向支撑", "zoned_direct": "异形分区墙—墙对撑"}.get(topology_strategy, topology_strategy),
                             "positionPattern": pattern,
@@ -1046,6 +1248,7 @@ def optimize_support_layout_candidates(
                                 "columnSpanMinM": column_min,
                                 "columnSpanMaxM": column_max,
                                 "maxTrials": max_trials,
+                                "requireDiverseSchemes": require_diverse_schemes,
                             },
                             "lockedSupportCount": locked_count,
                             "lockedSupportIds": locked_ids,
@@ -1058,12 +1261,31 @@ def optimize_support_layout_candidates(
                                 "summary": deep_design.get("summary"),
                                 "metrics": deep_metrics,
                                 "governingMembers": deep_design.get("governingMembers", [])[:8],
-                                "designActions": deep_design.get("designActions", []),
+                                "designActions": list(deep_design.get("designActions", []))[:12],
                             },
                             "strengthTopologyPreflight": {
                                 "concaveReturnRepair": concave_preflight,
                                 "waleSupportBayRepair": wale_preflight,
                                 "addedSupportCount": int(concave_preflight.get("addedSupportCount", 0) or 0) + int(wale_preflight.get("addedSupportCount", 0) or 0),
+                            },
+                            "topologyQualification": {
+                                "qualityStatus": quality.status,
+                                "qualityScore": float(quality.score or 0.0),
+                                "failCount": int(fail_count),
+                                "warningCount": int(warning_count),
+                                "blockingCategories": list(hard.get("blockingCategories") or []),
+                                "hardFailureKeys": list(hard.get("hardFailureKeys") or []),
+                                "controlMetrics": {
+                                    "supportCrossingCount": int(metrics.get("supportCrossingCount", 0) or 0),
+                                    "supportOutsideExcavationCount": int(metrics.get("supportOutsideExcavationCount", 0) or 0),
+                                    "waleSupportBayFailCount": int(metrics.get("waleSupportBayFailCount", 0) or 0),
+                                    "supportStationClusterCount": int(metrics.get("supportStationClusterCount", 0) or 0),
+                                    "supportToSupportTerminalCount": int(metrics.get("supportToSupportTerminalCount", 0) or 0),
+                                    "unsupportedInternalEndpointCount": int(metrics.get("unsupportedInternalEndpointCount", 0) or 0),
+                                    "cornerBraceParallelismIssueCount": int(metrics.get("cornerBraceParallelismIssueCount", 0) or 0),
+                                    "cornerBraceEndpointCongestionCount": int(metrics.get("cornerBraceEndpointCongestionCount", 0) or 0),
+                                    "supportMemberScreeningFailCount": deep_member_fail_count,
+                                },
                             },
                         },
                         line_adjustments=adjustments[:30],
@@ -1094,6 +1316,63 @@ def optimize_support_layout_candidates(
                         ),
                     )
                     candidates.append((candidate, trial_project.retaining_system))
+                    memory_event(
+                        "candidate-search",
+                        "trial-complete",
+                        trialIndex=trial_count,
+                        candidateId=candidate.id,
+                        score=candidate.score,
+                        hardPassed=bool(candidate.hard_constraints.get("passed")),
+                        qualityStatus=quality.status,
+                        qualityScore=float(quality.score or 0.0),
+                        failCount=int(fail_count),
+                        warningCount=int(warning_count),
+                        blockingCategories=list(hard.get("blockingCategories") or []),
+                        hardFailureKeys=list(hard.get("hardFailureKeys") or []),
+                        controlMetrics=(candidate.variable_summary.get("topologyQualification") or {}).get("controlMetrics", {}),
+                        supportCount=candidate.support_count,
+                        columnCount=candidate.column_count,
+                        candidatePoolSize=len(candidates),
+                        candidatePoolLimit=candidate_pool_limit,
+                    )
+                    if len(candidates) > candidate_pool_limit:
+                        # Keep a bounded set of complete retaining-system objects.
+                        # Previously all trial systems remained alive until the end
+                        # of the search, which multiplied memory by the trial count.
+                        candidates.sort(key=lambda item: (
+                            not item[0].hard_constraints.get("passed", False),
+                            int(item[0].fail_count or 0),
+                            _status_rank(item[0].status),
+                            -float(item[0].score or 0.0),
+                            int(item[0].support_count or 0),
+                            int(item[0].column_count or 0),
+                        ))
+                        family_best: dict[str, tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = {}
+                        for pair in candidates:
+                            family = str((pair[0].variable_summary or {}).get("topologyFamily") or "unknown")
+                            family_best.setdefault(family, pair)
+                        keep = list(family_best.values())
+                        selected_ids = {id(pair[0]) for pair in keep}
+                        for pair in candidates:
+                            if len(keep) >= candidate_pool_limit:
+                                break
+                            if id(pair[0]) not in selected_ids:
+                                keep.append(pair)
+                                selected_ids.add(id(pair[0]))
+                        candidates[:] = keep[:candidate_pool_limit]
+                    # Trial-only objects are intentionally released at every
+                    # boundary. CPython may retain arenas, but the process-level
+                    # hard cap and one-task worker guarantee final reclamation.
+                    del trial_project
+                    if trial_count % 2 == 0:
+                        gc.collect()
+    memory_event(
+        "candidate-search",
+        "search-ranking",
+        trialCount=trial_count,
+        candidatePoolSize=len(candidates),
+        candidatePoolLimit=candidate_pool_limit,
+    )
     # Feasible candidates first, then score, geometry diversity, then fewer supports/columns for constructability.
     candidates.sort(key=lambda item: (
         not item[0].hard_constraints.get("passed", False),
@@ -1106,60 +1385,155 @@ def optimize_support_layout_candidates(
         item[0].column_count,
     ))
     ranked: list[SupportLayoutOptimizationCandidate] = []
+    ranked_systems: list[RetainingSystem] = []
     seen: set[tuple] = set()
     selected_system: RetainingSystem | None = None
 
-    def _structural_signature(candidate: SupportLayoutOptimizationCandidate) -> tuple[str, int, int, int, int]:
+    def _role_histogram(system: RetainingSystem) -> tuple[int, int, int, int]:
+        roles = [str(item.support_role or "main_strut") for item in system.supports]
         return (
-            str((candidate.variable_summary or {}).get("topologyFamily", "unknown")),
+            roles.count("main_strut"),
+            roles.count("corner_diagonal"),
+            roles.count("secondary_strut"),
+            len(roles) - roles.count("main_strut") - roles.count("corner_diagonal") - roles.count("secondary_strut"),
+        )
+
+    def _angle_histogram(system: RetainingSystem) -> tuple[int, int, int, int]:
+        bins = [0, 0, 0, 0]
+        for item in system.supports:
+            dx = float(item.end.x) - float(item.start.x)
+            dy = float(item.end.y) - float(item.start.y)
+            angle = abs(math.degrees(math.atan2(dy, dx))) % 180.0
+            angle = min(angle, 180.0 - angle)
+            index = 0 if angle < 15.0 else 1 if angle < 40.0 else 2 if angle < 70.0 else 3
+            bins[index] += 1
+        return tuple(bins)  # type: ignore[return-value]
+
+    def _structural_signature(candidate: SupportLayoutOptimizationCandidate, system: RetainingSystem) -> tuple[Any, ...]:
+        # The topology-family label is intentionally excluded. Earlier versions
+        # treated a changed label as structural diversity even when every support
+        # line was identical, which produced cosmetic A/B/C alternatives.
+        return (
             int(candidate.support_count or 0),
             int(candidate.column_count or 0),
             int(round(float(candidate.max_bay_spacing or 0.0) * 10.0)),
             int(round(float(candidate.max_span_length or 0.0) * 10.0)),
+            _role_histogram(system),
+            _angle_histogram(system),
         )
 
-    structural_seen: set[tuple[str, int, int, int, int]] = set()
+    def _fingerprint_distance(left: RetainingSystem, right: RetainingSystem) -> float:
+        a = set(_geometry_fingerprint(left))
+        b = set(_geometry_fingerprint(right))
+        if not a and not b:
+            return 0.0
+        return round(len(a.symmetric_difference(b)) / max(len(a.union(b)), 1), 4)
+
+    structural_seen: set[tuple[Any, ...]] = set()
 
     def add_candidate(candidate: SupportLayoutOptimizationCandidate, system: RetainingSystem, *, force: bool = False) -> bool:
         nonlocal selected_system
         key = _geometry_fingerprint(system)
-        structural_key = _structural_signature(candidate)
+        structural_key = _structural_signature(candidate, system)
         if len(ranked) >= max_candidates:
             return False
-        if key in seen and structural_key in structural_seen:
+        if key in seen:
+            append_event(
+                "candidate-geometry", "candidate-rejected",
+                projectId=project.id, reason="identical_geometry", topologyFamily=(candidate.variable_summary or {}).get("topologyFamily"),
+                supportCount=candidate.support_count, columnCount=candidate.column_count,
+            )
             return False
-        # Operators should not compare three cosmetic 1 m shifts that have the
-        # same support count, same column count and same force path.  The first
-        # item is the recommended baseline; later items must either be a true
-        # count/spacing alternative or have a clear geometric displacement.
-        difference = float(candidate.variable_summary.get("geometryDifferenceScore", 0.0) or 0.0)
+        pairwise = [_fingerprint_distance(system, prior) for prior in ranked_systems]
+        minimum_geometry_delta = min(pairwise) if pairwise else 1.0
         has_structural_delta = not structural_seen or structural_key not in structural_seen
-        if ranked and not force and not has_structural_delta and difference < 0.12:
+        declared_difference = float((candidate.variable_summary or {}).get("geometryDifferenceScore", 0.0) or 0.0)
+        # A valid comparison candidate must change the actual force-path geometry
+        # or a material structural quantity. Family labels and line-shift metadata
+        # alone cannot force a duplicate into the A/B/C set.
+        if ranked and not force and not has_structural_delta and minimum_geometry_delta < 0.10 and declared_difference < 0.12:
+            append_event(
+                "candidate-geometry", "candidate-rejected",
+                projectId=project.id, reason="cosmetic_difference", topologyFamily=(candidate.variable_summary or {}).get("topologyFamily"),
+                geometryDelta=minimum_geometry_delta, declaredDifference=declared_difference,
+                supportCount=candidate.support_count, columnCount=candidate.column_count,
+            )
             return False
         seen.add(key)
         structural_seen.add(structural_key)
         candidate.rank = len(ranked) + 1
+        candidate.variable_summary = dict(candidate.variable_summary or {})
+        candidate.variable_summary["minimumGeometryDeltaToSelected"] = round(minimum_geometry_delta, 4) if ranked else 1.0
+        fingerprint_text = ";".join("-".join(map(str, row)) for row in key)
+        candidate.variable_summary["actualGeometrySignature"] = {
+            "supportCount": int(candidate.support_count or 0),
+            "columnCount": int(candidate.column_count or 0),
+            "roleHistogram": list(_role_histogram(system)),
+            "angleHistogram": list(_angle_histogram(system)),
+            "fingerprintSize": len(key),
+            "fingerprintHash": hashlib.sha256(fingerprint_text.encode("utf-8")).hexdigest()[:16],
+        }
         ranked.append(candidate)
+        ranked_systems.append(system)
+        append_event(
+            "candidate-geometry", "candidate-accepted",
+            projectId=project.id, rank=candidate.rank, candidateId=candidate.id,
+            topologyFamily=candidate.variable_summary.get("topologyFamily"), geometryDelta=minimum_geometry_delta,
+            supportCount=candidate.support_count, columnCount=candidate.column_count,
+            roleHistogram=list(_role_histogram(system)), angleHistogram=list(_angle_histogram(system)),
+        )
         if selected_system is None:
-            selected_system = system.model_copy(deep=True)
+            selected_system = system
         return True
 
     feasible_pairs = [pair for pair in candidates if pair[0].hard_constraints.get("passed", False) and pair[0].score >= 1.0]
     if not feasible_pairs and candidates:
-        diagnostic, diagnostic_system = candidates[0]
-        diagnostic.variable_summary = dict(diagnostic.variable_summary or {})
-        diagnostic.variable_summary["capabilityOutcome"] = "controlled_block"
-        diagnostic.variable_summary["shapeDiagnostics"] = shape
-        diagnostic.variable_summary["alternativeSystemRecommendations"] = [
-            "环梁/环撑体系",
-            "中心岛法或分区施工",
-            "具有平面内弯剪刚度和节点构造的显式双向框架",
-        ]
-        diagnostic.constructability_note = (
-            "当前轴压墙—墙构件模型无法在零非法交叉条件下闭合该平面的全部围檩跨。"
-            "系统只保留一个诊断方案，不再生成三个几何近似且均失败的候选；请切换结构体系后重新优化。"
+        # Retain up to three *actually different* diagnostic alternatives. This
+        # helps the engineer see whether the controlled block is caused by bay
+        # density, terminal bracing or column service span. Every card remains
+        # explicitly non-adoptable as a formal scheme until hard constraints pass.
+        for diagnostic, diagnostic_system in candidates:
+            diagnostic.variable_summary = dict(diagnostic.variable_summary or {})
+            diagnostic.variable_summary["capabilityOutcome"] = "controlled_block"
+            diagnostic.variable_summary["formalSchemeEligible"] = False
+            diagnostic.variable_summary["shapeDiagnostics"] = shape
+            diagnostic.variable_summary["alternativeSystemRecommendations"] = [
+                "环梁/环撑体系",
+                "中心岛法或分区施工",
+                "具有平面内弯剪刚度和节点构造的显式双向框架",
+            ]
+            blocking_text = "、".join(
+                map(str, (diagnostic.hard_constraints or {}).get("blockingCategories") or [])
+            )
+            diagnostic.constructability_note = (
+                "当前轴压墙—墙构件模型尚未通过全部硬约束。该卡片仅用于比较真实几何差异和定位受控阻断，"
+                "不得作为正式采用方案；请调整结构体系或设计约束后重新优化。"
+                + (f" 当前控制类别：{blocking_text}。" if blocking_text else "")
+            )
+            add_candidate(diagnostic, diagnostic_system, force=not ranked)
+            if len(ranked) >= min(max_candidates, 3):
+                break
+        memory_event(
+            "candidate-search",
+            "search-complete",
+            trialCount=trial_count,
+            rankedCandidateCount=len(ranked),
+            retainedSystemCount=1 if selected_system is not None else 0,
+            controlledBlock=True,
+            distinctGeometryCount=len({str(_geometry_fingerprint(item)) for item in ranked_systems}),
+            candidateIds=[item.id for item in ranked],
+            blockingCandidates=[
+                {
+                    "candidateId": item.id,
+                    "targetSpacingM": item.target_spacing,
+                    "columnSpanM": item.column_max_span,
+                    "blockingCategories": list((item.hard_constraints or {}).get("blockingCategories") or []),
+                    "hardFailureKeys": list((item.hard_constraints or {}).get("hardFailureKeys") or []),
+                    "controlMetrics": dict(((item.variable_summary or {}).get("topologyQualification") or {}).get("controlMetrics") or {}),
+                }
+                for item in ranked[:3]
+            ],
         )
-        add_candidate(diagnostic, diagnostic_system, force=True)
         return selected_system, ranked
 
     # Select one feasible representative from each topology family first.  The
@@ -1172,7 +1546,7 @@ def optimize_support_layout_candidates(
             family_best.append(item)
     family_best.sort(key=lambda item: (int(item[0].fail_count or 0), _status_rank(item[0].status), *_cleanliness_sort_key(item[0]), -item[0].score))
     for candidate, system in family_best:
-        add_candidate(candidate, system, force=True)
+        add_candidate(candidate, system, force=not ranked)
         if len(ranked) >= min(max_candidates, 3):
             break
     if not ranked and candidates:
@@ -1191,7 +1565,7 @@ def optimize_support_layout_candidates(
         column_bucket = int(round(candidate.column_max_span * 10.0))
         if spacing_bucket in used_spacing_buckets:
             continue
-        if add_candidate(candidate, system, force=True):
+        if add_candidate(candidate, system):
             used_spacing_buckets.add(spacing_bucket)
             used_column_buckets.add(column_bucket)
         if len(ranked) >= max_candidates:
@@ -1221,9 +1595,34 @@ def optimize_support_layout_candidates(
             break
 
     for candidate, system in candidates:
+        # When at least one feasible scheme exists, failed trial geometries are
+        # diagnostic evidence only and must not be mixed into the formal A/B/C
+        # list. This also prevents a failed candidate from being selected merely
+        # because it was the last displayed card.
+        if candidate.score < 1.0 or not candidate.hard_constraints.get("passed", False):
+            continue
         add_candidate(candidate, system)
         if len(ranked) >= max_candidates:
             break
     for idx, candidate in enumerate(ranked, start=1):
         candidate.rank = idx
+        candidate.variable_summary = dict(candidate.variable_summary or {})
+        candidate.variable_summary["diversityBasis"] = {
+            "topologyFamily": candidate.variable_summary.get("topologyFamily"),
+            "targetSpacingM": candidate.target_spacing,
+            "columnSpanM": candidate.column_max_span,
+            "supportCount": candidate.support_count,
+            "columnCount": candidate.column_count,
+            "positionPattern": candidate.variable_summary.get("positionPattern"),
+        }
+    memory_event(
+        "candidate-search",
+        "search-complete",
+        trialCount=trial_count,
+        rankedCandidateCount=len(ranked),
+        retainedSystemCount=1 if selected_system is not None else 0,
+        controlledBlock=False,
+        distinctGeometryCount=len({str(_geometry_fingerprint(item)) for item in ranked_systems}),
+        candidateIds=[item.id for item in ranked],
+    )
     return selected_system, ranked

@@ -22,7 +22,7 @@ from app.geology.model_builder import ensure_geological_model_covers_excavation,
 from app.rules.gb50007.foundation_rules import check_foundation_bearing_pressure
 from app.rules.gb50009.load_combination_rules import design_effect_standard_to_uls
 from app.rules.gb50009.load_combinations import check_combination_documented, combination_record
-from app.rules.gb50010.rc_section_rules import check_rc_rectangular_axial_capacity, check_rectangular_shear_capacity, design_rectangular_flexural_reinforcement, rectangular_flexural_capacity_knm_per_m
+from app.rules.gb50010.rc_section_rules import check_rc_rectangular_axial_capacity, check_rectangular_shear_capacity, concrete_ec, design_rectangular_flexural_reinforcement, rectangular_flexural_capacity_knm_per_m
 from app.rules.gb50010.detailing_rules import check_crack_width, check_rebar_anchorage_and_lap
 from app.rules.gb50010.reinforcement_rules import check_minimum_wall_reinforcement
 from app.rules.gb50017.steel_support_rules import check_steel_pipe_support_axial_capacity
@@ -53,6 +53,11 @@ from app.quality.formal_gate import build_formal_report_gate
 from app.services.support_layout_repair import auto_repair_support_layout
 from app.services.support_layout import repair_concave_return_supports, repair_wale_support_bays
 from app.services.calculation_diagnostics import build_calculation_diagnostics
+from app.services.pareto_scheme import apply_pareto_ranking
+from app.services.adverse_scenarios import build_adverse_scenario_screening
+from app.services.local_node_submodel import build_local_node_submodel_checks
+from app.services.runtime_diagnostics import append_event
+from app.services.engineering_templates import action_group_enabled, safety_targets
 from app.services.calculation_assurance import audit_calculation_inputs, build_calculation_contract, apply_calculation_assurance
 from app.services.wall_restraint import build_effective_wall_restraints
 from app.services.candidate_result_cache import candidate_input_hash, get_cached_candidate_result, put_cached_candidate_result
@@ -572,26 +577,45 @@ def _support_construction_effects(support, standard_force: float, safety_grade: 
 
 
 def _add_wale_reinforcement_groups(beam, design: WaleBeamDesignResult) -> list[ReinforcementGroup]:
+    role_label = "冠梁" if getattr(beam, "beam_role", "") == "crown_beam" else "围檩"
     groups = [
         ReinforcementGroup(
-            name="围檩上/下缘主筋",
+            name=f"{role_label}上/下缘主筋",
             bar_type="longitudinal",
             diameter=design.main_bar_diameter or 25,
             spacing=design.main_bar_spacing or 150,
             grade="HRB400",
-            location_description=f"{beam.code} 沿梁长连续配置；节点区与支撑端部附加筋协调",
+            location_description=f"{beam.code} 沿梁长连续配置；转角、施工缝和支撑节点区连续锚固",
             area_per_meter=design.provided_reinforcement_area,
             required_area_per_meter=design.required_reinforcement_area,
             check_status=design.check_status,
         ),
         ReinforcementGroup(
-            name="围檩箍筋",
+            name=f"{role_label}箍筋",
             bar_type="stirrup",
             diameter=design.stirrup_diameter or 12,
             spacing=design.stirrup_spacing or 150,
             grade="HRB400",
             location_description=f"{beam.code} 支撑节点两侧 1.5h 范围加密，普通区按计算和构造取值",
             check_status=design.check_status,
+        ),
+        ReinforcementGroup(
+            name=f"{role_label}侧面构造筋",
+            bar_type="distribution",
+            diameter=14,
+            spacing=200,
+            grade="HRB400",
+            location_description=f"{beam.code} 两侧面连续构造配置，用于裂缝分散、箍筋定位和钢筋骨架稳定",
+            check_status="manual_review",
+        ),
+        ReinforcementGroup(
+            name=f"{role_label}拉结筋",
+            bar_type="tie",
+            diameter=12,
+            spacing=400,
+            grade="HRB400",
+            location_description=f"{beam.code} 截面内拉结上、下缘和侧面钢筋；转角区按节点大样加密",
+            check_status="manual_review",
         ),
         ReinforcementGroup(
             name="节点区附加抗裂筋",
@@ -610,6 +634,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
     if not project.retaining_system:
         return []
     checks: list[dict[str, Any]] = []
+    strength_target = max(1.0, float(safety_targets(project).get("strength", 1.0)))
     grouped: dict[str, list] = {}
     for result in wale_results:
         grouped.setdefault(result.wale_beam_code, []).append(result)
@@ -632,8 +657,9 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         initial_height = max(float(beam.section.height or 0.8), 0.2)
         width = initial_width
         height = initial_height
-        flex = design_rectangular_flexural_reinforcement(m_design / width, height, beam.material.grade, "HRB400")
-        shear = check_rectangular_shear_capacity(v_design / width, height, beam.material.grade)
+        base_flex = design_rectangular_flexural_reinforcement(m_design / width, height, beam.material.grade, "HRB400")
+        flex = design_rectangular_flexural_reinforcement(m_design * strength_target / width, height, beam.material.grade, "HRB400")
+        shear = check_rectangular_shear_capacity(v_design * strength_target / width, height, beam.material.grade)
         # Auto-size the wale section instead of reporting avoidable fails.  The
         # search uses practical large RC wale dimensions and updates the BIM
         # section when a passing subset design is found.
@@ -645,19 +671,21 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
             for cand_w in candidate_widths:
                 cand_w = max(cand_w, initial_width)
                 cand_h = max(cand_h, initial_height)
-                cand_flex = design_rectangular_flexural_reinforcement(m_design / cand_w, cand_h, beam.material.grade, "HRB400")
-                cand_shear = check_rectangular_shear_capacity(v_design / cand_w, cand_h, beam.material.grade)
+                cand_base_flex = design_rectangular_flexural_reinforcement(m_design / cand_w, cand_h, beam.material.grade, "HRB400")
+                cand_flex = design_rectangular_flexural_reinforcement(m_design * strength_target / cand_w, cand_h, beam.material.grade, "HRB400")
+                cand_shear = check_rectangular_shear_capacity(v_design * strength_target / cand_w, cand_h, beam.material.grade)
                 optimization_history.append({
                     "width": round(cand_w, 3),
                     "height": round(cand_h, 3),
                     "flexureStatus": cand_flex["status"],
                     "shearStatus": cand_shear["status"],
-                    "asRequired": round(cand_flex["asRequired"], 2),
+                    "asRequired": round(cand_base_flex["asRequired"], 2),
                     "asProvided": round(cand_flex["barArrangement"]["providedAs"], 2),
                     "shearUtilization": round(cand_shear.get("utilization", 0.0), 3),
+                    "reserveTarget": round(strength_target, 3),
                 })
                 if cand_flex["status"] == "pass" and cand_shear["status"] == "pass":
-                    width, height, flex, shear = cand_w, cand_h, cand_flex, cand_shear
+                    width, height, base_flex, flex, shear = cand_w, cand_h, cand_base_flex, cand_flex, cand_shear
                     found = True
                     break
             if found:
@@ -667,8 +695,11 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
             beam.section.height = round(height, 3)
             beam.section.name = f"{int(round(width * 1000))}x{int(round(height * 1000))} RC wale beam"
         provided = flex["barArrangement"]["providedAs"]
-        required = flex["asRequired"]
+        required = base_flex["asRequired"]
         capacity = rectangular_flexural_capacity_knm_per_m(provided, height, beam.material.grade, "HRB400") * width
+        # ``shear`` is evaluated on the reserve-amplified action.  The physical
+        # section capacity is unchanged and is therefore a valid limit against
+        # the unamplified design action shown in the verification table.
         shear_capacity = shear.get("concreteShearCapacity", 0.0) * width
         status = "pass" if flex["status"] == "pass" and shear["status"] == "pass" else "fail"
         stirrup_spacing = 100 if shear.get("utilization", 0.0) > 0.75 else 150
@@ -724,10 +755,10 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "objectId": beam.id,
                 "objectType": "BeamElement",
                 "status": status,
-                "calculatedValue": design.required_reinforcement_area,
-                "limitValue": design.provided_reinforcement_area,
-                "unit": "mm2/m",
-                "message": f"围檩正截面受弯配筋子集：Md={design.max_moment_design} kN*m，建议 {flex['barArrangement']['description']}。",
+                "calculatedValue": design.max_moment_design,
+                "limitValue": design.moment_capacity,
+                "unit": "kN*m",
+                "message": f"围檩正截面受弯承载力：Md={design.max_moment_design} kN*m，Mu={design.moment_capacity} kN*m；按项目储备目标 {strength_target:.2f} 配置 {flex['barArrangement']['description']}。",
                 "clauseReference": "GB 50010 rectangular flexure subset for RC wale beam; final clause applicability to verify",
                 "formula": "M <= alpha1*fc*b*x*(h0-x/2); alpha1*fc*b*x = fy*As; total beam M converted by beam width",
             },
@@ -739,7 +770,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "calculatedValue": round(v_design, 3),
                 "limitValue": round(shear_capacity, 3),
                 "unit": "kN",
-                "message": f"围檩斜截面抗剪子集：建议 D12@{stirrup_spacing} 箍筋，节点两侧加密。",
+                "message": f"围檩斜截面抗剪子集：已按项目储备目标 {strength_target:.2f} 选截面，建议 D12@{stirrup_spacing} 箍筋，节点两侧加密。",
                 "clauseReference": "GB 50010 shear subset for RC wale beam; stirrup detailing to verify",
                 "formula": "V <= 0.7*ft*b*h0 plus stirrup contribution in detailed design",
             },
@@ -766,6 +797,186 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "message": "围檩节点区附加筋与围檩主筋协调：主筋连续通过，承压板后方设置附加竖筋、U 形筋和加密箍筋。",
                 "clauseReference": "GB 50010 anchorage/detailing coordination subset; project detailing to verify",
                 "formula": "node additional reinforcement >= 20% of controlling main reinforcement area, screening rule",
+            },
+        ])
+    return checks
+
+
+def _design_crown_beams(project: Project, stage_results: list[StageCalculationResult], gamma0: float) -> list[dict[str, Any]]:
+    """Create a traceable construction-stage crown-beam design result.
+
+    Crown beams previously had geometry only, so reinforcement deepening could
+    never distinguish "not calculated" from a detailing review item.  The load
+    path below is deliberately transparent: the staged wall shear envelope in
+    the top influence band becomes a line load on a bounded control span.  It is
+    a design-stage RC subset, not a substitute for crane/load-bearing inserts or
+    a project-specific continuous-beam model.
+    """
+    ret = project.retaining_system
+    excavation = project.excavation
+    if not ret or not excavation:
+        return []
+    strength_target = max(1.0, float(safety_targets(project).get("strength", 1.0)))
+    stiffness_target = max(1.0, float(safety_targets(project).get("stiffness", strength_target)))
+    segment_by_name = {segment.name: segment for segment in excavation.segments}
+    results_by_segment: dict[str, list[StageCalculationResult]] = {}
+    for stage_result in stage_results:
+        results_by_segment.setdefault(str(stage_result.segment_id), []).append(stage_result)
+
+    checks: list[dict[str, Any]] = []
+    for beam in ret.crown_beams or []:
+        segment_name = str(beam.code).removeprefix("CB-")
+        segment = segment_by_name.get(segment_name)
+        segment_results = results_by_segment.get(str(segment.id), []) if segment else []
+        wall_force_rows = [row.wall_internal_force for row in segment_results if row.wall_internal_force and row.wall_internal_force.points]
+        if segment is None or not wall_force_rows:
+            beam.design_result = None
+            checks.append({
+                "ruleId": "PITGUARD-CROWN-BEAM-STAGE-EVIDENCE",
+                "objectId": beam.id,
+                "objectType": "BeamElement",
+                "status": "manual_review",
+                "calculatedValue": None,
+                "limitValue": None,
+                "unit": "-",
+                "message": "冠梁缺少对应墙段的施工阶段墙顶剪力记录；请重新运行当前施工方案计算，或导入专项冠梁内力。",
+                "clauseReference": "施工阶段墙—冠梁传力路径需形成可追溯设计内力",
+            })
+            continue
+
+        top_shear = 0.0
+        governing_stage_id = None
+        for wall_force in wall_force_rows:
+            maximum_depth = max((float(point.depth) for point in wall_force.points), default=0.0)
+            top_band = max(1.5, 0.15 * maximum_depth)
+            points = [point for point in wall_force.points if float(point.depth) <= top_band + 1.0e-9]
+            if not points:
+                points = [min(wall_force.points, key=lambda point: float(point.depth))]
+            candidate = max((abs(float(point.shear)) for point in points), default=0.0)
+            if candidate >= top_shear:
+                top_shear = candidate
+                governing_stage_id = wall_force.stage_id
+
+        axis_points = list(beam.axis.points or [])
+        axis_length = sum(
+            math.hypot(float(b.x) - float(a.x), float(b.y) - float(a.y))
+            for a, b in zip(axis_points, axis_points[1:])
+        )
+        control_span = max(1.5, min(axis_length or float(segment.length), 6.0))
+        line_load = max(top_shear, 0.0)
+        max_m = line_load * control_span**2 / 8.0
+        max_v = line_load * control_span / 2.0
+        m_design = max_m * gamma0 * LOAD_FACTOR_RETAINING
+        v_design = max_v * gamma0 * LOAD_FACTOR_RETAINING
+        initial_width = max(float(beam.section.width or 1.0), 0.6)
+        initial_height = max(float(beam.section.height or 0.8), 0.6)
+        width, height = initial_width, initial_height
+        base_flex = design_rectangular_flexural_reinforcement(m_design / width, height, beam.material.grade, "HRB400")
+        reserve_flex = design_rectangular_flexural_reinforcement(m_design * strength_target / width, height, beam.material.grade, "HRB400")
+        reserve_shear = check_rectangular_shear_capacity(v_design * strength_target / width, height, beam.material.grade)
+        max_deflection = 0.0
+        optimization_history: list[dict[str, Any]] = []
+        found = False
+        candidate_widths = sorted({initial_width, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0})
+        candidate_heights = sorted({initial_height, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8})
+        for cand_h in candidate_heights:
+            for cand_w in candidate_widths:
+                if cand_w + 1.0e-9 < initial_width or cand_h + 1.0e-9 < initial_height:
+                    continue
+                cand_base = design_rectangular_flexural_reinforcement(m_design / cand_w, cand_h, beam.material.grade, "HRB400")
+                cand_reserve = design_rectangular_flexural_reinforcement(m_design * strength_target / cand_w, cand_h, beam.material.grade, "HRB400")
+                cand_shear = check_rectangular_shear_capacity(v_design * strength_target / cand_w, cand_h, beam.material.grade)
+                inertia = cand_w * cand_h**3 / 12.0
+                e_pa = concrete_ec(beam.material.grade) * 1.0e6 * float(project.design_settings.wale_cracked_stiffness_factor)
+                cand_deflection = 5.0 * line_load * 1000.0 * control_span**4 / max(384.0 * e_pa * inertia, 1.0e-9)
+                deflection_limit = control_span / 400.0
+                optimization_history.append({
+                    "width": round(cand_w, 3), "height": round(cand_h, 3),
+                    "flexureStatus": cand_reserve["status"], "shearStatus": cand_shear["status"],
+                    "deflectionM": round(cand_deflection, 6), "deflectionLimitM": round(deflection_limit, 6),
+                    "reserveTarget": round(strength_target, 3),
+                })
+                if cand_reserve["status"] == "pass" and cand_shear["status"] == "pass" and cand_deflection * stiffness_target <= deflection_limit + 1.0e-9:
+                    width, height = cand_w, cand_h
+                    base_flex, reserve_flex, reserve_shear = cand_base, cand_reserve, cand_shear
+                    max_deflection = cand_deflection
+                    found = True
+                    break
+            if found:
+                break
+        if not found:
+            inertia = width * height**3 / 12.0
+            e_pa = concrete_ec(beam.material.grade) * 1.0e6 * float(project.design_settings.wale_cracked_stiffness_factor)
+            max_deflection = 5.0 * line_load * 1000.0 * control_span**4 / max(384.0 * e_pa * inertia, 1.0e-9)
+
+        beam.section.width = round(width, 3)
+        beam.section.height = round(height, 3)
+        beam.section.name = f"{int(round(width * 1000))}x{int(round(height * 1000))} 钢筋混凝土冠梁"
+        provided = float(reserve_flex["barArrangement"]["providedAs"])
+        required = float(base_flex["asRequired"])
+        moment_capacity = rectangular_flexural_capacity_knm_per_m(provided, height, beam.material.grade, "HRB400") * width
+        shear_capacity = float(reserve_shear.get("concreteShearCapacity") or 0.0) * width
+        deflection_limit = control_span / 400.0
+        deflection_ratio = max_deflection / max(deflection_limit, 1.0e-9)
+        status = "pass" if reserve_flex["status"] == "pass" and reserve_shear["status"] == "pass" and deflection_ratio * stiffness_target <= 1.0 + 1.0e-9 else "fail"
+        stirrup_spacing = 100 if float(reserve_shear.get("utilization") or 0.0) > 0.70 else 150
+        design = WaleBeamDesignResult(
+            wale_beam_code=beam.code,
+            face_code=segment.name,
+            level_index=0,
+            max_moment=round(max_m, 3),
+            max_shear=round(max_v, 3),
+            max_deflection=round(max_deflection, 6),
+            max_moment_design=round(m_design, 3),
+            max_shear_design=round(v_design, 3),
+            required_reinforcement_area=round(required, 2),
+            provided_reinforcement_area=round(provided, 2),
+            moment_capacity=round(moment_capacity, 3),
+            shear_capacity=round(shear_capacity, 3),
+            main_bar_diameter=reserve_flex["barArrangement"].get("diameter"),
+            main_bar_spacing=reserve_flex["barArrangement"].get("spacing"),
+            stirrup_diameter=12,
+            stirrup_spacing=stirrup_spacing,
+            node_additional_reinforcement_note="冠梁转角、地下连续墙接头、吊筋及预埋件区设置附加 U 形筋、封闭箍筋和局部抗裂筋。",
+            deflection_limit=round(deflection_limit, 6),
+            deflection_ratio=round(deflection_ratio, 3),
+            deflection_check_status="pass" if deflection_ratio * stiffness_target <= 1.0 + 1.0e-9 else "fail",
+            optimized_width=round(width, 3),
+            optimized_height=round(height, 3),
+            optimization_history=optimization_history[-20:],
+            wall_connection_note="墙顶剪力经冠梁连续传递；墙段接头、转角和预埋件范围须在施工图中形成闭合锚固节点。",
+            check_status=status,
+            method="施工阶段墙顶剪力包络 → 冠梁等效线荷载 → 6m以内控制跨受弯、受剪与挠度设计",
+            notes=[
+                f"控制施工阶段 {governing_stage_id or '未标识'}；墙顶影响带剪力包络 {line_load:.3f} kN/m，控制跨 {control_span:.2f}m。",
+                "自动闭环仅增强冠梁截面与计算配筋；吊装、机械连接、施工缝和预埋件仍进入专业构造复核。",
+            ],
+        )
+        beam.design_result = design
+        beam.design_moment = design.max_moment_design
+        beam.design_shear = design.max_shear_design
+        beam.reinforcement = _add_wale_reinforcement_groups(beam, design)
+        checks.extend([
+            {
+                "ruleId": "GB50010-CROWN-BEAM-FLEXURE-SUBSET", "objectId": beam.id, "objectType": "BeamElement",
+                "status": status if reserve_flex["status"] == "pass" else "fail",
+                "calculatedValue": round(m_design, 3), "limitValue": round(moment_capacity, 3), "unit": "kN*m",
+                "message": f"冠梁受弯承载力：墙顶剪力包络形成 q={line_load:.2f} kN/m，Md={m_design:.2f} kN*m，Mu={moment_capacity:.2f} kN*m；按储备目标 {strength_target:.2f} 配置 {reserve_flex['barArrangement']['description']}。",
+                "clauseReference": "GB/T 50010 正截面受弯承载力；施工阶段冠梁传力路径",
+            },
+            {
+                "ruleId": "GB50010-CROWN-BEAM-SHEAR-SUBSET", "objectId": beam.id, "objectType": "BeamElement",
+                "status": "pass" if reserve_shear["status"] == "pass" else "fail",
+                "calculatedValue": round(v_design, 3), "limitValue": round(shear_capacity, 3), "unit": "kN",
+                "message": f"冠梁斜截面抗剪按储备目标 {strength_target:.2f} 控制，建议 D12@{stirrup_spacing}，转角及接头区加密。",
+                "clauseReference": "GB/T 50010 斜截面受剪承载力与箍筋构造",
+            },
+            {
+                "ruleId": "CROWN-BEAM-DEFLECTION-ENVELOPE-SUBSET", "objectId": beam.id, "objectType": "BeamElement",
+                "status": "pass" if deflection_ratio * stiffness_target <= 1.0 + 1.0e-9 else "fail",
+                "calculatedValue": round(max_deflection, 6), "limitValue": round(deflection_limit, 6), "unit": "m",
+                "message": f"冠梁控制跨挠度按 L/400 及项目刚度储备目标 {stiffness_target:.2f} 筛查。",
+                "clauseReference": "冠梁正常使用极限状态工程筛查",
             },
         ])
     return checks
@@ -912,6 +1123,12 @@ def build_default_construction_cases(project: Project) -> list[CalculationCase]:
     top = project.excavation.top_elevation
     bottom = project.excavation.bottom_elevation
     topology_hash = _support_topology_hash(project)
+    surcharge_value = project.design_settings.surcharge if action_group_enabled(project, "ground_surcharge") else 0.0
+    water_enabled = action_group_enabled(project, "water_pressure")
+    groundwater_outside = project.design_settings.groundwater_level
+    groundwater_inside = (project.design_settings.groundwater_level_inside if project.design_settings.groundwater_level_inside is not None else groundwater_outside)
+    if not water_enabled:
+        groundwater_inside = groundwater_outside
     if supports:
         level_groups: dict[float, list[Any]] = {}
         for support in sorted(supports, key=lambda s: s.elevation, reverse=True):
@@ -926,30 +1143,30 @@ def build_default_construction_cases(project: Project) -> list[CalculationCase]:
             active_levels.append(level_index)
             stages.append(
                 ConstructionStage(
-                    name=f"Stage {idx}: excavate to {excavation_elev:.2f}m and activate support level {idx}",
+                    name=f"第 {idx} 阶段：开挖至 {excavation_elev:.2f}m，并安装第 {level_index} 道水平支撑",
                     excavation_elevation=max(excavation_elev, bottom),
                     active_support_ids=list(active),
                     active_support_levels=sorted(set(active_levels)),
                     support_topology_hash=topology_hash,
                     stage_type="support_installation",
                     zone=f"Z{idx}",
-                    groundwater_level_inside=project.design_settings.groundwater_level,
-                    groundwater_level_outside=project.design_settings.groundwater_level,
-                    surcharge=project.design_settings.surcharge,
+                    groundwater_level_inside=groundwater_inside,
+                    groundwater_level_outside=groundwater_outside,
+                    surcharge=surcharge_value,
                 )
             )
     stages.append(
         ConstructionStage(
-            name="Final excavation and service verification",
+            name=f"最终开挖至坑底 {bottom:.2f}m，并进行使用阶段校核",
             excavation_elevation=bottom,
             active_support_ids=[s.id for s in supports],
             active_support_levels=sorted({int(s.level_index) for s in supports}),
             support_topology_hash=topology_hash,
             stage_type="final",
             zone="Z-final",
-            groundwater_level_inside=project.design_settings.groundwater_level,
-            groundwater_level_outside=project.design_settings.groundwater_level,
-            surcharge=project.design_settings.surcharge,
+            groundwater_level_inside=groundwater_inside,
+            groundwater_level_outside=groundwater_outside,
+            surcharge=surcharge_value,
         )
     )
     if supports:
@@ -964,7 +1181,7 @@ def build_default_construction_cases(project: Project) -> list[CalculationCase]:
             transferred_levels.append(int(level))
             stages.append(
                 ConstructionStage(
-                    name=f"Replacement path: remove support level {level} after basement slab/waler transfer",
+                    name=f"换撑拆除：楼板或换撑构件达到条件后，拆除第 {level} 道水平支撑",
                     excavation_elevation=bottom,
                     active_support_ids=list(remaining_support_ids),
                     deactivated_support_ids=remove_ids,
@@ -973,13 +1190,13 @@ def build_default_construction_cases(project: Project) -> list[CalculationCase]:
                     support_topology_hash=topology_hash,
                     stage_type="replacement",
                     zone=f"replace-L{level}",
-                    replacement_action="bottom-up support removal after slab strength reaches design requirement",
-                    groundwater_level_inside=project.design_settings.groundwater_level_inside if project.design_settings.groundwater_level_inside is not None else project.design_settings.groundwater_level,
-                    groundwater_level_outside=project.design_settings.groundwater_level,
-                    surcharge=project.design_settings.surcharge,
+                    replacement_action="地下室楼板或换撑构件达到设计强度并完成传力确认后，自下而上分级拆除支撑",
+                    groundwater_level_inside=groundwater_inside,
+                    groundwater_level_outside=groundwater_outside,
+                    surcharge=surcharge_value,
                 )
             )
-    return [CalculationCase(name="Default staged excavation and replacement path case", stages=stages, support_topology_hash=topology_hash)]
+    return [CalculationCase(name="推荐分步开挖、支撑安装与换撑拆除算例", stages=stages, support_topology_hash=topology_hash)]
 
 
 def _candidate_label(index: int) -> str:
@@ -1084,6 +1301,7 @@ def _rank_full_candidate_calculations(outputs: list[dict[str, Any]]) -> None:
     valid = [item for item in outputs if not item.get("error")]
     if not valid:
         return
+    apply_pareto_ranking(valid)
 
     lower_is_better: dict[str, float] = {
         "maxSupportAxialForce": 0.12,
@@ -1148,6 +1366,7 @@ def _rank_full_candidate_calculations(outputs: list[dict[str, Any]]) -> None:
         valid,
         key=lambda item: (
             int(item.get("failCount", 0) or 0) > 0,
+            int(item.get("paretoRank", 999) or 999),
             -float(item.get("decisionScore", 0.0) or 0.0),
             int(item.get("rank", 999) or 999),
         ),
@@ -1456,6 +1675,11 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     wall_stiffness_factor = float(calibration.get("wallStiffnessFactor") or 1.0)
     soil_modulus_factor = float(calibration.get("soilModulusFactor") or 1.0)
     support_stiffness_factor = float(calibration.get("supportStiffnessFactor") or 1.0)
+    if project.design_settings.structural_analysis_model == "engineering_spatial":
+        wall_stiffness_factor *= float(project.design_settings.wall_cracked_stiffness_factor)
+    long_term_stiffness_factor = 1.0
+    if project.design_settings.enable_long_term_effects and project.design_settings.design_stage == "permanent_combined":
+        long_term_stiffness_factor = 1.0 / max(1.0 + float(project.design_settings.creep_coefficient) * float(project.design_settings.sustained_load_ratio), 1.0)
     groundwater_offset_m = float(calibration.get("groundwaterOffsetM") or 0.0)
 
     max_pressure = 0.0
@@ -1495,6 +1719,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     bottom = project.excavation.bottom_elevation
     final_depth = top - bottom
     gamma0 = importance_factor(project.design_settings.safety_grade)
+    strength_target = max(1.0, float(safety_targets(project).get("strength", 1.0)))
     segment_wall_envelopes: dict[str, dict[str, float]] = {}
     segment_wall_design: dict[str, dict[str, float]] = {}
 
@@ -1613,6 +1838,12 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     "connectionReduction": project.design_settings.replacement_connection_reduction,
                     "transferLengthM": float(segment.length),
                 },
+                wale_stiffness_factor=float(project.design_settings.wale_cracked_stiffness_factor),
+                joint_translational_factor=float(project.design_settings.joint_translational_stiffness_factor),
+                joint_rotational_factor=float(project.design_settings.joint_rotational_stiffness_factor),
+                rigid_zone_length_factor=float(project.design_settings.rigid_zone_length_factor),
+                initial_imperfection_ratio=float(project.design_settings.initial_imperfection_ratio),
+                long_term_stiffness_factor=long_term_stiffness_factor,
             )
             global_coupled = GlobalCoupledSystemResult(**global_coupled_raw)
             # Upgrade support force entries with global matrix reactions when the
@@ -1827,17 +2058,19 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     excavation_bottom_elevation=top - stage_depth,
                     safety_grade=project.design_settings.safety_grade,
                 )))
-                flex = design_rectangular_flexural_reinforcement(m_design, wall_thickness, concrete_grade, rebar_grade)
-                shear = check_rectangular_shear_capacity(v_design, wall_thickness, concrete_grade)
+                base_flex = design_rectangular_flexural_reinforcement(m_design, wall_thickness, concrete_grade, rebar_grade)
+                flex = design_rectangular_flexural_reinforcement(m_design * strength_target, wall_thickness, concrete_grade, rebar_grade)
+                shear = check_rectangular_shear_capacity(v_design * strength_target, wall_thickness, concrete_grade)
+                moment_capacity_for_crack = rectangular_flexural_capacity_knm_per_m(flex["barArrangement"]["providedAs"], wall_thickness, concrete_grade, rebar_grade)
                 stage_checks.append({
                     "ruleId": "GB50010-FLEXURE-SUBSET",
                     "objectId": wall.id,
                     "objectType": "DiaphragmWallPanel",
                     "status": flex["status"],
-                    "calculatedValue": flex["asRequired"],
-                    "limitValue": flex["barArrangement"]["providedAs"],
-                    "unit": "mm2/m",
-                    "message": f"正截面受弯配筋子集：Md={flex['momentDesign']} kN*m/m，建议 {flex['barArrangement']['description']}。",
+                    "calculatedValue": round(abs(m_design), 3),
+                    "limitValue": round(moment_capacity_for_crack, 3),
+                    "unit": "kN*m/m",
+                    "message": f"正截面受弯承载力：Md={base_flex['momentDesign']} kN*m/m，Mu={moment_capacity_for_crack:.3f} kN*m/m；按项目储备目标 {strength_target:.2f} 配置 {flex['barArrangement']['description']}。",
                     "clauseReference": "GB 50010 6.2.10 subset; final clause applicability to verify",
                     "formula": "M <= alpha1*fc*b*x*(h0-x/2); alpha1*fc*b*x = fy*As",
                 })
@@ -1846,16 +2079,15 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                     "objectId": wall.id,
                     "objectType": "DiaphragmWallPanel",
                     "status": shear["status"],
-                    "calculatedValue": shear["shearDesign"],
+                    "calculatedValue": round(abs(v_design), 3),
                     "limitValue": shear["concreteShearCapacity"],
                     "unit": "kN/m",
-                    "message": "斜截面抗剪承载力子集筛查；箍筋、构造和截面尺寸需复核。",
+                    "message": f"斜截面抗剪承载力子集已按项目储备目标 {strength_target:.2f} 控制截面；箍筋和节点构造仍需复核。",
                     "clauseReference": "GB 50010 shear subset; final clause applicability to verify",
                     "formula": "V <= 0.7*ft*b*h0 plus stirrup contribution if detailed",
                 })
                 stage_checks.append(_check_to_dict(check_minimum_wall_reinforcement(wall.id, wall_thickness, flex["barArrangement"]["diameter"], flex["barArrangement"]["spacing"])))
                 stage_checks.append(_check_to_dict(check_combination_documented(wall.id, combination_record(permanent=m, variable=stage.surcharge))))
-                moment_capacity_for_crack = rectangular_flexural_capacity_knm_per_m(flex["barArrangement"]["providedAs"], wall_thickness, concrete_grade, rebar_grade)
                 stage_checks.append(_check_to_dict(check_crack_width(
                     wall.id,
                     m_design,
@@ -2112,6 +2344,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     if getattr(project.retaining_system, "support_nodes", None):
         node_checks = update_support_node_design(project.retaining_system.support_nodes, project.retaining_system.supports)
         support_checks.extend(node_checks)
+        support_checks.extend(build_local_node_submodel_checks(project))
     support_deep_design = evaluate_support_deep_design(
         project,
         project.retaining_system,
@@ -2146,6 +2379,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
         })
     wale_results_all = [wale for sr in stage_results for wale in getattr(sr, "wale_beam_results", [])]
     support_checks.extend(_design_wale_beams(project, wale_results_all, gamma0))
+    support_checks.extend(_design_crown_beams(project, stage_results, gamma0))
     if support_checks and stage_results:
         stage_results[-1].checks.extend(support_checks)
         global_checks.extend(support_checks)
@@ -2153,11 +2387,18 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     for wall in project.retaining_system.diaphragm_walls:
         env = segment_wall_envelopes.get(wall.segment_id, {"moment": 0.0, "shear": 0.0, "displacement": 0.0})
         design_env = segment_wall_design.get(wall.segment_id, {"moment": env["moment"] * gamma0 * LOAD_FACTOR_RETAINING, "shear": env["shear"] * gamma0 * LOAD_FACTOR_RETAINING})
-        flex = design_rectangular_flexural_reinforcement(design_env["moment"], wall.thickness, wall.concrete_grade, wall.rebar_grade)
-        shear = check_rectangular_shear_capacity(design_env["shear"], wall.thickness, wall.concrete_grade)
-        wall.reinforcement = diaphragm_wall_reinforcement(wall.thickness, design_env["moment"], wall.concrete_grade, wall.rebar_grade)
+        base_flex = design_rectangular_flexural_reinforcement(design_env["moment"], wall.thickness, wall.concrete_grade, wall.rebar_grade)
+        flex = design_rectangular_flexural_reinforcement(design_env["moment"] * strength_target, wall.thickness, wall.concrete_grade, wall.rebar_grade)
+        shear = check_rectangular_shear_capacity(design_env["shear"] * strength_target, wall.thickness, wall.concrete_grade)
+        wall.reinforcement = diaphragm_wall_reinforcement(
+            wall.thickness,
+            design_env["moment"],
+            wall.concrete_grade,
+            wall.rebar_grade,
+            target_safety_factor=strength_target,
+        )
         provided = flex["barArrangement"]["providedAs"]
-        required = flex["asRequired"]
+        required = base_flex["asRequired"]
         moment_capacity = rectangular_flexural_capacity_knm_per_m(provided, wall.thickness, wall.concrete_grade, wall.rebar_grade)
         status = "pass" if flex["status"] == "pass" and shear["status"] == "pass" and provided >= required else "warning"
         wall.design_results = WallDesignResult(
@@ -2185,7 +2426,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
                 "Ka=tan^2(45deg-phi/2); Kp=tan^2(45deg+phi/2); u=gamma_w*h_w",
                 "p_a=max(0, sigma_v_eff*Ka-2*c*sqrt(Ka))+u; p_p=max(0, sigma_v_eff*Kp+2*c*sqrt(Kp))+u",
                 "EI*y''''+k_s*y+sum(k_support*y*delta)=q(z) finite-difference screening",
-                "M_design=gamma0*1.25*M_standard; V_design=gamma0*1.25*V_standard",
+                f"M_design=gamma0*1.25*M_standard; V_design=gamma0*1.25*V_standard; member reserve target={strength_target:.2f}",
                 "alpha1*fc*b*x=fy*As; M<=alpha1*fc*b*x*(h0-x/2)",
             ],
             check_status=status,
@@ -2204,6 +2445,26 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     result_summary = _summary(global_checks)
     design_review = _design_review_summary(global_checks, stage_results)
     stability_package = build_reviewable_stability_package(project, stage_results, global_checks)
+    adverse_scenarios = build_adverse_scenario_screening(
+        project,
+        stability_package,
+        max_displacement_mm=max_displacement,
+        max_support_force_kn=max_support_force,
+    )
+    append_event(
+        "analysis-scenarios",
+        "staged_calculation_analysis_contract",
+        projectId=project.id,
+        caseId=case.id,
+        structuralAnalysisModel=project.design_settings.structural_analysis_model,
+        stageCount=len(stage_results),
+        wallCrackedStiffnessFactor=project.design_settings.wall_cracked_stiffness_factor,
+        waleCrackedStiffnessFactor=project.design_settings.wale_cracked_stiffness_factor,
+        jointRotationalStiffnessFactor=project.design_settings.joint_rotational_stiffness_factor,
+        longTermStiffnessFactor=long_term_stiffness_factor,
+        adverseScenarioSummary=adverse_scenarios.get("summary") if isinstance(adverse_scenarios, dict) else None,
+        checkCount=len(global_checks),
+    )
     try:
         drawing_sheets = generate_construction_detail_sheets(project, "exports/detail-sheets")
     except Exception as exc:
@@ -2363,7 +2624,21 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "p33GeologicalDesignDomainCoverage": True,
             "p34WallEmbedmentStrengthDesign": True,
             "p35SupportDeepDesignScreening": True,
+            "p36SemiRigidSpatialModel": project.design_settings.structural_analysis_model == "engineering_spatial",
+            "p37CrackedAndLongTermStiffness": True,
+            "p38AdverseScenarioScreening": bool(adverse_scenarios.get("enabled")),
             "supportDeepDesign": support_deep_design,
+            "analysisModelContract": {
+                "model": project.design_settings.structural_analysis_model,
+                "wallCrackedStiffnessFactor": project.design_settings.wall_cracked_stiffness_factor,
+                "waleCrackedStiffnessFactor": project.design_settings.wale_cracked_stiffness_factor,
+                "jointTranslationalStiffnessFactor": project.design_settings.joint_translational_stiffness_factor,
+                "jointRotationalStiffnessFactor": project.design_settings.joint_rotational_stiffness_factor,
+                "rigidZoneLengthFactor": project.design_settings.rigid_zone_length_factor,
+                "initialImperfectionRatio": project.design_settings.initial_imperfection_ratio,
+                "longTermStiffnessFactor": long_term_stiffness_factor,
+            },
+            "adverseScenarioScreening": adverse_scenarios,
             "autoStrengthDesignEnabled": strength_auto_enabled,
             "maxDesignIterations": int(getattr(project.design_settings, "max_design_iterations", 3) or 3),
             "topologyPreflight": topology_preflight,
@@ -2416,6 +2691,7 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
             "checkSummary": result_summary,
             "designReviewSummary": design_review.model_dump(mode="json", by_alias=True),
             "reviewableStabilityPackage": stability_package.model_dump(mode="json", by_alias=True),
+            "adverseScenarioScreening": adverse_scenarios,
             "drawingSheets": [sheet.model_dump(mode="json", by_alias=True) for sheet in drawing_sheets],
             "supportLayoutQuality": support_quality.model_dump(mode="json", by_alias=True),
             "ifcCompatibility": ifc_quality.model_dump(mode="json", by_alias=True),
@@ -2482,4 +2758,15 @@ def run_calculation(project: Project, calculation_case: CalculationCase | None =
     )
     result.report_diagram_data = dict(result.report_diagram_data or {})
     result.report_diagram_data["formalReportGate"] = result.formal_report_gate.model_dump(mode="json", by_alias=True)
+    # Freeze the final delivered result after all evidence-gated support and
+    # formal-release fields have been attached.  The earlier assurance pass is
+    # needed by support deep-design evaluation; this final pass makes the
+    # immutable result hash cover the completed calculation payload.
+    result = apply_calculation_assurance(
+        project,
+        case,
+        result,
+        input_audit=calculation_input_audit,
+        contract=dict(result.calculation_assurance.get("contract") or calculation_contract),
+    )
     return result

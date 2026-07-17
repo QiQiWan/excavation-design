@@ -1,17 +1,19 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { api } from '../api/client';
 import BoreholeImport from '../components/BoreholeImport';
 import ExcavationEditor from '../components/ExcavationEditor';
 import RebarDesignPanel from '../components/RebarDesignPanel';
 import DrawingRuleSetPanel from '../components/DrawingRuleSetPanel';
 import CalculationRecoveryPanel from '../components/CalculationRecoveryPanel';
+import ConstructionStageEditor from '../components/ConstructionStageEditor';
 import SchemeComparisonPanel from '../components/SchemeComparisonPanel';
 import ProjectDataWorkspacePanel from '../components/ProjectDataWorkspacePanel';
-import DesignQualificationPanel from '../components/DesignQualificationPanel';
-import ProgressiveDesignPanel from '../components/ProgressiveDesignPanel';
+import DesignQualificationPanel, { type Qualification } from '../components/DesignQualificationPanel';
+import ProgressiveDesignPanel, { type ProgressiveDesignSession } from '../components/ProgressiveDesignPanel';
+import { beginGlobalActivity, finishGlobalActivity, FullPageLoadingFallback, updateGlobalActivity } from '../app/GlobalRequestProgress';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 import { effectiveGeologicalSurfaces, hasGeologicalSurfacePreview } from '../utils/geology';
-import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult, StandardsProcessMatrix, StandardsProcessStep } from '../types/domain';
+import type { AssuranceResult, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, CalculationResult, IssueCenterItem, IssueCenterResult, PitTask, Project, RebarDetailingResult, StandardsProcessMatrix, StandardsProcessStep } from '../types/domain';
 
 const AdvancedEngineeringPanel = lazy(() => import('../components/AdvancedEngineeringPanel'));
 const GeologyViewer = lazy(() => import('../viewers/GeologyViewer'));
@@ -34,7 +36,7 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'storage_compaction' | 'support_layout_optimization' | 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+type BackendTaskOperation = 'storage_compaction' | 'support_layout_optimization' | 'adopt_support_candidate' | 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
 
 function SystemReliabilityStrip({ project }: { project: Project }) {
   const [snapshot, setSnapshot] = useState<{ readiness?: Record<string, any>; metrics?: Record<string, any>; error?: string }>({});
@@ -126,6 +128,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
   });
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
+  const operationActivityId = useRef<string | undefined>(undefined);
   const [workspaceRole, setWorkspaceRole] = useState<WorkspaceRole>(() => {
     const saved = window.localStorage.getItem('pitguard-workspace-role') as WorkspaceRole | null;
     return saved && saved in ROLE_LABELS ? saved : 'designer';
@@ -137,6 +140,40 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
 
   useEffect(() => { window.localStorage.setItem('pitguard-workspace-mode', viewMode); }, [viewMode]);
   useEffect(() => { window.localStorage.setItem('pitguard-workspace-role', workspaceRole); }, [workspaceRole]);
+
+  useEffect(() => {
+    if (!operation) {
+      if (operationActivityId.current) {
+        finishGlobalActivity(operationActivityId.current, { ok: true, phase: busy ? '任务已转入后台执行' : '操作已结束' });
+        operationActivityId.current = undefined;
+      }
+      return;
+    }
+    if (!operationActivityId.current) {
+      operationActivityId.current = beginGlobalActivity({
+        label: operation.title,
+        phase: operation.detail,
+        expectedMs: 12000,
+        blocking: true,
+        progress: operation.progress,
+        path: `local://project/${current.id}/operation`,
+      });
+    }
+    const failed = operation.phases.some((phase) => phase.status === 'error');
+    updateGlobalActivity(operationActivityId.current, {
+      label: operation.title,
+      phase: operation.detail || operation.phases.find((phase) => phase.status === 'running')?.label,
+      progress: operation.progress,
+      blocking: true,
+    });
+    if (failed) {
+      finishGlobalActivity(operationActivityId.current, { ok: false, error: operation.detail || '工程操作失败', progress: operation.progress });
+      operationActivityId.current = undefined;
+    } else if (operation.progress >= 100) {
+      finishGlobalActivity(operationActivityId.current, { ok: true, phase: operation.detail || '工程操作已完成', progress: 100 });
+      operationActivityId.current = undefined;
+    }
+  }, [operation, busy, current.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,7 +444,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
           <StepHeader step={activeStep} project={current} compact={viewMode === 'compact'} />
           <WorkflowStandardsRibbon projectId={current.id} revision={current.updatedAt} stepKey={activeStep.key} />
           {selectedLocator && <LocatorBanner locator={selectedLocator} onClear={() => setSelectedLocator(undefined)} />}
-          <Suspense fallback={<div className="viewerLoadFallback">正在按需加载当前专业视图…</div>}>
+          <Suspense fallback={<FullPageLoadingFallback label="正在加载当前专业视图" detail="正在按需装载三维查看器、计算结果或深化设计模块。" />}>
             <StepBody
               active={active}
               project={current}
@@ -419,6 +456,7 @@ export default function ProjectWorkspace({ project, onBack, onProjectChange }: {
               vtuMessage={vtuMessage}
               selectedLocator={selectedLocator}
               onLocateIssue={locateIssue}
+              onJump={setActive}
               viewMode={viewMode}
             />
           </Suspense>
@@ -768,6 +806,7 @@ function StepBody({
   vtuMessage,
   selectedLocator,
   onLocateIssue,
+  onJump,
   viewMode
 }: {
   active: WorkflowStepKey;
@@ -780,6 +819,7 @@ function StepBody({
   vtuMessage?: string;
   selectedLocator?: Record<string, unknown>;
   onLocateIssue: (issue: IssueCenterItem) => void;
+  onJump: (key: WorkflowStepKey) => void;
   viewMode: 'compact' | 'professional';
 }) {
   if (active === 'settings') return <SettingsStep project={project} onChanged={onRefresh} viewMode={viewMode} />;
@@ -787,7 +827,7 @@ function StepBody({
   if (active === 'geology') return <GeologyStep project={project} runStep={runStep} importVtu={importVtu} vtuMessage={vtuMessage} />;
   if (active === 'excavation') return <ExcavationEditor project={project} onSaved={onRefresh} />;
   if (active === 'retaining') return <RetainingStep project={project} runStep={runStep} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} />;
-  if (active === 'calculation') return <CalculationStep project={project} runStep={runStep} runWorkflow={runWorkflow} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} />;
+  if (active === 'calculation') return <CalculationStep project={project} runStep={runStep} runWorkflow={runWorkflow} runTask={runTask} onRefresh={onRefresh} selectedLocator={selectedLocator} viewMode={viewMode} onJump={onJump} />;
   if (active === 'assurance') return <AssurancePanel project={project} onLocateIssue={onLocateIssue} onChanged={onRefresh} runTask={runTask} viewMode={viewMode} />;
   return <ExportPanel project={project} runTask={runTask} selectedLocator={selectedLocator} onRefresh={onRefresh} viewMode={viewMode} />;
 }
@@ -929,6 +969,11 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   const [designerAudit, setDesignerAudit] = useState<Record<string, any> | null>(null);
   const [deepDesign, setDeepDesign] = useState<Record<string, any> | null>(null);
   const [resourceEstimate, setResourceEstimate] = useState<Record<string, any> | null>(null);
+  const [designBootstrap, setDesignBootstrap] = useState<Record<string, any> | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string>();
+  const [bootstrapRefreshToken, setBootstrapRefreshToken] = useState(0);
+  const [advancedAnalysisLoading, setAdvancedAnalysisLoading] = useState(false);
+  const [advancedAnalysisAttempted, setAdvancedAnalysisAttempted] = useState(false);
   const [weightPreset, setWeightPreset] = useState<'balanced' | 'clean_support_layout' | 'fewer_columns' | 'low_axial_force' | 'muck_path_priority'>('clean_support_layout');
   const defaultWeights: Record<string, number> = {
     spacingDeviation: 20,
@@ -968,6 +1013,10 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   const [lockedLevels, setLockedLevels] = useState<number[]>([]);
   const [lockedObstacleIds, setLockedObstacleIds] = useState<string[]>(project.excavation?.obstacles?.filter((o) => o.optimizationLocked && o.id).map((o) => o.id!) ?? []);
   useEffect(() => {
+    setAdvancedAnalysisAttempted(false);
+    setDesignerAudit(null);
+    setDeepDesign(null);
+    setResourceEstimate(null);
     setLockedIds(project.retainingSystem?.supports?.filter((s) => s.optimizationLocked).map((s) => s.id) ?? []);
     setLockedStartIds(project.retainingSystem?.supports?.filter((s) => s.optimizationLockedStart).map((s) => s.id) ?? []);
     setLockedEndIds(project.retainingSystem?.supports?.filter((s) => s.optimizationLockedEnd).map((s) => s.id) ?? []);
@@ -978,26 +1027,42 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   useEffect(() => {
     let active = true;
     if (!project.excavation) {
+      setDesignBootstrap(null);
       setShapeDiagnostics(null);
-      setDesignerAudit(null);
-      setDeepDesign(null);
-      setResourceEstimate(null);
+      setBootstrapError(undefined);
       return () => { active = false; };
     }
+    setBootstrapError(undefined);
+    api.getDesignWorkspaceBootstrap(project.id, bootstrapRefreshToken > 0)
+      .then((value) => {
+        if (!active) return;
+        setDesignBootstrap(value);
+        setShapeDiagnostics((value.shapeDiagnostics ?? null) as Record<string, any> | null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setBootstrapError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { active = false; };
+  }, [project.id, project.updatedAt, project.excavation?.id, project.excavation?.outline?.points?.length, bootstrapRefreshToken]);
+
+  useEffect(() => {
+    if (!open || !project.excavation || advancedAnalysisLoading || advancedAnalysisAttempted) return;
+    let active = true;
+    setAdvancedAnalysisAttempted(true);
+    setAdvancedAnalysisLoading(true);
     Promise.allSettled([
-      api.getPlanShapeDiagnostics(project.id),
       api.getSupportDesignerAudit(project.id),
       api.getSupportDeepDesign(project.id, false),
       api.getCalculationResourceEstimate(project.id, 0),
-    ]).then(([shapeResult, auditResult, deepResult, resourceResult]) => {
+    ]).then(([auditResult, deepResult, resourceResult]) => {
       if (!active) return;
-      setShapeDiagnostics(shapeResult.status === 'fulfilled' ? shapeResult.value : null);
       setDesignerAudit(auditResult.status === 'fulfilled' ? auditResult.value : null);
       setDeepDesign(deepResult.status === 'fulfilled' ? deepResult.value : null);
       setResourceEstimate(resourceResult.status === 'fulfilled' ? resourceResult.value : null);
-    });
+    }).finally(() => { if (active) setAdvancedAnalysisLoading(false); });
     return () => { active = false; };
-  }, [project.id, project.excavation?.id, project.excavation?.outline?.points?.length]);
+  }, [open, project.id, project.excavation?.id, advancedAnalysisLoading, advancedAnalysisAttempted]);
   const runAuto = () => runTask(
     '正在由独立进程识别形状并生成围护支撑体系',
     'support_layout_optimization',
@@ -1028,13 +1093,14 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   }).sort((a, b) => b.previewScore - a.previewScore).slice(0, 5);
   return (
     <div>
-      <ProgressiveDesignPanel project={project} runTask={runTask} onRefresh={onRefresh} />
+      {designBootstrap ? <ProgressiveDesignPanel project={project} runTask={runTask} onRefresh={onRefresh} initialSession={designBootstrap.progressive as ProgressiveDesignSession} /> : <section className={`progressiveDesignPanel ${bootstrapError ? 'errorPanel' : 'loadingPanel'}`}><strong>{bootstrapError ? '围护设计工作区读取失败' : '正在一次性装配设计资格、形状识别和渐进式配置…'}</strong>{bootstrapError ? <><p>{bootstrapError}</p><button className="secondary" onClick={() => setBootstrapRefreshToken((value) => value + 1)}>重新装配工作区</button></> : <p>核心数据先返回，构件深化、审计和资源估算将在展开高级面板后按需加载。</p>}</section>}
       <div className="actionStrip simplifiedActions progressiveQuickActions">
         <button className="secondary" title="识别形状并生成围护体系" onClick={runAuto} disabled={!project.excavation}>按默认配置快速生成</button>
         <button className="secondary" onClick={() => setOpen(true)}>高级操作与人工锁定</button>
         <span className="small">快捷生成会采用当前渐进式配置的默认值；正式设计建议逐步确认坐标、施工组织、围护体系、支撑体系和计算范围。</span>
       </div>
-      <DesignQualificationPanel project={project} runTask={runTask} />
+      {designBootstrap?.qualification ? <DesignQualificationPanel project={project} runTask={runTask} initialData={designBootstrap.qualification as Qualification} /> : null}
+      {advancedAnalysisLoading ? <div className="infoBanner">正在按需读取布设审计、构件深化与计算资源估算；该过程不会阻塞基础设计界面。</div> : null}
       {activeShape && <section className="shapeStrategyPanel">
         <div className="shapeStrategyHeader">
           <div><h3>平面形状识别与支撑体系决策</h3><p className="small">识别结果用于候选生成和计算门禁；异形交汇区未形成明确转接体系时只允许方案设计。</p></div>
@@ -1203,7 +1269,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
         compact={viewMode === 'compact'}
         onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })}
         onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })}
-        onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))}
+        onAdopt={(candidateId) => runTask('正在由独立worker采用支撑优化方案', 'adopt_support_candidate', { candidateId })}
         onRefresh={onRefresh}
       />
       <DeferredDetails summary="查看当前围护结构模型与构件明细" defaultOpen={viewMode === 'professional'}><RetainingSystemViewer project={project} highlightLocator={selectedLocator} /></DeferredDetails>
@@ -1211,10 +1277,12 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   );
 }
 
-function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, selectedLocator, viewMode }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional' }) {
+function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, selectedLocator, viewMode, onJump }: { project: Project; runStep: (label: string, step: () => Promise<unknown>) => Promise<void>; runWorkflow: (title: string, actions: WorkflowAction[]) => Promise<void>; runTask: (title: string, operationName: BackendTaskOperation, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; onRefresh: () => void | Promise<void>; selectedLocator?: Record<string, unknown>; viewMode: 'compact' | 'professional'; onJump: (key: WorkflowStepKey) => void }) {
   const [open, setOpen] = useState(false);
   const [qualification, setQualification] = useState<Record<string, any>>();
   const [qualificationError, setQualificationError] = useState<string>();
+  const [latestEvidence, setLatestEvidence] = useState<{ evidence: Record<string, any>; result?: CalculationResult }>();
+  const workspaceLatest = project.calculationResults?.[project.calculationResults.length - 1];
   useEffect(() => {
     let cancelled = false;
     setQualificationError(undefined);
@@ -1225,6 +1293,28 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, se
     });
     return () => { cancelled = true; };
   }, [project.id, project.updatedAt, project.retainingSystem?.supportLayoutRepair?.checkedAt]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!workspaceLatest) {
+      setLatestEvidence(undefined);
+      return () => { cancelled = true; };
+    }
+    void api.getLatestCalculationEvidence(project.id).then((value) => {
+      if (!cancelled) setLatestEvidence({ evidence: value.evidence, result: value.result });
+    }).catch(() => {
+      if (!cancelled) setLatestEvidence({ evidence: { state: 'load_failed', message: '最新施工阶段成果读取失败，请刷新或重新计算。' } });
+    });
+    return () => { cancelled = true; };
+  }, [project.id, project.updatedAt, workspaceLatest?.id]);
+
+  const calculationProject = useMemo<Project>(() => {
+    if (!latestEvidence?.result || latestEvidence.result.id !== workspaceLatest?.id) return project;
+    const history = [...(project.calculationResults ?? [])];
+    if (history.length) history[history.length - 1] = latestEvidence.result;
+    else history.push(latestEvidence.result);
+    return { ...project, calculationResults: history };
+  }, [project, latestEvidence?.result, workspaceLatest?.id]);
 
   const rawCandidates = project.retainingSystem?.supportLayoutRepair?.candidates ?? [];
   const localControlledBlock = rawCandidates.length > 0
@@ -1238,20 +1328,32 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, se
     .map((gate) => `${String(gate.title ?? gate.code)}：${String(gate.message ?? '')}`);
   const runAll = () => calculationAllowed ? runTask('一键计算校核', 'calculation_full', { topN: 0 }) : Promise.resolve();
   const calculationDisabled = !project.retainingSystem || !calculationAllowed;
+  const navigateClosureTarget = (targetPanel: string) => {
+    if (targetPanel.includes('施工阶段')) {
+      document.getElementById('construction-stage-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (targetPanel.includes('地质')) { onJump('geology'); return; }
+    if (targetPanel.includes('围护方案') || targetPanel.includes('梁构件') || targetPanel.includes('墙段') || targetPanel.includes('支撑')) { onJump('retaining'); return; }
+    if (targetPanel.includes('工程输入')) { onJump('settings'); return; }
+    onJump('assurance');
+  };
   return (
     <div>
       {!calculationAllowed ? <div className="warning calculationQualificationBlock" role="alert"><strong>完整计算入口已由设计资格门禁锁定。</strong><span>{calculationBlockers.join('；') || (localControlledBlock ? '当前支撑体系仅形成诊断候选，需先完成体系选择与传力拓扑闭合。' : '请先完成围护结构和支撑体系资格检查。')}</span></div> : null}
       {qualificationError ? <div className="mutedNote">设计资格状态暂未刷新：{qualificationError}</div> : null}
+      <ConstructionStageEditor project={project} onChanged={onRefresh} />
+      {workspaceLatest ? <div className={`calculationEvidenceBanner ${String(latestEvidence?.evidence?.state ?? 'loading')}`}><div><strong>施工阶段计算证据</strong><span>{String(latestEvidence?.evidence?.message ?? '正在按最新计算结果编号读取阶段成果…')}</span></div><b>{String(latestEvidence?.evidence?.stageResultCount ?? 0)} / {String(latestEvidence?.evidence?.expectedStageResultCount || '-')} 条已载入</b><em>{String(latestEvidence?.evidence?.state ?? 'loading')}</em></div> : null}
       <div className="actionStrip simplifiedActions">
         <button onClick={runAll} disabled={calculationDisabled}>一键计算校核</button>
         <button className="secondary" onClick={() => setOpen(true)}>高级操作</button>
         
       </div>
       {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={calculationDisabled}>仅生成工况</button><button onClick={() => runTask('正在由独立计算进程运行当前方案', 'calculation_full', { topN: 0 })} disabled={calculationDisabled}>仅运行当前方案</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={calculationDisabled}>并行计算前 3 个候选方案</button></aside></div>}
-      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, candidateId))} onRefresh={onRefresh} />
-      <CalculationRecoveryPanel project={project} runStep={runStep} />
-      <ResultViewer project={project} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />
-      {viewMode === 'professional' ? <CalculationTracePanel project={project} /> : <details className="focusDetails"><summary>查看完整计算追溯链、公式和规范条文</summary><CalculationTracePanel project={project} /></details>}
+      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runTask('正在由独立worker采用支撑优化方案', 'adopt_support_candidate', { candidateId })} onRefresh={onRefresh} />
+      <CalculationRecoveryPanel project={calculationProject} runStep={runStep} onNavigate={navigateClosureTarget} />
+      <ResultViewer project={calculationProject} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />
+      {viewMode === 'professional' ? <CalculationTracePanel project={calculationProject} /> : <details className="focusDetails"><summary>查看完整计算追溯链、公式和规范条文</summary><CalculationTracePanel project={calculationProject} /></details>}
     </div>
   );
 }
@@ -1642,6 +1744,34 @@ function BenchmarkPanel() {
 
 function ExportCard({ title, description, href, button, projectId, taskOperation }: { title: string; description: string; href: string; button: string; projectId?: string; taskOperation?: BackendTaskOperation }) {
   const [state, setState] = useState<{ running: boolean; progress: number; phase: string; error?: string }>({ running: false, progress: 0, phase: '' });
+  const exportActivityId = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (state.running && !exportActivityId.current) {
+      exportActivityId.current = beginGlobalActivity({
+        label: `正在生成${title}`,
+        phase: state.phase || '提交导出请求',
+        expectedMs: taskOperation ? 120000 : 15000,
+        blocking: true,
+        progress: Math.max(2, state.progress),
+        path: projectId ? `local://project/${projectId}/export/${taskOperation ?? 'direct'}` : href,
+      });
+    }
+    if (!exportActivityId.current) return;
+    updateGlobalActivity(exportActivityId.current, {
+      phase: state.error || state.phase || '后端正在生成成果',
+      progress: Math.max(2, Math.min(100, state.progress || 6)),
+      blocking: true,
+    });
+    if (state.error) {
+      finishGlobalActivity(exportActivityId.current, { ok: false, error: state.error, progress: state.progress });
+      exportActivityId.current = undefined;
+    } else if (!state.running && state.progress >= 100) {
+      finishGlobalActivity(exportActivityId.current, { ok: true, phase: state.phase || '成果已生成', progress: 100 });
+      exportActivityId.current = undefined;
+    }
+  }, [state, title, href, projectId, taskOperation]);
+
   async function download() {
     try {
       setState({ running: true, progress: 12, phase: '提交导出请求' });

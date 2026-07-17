@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { DrawingSetManifest, Project, RebarDesignScheme } from '../types/domain';
 import { SupportRebarPreview, WallZoneElevationPreview } from './RebarDrawingPreview';
+import { waitForTaskWithHealth } from '../utils/taskPolling';
 
 type RebarMode = 'conservative' | 'balanced' | 'economic';
 type ActiveGroup = 'issues' | 'walls' | 'supports' | 'beams' | 'drawings';
@@ -69,29 +70,41 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
   }, [project.id, project.updatedAt, project.calculationResults.length, mode]);
 
   const diagnostics = scheme?.diagnostics;
+  const deepeningGate = record(diagnostics?.deepeningGate);
+  const gateBlockers = (Array.isArray(deepeningGate.blockers) ? deepeningGate.blockers : []).map(record);
+  const gateWarnings = (Array.isArray(deepeningGate.warnings) ? deepeningGate.warnings : []).map(record);
   const summary = scheme?.summary ?? {};
   const q = query.trim().toLowerCase();
   const filterRows = (rows: Record<string, unknown>[] | undefined) => (rows ?? []).map(record).filter((row) => passesStatus(row, statusFilter) && (!q || searchable(row).includes(q)));
   const wallRows = useMemo(() => filterRows(scheme?.wallZones), [scheme, statusFilter, q]);
   const supportRows = useMemo(() => filterRows(scheme?.supportSchemes), [scheme, statusFilter, q]);
+  // The drawing preview is a design record, not a problem list.  Using the
+  // filtered table rows here made all passing stirrups/construction bars vanish
+  // whenever the default filter was "problems".
+  const allSupportRows = useMemo(() => (scheme?.supportSchemes ?? []).map(record).filter((row) => !q || searchable(row).includes(q)), [scheme, q]);
   const beamRows = useMemo(() => filterRows(scheme?.beamNodeSchemes), [scheme, statusFilter, q]);
   const issueRows = useMemo(() => filterRows(scheme?.checks), [scheme, statusFilter, q]);
   const issueMode: 'review' | 'construction' = diagnostics?.canIssueConstructionDrawings ? 'construction' : 'review';
   const primaryDownloadText = issueMode === 'construction' ? '下载施工图包' : '下载审查版图纸';
-  const canApply = Boolean(diagnostics?.canApply ?? project.retainingSystem);
+  const canApply = diagnostics ? Boolean(diagnostics.canApply) : Boolean(project.retainingSystem && project.calculationResults.length > 0);
 
   async function applyScheme() {
     try {
       setApplying(true); setError(undefined); setNotice(undefined);
-      const result = await api.applyRebarDesignScheme(project.id, mode, true);
-      setScheme(result.scheme);
-      setNotice(result.recalculated ? '截面优化已应用并完成重新计算，配筋方案已按新内力更新。' : result.recalculationQueued ? '配筋方案已应用，重新计算已交由独立计算进程。完成后请刷新配筋结果。' : '配筋方案已应用到当前构件。');
+      const created = await api.createTask(project.id, 'rebar_design', { mode, apply: true, recalculate: true });
+      const finished = await waitForTaskWithHealth(created, () => undefined, { timeoutMs: 20 * 60 * 1000 });
+      if (finished.status !== 'success') throw new Error(finished.error || `配筋任务未完成：${finished.status}`);
+      setNotice(finished.result?.requiresRecalculation ? '配筋草案已生成，但二次复算后仍存在截面调整需求；当前保持审查版并列出控制构件。' : finished.result?.recalculatedAfterSectionChange ? '配筋引起的截面调整已自动复算，并按更新后的内力包络重新完成配筋。' : '配筋草案已应用到当前构件，并完成构造与出图资格检查。');
       await onApplied();
+      const next = await api.getRebarDesignScheme(project.id, mode);
+      setScheme(next);
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setApplying(false); }
   }
 
-  const steps = [
+  const gateSteps = (Array.isArray(deepeningGate.steps) ? deepeningGate.steps : []).map(record);
+  const structuralClosure = record(deepeningGate.structuralClosure);
+  const steps = gateSteps.length ? gateSteps.map((step, index) => ({ label: `${index + 1} ${String(step.label)}`, status: String(step.status), note: String(step.message ?? '') })) : [
     { label: '1 校验计算', status: diagnostics?.calculation.status ?? 'warning', note: diagnostics?.calculation.valid ? '施工阶段和支撑拓扑有效' : '需要先重新计算' },
     { label: '2 选择策略', status: 'pass', note: mode === 'conservative' ? '较低目标利用率' : mode === 'economic' ? '较高目标利用率' : '承载与施工性平衡' },
     { label: '3 处理问题', status: Number(summary.failCount ?? 0) ? 'fail' : Number(summary.warningCount ?? 0) ? 'warning' : 'pass', note: `${summary.failCount ?? 0} 个阻断，${summary.warningCount ?? 0} 个复核` },
@@ -101,7 +114,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
   return (
     <section className="rebarDesignPanel summaryPanel">
       <div className="panelTitleRow">
-        <div><h3>配筋设计与施工图</h3><p className="small">按“计算有效性—传力体系—构件配筋—节点构造—图纸闸门”逐级检查，仅展示需要处理的信息。</p></div>
+        <div><h3>配筋设计与施工图</h3><p className="small">构件配筋、节点构造与出图资格。</p></div>
         <span className={`statusPill ${statusTone(scheme?.status)}`}><strong>{localizedStatus(scheme?.status ?? '未计算')}</strong></span>
       </div>
 
@@ -116,10 +129,10 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
 
       <div className="rebarPrimaryBar">
         <label>配筋策略<select value={mode} onChange={(event) => setMode(event.target.value as RebarMode)}><option value="conservative">保守</option><option value="balanced">均衡</option><option value="economic">经济</option></select></label>
-        <button onClick={applyScheme} disabled={applying || loading || !canApply}>{applying ? '正在应用并复算…' : diagnostics?.sectionChangeCount ? `应用 ${diagnostics.sectionChangeCount} 项截面优化并复算` : '应用配筋方案'}</button>
+        <button onClick={applyScheme} disabled={applying || loading || !canApply}>{applying ? '后台生成配筋…' : diagnostics?.sectionChangeCount ? `应用 ${diagnostics.sectionChangeCount} 项截面优化` : '生成并应用配筋草案'}</button>
         <a className={`buttonLink ${issueMode === 'review' ? 'secondary' : ''}`} href={api.cadPackageUrl(project.id, 'full', mode, issueMode)}>{primaryDownloadText}</a>
       </div>
-      {!canApply ? <div className="rebarGateMessage fail">计算结果或支撑拓扑尚未通过，已禁用配筋应用。先执行重新计算或优化支撑体系。</div> : null}
+      {!canApply ? <div className="rebarGateMessage fail">当前不能生成配筋草案：{gateBlockers[0]?.message ?? diagnostics?.calculation.messages?.[0] ?? '缺少围护体系或有效施工阶段计算结果。'} {gateBlockers[0]?.requiredAction ?? ''}</div> : null}
       {issueMode === 'review' ? <div className="rebarGateMessage warn">图纸包将带“审查版”标识；消除阻断项后才能切换为施工图复核包。</div> : null}
       {notice ? <div className="rebarGateMessage pass">{notice}</div> : null}
       {error ? <div className="error">{error}</div> : null}
@@ -128,7 +141,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       <div className="deepDetailingSummary" aria-label="深化设计摘要">
         <div className="panelTitleRow"><div><h4>深化设计闭环</h4><p className="small">节点钢构件、钢筋笼吊装、机械连接、预埋件碰撞和施工顺序。</p></div><span className={`statusPill ${statusTone(record(deepDetailing?.summary).status)}`}>{localizedStatus(record(deepDetailing?.summary).status ?? 'warning')}</span></div>
         <div className="maturityGrid rebarSummaryGrid">
-          <div className={`statusCard ${statusTone(record(deepDetailing?.summary).hardFailureCount ? 'fail' : 'pass')}`}><span>深化阻断</span><strong>{String(record(deepDetailing?.summary).hardFailureCount ?? 0)}</strong><em>节点、吊装或预埋件碰撞</em></div>
+          <div className={`statusCard ${statusTone(record(deepDetailing?.summary).hardFailureCount ? 'fail' : 'pass')}`}><span>空间深化阻断</span><strong>{String(record(deepDetailing?.summary).hardFailureCount ?? 0)}</strong><em>仅指节点、吊装或预埋件碰撞</em></div>
           <div className="statusCard"><span>节点硬件</span><strong>{String(record(deepDetailing?.summary).bearingPlateCount ?? 0)}</strong><em>承压板/加劲板/焊缝/锚筋</em></div>
           <div className="statusCard"><span>吊装工况</span><strong>{String(record(deepDetailing?.summary).cageHoistingCaseCount ?? 0)}</strong><em>分节、吊点、索力与临时加强</em></div>
           <div className="statusCard"><span>机械连接</span><strong>{String(record(deepDetailing?.summary).couplerCount ?? 0)}</strong><em>套筒、丝头、错开组和抽检</em></div>
@@ -138,10 +151,22 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       <div className="maturityGrid rebarSummaryGrid">
         <div className={`statusCard ${statusTone(diagnostics?.calculation.status)}`}><span>计算有效性</span><strong>{localizedStatus(diagnostics?.calculation.status ?? 'warning')}</strong><em>{diagnostics?.calculation.messages?.[0] ?? '等待检查'}</em></div>
         <div className={`statusCard ${statusTone(diagnostics?.supportTopology.status)}`}><span>支撑传力体系</span><strong>{localizedStatus(diagnostics?.supportTopology.status ?? 'warning')}</strong><em>正交次对撑 {diagnostics?.supportTopology.secondaryGridSupportCount ?? 0} 根；角撑最大分担 {n(diagnostics?.supportTopology.maxCornerTributaryWidthM, 1)} m</em></div>
-        <div className={`statusCard ${Number(summary.failCount ?? 0) ? 'fail' : 'pass'}`}><span>阻断项</span><strong>{String(summary.failCount ?? 0)}</strong><em>截面、配筋、节点或拓扑不足</em></div>
+        <div className={`statusCard ${Number(deepeningGate.blockerCount ?? summary.failCount ?? 0) ? 'fail' : 'pass'}`}><span>深化入口总阻断</span><strong>{String(deepeningGate.blockerCount ?? summary.failCount ?? 0)}</strong><em>计算、方案、构件与配筋的统一口径</em></div>
         <div className={`statusCard ${Number(summary.warningCount ?? 0) ? 'warn' : 'pass'}`}><span>复核项</span><strong>{String(summary.warningCount ?? 0)}</strong><em>锚固、裂缝、拥挤和施工偏差</em></div>
         <div className={`statusCard ${diagnostics?.canIssueConstructionDrawings ? 'pass' : 'review'}`}><span>出图状态</span><strong>{diagnostics?.canIssueConstructionDrawings ? '施工图复核' : '审查版'}</strong><em>{manifest?.sheetCount ?? 0} 张计划图纸</em></div>
       </div>
+
+      {(gateBlockers.length || gateWarnings.length) ? <section className="deepeningEntryDiagnostics" aria-label="配筋深化入口诊断">
+        <div className="panelTitleRow"><div><h4>配筋深化入口诊断</h4><p className="small">逐项说明哪里缺失、影响哪些对象、由哪个阶段补齐。</p></div><span className={`statusPill ${gateBlockers.length ? 'fail' : 'warn'}`}>{gateBlockers.length ? `${String(deepeningGate.blockerCount ?? gateBlockers.length)} 个阻断` : `${String(deepeningGate.warningCount ?? gateWarnings.length)} 个复核`}</span></div>
+        {gateBlockers.length ? <div className="deepeningIssueGrid">{gateBlockers.map((issue) => <article key={String(issue.id ?? issue.reasonCode)} className="fail"><header><strong>{String(issue.title ?? issue.reasonCode)}</strong><span>{String(issue.count ?? 1)} 项</span></header><p>{String(issue.message ?? '')}</p>{Array.isArray(issue.objects) && issue.objects.length ? <small>影响对象：{issue.objects.map(String).join('、')}</small> : null}<div><b>如何补齐</b><span>{String(issue.requiredAction ?? '调整设计并重新运行校核。')}</span></div><footer><span>目标阶段：{String(issue.targetStage ?? '配筋深化')}</span><em>{issue.canResolveAtDesignStage === false ? '需施工/专项资料' : '设计阶段可处理'}</em></footer></article>)}</div> : <div className="rebarGateMessage pass">配筋深化入口无硬阻断，可继续运行 P3；正式出图仍需关闭复核项。</div>}
+        {gateWarnings.length ? <details className="deepeningWarningRegister"><summary>查看 {String(deepeningGate.warningCount ?? gateWarnings.length)} 个复核项及处理方法</summary><div>{gateWarnings.map((issue) => <article key={String(issue.id ?? issue.reasonCode)}><strong>{String(issue.title ?? issue.reasonCode)} · {String(issue.count ?? 1)} 项</strong><span>{String(issue.message ?? '')}</span><em>{String(issue.requiredAction ?? '')}</em></article>)}</div></details> : null}
+      </section> : null}
+
+      {structuralClosure.status ? <div className={`rebarGateMessage ${structuralClosure.closed ? 'pass' : 'warn'}`}>
+        <strong>{structuralClosure.closed ? '结构计算与配筋合同已闭合' : '结构闭合尚未完成'}</strong>
+        <span>{String(structuralClosure.message ?? '')}</span>
+        {structuralClosure.closed && gateWarnings.length ? <em>剩余 {gateWarnings.length} 组项目属于锚固、接头、碰撞或审签复核，可进入 P3 处理。</em> : null}
+      </div> : null}
 
       {(diagnostics?.actions?.length ?? 0) > 0 ? <div className="rebarActionList"><strong>建议处理顺序</strong>{diagnostics?.actions.map((action) => <div key={action.id}><span className="actionPriority">P{action.priority}</span><b>{action.label}</b><span>{action.description}</span></div>)}</div> : null}
 
@@ -165,7 +190,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       </div> : null}
 
       {activeGroup === 'walls' ? <><WallZoneElevationPreview zones={wallRows} /><table className="table compactTable"><thead><tr><th>区段</th><th>墙段</th><th>类型</th><th>标高</th><th>坑内侧</th><th>坑外侧</th><th>布置</th><th>状态</th><th>图号</th></tr></thead><tbody>{wallRows.map((row) => { const faces = (row.faces ?? []) as Record<string, any>[]; const inner = record(faces.find((item) => item.face === 'inner')); const outer = record(faces.find((item) => item.face === 'outer')); return <tr key={String(row.zoneId)}><td>{String(row.zoneId)}</td><td>{String(row.hostCode)}</td><td>{String(row.zoneType)}</td><td>{n(row.topElevation)}～{n(row.bottomElevation)}</td><td>{String(inner.token ?? '-')}</td><td>{String(outer.token ?? '-')}</td><td>{String(inner.arrangementType ?? outer.arrangementType ?? '单层')}</td><td>{localizedStatus(row.status)}</td><td>{(row.drawingRefs ?? []).join(' / ')}</td></tr>; })}</tbody></table></> : null}
-      {activeGroup === 'supports' ? <><SupportRebarPreview rows={supportRows} /><table className="table compactTable"><thead><tr><th>支撑</th><th>角色</th><th>轴力</th><th>现状/建议截面</th><th>纵筋</th><th>利用率</th><th>结论</th><th>建议</th></tr></thead><tbody>{supportRows.map((row) => { const section = record(row.section); const existing = record(row.existingSection); return <tr key={String(row.hostId)}><td>{String(row.hostCode)}</td><td>{String(row.supportRole ?? '-')}</td><td>{n(row.axialForceDesignKn)} kN</td><td>{existing.name ?? '-'}{row.sectionChanged ? ` → ${section.name ?? '-'}` : ''}</td><td>{String(record(row.longitudinal).token ?? '-')}</td><td>{n(row.utilization, 3)}</td><td>{localizedStatus(row.status)}</td><td>{String(row.recommendedAction ?? '-')}</td></tr>; })}</tbody></table></> : null}
+      {activeGroup === 'supports' ? <><SupportRebarPreview rows={allSupportRows} />{supportRows.length ? <table className="table compactTable supportRebarTable"><thead><tr><th>支撑</th><th>角色 / 轴力</th><th>现状 / 建议截面</th><th>纵向主筋</th><th>端部 / 跨中箍筋</th><th>侧面构造筋</th><th>拉结 / 附加筋</th><th>五类钢筋合同</th><th>结论与建议</th></tr></thead><tbody>{supportRows.map((row) => { const section = record(row.section); const existing = record(row.existingSection); const contract = record(row.rebarContract); return <tr key={String(row.hostId)}><td><strong>{String(row.hostCode)}</strong></td><td>{String(row.supportRole ?? '-')}<small>{n(row.axialForceDesignKn)} kN</small></td><td>{existing.name ?? '-'}{row.sectionChanged ? ` → ${section.name ?? '-'}` : ''}</td><td>{String(record(row.longitudinal).token ?? '-')}</td><td>{String(record(row.endZones).token ?? '-')} / {String(record(row.middleZone).token ?? '-')}</td><td>{String(record(row.distributionBars).token ?? '-')}</td><td>{String(record(row.tieBars).token ?? '-')} / {String(record(row.lapAdditionalBars).token ?? '-')}</td><td><span className={`inlineStatus ${contract.status === 'complete' ? 'pass' : 'fail'}`}>{contract.status === 'complete' ? '完整' : `缺 ${Array.isArray(contract.missingBarTypes) ? contract.missingBarTypes.join('、') : '数据'}`}</span></td><td>{localizedStatus(row.status)}<small>{String(row.recommendedAction ?? '-')}</small></td></tr>; })}</tbody></table> : <div className="emptyState">当前筛选条件下没有问题支撑；上方仍展示全部支撑的纵筋、箍筋、构造筋、拉结筋和附加筋。切换“全部”可查看完整明细。</div>}</> : null}
       {activeGroup === 'beams' ? <table className="table compactTable"><thead><tr><th>对象</th><th>类型</th><th>主筋/U筋</th><th>箍筋/约束</th><th>承压利用率</th><th>状态</th><th>建议</th><th>图号</th></tr></thead><tbody>{beamRows.map((row) => <tr key={String(row.hostId)}><td>{String(row.hostCode)}</td><td>{String(row.hostType)}</td><td>{String(record(row.mainBars).token ?? record(row.additionalUBars).token ?? '-')}</td><td>{String(record(row.stirrups).token ?? `D${record(row.confinement).stirrupDiameterMm ?? '-'}@${record(row.confinement).spacingMm ?? '-'}`)}</td><td>{n(row.bearingUtilization, 3)}</td><td>{localizedStatus(row.status)}</td><td>{String(row.recommendedAction ?? row.nodeAdditional ?? '-')}</td><td>{(row.drawingRefs ?? []).join(' / ')}</td></tr>)}</tbody></table> : null}
       {activeGroup === 'drawings' ? <><table className="table compactTable"><thead><tr><th>图号</th><th>图名</th><th>类别</th><th>比例</th><th>文件</th></tr></thead><tbody>{manifest?.sheets.map((item) => <tr key={item.sheetNo}><td>{item.sheetNo}</td><td>{item.title}</td><td>{item.category}</td><td>{item.scale}</td><td>{item.file}</td></tr>)}</tbody></table><details className="secondaryDownloads"><summary>分专业下载</summary><div><a className="buttonLink secondary" href={api.cadPackageUrl(project.id, 'general', mode, issueMode)}>总图与剖面</a><a className="buttonLink secondary" href={api.cadPackageUrl(project.id, 'rebar', mode, issueMode)}>配筋图</a><a className="buttonLink secondary" href={api.cadPackageUrl(project.id, 'details', mode, issueMode)}>节点大样</a></div></details></> : null}
       <p className="small boundaryNote">{manifest?.issueBoundary}</p>

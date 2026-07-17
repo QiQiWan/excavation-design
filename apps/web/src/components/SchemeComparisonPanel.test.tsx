@@ -99,4 +99,39 @@ describe('SchemeComparisonPanel', () => {
     vi.unstubAllGlobals();
   });
 
+  it('shows distinct controlled-block diagnostics but disables adoption and full calculation', () => {
+    const controlled = {
+      ...project,
+      retainingSystem: {
+        ...project.retainingSystem,
+        supportLayoutRepair: {
+          candidates: project.retainingSystem?.supportLayoutRepair?.candidates?.map((candidate, index) => ({
+            ...candidate,
+            hardConstraints: { passed: false },
+            variableSummary: {
+              ...candidate.variableSummary,
+              capabilityOutcome: 'controlled_block',
+              formalSchemeEligible: false,
+              minimumGeometryDeltaToSelected: index === 0 ? 1 : 0.25,
+              alternativeSystemRecommendations: ['环梁/环撑体系'],
+              shapeDiagnostics: { classification: 'slender_stepped_strip' },
+            },
+          })),
+        },
+      },
+    } as unknown as Project;
+    render(<SchemeComparisonPanel project={controlled} compact />);
+    expect(screen.getByText(/真实几何不同的诊断替代方案/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '诊断方案不可完整计算' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '诊断方案不可采用' })).toBeDisabled();
+  });
+
+  it('reports the inspected candidate so the quality-plan viewer follows the selected card', async () => {
+    const onSelectCandidate = vi.fn();
+    render(<SchemeComparisonPanel project={project} compact onSelectCandidate={onSelectCandidate} />);
+    await waitFor(() => expect(onSelectCandidate).toHaveBeenCalled());
+    const calls = onSelectCandidate.mock.calls;
+    expect(calls[calls.length - 1]?.[0]?.id).toBe('A');
+  });
+
 });

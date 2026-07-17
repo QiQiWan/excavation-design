@@ -241,6 +241,7 @@ Environment=MPLCONFIGDIR=$RUNTIME_DIR/matplotlib
 Environment=XDG_CACHE_HOME=$RUNTIME_DIR/cache
 Environment=PITGUARD_TASK_EXECUTION_MODE=external
 Environment=PITGUARD_PROCESS_ROLE=api
+Environment=PITGUARD_PRODUCT_MODE=core
 Environment=PITGUARD_SLOW_REQUEST_MS=1200
 ExecStart=$PYTHON_BIN -m uvicorn app.main:app --host 127.0.0.1 --port $BACKEND_PORT --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=always
@@ -293,6 +294,7 @@ Environment=MPLCONFIGDIR=$RUNTIME_DIR/matplotlib-worker
 Environment=XDG_CACHE_HOME=$RUNTIME_DIR/cache-worker
 Environment=PITGUARD_TASK_EXECUTION_MODE=worker
 Environment=PITGUARD_PROCESS_ROLE=worker
+Environment=PITGUARD_PRODUCT_MODE=core
 Environment=PITGUARD_MIGRATE_ON_FULL_LOAD=1
 ExecStart=$PYTHON_BIN -m app.tasks.worker_daemon
 Restart=always

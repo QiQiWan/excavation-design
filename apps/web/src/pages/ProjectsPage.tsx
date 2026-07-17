@@ -157,7 +157,7 @@ export default function ProjectsPage({ onOpen }: { onOpen: (project: Project) =>
               <tr key={project.id} className={project.optimistic ? 'optimisticRow' : undefined}>
                 <td>{project.name}{project.optimistic ? <small className="pendingLabel">正在创建</small> : null}</td>
                 <td>{project.location ?? '-'}</td>
-                <td><span className={`statusTag ${project.storageStatus === 'large' ? 'warning' : project.storageStatus === 'elevated' ? 'info' : 'pass'}`}>{project.optimistic ? '准备中' : project.payloadBytes ? `核心 ${(project.payloadBytes / 1048576).toFixed(1)} MB${project.externalBytes ? ` · 外部 ${(project.externalBytes / 1048576).toFixed(1)} MB` : ''}` : '常规'}</span></td>
+                <td><span className={`statusTag ${project.storageStatus === 'workspace_only' || project.storageStatus === 'large' ? 'warning' : project.storageStatus === 'elevated' ? 'info' : 'pass'}`} title={project.storageStatus === 'workspace_only' ? '完整快照由后台 worker 按需读取，网页仅加载轻量工作区。' : undefined}>{project.optimistic ? '准备中' : project.storageStatus === 'workspace_only' ? `工作区模式 · 核心 ${((project.payloadBytes ?? 0) / 1048576).toFixed(1)} MB` : project.payloadBytes ? `核心 ${(project.payloadBytes / 1048576).toFixed(1)} MB${project.externalBytes ? ` · 外部 ${(project.externalBytes / 1048576).toFixed(1)} MB` : ''}` : '常规'}</span></td>
                 <td>{new Date(project.updatedAt).toLocaleString()}</td>
                 <td>
                   <div className="table-actions">

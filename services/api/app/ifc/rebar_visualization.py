@@ -4,7 +4,8 @@ import math
 from collections import Counter, defaultdict
 from typing import Any
 
-from app.schemas.domain import BeamElement, Point2D, Project, ReinforcementGroup
+from app.schemas.domain import BeamElement, Point2D, Project, ReinforcementGroup, SupportElement
+from app.services.runtime_diagnostics import append_event
 
 
 def _dist(a: Point2D, b: Point2D) -> float:
@@ -301,6 +302,58 @@ def _add_wall_rebars(bars: list[dict[str, Any]], wall, max_per_wall: int = 110) 
     return sampled_total, estimated_total
 
 
+
+
+_SUPPORT_EXPECTED_BAR_TYPES = ("longitudinal", "distribution", "stirrup", "tie", "additional")
+
+def _support_reinforcement_contract(support: SupportElement, scheme_row: dict[str, Any] | None) -> tuple[list[ReinforcementGroup], dict[str, Any]]:
+    """Resolve the applied support cage contract, including legacy projects.
+
+    Older projects often persisted only the longitudinal group on the support
+    object while the detailed end-zone/middle-zone schedule lived in
+    ``retainingSystem.rebarDesignScheme.supportSchemes``. The 3D viewer must
+    consume both sources and report missing families instead of silently
+    drawing a longitudinal-only cage.
+    """
+    groups = list(support.reinforcement or [])
+    present = {str(item.bar_type) for item in groups}
+    synthesized: list[str] = []
+    row = dict(scheme_row or {})
+    longitudinal = dict(row.get("longitudinal") or {})
+    end_zone = dict(row.get("endZones") or {})
+    middle = dict(row.get("middleZone") or {})
+    status = "pass" if str(row.get("status") or "") == "pass" else "manual_review"
+    grade = str(longitudinal.get("grade") or "HRB400")
+
+    def add(group: ReinforcementGroup) -> None:
+        groups.append(group)
+        present.add(str(group.bar_type))
+        synthesized.append(str(group.bar_type))
+
+    if row and "longitudinal" not in present:
+        add(ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=grade, check_status=status, location_description="resolved from applied rebarDesignScheme.supportSchemes"))
+    if row and "distribution" not in present:
+        add(ReinforcementGroup(name="支撑侧面分布筋", bar_type="distribution", diameter=12, spacing=250, grade=grade, check_status="manual_review", location_description="resolved from applied support cage detailing contract"))
+    if row and "stirrup" not in present:
+        add(ReinforcementGroup(name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade=grade, check_status="manual_review", location_description=f"end zones length {end_zone.get('lengthM')}m at both ends; resolved from applied scheme"))
+        add(ReinforcementGroup(name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade=grade, check_status="manual_review", location_description="middle-zone confinement; resolved from applied scheme"))
+    if row and "tie" not in present:
+        add(ReinforcementGroup(name="支撑拉结/架立筋", bar_type="tie", diameter=12, spacing=400, grade=grade, check_status="manual_review", location_description="resolved from applied support cage detailing contract"))
+    if row and "additional" not in present:
+        add(ReinforcementGroup(name="搭接加强筋", bar_type="additional", diameter=max(16.0, float(longitudinal.get("diameterMm") or 25) - 6.0), count=4, grade=grade, check_status="manual_review", location_description="staggered lap zone away from rigid end zones; resolved from applied scheme"))
+
+    final_present = sorted({str(item.bar_type) for item in groups})
+    missing = [name for name in _SUPPORT_EXPECTED_BAR_TYPES if name not in final_present]
+    return groups, {
+        "hostId": support.id, "hostCode": support.code,
+        "expectedBarTypes": list(_SUPPORT_EXPECTED_BAR_TYPES),
+        "sourceBarTypes": sorted({str(item.bar_type) for item in (support.reinforcement or [])}),
+        "resolvedBarTypes": final_present, "synthesizedBarTypes": sorted(set(synthesized)),
+        "missingBarTypes": missing, "schemeRowFound": bool(row),
+        "status": "complete" if not missing else "incomplete",
+    }
+
+
 def _support_longitudinal_offsets(count: int, width: float, height: float) -> list[tuple[float, float]]:
     n = max(2, min(count, 16))
     # Perimeter-like distribution in local section: lateral offset in plan, vertical offset in elevation.
@@ -317,17 +370,28 @@ def _support_longitudinal_offsets(count: int, width: float, height: float) -> li
     return perimeter
 
 
-def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, max_per_support: int = 24) -> tuple[int, int]:
+def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, groups: list[ReinforcementGroup] | None = None, max_per_support: int = 44) -> tuple[int, int]:
     width = max((support.section.width if support.section else None) or 0.8, 0.35)
     height = max((support.section.height if support.section else None) or 0.8, 0.35)
     ux, uy, length = _unit(support.start, support.end)
     nx, ny = -uy, ux
     sampled_total = 0
     estimated_total = 0
-    for group in support.reinforcement:
+    # Reserve a visible quota for every reinforcement family.  The former
+    # sequential sampler allowed longitudinal bars and the first stirrup group
+    # to exhaust the complete preview budget, hiding ties and local bars.
+    type_caps = {"longitudinal": 12, "distribution": 6, "stirrup": 12, "tie": 5, "additional": 5}
+    used_by_type: dict[str, int] = {}
+    priority = {"longitudinal": 0, "distribution": 1, "stirrup": 2, "tie": 3, "additional": 4}
+    resolved_groups = sorted(list(groups if groups is not None else (support.reinforcement or [])), key=lambda item: priority.get(item.bar_type, 99))
+    for group in resolved_groups:
         if sampled_total >= max_per_support:
             break
-        remaining = max_per_support - sampled_total
+        type_remaining = max(0, type_caps.get(group.bar_type, 4) - used_by_type.get(group.bar_type, 0))
+        remaining = min(max_per_support - sampled_total, type_remaining)
+        if remaining <= 0:
+            continue
+        before = sampled_total
         if group.bar_type == "longitudinal":
             count = min(group.count or 8, remaining)
             estimated_total += group.count or count
@@ -468,6 +532,7 @@ def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, max
                     sampled_from_count=count,
                 ))
             sampled_total += count
+        used_by_type[group.bar_type] = used_by_type.get(group.bar_type, 0) + max(0, sampled_total - before)
     return sampled_total, estimated_total
 
 
@@ -610,6 +675,68 @@ def _add_node_rebars(bars: list[dict[str, Any]], node, max_per_node: int = 10) -
     return sampled_total, estimated_total
 
 
+
+
+def _stratified_bar_type_sample(items: list[dict[str, Any]], quota: int) -> list[dict[str, Any]]:
+    """Sample reinforcement across bar families and hosts.
+
+    A pure host round-robin still favors the first reinforcement family stored
+    on every host.  For internal supports that made longitudinal bars consume
+    the global budget before stirrups, distribution bars, ties and local bars
+    were reached.  This sampler first reserves a bounded quota per bar family,
+    then distributes each family across hosts.
+    """
+    if quota <= 0 or not items:
+        return []
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    type_order = ["longitudinal", "distribution", "stirrup", "tie", "additional"]
+    for item in items:
+        grouped[str(item.get("barType") or "other")].append(item)
+    active = [name for name in type_order if grouped.get(name)]
+    active.extend(sorted(name for name in grouped if name not in active))
+    if not active:
+        return _round_robin_host_sample(items, quota)
+
+    weights = {
+        "longitudinal": 0.28,
+        "distribution": 0.14,
+        "stirrup": 0.30,
+        "tie": 0.13,
+        "additional": 0.15,
+    }
+    weight_sum = sum(weights.get(name, 0.08) for name in active) or 1.0
+    quotas: dict[str, int] = {}
+    remaining = quota
+    for index, name in enumerate(active):
+        available = len(grouped[name])
+        if index == len(active) - 1:
+            assigned = min(available, remaining)
+        else:
+            raw = int(round(quota * weights.get(name, 0.08) / weight_sum))
+            assigned = max(1, min(available, raw))
+            assigned = min(assigned, max(1, remaining - (len(active) - index - 1)))
+        quotas[name] = assigned
+        remaining -= assigned
+
+    if remaining > 0:
+        for name in sorted(active, key=lambda row: len(grouped[row]) - quotas.get(row, 0), reverse=True):
+            if remaining <= 0:
+                break
+            extra = min(len(grouped[name]) - quotas.get(name, 0), remaining)
+            if extra > 0:
+                quotas[name] = quotas.get(name, 0) + extra
+                remaining -= extra
+
+    selected: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    for name in active:
+        rows = _round_robin_host_sample(grouped[name], quotas.get(name, 0))
+        selected.extend(rows)
+        selected_ids.update(str(row.get("id")) for row in rows)
+    if len(selected) < quota:
+        residual = [row for row in items if str(row.get("id")) not in selected_ids]
+        selected.extend(_round_robin_host_sample(residual, quota - len(selected)))
+    return selected[:quota]
 
 
 def _round_robin_host_sample(items: list[dict[str, Any]], quota: int) -> list[dict[str, Any]]:
@@ -797,6 +924,8 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
 
     zone_scheme = retaining.rebar_design_scheme if retaining and isinstance(retaining.rebar_design_scheme, dict) else {}
     wall_zones_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    support_scheme_by_host = {str(item.get("hostId")): dict(item) for item in (zone_scheme.get("supportSchemes", []) if isinstance(zone_scheme, dict) else [])}
+    support_contracts: list[dict[str, Any]] = []
     cages: list[dict[str, Any]] = []
     for zone in zone_scheme.get("wallZones", []) if isinstance(zone_scheme, dict) else []:
         wall_zones_by_host[str(zone.get("hostId"))].append(zone)
@@ -838,14 +967,19 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
                 )
         for support in retaining.supports:
             host_bars = []
-            sampled, estimated = _add_support_rebars(host_bars, support)
+            resolved_groups, contract = _support_reinforcement_contract(support, support_scheme_by_host.get(support.id))
+            sampled, estimated = _add_support_rebars(host_bars, support, resolved_groups)
+            contract["sampledBarTypes"] = sorted({str(item.get("barType")) for item in host_bars})
+            contract["sampledBarCount"] = sampled
+            support_contracts.append(contract)
+            append_event("rebar-contract", "support-contract-resolved", projectId=project.id, **contract)
             _capture(
                 "internal_support",
                 support.code,
-                len(support.reinforcement),
+                len(resolved_groups),
                 sampled,
                 estimated,
-                [_group_token(g) for g in support.reinforcement],
+                [_group_token(g) for g in resolved_groups],
                 host_bars,
             )
         for node in retaining.support_nodes or []:
@@ -904,7 +1038,14 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
                 if addable > 0:
                     quotas[category] = quotas.get(category, 0) + addable
                     remaining_budget -= addable
-        bars = [bar for category in category_order for bar in _round_robin_host_sample(pools.get(category, []), quotas.get(category, 0))]
+        bars = []
+        for category in category_order:
+            category_rows = pools.get(category, [])
+            quota = quotas.get(category, 0)
+            if category == "internal_support":
+                bars.extend(_stratified_bar_type_sample(category_rows, quota))
+            else:
+                bars.extend(_round_robin_host_sample(category_rows, quota))
         omitted_hosts = sum(1 for summary in host_summaries if summary["sampledBarCount"] and not any(bar.get("hostCode") == summary["hostCode"] for bar in bars))
 
     by_type = Counter(str(bar.get("barType")) for bar in bars)
@@ -915,6 +1056,16 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
         dia_m = max(float(bar.get("diameterMm") or 0.0) / 1000.0, 0.0)
         area = math.pi * dia_m * dia_m / 4.0
         steel_mass_proxy_kg += area * float(bar.get("lengthM") or 0.0) * 7850.0
+    support_types_present = sorted({str(bar.get("barType")) for bar in bars if str(bar.get("hostType")) == "internal_support"})
+    support_types_missing = [name for name in _SUPPORT_EXPECTED_BAR_TYPES if name not in support_types_present]
+    incomplete_contracts = [item for item in support_contracts if item.get("missingBarTypes")]
+    append_event(
+        "rebar-visualization", "visualization-built", projectId=project.id, maxBars=max_bars,
+        sampledBarCount=len(bars), totalAvailableBarCount=total_available,
+        supportBarTypesPresent=support_types_present, supportBarTypesMissing=support_types_missing,
+        incompleteSupportContractCount=len(incomplete_contracts), supportCount=len(support_contracts),
+        byBarType=dict(by_type), byHostType=dict(by_host), omittedHostCount=omitted_hosts,
+    )
     return {
         "projectId": project.id,
         "exportProfileMapping": {
@@ -931,6 +1082,11 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
             "omittedHostCount": omitted_hosts,
             "steelMassProxyKg": round(steel_mass_proxy_kg, 1),
             "byBarType": dict(by_type),
+            "supportBarTypesPresent": support_types_present,
+            "supportBarTypesExpected": list(_SUPPORT_EXPECTED_BAR_TYPES),
+            "supportBarTypesMissing": support_types_missing,
+            "supportContractCompleteCount": sum(1 for item in support_contracts if not item.get("missingBarTypes")),
+            "supportContractIncompleteCount": len(incomplete_contracts),
             "byHostType": dict(by_host),
             "byCheckStatus": dict(by_status),
             "detailLevel": "construction_panel_cage_grid_plus_zone_linked_sampled_bars" if cages else ("zone_linked_sampled_bar_level" if wall_zones_by_host else "sampled_bar_level_from_parameterized_reinforcement_groups"),
@@ -940,6 +1096,7 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
         "bars": bars,
         "cages": cages,
         "hosts": host_summaries[:200],
+        "supportContracts": support_contracts[:500],
         "notes": [
             "The visualization is generated from the applied reinforcement design scheme and the same host object IDs used by IFC/CAD exports.",
             "Applied wall-zone schemes display separate elevation ranges, inner/outer faces and drawing references; unapplied projects fall back to governing member groups.",

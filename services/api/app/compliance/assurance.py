@@ -193,15 +193,25 @@ def evaluate_project_assurance(project: Project) -> dict[str, Any]:
     # Capability completion is intentionally separated from engineering check status.
     # A project can have a complete software workflow and still fail an engineering check;
     # in that case engineeringCheckStatus is fail and closedLoopComplete remains false.
+    artifact_keys = {
+        str(item.get("storageKey") or "")
+        for item in list(((project.advanced_engineering or {}).get("artifactStorage") or {}).get("artifacts") or [])
+        if isinstance(item, dict)
+    }
+    latest_stage_summary = dict(getattr(latest, "stage_result_summary", None) or {}) if latest else {}
+    persisted_stage_count = int(latest_stage_summary.get("actualCount") or 0)
+    has_geology_surfaces = bool(project.geological_model and project.geological_model.surfaces) or "geology:surfaces" in artifact_keys
+    has_vtu_mesh = bool(project.geological_model and project.geological_model.vtu_mesh) or "geology:vtu" in artifact_keys
+    has_stage_evidence = bool(latest and (latest.stage_results or persisted_stage_count > 0))
     implemented: dict[str, bool] = {
         "P0": True,
         "P1": True,
         "P2": bool(project.boreholes and project.strata),
-        "P3": bool(project.geological_model and project.geological_model.surfaces),
-        "P4": bool(project.geological_model and project.geological_model.vtu_mesh),
+        "P3": has_geology_surfaces,
+        "P4": has_vtu_mesh,
         "P5": bool(project.excavation and project.excavation.segments),
         "P6": bool(project.retaining_system and project.retaining_system.diaphragm_walls and project.retaining_system.supports),
-        "P7": bool(latest and latest.stage_results and (latest.governing_values.max_wall_moment or 0) > 0),
+        "P7": bool(latest and has_stage_evidence and (latest.governing_values.max_wall_moment or 0) > 0),
         "P8": bool(project.retaining_system and all(w.reinforcement and w.design_results for w in project.retaining_system.diaphragm_walls)),
         "P9": bool(project.retaining_system and project.retaining_system.diaphragm_walls),
         "P10": bool(latest),

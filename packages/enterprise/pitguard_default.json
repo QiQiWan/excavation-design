@@ -1,0 +1,97 @@
+{
+  "libraryId": "pitguard_default",
+  "libraryVersion": "2026.07-v3.47",
+  "name": "PitGuard 默认企业工程资源库",
+  "status": "software_validation",
+  "boundary": "本库用于软件工程闭环与项目草案。正式项目应由企业总工办确认地方标准、构件截面、节点详图和材料供应信息。",
+  "standardTemplates": [
+    {
+      "id": "national_core_2026",
+      "name": "国家标准核心体系",
+      "standards": ["GB 55003-2021", "JGJ 120-2012", "GB 50009-2012", "GB 50007-2011", "GB 55008-2021", "GB/T 50010-2010（2024年局部修订）", "GB 50017-2017"],
+      "safetyTargets": {
+        "strength": 1.10,
+        "stiffness": 1.05,
+        "support_stability": 1.10,
+        "column_stability": 1.10,
+        "embedment": 1.20,
+        "heave": 1.20,
+        "seepage": 1.20,
+        "confined_uplift": 1.20,
+        "overall_stability": 1.25
+      },
+      "loadCombinationPolicy": "standard"
+    },
+    {
+      "id": "sensitive_environment_2026",
+      "name": "高敏感周边环境控制模板",
+      "standards": ["GB 55003-2021", "JGJ 120-2012", "GB 50009-2012", "GB 55008-2021", "GB/T 50010-2010（2024年局部修订）"],
+      "safetyTargets": {
+        "strength": 1.15,
+        "stiffness": 1.10,
+        "support_stability": 1.15,
+        "column_stability": 1.15,
+        "embedment": 1.25,
+        "heave": 1.25,
+        "seepage": 1.25,
+        "confined_uplift": 1.25,
+        "overall_stability": 1.30
+      },
+      "loadCombinationPolicy": "conservative"
+    }
+  ],
+  "nodeTemplates": [
+    {
+      "id": "RC_SUPPORT_TO_WALE_STANDARD",
+      "name": "钢筋混凝土支撑—围檩标准节点",
+      "hostTypes": ["rc_rectangular"],
+      "axialForceRangeKn": [0, 6000],
+      "bearingPlate": {"minWidthMm": 700, "minHeightMm": 700, "minThicknessMm": 30},
+      "stiffener": {"minCount": 4, "minThicknessMm": 16},
+      "anchorBars": {"grade": "HRB400", "diameterMm": 25, "minCount": 8},
+      "localFemRequiredAboveUtilization": 0.85,
+      "drawingRef": "NODE-RC-01"
+    },
+    {
+      "id": "STEEL_PIPE_SUPPORT_TO_WALE",
+      "name": "钢管支撑—围檩端板节点",
+      "hostTypes": ["steel_pipe"],
+      "axialForceRangeKn": [0, 10000],
+      "bearingPlate": {"minWidthMm": 900, "minHeightMm": 900, "minThicknessMm": 40},
+      "stiffener": {"minCount": 8, "minThicknessMm": 20},
+      "bolts": {"grade": "10.9S", "diameterMm": 30, "minCount": 12},
+      "localFemRequiredAboveUtilization": 0.75,
+      "drawingRef": "NODE-ST-01"
+    }
+  ],
+  "rebarCombinations": [
+    {
+      "id": "WALL_C35_HRB400_BALANCED",
+      "name": "C35-HRB400 地连墙均衡配筋组合",
+      "hostType": "diaphragm_wall",
+      "concreteGrade": "C35",
+      "rebarGrade": "HRB400",
+      "mainBars": [{"diameterMm": 25, "spacingMm": 150}, {"diameterMm": 28, "spacingMm": 150}, {"diameterMm": 32, "spacingMm": 150}],
+      "distributionBars": [{"diameterMm": 16, "spacingMm": 200}, {"diameterMm": 18, "spacingMm": 200}],
+      "couplerThresholdMm": 28,
+      "minimumClearSpacingMm": 50
+    },
+    {
+      "id": "RC_SUPPORT_C35_HRB400",
+      "name": "C35-HRB400 水平支撑配筋组合",
+      "hostType": "rc_support",
+      "concreteGrade": "C35",
+      "rebarGrade": "HRB400",
+      "longitudinalOptions": [{"diameterMm": 25, "counts": [12, 16, 20]}, {"diameterMm": 28, "counts": [12, 16, 20]}, {"diameterMm": 32, "counts": [12, 16]}],
+      "stirrupOptions": [{"diameterMm": 12, "spacingMm": [100, 150, 200]}, {"diameterMm": 14, "spacingMm": [100, 150]}],
+      "couplerThresholdMm": 28,
+      "minimumClearSpacingMm": 50
+    }
+  ],
+  "drawingStandards": {
+    "nodeSheetPrefix": "N",
+    "rebarSheetPrefix": "R",
+    "scenarioSheetPrefix": "SC",
+    "reviewStatuses": ["draft", "review", "approved"]
+  }
+}

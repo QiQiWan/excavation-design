@@ -1,321 +1,93 @@
-# PitGuard BIM Designer V3.37.0
+# PitGuard V3.55.0
 
-面向基坑围护结构方案设计、分阶段计算、规范审查、配筋与构造深化、三维复核以及 IFC/CAD/PDF 交付的工程设计辅助系统。
+PitGuard 的默认产品形态已经收敛为基坑围护结构核心设计工作台。主流程采用六个核心步骤：
 
+1. 设计基准：工程等级、安全等级、规范体系、荷载组合和材料参数；
+2. 工程输入：钻孔/地层、地质摘要、闭合基坑轮廓与标高；
+3. 围护方案：围护墙、围檩、水平支撑、角撑和临时立柱；
+4. 计算验算：施工阶段、内力变形、强度、刚度和稳定性；
+5. 配筋深化：围护墙、围檩、支撑、节点和施工构造；
+6. 成果交付：计算书、施工图、IFC 和审查成果包。
 
-## V3.37.0 渐进式设计与自适应资源运行架构
+V3.52 将基坑验算从少量汇总值升级为 51 项设计阶段完整目录，覆盖强度、刚度、稳定性、水控制和施工性，并保留逐墙、逐工况证据。缺资料项会列明资料名称、提供阶段、责任方、设计阶段是否可提供及补齐动作。配筋深化入口统一计算合同、方案应用、构件配筋、空间深化和 P3 闭环口径，直接输出阻断原因、影响对象和处理顺序。
 
-- 基坑轮廓解析后进入八级渐进式设计：设计域、工程约束、围护墙、支撑体系、线位搜索、候选预检、完整计算和深化交付。
-- 配置独立持久化并生成追踪哈希；修改上游决策只失效受影响的下游阶段。
-- 固定 96 MB 阈值替换为基于主机/cgroup内存、进程RSS、CPU负载、磁盘余量和JSON放大系数的动态资源策略。
-- API始终采用工作区优先，A/B/C任务提交只读取候选ID；完整项目由独立worker按实时资源准入。
-- 重型任务并发在每次执行前动态调整，避免多候选同时通过预检后共同耗尽内存。
-- 候选平面增加独立预览缓存和SQLite JSON1旧项目回填，切换方案不再显示空白。
-- 低内存或低磁盘时，存储维护只重建轻量工作区并延后完整外部化，保证服务持续可用。
+V3.55 将校核结果接入设计器：按项目储备目标自动执行“验算—定位控制构件—补强—复算”，达到安全边界后闭合，不能安全自动修改的地质、水位和锁定施工顺序转为可交互建议。版本同时补齐冠梁施工阶段内力与五类配筋回写，并修复水平支撑箍筋、侧面构造筋、拉结筋及搭接附加筋在问题过滤后消失的问题。
 
-详细说明见 [`docs/releases/V3_37_0_PROGRESSIVE_ADAPTIVE_RUNTIME.md`](docs/releases/V3_37_0_PROGRESSIVE_ADAPTIVE_RUNTIME.md)。
+## 启动
 
-
-## V3.36.0 通用设计资格与结构体系决策
-
-- 新增统一“数据工作集—几何—坐标/地质—支撑体系—计算—交付”资格矩阵，明确正常、受限和诊断三种交互模式。
-- 大项目的设计诊断、支撑审查和资源估算改用有上限的工作区投影，完整快照超过 API 阈值时不再导致方案面板整体失效。
-- 新增独立 `storage_compaction` 任务，直接对持久化 JSON 外部化重型数据并重建工作区，不在 API 进程中加载完整工程对象。
-- 新增坐标一致性审计，检查钻孔与基坑的包围盒交叠、中心偏移、尺度比和显式坐标元数据；平移建议仅用于预览和人工确认。
-- 建立可扩展结构体系目录，将自动对撑、斜撑混合、分区转接、环梁径向撑、中心岛、环桁架、双向框架和分仓施工纳入统一候选决策。
-- A/B/C 面板不再把 `controlled_block` 诊断卡显示成空白设计方案；无计算资格时转入体系选择，并给出前提、硬边界和下一步动作。
-- 支撑候选任务支持显式 `topologyFamily`，只在已实现的体系生成器范围内运行；未实现体系禁止静默降级为普通直撑。
-- 围檩超限跨修复改为通用“目标站—受力体系”搜索：先生成墙面缺失支点目标，再依次寻找相对墙直撑、端墙长斜撑或独立平行角撑；不依赖特定轮廓名称。
-- 计算页和独立 worker 共用设计资格门禁，无有效传力拓扑时禁止绕过前端直接启动完整计算。
-- 新增长条形、近方形、L 形和井筒等多平面回归，确保本轮框架不绑定单一轮廓。
-
-详细说明见 [`docs/releases/V3_36_0_GENERAL_DESIGN_QUALIFICATION.md`](docs/releases/V3_36_0_GENERAL_DESIGN_QUALIFICATION.md)。
-
-## V3.35.0 证据分级、运行可靠性与正式设计门禁
-
-- 将水平支撑结论拆分为候选筛查通过、完整计算就绪和正式设计就绪，新增 A-D 证据等级。
-- 完整计算直接向深化设计传递本次施工阶段轴力包络；与当前拓扑、输入快照或算法版本不一致的历史结果禁止参与承载力判断。
-- 增加分阶段轴力覆盖率、土层参数完整度、地质覆盖、节点闭环和计算质量包联合门禁。
-- 前端 GET 请求增加有界瞬时故障重试、取消与超时区分，以及服务端请求追踪号。
-- 后端监控路径去标识化并限制聚合基数；系统就绪检查增加磁盘、进程内存和任务排队退化判定。
-- 项目工作台新增系统可靠性条，显示 API P95、错误率、并发、队列、进程内存和监控路径基数。
-- 软件、算法、规则集和导出协议统一升级至 V3.35。
-
-详细说明见 [`docs/releases/V3_35_0_EVIDENCE_GATED_RELIABILITY.md`](docs/releases/V3_35_0_EVIDENCE_GATED_RELIABILITY.md)。
-
-
-
-## V3.34.0 水平支撑深化设计与稳定感知优化
-
-- 候选方案在几何洁净度之外增加轴压稳定、长细比、预加轴力、温度、间隙、安装偏心、节点完整性和传力冗余评价。
-- 新增支撑深化设计筛查接口和前端面板，显示控制构件、组合利用率、有效无侧向支承长度及整改动作。
-- 新增受控截面/临时立柱迭代：保持平面拓扑不变，先缩短计算长度，再升级 RC、钢管或 H 型钢截面；仍不满足时要求返回拓扑优化。
-- 完整分阶段计算结果写入同一深化设计质量包，作为施工图和正式发行门禁的输入。
-
-详细说明见 [`docs/releases/V3_34_0_SUPPORT_DEEP_DESIGN.md`](docs/releases/V3_34_0_SUPPORT_DEEP_DESIGN.md)。
-
-## V3.33.0 IDW 与长条形台阶基坑支撑闭环
-
-- IDW 完整地质曲面继续存入外部对象，网页工作区新增边界保持型 `surfacePreviews`，三维查看器可立即显示降采样曲面。
-- 已外部化的旧地质曲面在升级迁移时自动回填预览，退出项目再进入仍可正常显示。
-- 新增 `elongated_stepped_strip` 识别，区分连续长条台阶轮廓与一般凹形多分区基坑。
-- 主对撑站位由折点双侧插入改为按局部净宽的等效分担面积自适应布置；宽度突变仅移动最近站位。
-- 端部短墙采用独立落墙的镜像平行角撑族，禁止扇形共节点、支撑到支撑终止和折点局部高密度直撑。
-- 新增 `supportStationClusterCount`、最小站位净距和候选硬门禁；旧密集方案在计算前自动进入支撑候选重建。
-- 更新计算诊断，明确先闭合平面传力和围檩支点，再迭代墙体厚度、支撑层位、墙趾和配筋。
-
-详细说明见 [`docs/releases/V3_33_0_IDW_STEPPED_STRIP_SUPPORT.md`](docs/releases/V3_33_0_IDW_STEPPED_STRIP_SUPPORT.md)。
-
-## V3.31.0 外部数据对象与小内存工作集
-
-- 项目主快照只保存设计核心、计算摘要和外部对象引用；完整施工阶段结果、地质网格、候选完整计算、逐根钢筋及工业深化缓存迁移到 `runtime/artifacts`。
-- 外部对象采用 SHA-256 内容寻址和 gzip 压缩；计算阶段结果按默认 100 条记录分片，worker 读取时自动重组。
-- 网页打开项目继续使用有上限的 `workspace_data`；计算明细在用户展开后读取单个分片，不再一次进入浏览器内存。
-- 大型数据下载由认证 API 返回 `X-Accel-Redirect`，Nginx 使用 `sendfile` 直接传输，Python API 不读取完整文件。
-- 一键部署自动备份数据库、迁移当前项目及保留修订、清理孤立对象，并配置 Nginx 内部对象路径。
-- 新增 `backup-production.sh`，同时生成 SQLite 一致性备份和对象校验清单；可选打包全部对象文件。
-
-详细说明见 [`docs/releases/V3_31_0_EXTERNAL_DATASET_WORKING_SET.md`](docs/releases/V3_31_0_EXTERNAL_DATASET_WORKING_SET.md)。
-
-## V3.30.0 大型项目安全打开与API内存隔离
-
-- 项目详情默认读取独立的 `workspace_data` 投影，不再把完整计算矩阵、VTU网格、逐根钢筋和候选完整计算装入API进程。
-- `GET /api/projects/{id}` 直接返回SQLite中已持久化的工作区JSON，跳过 `json.loads → Pydantic → 再序列化` 的多重内存复制。
-- 完整项目快照继续保存在 `projects.data` 和不可变修订中，仅隔离worker或显式 `profile=full` 使用。
-- 数据库自动增加 `workspace_data`、`payload_bytes` 和 `workspace_bytes`；旧数据库通过SQLite JSON1在独立部署进程中安全回填。
-- 项目打开改为只读操作，不再在GET请求中执行历史迁移、结果失效写回或创建新修订。
-- API对完整项目加载增加默认96 MB硬门禁；超限返回HTTP 413诊断，避免冲破systemd内存上限。
-- 项目列表显示完整快照体积，新增 `/api/projects/{id}/storage-health`；`status-production.sh` 输出最大项目及工作区体积。
-- 一键部署会在启动API前执行工作区投影准备，API和worker分别设置 `PITGUARD_PROCESS_ROLE=api/worker`。
-
-详细说明见 [`docs/releases/V3_30_0_PROJECT_OPEN_MEMORY_SAFETY.md`](docs/releases/V3_30_0_PROJECT_OPEN_MEMORY_SAFETY.md)。
-
-## V3.28.0 异形轮廓智能识别与体系选型
-
-- 新增最小旋转外接矩形局部坐标、圆度、矩形度、凸度、正交边比例、凹角数量、外包矩形缺口签名和矩形走廊分解。
-- 可识别狭长矩形、近方形、旋转矩形、梯形、平行四边形、三角形、凸多边形、圆形、椭圆形、多边形竖井，以及 L/U/C/T/Z/H 形、单缺口、台阶形、梳齿/多台阶和一般凹多边形。
-- 体系选择由形状驱动：狭长平面采用短跨直对撑+端部平行角撑；近方形/圆形/椭圆形采用闭合内环+径向支撑；凸非正交平面采用可见墙面对；凹形平面采用走廊分区墙—墙对撑并对交汇转接区设置强制门禁。
-- 新增真正的 `zoned_direct` 生成器。支撑按识别分区的短跨方向布置，随后延伸至实际围护墙；禁止终止在虚拟分区边界或其他支撑。
-- 凹角、多臂交汇和错台转接区没有环梁、分隔墙、中心岛或显式平面框架时，系统允许形成方案级支撑草案，但完整计算与施工版发行保持 `controlled_block`。
-- 新增 `/api/projects/{project_id}/design/plan-shape-diagnostics` 和 `/auto-supports-by-shape`，前端围护结构页显示形状、局部跨径、长宽比、凹角、设计分区、推荐体系、布置规则、禁用形式和计算模型。
-- 几何资格套件扩展为15类平面，覆盖长条形、旋转矩形、梯形、凸六边形、L/T/U/C/Z/H形、一般凹形、近方形、圆形和椭圆形；结果区分 `calculation_ready` 与 `controlled_block`。
-
-## 服务器一键构建与启动（推荐）
-
-在代码根目录执行：
-
-```bash
-sudo bash start-linux.sh
-```
-
-该命令会自动完成：
-
-- 使用当前 Python 环境安装后端依赖；
-- 执行 `npm ci` 并构建生产前端；
-- 将前端构建到 `apps/web/dist`；
-- 创建并启动 `pitguard-api.service` 与隔离计算服务 `pitguard-worker.service`；
-- 写入 `designer.eatrice.cn` 的 Nginx HTTPS 配置；
-- 自动生成自动化 API 密钥、应用登录账号、密码和会话密钥；
-- 执行后端健康检查、`nginx -t` 和 Nginx 重载。
-
-生产环境不启动 Vite，不使用也不检查 5173/5174 端口。前端由 Nginx 直接通过 443 端口提供，后端仅监听 `127.0.0.1:8002`。浏览器进入应用登录页，不再出现 Nginx Basic Auth 弹窗。
-
-默认参数：
-
-```text
-域名        designer.eatrice.cn
-证书        /usr/crt/fullchain.pem
-私钥        /usr/crt/privkey.pem
-后端        127.0.0.1:8002
-数据库      runtime/pitguard.sqlite3
-服务        pitguard-api.service / pitguard-worker.service
-```
-
-常用覆盖方式：
-
-```bash
-sudo PITGUARD_DOMAIN=designer.eatrice.cn \
-  PYTHON_BIN=/root/anaconda3/envs/ifc/bin/python \
-  PITGUARD_WEB_USER=pitguard \
-  PITGUARD_WEB_PASSWORD='设置强密码' \
-  bash start-linux.sh
-```
-
-常用运维命令：
-
-```bash
-bash status-production.sh
-sudo bash restart-production.sh
-sudo journalctl -u pitguard-api -f
-sudo journalctl -u pitguard-worker -f
-```
-
-仅构建、不安装系统服务：
-
-```bash
-PYTHON_BIN=/root/anaconda3/envs/ifc/bin/python \
-  bash scripts/build-production.sh
-```
-
-本地开发模式保留为：
-
-```bash
-bash start-linux-dev.sh
-```
-
-## 文档入口
-
-全部说明集中在 [`docs/README.md`](docs/README.md)。根目录只保留启动脚本、源码目录和本文件。
-
-
-
-
-## V3.27.0 多平面拓扑与隔离计算进程
-
-- 长条形端墙按围檩硬限值反算平行角撑族数量，160m×33m资格算例不再出现每层两端墙各一次的“拓扑 Fail 6”。
-- 支撑扫描线和角撑判定统一使用局部主轴，旋转长方形不再受全局X/Y包围盒影响。
-- L/T/U形、一般凹多边形和近方形不再用任意角度斜撑或支撑中部T/Y节点强行补齐；当前轴压杆模型无法闭合时仅返回一个受控阻断方案。
-- 支撑候选优化、完整计算和重型导出从Uvicorn API进程迁移到 `pitguard-worker.service`。计算进程超时、OOM或原生库崩溃时，登录、项目和健康检查仍由API服务提供。
-- 任务增加载荷哈希去重、SQLite原子领取、单重任务并发、CPU/内存cgroup限制和一次一进程内存回收。
-- 首次升级必须执行 `sudo bash start-linux.sh` 以安装新worker服务。
-
-详细说明见 [`docs/releases/V3_27_0_SHAPE_TOPOLOGY_ISOLATED_WORKER.md`](docs/releases/V3_27_0_SHAPE_TOPOLOGY_ISOLATED_WORKER.md)。
-
-## V3.26.0 平行角撑与登录弹窗修复
-
-- 角部斜撑按施工图逻辑生成独立平行角撑族：每根角撑在两侧围檩上使用独立节点，禁止 V 形/扇形汇交。
-- 围檩超限修复不再从固定墙点向相邻墙发散，改为共同转角等链距的平行角撑修复。
-- 角撑平行度、墙节点最小间距进入硬约束和方案排序。
-- 生产脚本自动移除同域名旧 Nginx server 块，显式设置 `auth_basic off`，并检测 `WWW-Authenticate`，避免旧 Basic Auth 弹窗覆盖应用登录页。
-
-## V3.24.1 独立登录路由
-
-- 新增独立 `/login` 页面，未登录访问任意受保护业务地址时自动跳转；
-- 自动保存原访问地址，登录成功后返回原页面；
-- 会话过期、接口返回 401 或主动退出时统一回到登录页；
-- 登录页采用全屏工程平台界面，支持密码显隐、状态提示和服务异常提示；
-- Nginx 继续使用 SPA 回退，直接访问 `/login`、`/docs` 均可正确加载；
-- 生产一键脚本自动生成网页账号、密码哈希和会话密钥，不启用浏览器 Basic Auth 弹窗。
-
-详细说明见 [`docs/releases/V3_24_1_INDEPENDENT_LOGIN_ROUTE.md`](docs/releases/V3_24_1_INDEPENDENT_LOGIN_ROUTE.md)。
-
-## V3.24.0 工业级计算与受控交付
-
-- 每次完整计算冻结求解前输入快照，并记录自动截面设计后的采用设计快照。
-- 计算合同绑定工况、几何、支撑拓扑、算法版本、规则集版本和数值运行环境。
-- 统一审计阶段—墙段覆盖、矩阵条件数、平衡残差、回退求解和有限数值。
-- 全局耦合解与墙体参考解、支撑轴力对账形成独立计算复核包。
-- 规范校核记录要求规则、对象、状态、信息和条文/方法来源完整可追溯。
-- 施工版协同交付必须绑定当前计算合同、岗位审签、当前修订和交付内容根哈希。
-- 前端计算面板直接显示输入哈希、采用设计哈希、结果哈希及工业计算质量状态。
-- 钢筋深化包采用流式XLSX、紧凑JSON和单份逐根几何数据，6万根基准算例导出约12.5秒。
-
-详细说明见 [`docs/releases/V3_24_0_INDUSTRIAL_CALCULATION_CONTROLLED_DELIVERY.md`](docs/releases/V3_24_0_INDUSTRIAL_CALCULATION_CONTROLLED_DELIVERY.md)。
-
-## V3.23.0 关键变化
-
-- 支撑洁净度目标覆盖围护墙上的端点连接：单根支撑正常落墙点仅记录追溯；同层两根及以上支撑共用墙/围檩节点计为墙上汇交，三根及以上计为高分支墙节点。
-- 候选采用分层排序：安全与几何硬约束、非法穿越、墙上高分支汇交、墙上汇交、总汇交与平面复杂度、结构性能和施工经济性。
-- 增加支撑—墙长联合优化接口。基坑边界保持固定，逐墙面优化计算控制段长度、施工槽段长度/数量、局部加强范围，并与竖向墙趾长度和支撑拓扑联合排序。
-- A/B/C 方案卡增加墙上汇交数及墙上/内部汇交节点图形标记，前端显示与后端优化目标一致。
-- IFC 详细模式按真实施工槽段拆分围护墙，建立计算墙装配、相邻槽段连接、钢筋笼 IFC Group 和代表钢筋分组关系，并输出 IFC 侧车追溯清单。
-- 钢筋笼可视化增加施工接头、吊点、竖向分段及搭接/套筒区；钢筋深化中的笼段编码继承真实施工槽段编码。
-- 施工图包新增支撑墙上连接节点表、计算墙—施工槽段—钢筋笼映射表和跨 IFC/CAD/配筋成果一致性 JSON；正式发行闸门检查双向映射和墙上高分支节点。
-- 生产访问改为应用内登录页，采用 HttpOnly 会话 Cookie 和角色权限；Nginx Basic Auth 弹窗已移除。
-- FastAPI 文档、OpenAPI 和系统就绪信息仅对已登录用户开放；导出接口具有唯一 Operation ID。
-- 生产构建默认使用同域 `/api`，即使直接运行 `npm run build` 也不会把本机 `127.0.0.1:8002` 写入构建产物。
-
-详细审查与实施边界见 [`docs/releases/V3_23_0_JOINT_CLEAN_IFC_REBAR_DRAWING_LOGIN.md`](docs/releases/V3_23_0_JOINT_CLEAN_IFC_REBAR_DRAWING_LOGIN.md)。
-
-## V3.21.0 关键变化
-
-- 将“水平支撑平面整洁度”提升为候选方案的主排序目标：先比较非法穿越数，再比较内部 T/Y/X 汇交节点、高度汇交节点、辅助构件数量和总构件数量，最后比较综合工程评分。
-- 非环形同层跨中穿越继续作为硬约束，必须为 0；合法 T/Y 节点单独计数，避免“零非法交叉”掩盖节点过密和施工图杂乱。
-- 新增 `clean_support_layout` 默认预设，非法穿越权重为 80，汇交节点复杂度权重为 80；前端默认进入整洁优先模式。
-- 支撑质量面板和 A/B/C 方案卡增加“非法穿越 / 内部汇交”指标，设计人员可直接识别线位复杂度。
-- 后端包、前端包和运行时版本统一为 3.21.0，修复长期存在的发布版本不一致问题。
-- 新增工业化成熟度审查与 P0-P3 路线图，详见 [`docs/engineering/24_INDUSTRIAL_MATURITY_AND_CLEAN_SUPPORT_OPTIMIZATION.md`](docs/engineering/24_INDUSTRIAL_MATURITY_AND_CLEAN_SUPPORT_OPTIMIZATION.md)。
-
-## V3.20.0 关键变化
-
-- 将围护模型拆分为**计算墙段、施工槽段和钢筋笼对象**：计算墙段服务于结构分析，施工槽段服务于成槽与接头，钢筋笼对象服务于配筋、吊装和加工。
-- 支撑生成改为“体系族选择—站位设计—转折区加密—直接传力复核—完整计算”。狭长基坑维持短跨主对撑连续性，角撑仅承担转角局部补强。
-- 普通非环形支撑禁止落在另一根普通支撑跨中；围檩修复优先采用墙—墙直接支撑，受控 T/Y 节点仅用于明确的双向框架、边桁架或凹角体系。
-- 支撑站位在平面台阶、折点和跨度变化区自动加密；同时记录里程、设计区、局部净跨、布置原因和传力类别。
-- 修复长墙钢筋显示过稀：每个施工槽段生成两面竖向主筋、水平分布筋和拉结筋的钢筋笼网格 LOD；可选择钢筋样本继续用于属性与碰撞。
-- 钢筋笼浏览器 LOD 与真实加工数量彻底分离。完整数量进入 BBS、CSV、XLSX 和 JSON，浏览器样本不能作为加工依据。
-- 墙趾采用 uniform、zoned 或 local 模式，但分区高差必须有稳定、渗流、软弱层和环境控制证据；导入或人工锁定墙趾禁止自动缩短。
-- 新增八阶段专家设计流水线：设计依据、支护方案、候选完整计算、分阶段分析、构件联合设计、钢筋笼深化、成果生成、校审发行。
-- 候选方案未完成独立计算或未明确采用时，P3 保持 warning；总平面、控制剖面、钢筋笼、节点和立柱基础等核心图种不完整时，P7 保持 warning。
-- 丰收湖复算生成 260 根支撑、40 根临时立柱、98 个施工槽段/钢筋笼；最大围檩直接支点间距 7.445 m，普通支撑单墙端点为 0，计算 Fail 为 0。
-- 新增实际支撑 CSV 导入：可将设计院或 PLAXIS 参考方案作为 Reference 候选导入，重建墙面端点、节点和临时立柱，并执行非交叉、坑内包含、有效跨度和围檩支点审计；缺少截面时保持 warning，禁止直接作为正式设计。
-
-详细说明见 [`docs/engineering/23_DESIGN_INSTITUTE_PIPELINE_SUPPORT_WALL_CAGE.md`](docs/engineering/23_DESIGN_INSTITUTE_PIPELINE_SUPPORT_WALL_CAGE.md)。
-
-## V3.17.0 关键变化
-
-- 项目列表增加不可逆删除功能。删除前显示项目名称并要求二次确认；后端同步清理项目记录、该项目后台任务和导出根目录内的任务成果，避免仅删除列表行后继续残留后台状态。
-- 水平支撑方案按受力路径重构：普通对撑采用墙/围檩—墙/围檩直接传力；角撑仅在转角影响区布置，并直接连接两条相邻墙面/围檩；支撑—支撑连接仅允许作为有明确竖向承托的 T/Y 分支节点，不能冒充角撑。
-- 角撑端点采用墙面连接语义和转角距离约束，默认墙面偏移约 3.5～8.0 m，且不超过相邻墙长的 30%；净距退让后仍须同时满足两端墙面、坑内包含和非交叉条件。
-- 候选方案 A/B/C 在评分和计算前执行同一套“墙—墙角撑、墙法向 T/Y 分支、普通支撑零穿越”预检，避免预览图与实际计算拓扑不一致。
-- 修复地质设计域覆盖的状态口径：实际地质模型覆盖围护结构及施工影响区时，覆盖规则必须通过；自动外扩或外推单独形成可追溯 warning/manual review，仅实际模型未覆盖设计域时形成 fail。
-- 丰收湖项目重新生成 235 根支撑和 43 根临时立柱，20 根角撑均直接落在相邻墙面/围檩，角点偏移约 3.8～4.1 m；计算结果为 Fail 0、Warning 5，强度、刚度和稳定性均通过。
-
-## V3.16.0 关键变化
-
-- 普通水平主对撑、次对撑和角撑执行“同层零穿越”硬约束；临时立柱不再将两根连续杆件的跨中交叉合法化。
-- 次对撑或角撑遇到既有主支撑时在首个有效交点终止，生成带临时立柱的 T/Y 节点；仅明确的环梁—径向撑体系采用环撑节点规则。
-- 修复内部支撑节点被误识别为围护墙端点的问题，避免端点语义、围檩支点和分担宽度被污染。
-- 围檩支点增补与凹角回墙修复统一执行非交叉裁剪，防止计算前的二次修复重新引入穿越。
-- 支撑优化器将“围檩端点或有立柱的 T/Y 节点”统一视为有效端点，候选方案可通过一致的硬约束并真正写回计算。
-- 计算诊断能够将 `QUALITY-SUPPORT_CROSSING` 明确归类为普通支撑穿越，界面显示拓扑、强度和刚度三个独立状态。
-- 项目加载时同时核对拓扑哈希、算法版本和规则集版本；旧结果自动归档并要求按当前拓扑重新计算。
-- 丰收湖三类非环形候选均完成重新生成与完整复算，支撑穿越为 0，计算 Fail 为 0。
-
-## V3.15.0 关键变化
-
-- 计算结果绑定当前支撑拓扑哈希；采用方案、修改几何或地质后自动归档旧结果并要求重算。
-- A/B/C 候选在评分前执行凹角回墙、围檩支点间距和坑内包含预检，消除候选卡片与最终拓扑不一致。
-- Step 5 一键生成围护体系现在直接执行同一套强度拓扑预检；超限围檩跨在进入计算前完成局部短对撑增补。
-- 围檩修复优先采用接近墙面法向的有效支撑路径，并剔除净距退让后坍缩为 1-2 m 的伪角撑。
-- 支撑布置采用边界加权局部主轴和形状诊断，覆盖旋转矩形、梯形、L 形和 U 形回归。
-- 任何支撑中心线离开基坑多边形均作为硬性失败；大型近方形基坑不再误判为环撑。
-- 施工工况按阶段类型和标高同步支撑，避免拓扑变化后残留失效构件 ID。
-- 地质模型设计域扩展为基坑、实际围护结构和施工影响区的并集；钻孔范围不足时自动扩网并标记低置信度外推区。
-- 大型候选方案完整计算自动串行，避免 NumPy/BLAS 线程争用；小型模型继续并行。
-- 保留 V3.14 强度驱动恢复、V3.13 工程图纸和协同成果交付能力。
-
-## 验证
-
-- 后端快速门禁：`bash scripts/test-backend.sh fast`
-- 后端完整隔离门禁：`bash scripts/test-backend.sh full-isolated`
-- 前端测试与构建：`bash scripts/test-frontend.sh`
-
-Windows 后端门禁可运行：
+Windows：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/test-backend.ps1 -Mode fast
+.\start-windows.ps1
 ```
 
-## 工程边界
+Linux：
 
-系统输出用于方案设计、工程复核、深化协调和成果组织。施工图正式签发仍需注册岩土/结构工程师复核参数来源、模型边界、规范适用性、节点构造、吊装方案、施工工序和现场条件。
+```bash
+./start-linux-dev.sh
+```
 
-## V3.22.0 — P0-P3 工业闭环
+API 默认端口为 `8002`，前端默认端口为 `5173`。
 
-本版本增加通用多边形资格测试、计算契约与数值有效性闸门、洁净支撑主目标、A/B/C 完整计算、逐根钢筋与节点深化阻断、不可变项目修订、审计日志、乐观并发控制、任务重试、API Key 角色控制、在线一致性备份、运行指标、项目级监测阈值、趋势预警和数字孪生快照。质量审查页新增 P0-P3 工业成熟度面板，可通过 `industrial_closure` 后台任务运行完整闭环。无钻孔草案只允许使用明确标识的保守占位土层做拓扑筛查，正式成果闸门保持阻断。
+## 核心运行原则
 
-详细实施与边界见 `docs/PitGuard_V3.22.0_P0-P3工业闭环实施报告.md`。
+- 网页只读取轻量工作区投影；
+- 完整计算和导出通过后台任务执行；
+- 默认生成具有体系、间距或立柱布置差异的三个候选，只自动计算当前采用方案；
+- 逐根钢筋、完整地质网格、计算阶段数组和导出文件存入外部对象；
+- 项目主快照只保留当前设计状态和必要摘要；
+- 每次修改方案后，计算和配筋状态按依赖关系失效。
 
+## 文档
 
-## V3.26.0 端部支撑传力与内存稳定性
+- [V3.55 智能设计闭环与完整配筋合同](docs/releases/V3_55_0_INTELLIGENT_DESIGN_CLOSURE.md)
+- [V3.53 施工阶段数据与计算证据闭环](docs/releases/V3_53_0_CONSTRUCTION_STAGE_EVIDENCE_CLOSURE.md)
+- [V3.52 完整验算与配筋深化闭环](docs/releases/V3_52_0_VERIFICATION_AND_DEEPENING_CLOSURE.md)
+- [核心流程](docs/core/01_CORE_WORKFLOW.md)
+- [工程方法与边界](docs/core/02_ENGINEERING_METHODS_AND_BOUNDARIES.md)
+- [运行时与存储](docs/core/03_RUNTIME_STORAGE_AND_DEPLOYMENT.md)
+- [测试与发行](docs/core/04_TEST_RELEASE_AND_LIMITATIONS.md)
+- [功能审计与扩展目录](docs/core/05_FUNCTION_AUDIT_AND_EXTENSION_CATALOG.md)
+- [V3.51 自适应拓扑搜索与门禁闭合](docs/releases/V3_51_0_ADAPTIVE_TOPOLOGY_RECOVERY.md)
+- [V3.50 候选视图与计算门禁恢复](docs/releases/V3_50_0_CANDIDATE_VIEW_CALCULATION_GATE.md)
+- [V3.49 设计基准静默交互与台阶形支撑闭合修复](docs/releases/V3_49_0_SILENT_BASIS_TOPOLOGY_RECOVERY.md)
+- [V3.48 候选与支撑配筋完整性](docs/releases/V3_48_0_CANDIDATE_REBAR_INTEGRITY.md)
+- [V3.46 P0–P2 工程闭环](docs/releases/V3_46_0_P0_P2_ENGINEERING_CLOSURE.md)
+- [V3.44 候选搜索内存治理](docs/releases/V3_44_0_BOUNDED_CANDIDATE_MEMORY.md)
+- [V3.43 隔离计算与后台恢复](docs/releases/V3_43_0_ISOLATED_WORKER_RECOVERY.md)
+- [V3.42 专业可视化与设计校核恢复](docs/releases/V3_42_0_PROFESSIONAL_VISUALIZATION_RESTORATION.md)
+- [V3.41 工程可视化与多方案设计](docs/releases/V3_41_0_ENGINEERING_VISIBILITY_AND_MULTI_SCHEME.md)
+- [V3.40 重构报告](docs/releases/V3_40_0_CORE_REINTEGRATION.md)
+- [功能、文档与界面整合审计](docs/releases/V3_40_0_FUNCTION_DOCUMENT_AUDIT.md)
 
-- 自动方案禁止水平支撑端部落在另一根轴向支撑中部；临时立柱仅提供竖向/侧向稳定，不作为平面横向反力点。
-- 端墙围檩超限优先生成两端落墙的长斜撑或平行角撑；无法形成无交叉墙—墙路径时保留阻断项，不生成伪T/Y短撑。
-- 交点最少仍为主要词典序目标，并新增 `supportToSupportTerminalCount=0` 硬约束。
-- 一键计算默认只计算当前采用方案；A/B/C 完整计算由独立按钮触发。
-- 默认任务线程2、重任务并发1、候选计算并发1；任务结束执行GC与 `malloc_trim`。
-- 计算结果正文默认仅保留最近1次完整结果，较早结果压缩为审计摘要，减少项目加载和JSON序列化内存。
-- 重任务启动前执行RSS软门禁，默认 `PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB=5600`；超过上限时受控终止任务，避免操作系统OOM杀死API。
-- systemd默认 `MemoryHigh=5G`、`MemoryMax=6500M`，可通过环境变量按服务器内存调整。
-- 对于当前轴压墙—墙拓扑无法闭合的近方形或深凹基坑，系统输出 `controlled_block`，要求改用环撑、中心岛或显式双向框架，不再用T/Y伪节点强行通过。
+V3.0–V3.39 的迭代文档已经归档到 `docs/archive/legacy_iteration_docs_v3_0_v3_39.zip`，不再占用主文档目录。
+
+## 核心链路自检
+
+```bash
+python scripts/smoke-core-workflow.py
+python scripts/smoke-v353-construction-stage-evidence.py
+python scripts/smoke-v352-verification-deepening-closure.py
+python scripts/smoke-candidate-memory.py
+python scripts/smoke-v351-adaptive-topology-recovery.py
+python scripts/smoke-v350-calculation-recovery.py
+python scripts/smoke-v350-full-calculation.py
+```
+
+该脚本在临时数据库中端到端执行项目创建、钻孔导入、轮廓录入、候选生成、当前方案计算和配筋，不修改现有工程。
+
+## 内存诊断
+
+候选搜索、方案采用、项目保存和一次性 worker 的结构化日志位于 `runtime/diagnostics`。发生内存异常时执行：
+
+```bash
+python scripts/summarize-runtime-diagnostics.py --runtime runtime
+python scripts/audit-design-rebar-integrity.py --project-id <PROJECT_ID>
+python scripts/repair-v349-support-bearings.py --project-id <PROJECT_ID>
+```
+
+230 m 台阶形样例的有界内存自检：
+
+```bash
+python scripts/smoke-candidate-memory.py --keep-runtime
+```

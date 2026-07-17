@@ -1,0 +1,66 @@
+{
+  "version": "3.51.0",
+  "candidateContractVersion": "3.51-adaptive-topology-search-v3",
+  "backend": {
+    "relatedRegression": {
+      "passed": 26,
+      "elapsedSeconds": 32.7,
+      "files": [
+        "test_v3_36_0_general_design_qualification.py",
+        "test_v3_44_0_bounded_candidate_memory.py",
+        "test_v3_48_0_candidate_rebar_integrity.py",
+        "test_v3_49_0_silent_basis_topology_recovery.py",
+        "test_v3_50_0_candidate_view_calculation_gate.py",
+        "test_v3_51_0_adaptive_topology_recovery.py"
+      ]
+    },
+    "adaptiveTopologySpecial": {
+      "passed": 3,
+      "elapsedSeconds": 2.26
+    },
+    "fullSuiteFailFast": {
+      "passedBeforeStop": 17,
+      "stoppedAt": "test_mvp.py::test_v1_complete_workflow_has_no_open_software_gaps",
+      "observedCompletionPercent": 76.9,
+      "legacyExpectedCompletionPercent": 100.0,
+      "relatedToTopologyChange": false
+    }
+  },
+  "frontend": {
+    "testFilesPassed": 21,
+    "testsPassed": 38,
+    "typescriptBuild": "passed",
+    "viteProductionBuild": "passed",
+    "threeOnDemandChunkKb": 523.86
+  },
+  "steppedTopologyRecovery": {
+    "status": "success",
+    "elapsedSeconds": 15.757,
+    "candidateSearchSeconds": 1.472,
+    "calculationSeconds": 13.986,
+    "selectedTargetSpacingM": 4.5,
+    "supportStationClusterCountBefore": 3,
+    "supportStationClusterCountAfter": 0,
+    "supportCount": 168,
+    "columnCount": 44,
+    "calculationResultCount": 1
+  },
+  "legacyCandidateRecovery": {
+    "status": "success",
+    "elapsedSeconds": 12.642,
+    "candidateCount": 3,
+    "supportCount": 208,
+    "columnCount": 40,
+    "calculationAllowed": true,
+    "calculationBlockerCount": 0
+  },
+  "harvestLakeFullCalculation": {
+    "status": "success",
+    "candidateSearchSeconds": 5.799,
+    "calculationSeconds": 21.98,
+    "candidateCount": 3,
+    "supportCount": 208,
+    "columnCount": 40,
+    "calculationResultCount": 1
+  }
+}

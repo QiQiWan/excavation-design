@@ -24,7 +24,7 @@ def get_rebar_detailing(
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     from app.services.rebar_detailing import build_rebar_detailing
-    return build_rebar_detailing(repo.require(project_id), mode=mode)
+    return build_rebar_detailing(repo.require_workspace_with_latest_calculation(project_id), mode=mode)
 
 
 @router.get("/deep-detailing")
@@ -34,7 +34,7 @@ def get_deep_detailing(
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     from app.services.rebar_detailing import build_rebar_detailing
-    detailing = build_rebar_detailing(repo.require(project_id), mode=mode)
+    detailing = build_rebar_detailing(repo.require_workspace_with_latest_calculation(project_id), mode=mode)
     return {
         "projectId": project_id,
         "mode": mode,
@@ -50,7 +50,7 @@ def get_rebar_design_scheme(
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
-    return build_rebar_design_scheme(repo.require(project_id), mode=mode)
+    return build_rebar_design_scheme(repo.require_workspace_with_latest_calculation(project_id), mode=mode)
 
 
 @router.post("/apply-design-scheme")
@@ -60,7 +60,7 @@ def apply_design_scheme(
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme
-    project = repo.require(project_id)
+    project = repo.require_with_latest_calculation(project_id)
     scheme = apply_rebar_design_scheme(project, mode=payload.mode)
     recalculated = False
     queued_task = None
@@ -69,16 +69,19 @@ def apply_design_scheme(
             repo.save(project)
             queued_task = task_manager.submit(project.id, "calculation_full", {"topN": 0})
         else:
-            from app.calculation.engine import build_default_construction_cases, run_calculation
-            if not project.calculation_cases:
-                project.calculation_cases = build_default_construction_cases(project)
-            result = run_calculation(
+            from app.services.intelligent_design_closure import run_intelligent_design_closure
+            from app.services.calculation_state import mark_calculation_state_current
+            from app.services.construction_stages import select_calculation_case_for_run
+            case, _stage_selection = select_calculation_case_for_run(project)
+            if not project.calculation_cases or project.calculation_cases[-1].id != case.id:
+                project.calculation_cases = [case]
+            result, _closure = run_intelligent_design_closure(
                 project,
-                project.calculation_cases[-1] if project.calculation_cases else None,
+                case,
                 auto_repair=False,
-                include_candidate_comparison=False,
             )
             project.calculation_results.append(result)
+            mark_calculation_state_current(project, result.id)
             # Rebuild and reapply the final reinforcement using the updated member
             # stiffness, force envelope and node bearing checks.
             scheme = apply_rebar_design_scheme(project, mode=payload.mode)

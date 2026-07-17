@@ -90,8 +90,13 @@ def _default_config(project: Project, systems: dict[str, Any]) -> dict[str, Any]
     }
 
 
-def normalize_progressive_config(project: Project, persisted: dict[str, Any] | None = None) -> dict[str, Any]:
-    systems = build_support_system_options(project)
+def normalize_progressive_config(
+    project: Project,
+    persisted: dict[str, Any] | None = None,
+    *,
+    systems: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    systems = dict(systems or build_support_system_options(project))
     base = _default_config(project, systems)
     raw = deepcopy(persisted or {})
     for section in ("decisions", "constraints", "resourcePolicy"):
@@ -164,10 +169,14 @@ def build_progressive_design_session(
     *,
     persisted: dict[str, Any] | None = None,
     storage_info: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+    qualification: dict[str, Any] | None = None,
+    systems: dict[str, Any] | None = None,
+    resource: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    config = normalize_progressive_config(project, persisted)
-    qualification = build_design_qualification(project, storage_info=storage_info)
-    systems = build_support_system_options(project)
+    systems = dict(systems or build_support_system_options(project))
+    config = dict(config or normalize_progressive_config(project, persisted, systems=systems))
+    qualification = dict(qualification or build_design_qualification(project, storage_info=storage_info, systems=systems))
     decisions = config["decisions"]
     constraints = config["constraints"]
     gates = {str(item.get("code")): item for item in qualification.get("gates") or []}
@@ -202,7 +211,7 @@ def build_progressive_design_session(
         }
         for item in systems.get("options") or []
     ]
-    resource = adaptive_resource_policy(role="api")
+    resource = dict(resource or adaptive_resource_policy(role="api"))
     stages = [
         _stage(
             "geometry_context", 1, "轮廓、坐标与设计域确认",

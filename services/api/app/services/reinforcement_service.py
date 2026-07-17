@@ -19,6 +19,7 @@ def diaphragm_wall_reinforcement(
     max_moment_design: float | None = None,
     concrete_grade: str = "C35",
     rebar_grade: str = "HRB400",
+    target_safety_factor: float = 1.0,
 ) -> list[ReinforcementGroup]:
     """Generate traceable GB 50010-oriented reinforcement suggestions per metre of wall.
 
@@ -26,14 +27,21 @@ def diaphragm_wall_reinforcement(
     design-assist recommendations, not final detailing: crack width, anchorage, splice,
     construction joint, cage lifting and node checks remain professional review items.
     """
-    design = design_rectangular_flexure(
+    base_design = design_rectangular_flexure(
         moment_design_knm_per_m=max_moment_design or 0.0,
         thickness_m=thickness,
         concrete_grade=concrete_grade,
         rebar_grade=rebar_grade,
         cover_mm=70.0,
     )
-    dia, spacing, provided = _select_bar_spacing(design.governing_as)
+    reserve_design = design_rectangular_flexure(
+        moment_design_knm_per_m=(max_moment_design or 0.0) * max(float(target_safety_factor or 1.0), 1.0),
+        thickness_m=thickness,
+        concrete_grade=concrete_grade,
+        rebar_grade=rebar_grade,
+        cover_mm=70.0,
+    )
+    dia, spacing, provided = _select_bar_spacing(reserve_design.governing_as)
     distribution_dia = 16 if thickness < 1.2 else 18
     distribution_spacing = 200 if thickness < 1.2 else 180
     return [
@@ -44,11 +52,12 @@ def diaphragm_wall_reinforcement(
             spacing=spacing,
             grade=rebar_grade,
             area_per_meter=round(provided, 2),
-            required_area_per_meter=round(design.governing_as, 2),
-            check_status="preliminary" if provided >= design.governing_as else "fail",
+            required_area_per_meter=round(base_design.governing_as, 2),
+            check_status="pass" if provided >= reserve_design.governing_as else "fail",
             location_description=(
                 f"inner face vertical bars; As_provided={provided:.0f}mm2/m; "
-                f"As_required={design.governing_as:.0f}mm2/m; GB50010 flexure/min-rebar subset"
+                f"As_required={base_design.governing_as:.0f}mm2/m; "
+                f"reserve target={max(float(target_safety_factor or 1.0), 1.0):.2f}; GB50010 flexure/min-rebar subset"
             ),
         ),
         ReinforcementGroup(
@@ -58,9 +67,9 @@ def diaphragm_wall_reinforcement(
             spacing=spacing,
             grade=rebar_grade,
             area_per_meter=round(provided, 2),
-            required_area_per_meter=round(design.governing_as, 2),
-            check_status="preliminary" if provided >= design.governing_as else "fail",
-            location_description="outer face vertical bars; symmetric preliminary cage for moment reversal and construction stages",
+            required_area_per_meter=round(base_design.governing_as, 2),
+            check_status="pass" if provided >= reserve_design.governing_as else "fail",
+            location_description="坑外侧竖向主筋；方案阶段按双面对称钢筋笼考虑弯矩反向与各施工阶段作用",
         ),
         ReinforcementGroup(
             name="水平分布筋",
@@ -70,7 +79,7 @@ def diaphragm_wall_reinforcement(
             grade=rebar_grade,
             area_per_meter=round(as_per_m_for_spacing(distribution_dia, distribution_spacing), 2),
             check_status="manual_review",
-            location_description="horizontal distribution bars; crack/detailing checks require professional review",
+            location_description="墙体水平分布筋；裂缝与节点构造由专业工程师复核",
         ),
         ReinforcementGroup(
             name="拉结筋/架立筋",
@@ -79,7 +88,7 @@ def diaphragm_wall_reinforcement(
             spacing=450,
             grade=rebar_grade,
             check_status="manual_review",
-            location_description="tie bars between reinforcement cages; constructability placeholder",
+            location_description="连接两侧钢筋网的拉结筋；间距结合钢筋笼制作和吊装复核",
         ),
     ]
 
@@ -129,7 +138,7 @@ def support_reinforcement(
             spacing=stirrup_spacing,
             grade=rebar_grade,
             check_status="manual_review",
-            location_description="RC support stirrups; shear and confinement detailing requires professional review",
+            location_description="钢筋混凝土支撑箍筋；抗剪、约束及端部加密构造需专业复核",
         ),
         ReinforcementGroup(
             name="支撑分布筋",
@@ -138,7 +147,7 @@ def support_reinforcement(
             spacing=distribution_spacing,
             grade=rebar_grade,
             check_status="manual_review",
-            location_description="distribution bars along support side faces for crack control and cage stability",
+            location_description="支撑侧面连续构造分布筋，用于控制裂缝并稳定钢筋骨架",
         ),
         ReinforcementGroup(
             name="支撑拉结/架立筋",
@@ -147,7 +156,7 @@ def support_reinforcement(
             spacing=tie_spacing,
             grade=rebar_grade,
             check_status="manual_review",
-            location_description="tie bars between longitudinal cages; helps maintain spacing and construction stability",
+            location_description="纵筋骨架之间的拉结筋，用于保持净距和施工阶段骨架稳定",
         ),
         ReinforcementGroup(
             name="搭接加强筋",
@@ -156,6 +165,6 @@ def support_reinforcement(
             count=4,
             grade=rebar_grade,
             check_status="manual_review",
-            location_description="additional bars around staggered lap / anchorage zone; exact lap length and hook form require detailing review",
+            location_description="错开搭接及锚固区附加筋；搭接长度与弯钩形式在深化设计中复核",
         ),
     ]

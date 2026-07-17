@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.runtime_diagnostics import memory_event
+
 from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.schemas.domain import Project, SupportLayoutRepairSummary, QualityGateIssue
 from app.services.design_service import auto_supports, support_layout_config_from_settings
@@ -194,6 +196,37 @@ def _apply_lock_item(project: Project, item: dict[str, Any], locked: bool, reaso
     return changed
 
 
+def _write_compact_optimization_summary(project: Project, repair: SupportLayoutRepairSummary) -> None:
+    if not project.retaining_system:
+        return
+    summary = dict(project.retaining_system.layout_summary or {})
+    # Remove legacy full duplicates. The canonical candidates live only in
+    # retainingSystem.supportLayoutRepair and preview geometry has its own table.
+    summary.pop("autoRepair", None)
+    summary.pop("supportOptimizationCandidates", None)
+    summary["supportOptimization"] = {
+        "status": repair.status,
+        "candidateCount": repair.candidate_count,
+        "bestCandidateId": repair.best_candidate_id,
+        "selectedCandidateId": repair.selected_candidate_id,
+        "scoreBefore": repair.score_before,
+        "scoreAfter": repair.score_after,
+        "checkedAt": repair.checked_at,
+    }
+    project.retaining_system.layout_summary = summary
+
+
+def compact_legacy_support_optimization_payload(project: Project) -> dict[str, int]:
+    """Drop duplicated candidate JSON left by releases before V3.44."""
+    if not project.retaining_system:
+        return {"removedLayoutSummaryCopies": 0}
+    summary = dict(project.retaining_system.layout_summary or {})
+    removed = int("autoRepair" in summary) + int("supportOptimizationCandidates" in summary)
+    summary.pop("autoRepair", None)
+    summary.pop("supportOptimizationCandidates", None)
+    project.retaining_system.layout_summary = summary
+    return {"removedLayoutSummaryCopies": removed}
+
 def auto_repair_support_layout(
     project: Project,
     objective_weights: dict[str, float] | None = None,
@@ -201,6 +234,7 @@ def auto_repair_support_layout(
     topology_family: str | None = None,
     max_candidates: int = 5,
     search_config: dict | None = None,
+    progress_callback: Any | None = None,
 ) -> SupportLayoutRepairSummary:
     """Optimize and repair the support layout using an explicit objective function.
 
@@ -211,6 +245,15 @@ def auto_repair_support_layout(
     """
     if not project.excavation:
         return SupportLayoutRepairSummary(status="manual_review", summary="缺少基坑轮廓，无法自动修复支撑布置。")
+    compact_result = compact_legacy_support_optimization_payload(project)
+    memory_event(
+        "candidate-search",
+        "optimization-enter",
+        projectId=project.id,
+        maxCandidates=max_candidates,
+        removedLayoutSummaryCopies=compact_result["removedLayoutSummaryCopies"],
+        existingSupportCount=len(project.retaining_system.supports) if project.retaining_system else 0,
+    )
     if topology_family and topology_family not in {"direct_grid", "hybrid_diagonal", "ring_radial", "zoned_direct"}:
         return SupportLayoutRepairSummary(
             status="manual_review",
@@ -257,8 +300,14 @@ def auto_repair_support_layout(
         preset=preset,
         topology_family=topology_family,
         search_config=search_config or {},
+        progress_callback=progress_callback,
     )
-    if best_system is not None and candidates:
+    diagnostic_only = bool(candidates) and not any(
+        bool((candidate.hard_constraints or {}).get("passed"))
+        and candidate.variable_summary.get("formalSchemeEligible", True) is not False
+        for candidate in candidates
+    )
+    if best_system is not None and candidates and not diagnostic_only:
         project.retaining_system = best_system
         actions.append({
             "action": "objective_function_support_layout_optimization",
@@ -272,6 +321,13 @@ def auto_repair_support_layout(
             "objectivePreset": preset or "custom",
             "requestedTopologyFamily": topology_family,
             "lockSummary": lock_summary,
+        })
+    elif best_system is not None and diagnostic_only:
+        actions.append({
+            "action": "controlled_block_diagnostic_candidates",
+            "description": "生成了实际几何不同的诊断候选，但没有任何方案通过硬约束；候选仅用于分析，不写入当前围护体系。",
+            "candidateCount": len(candidates),
+            "candidateIds": [candidate.id for candidate in candidates],
         })
     else:
         should_regenerate = (
@@ -298,11 +354,30 @@ def auto_repair_support_layout(
     )
     if candidates:
         pattern = candidates[0].variable_summary.get("positionPattern", "as_generated") if candidates[0].variable_summary else "as_generated"
-        summary += (
-            f" 已比选 {len(candidates)} 个约束优化候选方案，采用第 1 名：目标分仓 {candidates[0].target_spacing:.1f}m，"
-            f"立柱服务跨 {candidates[0].column_max_span:.1f}m，支撑线变量策略 {pattern}，非法穿越 "
-            f"{candidates[0].crossing_count} 处，内部汇交节点 {candidates[0].junction_count} 处。"
-        )
+        if diagnostic_only:
+            blocking_categories = sorted({
+                str(category)
+                for candidate in candidates
+                for category in (
+                    (candidate.hard_constraints or {}).get("blockingCategories")
+                    or (candidate.hard_constraints or {}).get("qualityFailCategories")
+                    or []
+                )
+                if category
+            })
+            blocking_text = "、".join(blocking_categories[:6])
+            summary += (
+                f" 已保留 {len(candidates)} 个真实几何不同的受控阻断诊断候选；未自动采用任何方案。"
+                f"首个候选目标分仓 {candidates[0].target_spacing:.1f}m、立柱服务跨 {candidates[0].column_max_span:.1f}m、"
+                f"线位策略 {pattern}，非法穿越 {candidates[0].crossing_count} 处。"
+                + (f"候选控制类别：{blocking_text}。" if blocking_text else "")
+            )
+        else:
+            summary += (
+                f" 已比选 {len(candidates)} 个约束优化候选方案，采用第 1 名：目标分仓 {candidates[0].target_spacing:.1f}m，"
+                f"立柱服务跨 {candidates[0].column_max_span:.1f}m，支撑线变量策略 {pattern}，非法穿越 "
+                f"{candidates[0].crossing_count} 处，内部汇交节点 {candidates[0].junction_count} 处。"
+            )
     elif actions:
         summary += " 已执行规则修复兜底。"
     else:
@@ -333,7 +408,7 @@ def auto_repair_support_layout(
         objective_weights=weights,
         candidate_count=len(candidates),
         best_candidate_id=candidates[0].id if candidates else None,
-        selected_candidate_id=candidates[0].id if candidates else None,
+        selected_candidate_id=(candidates[0].id if candidates and not diagnostic_only else None),
         locked_support_ids=final_lock_summary.get("supportLineIds", []),
         lock_summary=final_lock_summary,
         candidates=candidates,
@@ -356,9 +431,16 @@ def auto_repair_support_layout(
     if project.retaining_system:
         project.retaining_system.support_layout_repair = repair
         project.retaining_system.warnings = list(dict.fromkeys([*project.retaining_system.warnings, summary]))
-        project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
-        project.retaining_system.layout_summary["autoRepair"] = repair.model_dump(mode="json", by_alias=True)
-        project.retaining_system.layout_summary["supportOptimizationCandidates"] = [c.model_dump(mode="json", by_alias=True) for c in candidates]
+        _write_compact_optimization_summary(project, repair)
+        memory_event(
+            "candidate-search",
+            "optimization-writeback",
+            projectId=project.id,
+            candidateCount=len(candidates),
+            selectedCandidateId=repair.selected_candidate_id,
+            supportCount=len(project.retaining_system.supports),
+            columnCount=len(project.retaining_system.columns),
+        )
     return repair
 
 
@@ -371,16 +453,28 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
     """
     if not project.excavation:
         return SupportLayoutRepairSummary(status="manual_review", summary="缺少基坑轮廓，无法采用支撑优化候选方案。")
+    compact_result = compact_legacy_support_optimization_payload(project)
     current_repair = project.retaining_system.support_layout_repair if project.retaining_system else None
     weights = dict(current_repair.objective_weights or OBJECTIVE_WEIGHTS) if current_repair else dict(OBJECTIVE_WEIGHTS)
-    _best, candidates = optimize_support_layout_candidates(project, max_candidates=12, objective_weights=weights)
+    # Candidate ids and reconstruction variables are already stored in the
+    # canonical repair summary. Re-running a 12-candidate search during a simple
+    # click deep-copied the 138 MB project dozens of times inside the API process
+    # and left it at 18 GB. Adoption is now O(1) lookup + one clean rebuild.
+    candidates = list(current_repair.candidates or []) if current_repair else []
     selected = next((c for c in candidates if c.id == candidate_id), None)
+    memory_event(
+        "candidate-adoption",
+        "adoption-enter",
+        projectId=project.id,
+        candidateId=candidate_id,
+        availableCandidateCount=len(candidates),
+        removedLayoutSummaryCopies=compact_result["removedLayoutSummaryCopies"],
+    )
     if selected is None:
-        # Fall back to the visible top-five candidates in the existing result.
-        existing = (current_repair.candidates if current_repair else []) or []
-        selected = next((c for c in existing if c.id == candidate_id), None)
-    if selected is None:
-        return SupportLayoutRepairSummary(status="fail", summary=f"未找到候选方案 {candidate_id}，无法采用。")
+        return SupportLayoutRepairSummary(
+            status="fail",
+            summary=f"未找到候选方案 {candidate_id}。请先重新生成 A/B/C；系统不会在采用按钮中重新执行完整搜索。",
+        )
     pattern = str((selected.variable_summary or {}).get("positionPattern", "as_generated"))
     amplitude = float((selected.variable_summary or {}).get("lineOffsetAmplitude", 0.0) or 0.0)
     topology_strategy = str((selected.variable_summary or {}).get("topologyFamily", "balanced_grid"))
@@ -409,7 +503,7 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
         selected_candidate_id=selected.id,
         locked_support_ids=lock_summary.get("supportLineIds", []),
         lock_summary=lock_summary,
-        candidates=candidates[:5],
+        candidates=candidates[:3],
         status=quality.status,
         score_before=_repair_priority_score(quality),
         score_after=_repair_priority_score(quality),
@@ -435,9 +529,15 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
         ),
     )
     project.retaining_system.support_layout_repair = repair
-    project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
-    project.retaining_system.layout_summary["autoRepair"] = repair.model_dump(mode="json", by_alias=True)
-    project.retaining_system.layout_summary["supportOptimizationCandidates"] = [c.model_dump(mode="json", by_alias=True) for c in repair.candidates]
+    _write_compact_optimization_summary(project, repair)
+    memory_event(
+        "candidate-adoption",
+        "adoption-rebuilt",
+        projectId=project.id,
+        candidateId=selected.id,
+        supportCount=len(project.retaining_system.supports),
+        columnCount=len(project.retaining_system.columns),
+    )
     # Candidate adoption changes the support system but must not leave a known
     # global wall-toe failure unresolved.  Apply the same common-toe stability
     # preflight that the calculation engine uses, while respecting imported or

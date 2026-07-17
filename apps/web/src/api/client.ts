@@ -1,5 +1,5 @@
 import { requestActivityEvents } from '../app/GlobalRequestProgress';
-import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult } from '../types/domain';
+import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, CalculationCase, ConstructionStageWorkspace, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult } from '../types/domain';
 
 const CONFIGURED_API_BASE = import.meta.env.VITE_API_BASE_URL;
 const API_BASE = CONFIGURED_API_BASE !== undefined
@@ -75,6 +75,14 @@ function formatStructuredApiError(status: number, statusText: string, payload: u
     const sizeText = payloadMb > 0 && limitMb > 0 ? `（${payloadMb.toFixed(1)} MB / 限值 ${limitMb.toFixed(1)} MB）` : '';
     const needsCompaction = Boolean(detail.compactionRecommended);
     return `完整快照当前不进入 API 进程${sizeText}。网页继续使用轻量工作区，完整计算与导出由独立 worker 按实时内存余量执行${needsCompaction ? '；当前工作区或历史数据存在冗余，建议运行“优化项目存储”' : ''}。`;
+  }
+  if (String(detail.code ?? '') === 'CONSTRUCTION_STAGE_VALIDATION_FAILED') {
+    const issues = Array.isArray(detail.validation?.issues) ? detail.validation.issues : [];
+    const actions = issues
+      .filter((item: Record<string, any>) => String(item.severity) === 'fail')
+      .slice(0, 6)
+      .map((item: Record<string, any>, index: number) => `${index + 1}. ${String(item.message ?? item.code)}；${String(item.action ?? '请修正后重试')}`);
+    return `[CONSTRUCTION_STAGE_VALIDATION_FAILED] ${String(detail.message ?? '施工阶段存在硬错误，未保存。')}${actions.length ? ` ${actions.join(' ')}` : ''}`;
   }
   const message = typeof root.detail === 'string'
     ? root.detail
@@ -235,8 +243,9 @@ export const api = {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在创建项目', expectedMs: 1200 }
   }).then((project) => { invalidateApiCache('GET:/api/projects'); return project; }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}?profile=workspace`, { timeoutMs: 20000, timeoutMessage: '项目工作区 20 秒内未加载完成。后端已阻止全量大对象进入 API；请检查项目存储健康状态。' }),
-  getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 5000 }),
-  listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 8000 }),
+  getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 15000, retryCount: 0 }),
+  getCoreDesignStatus: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design/core-status`, { timeoutMs: 15000, retryCount: 0 }),
+  listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 30000, retryCount: 0 }),
   projectArtifactDownloadUrl: (id: string, artifactId: string) => `${API_BASE}/api/projects/${id}/artifacts/${artifactId}/download`,
   getCalculationStageChunks: (id: string, resultId: string) => request<Record<string, unknown>>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks`),
   getCalculationStageChunk: (id: string, resultId: string, chunkIndex: number) => request<Record<string, unknown>[]>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks/${chunkIndex}`, { timeoutMs: 15000 }),
@@ -266,16 +275,17 @@ export const api = {
     request<ExcavationModel>(`/api/projects/${projectId}/excavation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   autoWall: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-diaphragm-wall`, { method: 'POST' }),
   autoSupports: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-supports`, { method: 'POST' }),
-  getDesignQualification: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/qualification`, { timeoutMs: 8000 }),
-  getProgressiveDesign: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { timeoutMs: 8000 }),
+  getDesignWorkspaceBootstrap: (projectId: string, refresh = false) => request<Record<string, any>>(`/api/projects/${projectId}/design/workspace-bootstrap${refresh ? '?refresh=true' : ''}`, { timeoutMs: 30000, retryCount: 0, activity: { label: '正在装配围护设计工作区', expectedMs: 2500, cacheTtlMs: refresh ? 0 : 15000, deduplicate: true } }),
+  getDesignQualification: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/qualification`, { timeoutMs: 30000, retryCount: 0 }),
+  getProgressiveDesign: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { timeoutMs: 30000, retryCount: 0 }),
   updateProgressiveDesign: (projectId: string, payload: Record<string, unknown>) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在保存渐进式设计配置', expectedMs: 1000 } }),
   getSupportCandidatePreviews: (projectId: string, limit = 12) => request<{ projectId: string; source: string; previews: { candidateId?: string; rank?: number; planGeometry?: Record<string, any> }[] }>(`/api/projects/${projectId}/design/candidate-previews?limit=${Math.max(1, Math.min(limit, 20))}`, { timeoutMs: 12000 }),
   getSupportSystemOptions: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/system-options`, { timeoutMs: 8000 }),
-  getPlanShapeDiagnostics: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/plan-shape-diagnostics`),
-  getSupportDesignerAudit: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-designer-audit`),
-  getSupportDeepDesign: (projectId: string, includeMembers = false) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-deep-design?include_members=${includeMembers ? 'true' : 'false'}`),
+  getPlanShapeDiagnostics: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/plan-shape-diagnostics`, { timeoutMs: 30000, retryCount: 0 }),
+  getSupportDesignerAudit: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-designer-audit`, { timeoutMs: 60000, retryCount: 0 }),
+  getSupportDeepDesign: (projectId: string, includeMembers = false) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-deep-design?include_members=${includeMembers ? 'true' : 'false'}`, { timeoutMs: 60000, retryCount: 0 }),
   optimizeSupportDeepDesign: (projectId: string, maxIterations = 3) => request<Record<string, any>>(`/api/projects/${projectId}/design/support-deep-design/optimize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxIterations }), activity: { label: '正在迭代支撑截面、稳定和临时立柱', expectedMs: 4500 } }),
-  getCalculationResourceEstimate: (projectId: string, candidateCount = 0) => request<Record<string, any>>(`/api/projects/${projectId}/design/calculation-resource-estimate?candidate_count=${candidateCount}`),
+  getCalculationResourceEstimate: (projectId: string, candidateCount = 0) => request<Record<string, any>>(`/api/projects/${projectId}/design/calculation-resource-estimate?candidate_count=${candidateCount}`, { timeoutMs: 30000, retryCount: 0 }),
   autoSupportsByShape: (projectId: string) => request<{ diagnostics: Record<string, any>; selectedTopologyFamily: string; retainingSystem: RetainingSystem }>(`/api/projects/${projectId}/design/auto-supports-by-shape`, { method: 'POST' }),
   importSupportLayoutCsv: (projectId: string, file: File, replace = true) => { const form = new FormData(); form.append('file', file); return request<Record<string, any>>(`/api/projects/${projectId}/design/import-support-layout?replace=${replace}`, { method: 'POST', body: form }); },
   autoRepairSupports: (projectId: string) => request<unknown>(`/api/projects/${projectId}/design/auto-repair-supports`, { method: 'POST' }),
@@ -284,8 +294,13 @@ export const api = {
   lockSupportLines: (projectId: string, supportIds: string[], locked = true, reason?: string) => request<unknown>(`/api/projects/${projectId}/design/lock-support-lines`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ supportIds, locked, reason }) }),
   setSupportOptimizationLocks: (projectId: string, payload: { supportIds?: string[]; lockItems?: Record<string, unknown>[]; levelIndices?: number[]; obstacleIds?: string[]; locked?: boolean; reason?: string; replace?: boolean }) => request<unknown>(`/api/projects/${projectId}/design/lock-support-lines`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   buildCases: (projectId: string) => request<unknown[]>(`/api/projects/${projectId}/calculation/build-cases`, { method: 'POST' }),
+  getConstructionStages: (projectId: string) => request<ConstructionStageWorkspace>(`/api/projects/${projectId}/calculation/construction-stages`, { activity: { cacheTtlMs: 0 } }),
+  saveConstructionStages: (projectId: string, calculationCase: CalculationCase) => request<ConstructionStageWorkspace>(`/api/projects/${projectId}/calculation/construction-stages`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(calculationCase) }),
+  resetConstructionStages: (projectId: string) => request<ConstructionStageWorkspace>(`/api/projects/${projectId}/calculation/construction-stages/reset`, { method: 'POST' }),
+  getLatestCalculationEvidence: (projectId: string) => request<{ projectId: string; evidence: Record<string, unknown>; result?: CalculationResult }>(`/api/projects/${projectId}/calculation/latest-evidence`, { timeoutMs: 30000, retryCount: 1 }),
   runCalculation: (projectId: string) => request<CalculationResult>(`/api/projects/${projectId}/calculation/run`, { method: 'POST' }),
   diagnoseAndRepairCalculation: (projectId: string) => request<Record<string, unknown>>(`/api/projects/${projectId}/calculation/diagnose-and-repair`, { method: 'POST' }),
+  applyCalculationClosureAction: (projectId: string, payload: { actionId: string; value?: unknown; strategy?: string; maxIterations?: number }) => request<Record<string, unknown>>(`/api/projects/${projectId}/calculation/intelligent-closure/action`, { method: 'POST', body: JSON.stringify(payload) }),
   calculationAssurance: (projectId: string) => request<Record<string, unknown>>(`/api/projects/${projectId}/calculation/assurance`),
   releaseReadiness: (projectId: string, issueMode: 'review' | 'construction' = 'review') => request<Record<string, unknown>>(`/api/projects/${projectId}/export/release-readiness?issue_mode=${issueMode}`),
   runCandidateComparison: (projectId: string, topN = 3) => request<Record<string, unknown>[]>(`/api/projects/${projectId}/calculation/run-candidate-comparison?top_n=${topN}`, { method: 'POST' }),

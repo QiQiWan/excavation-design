@@ -1,0 +1,25 @@
+{
+  "version": "3.46.0",
+  "backend": {
+    "v346Focused": {"passed": 8, "failed": 0},
+    "p0p2RelatedRegression": {"passed": 85, "failed": 0},
+    "pythonCompileAll": "passed"
+  },
+  "frontend": {
+    "testFilesPassed": 19,
+    "testsPassed": 33,
+    "typescript": "passed",
+    "viteProductionBuild": "passed",
+    "knownBuildWarning": "Three.js lazy chunk is approximately 523.86 kB after minification"
+  },
+  "workflow": {
+    "coreWorkflow": "passed",
+    "isolatedWorkerWorkflow": "passed",
+    "projectAuditScript": "passed",
+    "designBasisMigrationDryRun": "passed"
+  },
+  "notExecuted": [
+    "Full DXF pressure tests requiring ezdxf in the current runtime",
+    "Native Windows large-project Job Object verification on the user's production machine"
+  ]
+}

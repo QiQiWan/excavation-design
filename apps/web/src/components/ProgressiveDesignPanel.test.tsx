@@ -47,3 +47,11 @@ it('groups progressive decisions by engineering meaning and exposes configuratio
   expect(screen.getByText('允许受控外扩')).toBeInTheDocument();
   expect(screen.getByText(/配置追踪 1234567890ab/)).toBeInTheDocument();
 });
+
+it('uses the bootstrap session without issuing a duplicate initial request', async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(session), { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<ProgressiveDesignPanel project={project} runTask={vi.fn(async () => undefined)} initialSession={session} />);
+  await waitFor(() => expect(screen.getByText('先确认设计意图，再逐级增加模型复杂度')).toBeInTheDocument());
+  expect(fetchMock).not.toHaveBeenCalled();
+});

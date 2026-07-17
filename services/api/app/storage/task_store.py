@@ -105,6 +105,31 @@ class SQLiteTaskStore:
             connection.commit()
             return task if cursor.rowcount == 1 else None
 
+
+    def mark_interrupted(self, task_id: str, reason: str, current_step: str = "计算工作进程不可用，任务已中断") -> bool:
+        now = _now()
+        with self._connect() as connection:
+            row = connection.execute("SELECT data FROM task_records WHERE id = ?", (task_id,)).fetchone()
+            if row is None:
+                return False
+            task = json.loads(row["data"])
+            if str(task.get("status")) not in {"queued", "running"}:
+                return False
+            task["status"] = "interrupted"
+            task["currentStep"] = current_step
+            task["error"] = reason
+            task["updatedAt"] = now
+            task["finishedAt"] = now
+            logs = list(task.get("logs") or [])
+            logs.append(f"[{now}] {reason}")
+            task["logs"] = logs[-500:]
+            connection.execute(
+                "UPDATE task_records SET status='interrupted', updated_at=?, data=? WHERE id=?",
+                (now, json.dumps(task, ensure_ascii=False, separators=(",", ":")), task_id),
+            )
+            connection.commit()
+            return True
+
     def mark_running_interrupted(self, reason: str = "External worker restarted") -> int:
         now = _now()
         count = 0

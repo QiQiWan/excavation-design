@@ -696,7 +696,32 @@ def _find_viable_oriented_line(
     return [], base_coord, False
 
 
-def _nearest_face_hit(point: Point2D, excavation, tolerance: float = 0.75) -> SegmentFaceHit | None:
+def _wall_bearing_alignment(point: Point2D, toward: Point2D, segment) -> float:
+    """Return how well a support force path bears normally on a wall face.
+
+    A support endpoint near a concave return corner can be geometrically closer
+    to the short return wall even though that wall is parallel to the support.
+    Treating the tangent face as the bearing face creates a false zero-clearance
+    endpoint and prevents an otherwise valid wall-to-wall support from entering
+    calculation.  The axial member direction must point broadly along the wall's
+    inward normal for the face to be a credible bearing face.
+    """
+    ux, uy = _unit_vector(point, toward)
+    inward_x = -float(segment.outward_normal.x)
+    inward_y = -float(segment.outward_normal.y)
+    norm = math.hypot(inward_x, inward_y)
+    if norm <= EPS:
+        return 0.0
+    return max(0.0, min(1.0, (ux * inward_x + uy * inward_y) / norm))
+
+
+def _nearest_face_hit(
+    point: Point2D,
+    excavation,
+    tolerance: float = 0.75,
+    *,
+    toward: Point2D | None = None,
+) -> SegmentFaceHit | None:
     """Return the connected wall face only when the point is actually near it.
 
     Earlier versions returned the nearest face even for an internal grid node.
@@ -704,14 +729,34 @@ def _nearest_face_hit(point: Point2D, excavation, tolerance: float = 0.75) -> Se
     duplicated tributary widths and could leave one fail per wall face after an
     optimized scheme was adopted.
     """
-    best: SegmentFaceHit | None = None
-    best_dist = float("inf")
+    candidates: list[tuple[float, float, SegmentFaceHit]] = []
     for segment in getattr(excavation, "segments", []):
         t, dist = _point_segment_projection(point, segment.start, segment.end)
-        if dist < best_dist:
-            best_dist = dist
-            best = SegmentFaceHit(face_code=segment.name, t=t, length=float(segment.length))
-    return best if best and best_dist <= max(float(tolerance), EPS) else None
+        if dist > max(float(tolerance), EPS):
+            continue
+        alignment = _wall_bearing_alignment(point, toward, segment) if toward is not None else 1.0
+        candidates.append((float(dist), float(alignment), SegmentFaceHit(face_code=segment.name, t=t, length=float(segment.length))))
+    if not candidates:
+        return None
+    if toward is None:
+        return min(candidates, key=lambda row: row[0])[2]
+
+    # Prefer a wall that can actually receive the axial force.  A mild minimum
+    # alignment keeps legitimate diagonal braces while excluding a wall face
+    # that is effectively tangent to the support.  The distance penalty is tied
+    # to the capture band so a perpendicular face up to the nominal 1 m support
+    # offset can beat a coincident tangent return face at a concave corner.
+    bearing = [row for row in candidates if row[1] >= 0.18]
+    pool = bearing or candidates
+    distance_scale = max(float(tolerance), 0.75)
+    return min(
+        pool,
+        key=lambda row: (
+            row[0] + (1.0 - row[1]) * distance_scale * 1.35,
+            -row[1],
+            row[0],
+        ),
+    )[2]
 
 
 def _endpoint_on_other_support_interior(
@@ -759,8 +804,8 @@ def _attach_faces(
     for line in lines:
         start_is_ty = _endpoint_on_other_support_interior(line.start, line, lines)
         end_is_ty = _endpoint_on_other_support_interior(line.end, line, lines)
-        s_hit = None if start_is_ty else _nearest_face_hit(line.start, excavation, tolerance=tolerance)
-        e_hit = None if end_is_ty else _nearest_face_hit(line.end, excavation, tolerance=tolerance)
+        s_hit = None if start_is_ty else _nearest_face_hit(line.start, excavation, tolerance=tolerance, toward=line.end)
+        e_hit = None if end_is_ty else _nearest_face_hit(line.end, excavation, tolerance=tolerance, toward=line.start)
         # Reattachment follows the current clipped geometry.  An endpoint that
         # has been shortened to a T/Y node must lose its historical wall-face
         # metadata; retaining the old face silently creates a zero-clearance
@@ -887,6 +932,109 @@ def _finalize_retained_support_endpoints(
     if shifted:
         messages.append(f"其中 {shifted} 个端点重新满足 {target:.2f}m 支撑中心线净距。")
     return messages
+
+
+def normalize_existing_support_wall_connections(project) -> dict[str, object]:
+    """Repair legacy support endpoints using force-path-aware wall selection.
+
+    Projects generated before V3.49 can retain a support endpoint attached to a
+    tangent return wall at a concave corner.  The geometry then looks nearly
+    closed in plan, but the design gate correctly blocks calculation because the
+    axial member has no valid perpendicular wall/wale bearing.  This migration is
+    deliberately narrow: it only reassigns endpoint face semantics, wall bearing
+    points and the configured centre-line clearance.  It does not invent new
+    support members or bypass any topology/quality check.
+    """
+    excavation = getattr(project, "excavation", None)
+    system = getattr(project, "retaining_system", None)
+    supports = list(getattr(system, "supports", []) or []) if system is not None else []
+    if excavation is None or not supports:
+        return {"changed": False, "changedSupportCount": 0, "unresolvedSupportCodes": []}
+
+    target = max(0.35, min(3.0, float(getattr(getattr(project, "design_settings", None), "support_wall_clearance_m", 1.0) or 1.0)))
+    tolerance = max(1.10, target + 0.35)
+    segments = {str(segment.name): segment for segment in getattr(excavation, "segments", [])}
+    changed_supports: set[str] = set()
+    unresolved: list[str] = []
+
+    def projected_wall_point(segment, probe: Point2D) -> Point2D:
+        station, _distance_to_wall = _point_segment_projection(probe, segment.start, segment.end)
+        length = max(float(getattr(segment, "length", 0.0) or _distance(segment.start, segment.end)), EPS)
+        ratio = max(0.0, min(1.0, station / length))
+        return Point2D(
+            x=round(segment.start.x + (segment.end.x - segment.start.x) * ratio, 4),
+            y=round(segment.start.y + (segment.end.y - segment.start.y) * ratio, 4),
+        )
+
+    for support in supports:
+        if str(getattr(support, "support_role", "")) == "ring_strut":
+            continue
+        support_changed = False
+        for side in ("start", "end"):
+            other_side = "end" if side == "start" else "start"
+            point = getattr(support, side)
+            other = getattr(support, other_side)
+            prior_connection = getattr(support, f"{side}_wall_connection", None)
+            probe = prior_connection or point
+            hit = _nearest_face_hit(probe, excavation, tolerance=tolerance, toward=other)
+            if hit is None and prior_connection is not None:
+                hit = _nearest_face_hit(point, excavation, tolerance=tolerance, toward=other)
+            if hit is None:
+                unresolved.append(str(getattr(support, "code", getattr(support, "id", "support"))))
+                continue
+            segment = segments.get(str(hit.face_code))
+            if segment is None:
+                unresolved.append(str(getattr(support, "code", getattr(support, "id", "support"))))
+                continue
+            wall_point = projected_wall_point(segment, probe)
+            adjusted, actual = _trim_endpoint_from_wall(wall_point, other, segment, target)
+            old_face = str(getattr(support, f"{side}_face_code", "") or "")
+            old_point = point
+            old_connection = prior_connection
+            old_clearance = getattr(support, f"{side}_wall_clearance_m", None)
+            setattr(support, f"{side}_face_code", str(hit.face_code))
+            setattr(support, f"{side}_wall_connection", wall_point)
+            setattr(support, f"{side}_wall_clearance_m", round(float(actual), 4))
+            setattr(support, side, adjusted)
+            if (
+                old_face != str(hit.face_code)
+                or _distance(old_point, adjusted) > 1.0e-4
+                or old_connection is None
+                or _distance(old_connection, wall_point) > 1.0e-4
+                or old_clearance is None
+                or abs(float(old_clearance) - float(actual)) > 1.0e-4
+            ):
+                support_changed = True
+        support.centerline_offset_m = target
+        support.span_length = round(_distance(support.start, support.end), 3)
+        if support_changed:
+            changed_supports.add(str(getattr(support, "code", getattr(support, "id", "support"))))
+
+        # Keep wall-node locations consistent with the repaired bearing points.
+        related_nodes = [node for node in list(getattr(system, "support_nodes", []) or []) if str(getattr(node, "support_id", "")) == str(getattr(support, "id", ""))]
+        endpoints = [
+            (getattr(support, "start_wall_connection", None), getattr(support, "start_face_code", None)),
+            (getattr(support, "end_wall_connection", None), getattr(support, "end_face_code", None)),
+        ]
+        for node in related_nodes:
+            available = [(point, face) for point, face in endpoints if point is not None]
+            if not available:
+                continue
+            point, face = min(available, key=lambda row: _distance(node.location, row[0]))
+            if _distance(node.location, point) > 1.0e-4 or str(getattr(node, "face_code", "") or "") != str(face or ""):
+                node.location = point
+                node.face_code = face
+                changed_supports.add(str(getattr(support, "code", getattr(support, "id", "support"))))
+
+    unresolved_unique = sorted(set(unresolved))
+    return {
+        "changed": bool(changed_supports),
+        "changedSupportCount": len(changed_supports),
+        "changedSupportCodes": sorted(changed_supports),
+        "unresolvedSupportCodes": unresolved_unique,
+        "targetClearanceM": target,
+        "method": "direction_aware_wall_bearing_recovery",
+    }
 
 
 def _endpoint_connected_to_retained_support(

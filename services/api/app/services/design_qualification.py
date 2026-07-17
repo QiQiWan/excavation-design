@@ -142,8 +142,8 @@ def _normalise_family(value: str) -> str:
     return aliases.get(value, value if value in SYSTEM_CATALOG else "engineer_selected")
 
 
-def build_support_system_options(project: Project) -> dict[str, Any]:
-    diagnostics = _shape_diagnostics(project)
+def build_support_system_options(project: Project, *, diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
+    diagnostics = dict(diagnostics or _shape_diagnostics(project))
     supported = [_normalise_family(str(item)) for item in diagnostics.get("supportedTopologyFamilies", [])]
     alternatives = [_normalise_family(str(item)) for item in diagnostics.get("alternativeSystems", [])]
     primary_raw = str(diagnostics.get("primarySystem") or diagnostics.get("recommendedTopology") or "")
@@ -230,7 +230,14 @@ def _gate(code: str, title: str, status: str, message: str, *, blocks: list[str]
     }
 
 
-def build_design_qualification(project: Project, *, storage_info: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_design_qualification(
+    project: Project,
+    *,
+    storage_info: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
+    systems: dict[str, Any] | None = None,
+    topology_detail: str = "summary",
+) -> dict[str, Any]:
     storage = dict(storage_info or {})
     full_allowed = bool(storage.get("fullLoadAllowed", True))
     workspace_allowed = bool(storage.get("workspaceLoadAllowed", True))
@@ -303,12 +310,12 @@ def build_design_qualification(project: Project, *, storage_info: dict[str, Any]
         action=("确认坐标转换并重建地质设计域。" if coordinate_blocks else None),
     )
 
-    systems = build_support_system_options(project)
+    diagnostics = dict(diagnostics or _shape_diagnostics(project))
+    systems = dict(systems or build_support_system_options(project, diagnostics=diagnostics))
     repair = project.retaining_system.support_layout_repair if project.retaining_system else None
     candidates = list(repair.candidates or []) if repair else []
     feasible = [candidate for candidate in candidates if bool((candidate.hard_constraints or {}).get("passed"))]
     current_support_count = len(project.retaining_system.supports or []) if project.retaining_system else 0
-    current_quality = evaluate_support_layout_quality(project) if current_support_count else None
     topology_hard_categories = {
         "support_spacing", "support_span", "wale_support_bay", "support_crossing",
         "support_outside_excavation", "obstacle_clearance", "temporary_column",
@@ -316,11 +323,56 @@ def build_design_qualification(project: Project, *, storage_info: dict[str, Any]
         "unsupported_internal_endpoint", "corner_brace_fan_geometry",
         "corner_brace_wall_node_congestion", "support_station_cluster",
     }
+    current_quality = None
+    topology_evidence_source = "workspace_summary"
+    if current_support_count and str(topology_detail).lower() == "full":
+        current_quality = evaluate_support_layout_quality(project)
+        topology_evidence_source = "live_full_quality_evaluation"
+    elif current_support_count and project.calculation_results:
+        latest_quality = getattr(project.calculation_results[-1], "support_layout_quality", None)
+        calculation_state = dict(project.advanced_engineering.get("calculationState") or {})
+        if latest_quality is not None and not bool(calculation_state.get("requiresRecalculation")):
+            current_quality = latest_quality
+            topology_evidence_source = "current_calculation_quality_snapshot"
     current_hard_failures = [
         issue for issue in (current_quality.issues if current_quality else [])
         if issue.severity == "fail" and issue.category in topology_hard_categories
     ]
-    current_topology_ready = bool(current_support_count and not current_hard_failures)
+    candidate_blocking_categories = sorted({
+        str(category)
+        for candidate in candidates
+        if not bool((candidate.hard_constraints or {}).get("passed"))
+        for category in (
+            (candidate.hard_constraints or {}).get("blockingCategories")
+            or (candidate.hard_constraints or {}).get("qualityFailCategories")
+            or []
+        )
+        if category
+    })
+    candidate_controls = [
+        {
+            "candidateId": candidate.id,
+            "targetSpacingM": candidate.target_spacing,
+            "columnSpanM": candidate.column_max_span,
+            "blockingCategories": list(
+                (candidate.hard_constraints or {}).get("blockingCategories")
+                or (candidate.hard_constraints or {}).get("qualityFailCategories")
+                or []
+            ),
+            "hardFailureKeys": list((candidate.hard_constraints or {}).get("hardFailureKeys") or []),
+            "controlMetrics": dict(
+                ((candidate.variable_summary or {}).get("topologyQualification") or {}).get("controlMetrics")
+                or {}
+            ),
+        }
+        for candidate in candidates[:3]
+        if not bool((candidate.hard_constraints or {}).get("passed"))
+    ]
+    selected_candidate_id = str(getattr(repair, "selected_candidate_id", None) or "") if repair else ""
+    selected_candidate = next((candidate for candidate in candidates if str(candidate.id or "") == selected_candidate_id), None)
+    selected_candidate_passed = bool(selected_candidate and (selected_candidate.hard_constraints or {}).get("passed"))
+    quality_snapshot_passed = bool(current_quality and current_quality.status in {"pass", "warning"} and not current_hard_failures)
+    current_topology_ready = bool(current_support_count and (quality_snapshot_passed or selected_candidate_passed))
     controlled = bool(systems.get("controlledBlock")) and not current_topology_ready
     if current_topology_ready:
         topology_status = "pass"
@@ -332,7 +384,11 @@ def build_design_qualification(project: Project, *, storage_info: dict[str, Any]
         topology_blocks = []
     elif candidates or controlled:
         topology_status = "manual_review"
-        topology_message = "当前体系只形成诊断候选或受控阻断，需要切换/补充结构体系。"
+        category_text = "、".join(candidate_blocking_categories[:6])
+        topology_message = (
+            "当前体系只形成诊断候选或受控阻断，需要切换/补充结构体系。"
+            + (f" 候选控制类别：{category_text}。" if category_text else "")
+        )
         topology_blocks = ["calculation", "formal_issue"]
     else:
         topology_status = "warning"
@@ -347,8 +403,13 @@ def build_design_qualification(project: Project, *, storage_info: dict[str, Any]
             "currentSupportCount": current_support_count,
             "currentTopologyReady": current_topology_ready,
             "currentQualityStatus": current_quality.status if current_quality else None,
+            "topologyEvidenceSource": topology_evidence_source,
+            "selectedCandidateId": selected_candidate_id or None,
+            "selectedCandidatePassed": selected_candidate_passed,
             "currentHardFailureCount": len(current_hard_failures),
             "currentHardFailureCategories": sorted({issue.category for issue in current_hard_failures}),
+            "candidateBlockingCategories": candidate_blocking_categories,
+            "candidateControls": candidate_controls,
             "controlledBlock": controlled,
             "systemOptionCount": len(systems.get("options") or []),
         },

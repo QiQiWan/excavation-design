@@ -15,7 +15,7 @@ type Stage = {
   blocksNext?: boolean;
 };
 
-type Session = {
+export type ProgressiveDesignSession = {
   projectId: string;
   config: {
     currentStage?: string;
@@ -66,19 +66,21 @@ export default function ProgressiveDesignPanel({
   project,
   runTask,
   onRefresh,
+  initialSession,
 }: {
   project: Project;
   runTask: (title: string, operation: TaskOperation, payload?: Record<string, unknown>) => Promise<void>;
   onRefresh?: () => Promise<unknown> | unknown;
+  initialSession?: ProgressiveDesignSession;
 }) {
-  const [session, setSession] = useState<Session>();
+  const [session, setSession] = useState<ProgressiveDesignSession | undefined>(initialSession);
   const [selectedCode, setSelectedCode] = useState<string>();
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
 
   async function reload() {
     try {
-      const value = await api.getProgressiveDesign(project.id) as Session;
+      const value = await api.getProgressiveDesign(project.id) as ProgressiveDesignSession;
       setSession(value);
       setSelectedCode((current) => current || value.recommendedStage || value.currentStage || value.stages?.[0]?.code);
       setError(undefined);
@@ -87,7 +89,15 @@ export default function ProgressiveDesignPanel({
     }
   }
 
-  useEffect(() => { void reload(); }, [project.id, project.updatedAt, project.retainingSystem?.supportLayoutRepair?.checkedAt]);
+  useEffect(() => {
+    if (initialSession) {
+      setSession(initialSession);
+      setSelectedCode((current) => current || initialSession.recommendedStage || initialSession.currentStage || initialSession.stages?.[0]?.code);
+      setError(undefined);
+      return;
+    }
+    void reload();
+  }, [initialSession, project.id, project.updatedAt, project.retainingSystem?.supportLayoutRepair?.checkedAt]);
 
   const selected = useMemo(
     () => session?.stages.find((stage) => stage.code === selectedCode) ?? session?.stages[0],
@@ -115,7 +125,7 @@ export default function ProgressiveDesignPanel({
         ...patch,
         currentStage: requestedStage,
         expectedVersion: session.config.sessionVersion,
-      }) as Session;
+      }) as ProgressiveDesignSession;
       setSession(updated);
       if (typeof patch.currentStage === 'string') setSelectedCode(updated.currentStage);
       setError(undefined);

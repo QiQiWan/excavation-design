@@ -1,0 +1,33 @@
+{
+  "release": "3.52.0",
+  "verifiedAt": "2026-07-17",
+  "backendRegression": {
+    "status": "passed",
+    "tests": 66,
+    "warnings": 58,
+    "warningNote": "Warnings are limited to missing CJK glyphs in the test environment's DejaVu Sans chart font."
+  },
+  "frontendRegression": {
+    "status": "passed",
+    "testFiles": 21,
+    "tests": 39
+  },
+  "productionBuild": {
+    "status": "passed",
+    "tool": "TypeScript + Vite"
+  },
+  "smoke": {
+    "status": "passed",
+    "verificationCatalogCount": 51,
+    "inputRequirementCount": 28,
+    "wallObjectCount": 4,
+    "stabilityHydraulicDirectoryCount": 16,
+    "missingInputClassCount": 12,
+    "mappedWallSafetyFactor": 1.5,
+    "deepeningBlockerObject": "S-SMOKE-1"
+  },
+  "reportSmoke": {
+    "status": "passed",
+    "format": "DOCX"
+  }
+}

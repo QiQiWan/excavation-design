@@ -86,9 +86,14 @@ def test_optimizer_returns_real_long_strip_alternatives_and_single_controlled_bl
     _, l_candidates = optimize_support_layout_candidates(
         l_project, max_candidates=3, preset="clean_support_layout"
     )
-    assert len(l_candidates) == 1
-    assert l_candidates[0].variable_summary.get("capabilityOutcome") == "controlled_block"
-    assert int(l_candidates[0].metrics.get("supportCrossingCount", 0) or 0) == 0
+    # V3.48+ retains up to three geometry-distinct diagnostic schemes so the
+    # engineer can compare controlled alternatives. None may be promoted as a
+    # formal solution while the transfer system remains incomplete.
+    assert 1 <= len(l_candidates) <= 3
+    assert all(item.variable_summary.get("capabilityOutcome") == "controlled_block" for item in l_candidates)
+    assert all(not bool(item.hard_constraints.get("passed")) for item in l_candidates)
+    assert all(int(item.metrics.get("supportCrossingCount", 0) or 0) == 0 for item in l_candidates)
+    assert len({str((item.variable_summary or {}).get("geometryFingerprint")) for item in l_candidates}) == len(l_candidates)
 
 def test_shape_diagnostics_expose_topology_recommendation() -> None:
     rows = [Point2D(x=x, y=y) for x, y in [(0, 0), (100, 0), (100, 25), (0, 25)]]

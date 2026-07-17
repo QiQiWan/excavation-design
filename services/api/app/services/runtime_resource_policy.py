@@ -5,6 +5,9 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from app.contracts.storage_status import StorageStatus, classify_storage_status
+from app.services.system_resources import physical_memory_bytes, process_effective_memory_bytes, process_rss_bytes
+
 
 def _read_int(path: str) -> int | None:
     try:
@@ -42,14 +45,7 @@ def _proc_meminfo() -> dict[str, int]:
 
 
 def _process_rss_bytes() -> int:
-    try:
-        with open("/proc/self/status", "r", encoding="utf-8") as stream:
-            for line in stream:
-                if line.startswith("VmRSS:"):
-                    return int(line.split()[1]) * 1024
-    except OSError:
-        pass
-    return 0
+    return int(process_rss_bytes())
 
 
 def _cgroup_memory() -> tuple[int | None, int | None]:
@@ -84,9 +80,9 @@ def _env_optional_mb(name: str) -> int | None:
 
 
 def runtime_memory_snapshot() -> dict[str, Any]:
-    mem = _proc_meminfo()
-    host_total = int(mem.get("MemTotal") or 0)
-    host_available = int(mem.get("MemAvailable") or 0)
+    host_total, host_available = physical_memory_bytes()
+    host_total = int(host_total or 0)
+    host_available = int(host_available or 0)
     cgroup_limit, cgroup_current = _cgroup_memory()
     effective_total = host_total
     if cgroup_limit and (not effective_total or cgroup_limit < effective_total):
@@ -120,6 +116,7 @@ def runtime_memory_snapshot() -> dict[str, Any]:
         "effectiveTotalBytes": effective_total,
         "effectiveAvailableBytes": min(effective_available, effective_total),
         "processRssBytes": _process_rss_bytes(),
+        "processEffectiveBytes": int(process_effective_memory_bytes()),
         "cpuCount": max(1, os.cpu_count() or 1),
         "loadAverage1m": round(float(load1), 3),
         "loadAverage5m": round(float(load5), 3),
@@ -143,6 +140,7 @@ def adaptive_resource_policy(*, role: str | None = None) -> dict[str, Any]:
     effective_total = int(snapshot["effectiveTotalBytes"])
     available = int(snapshot["effectiveAvailableBytes"])
     rss = int(snapshot["processRssBytes"])
+    process_effective = int(snapshot.get("processEffectiveBytes") or rss)
     selected_role = str(role or os.getenv("PITGUARD_PROCESS_ROLE", "api")).strip().lower() or "api"
     mode = str(os.getenv("PITGUARD_RESOURCE_POLICY_MODE", "adaptive")).strip().lower()
 
@@ -188,14 +186,28 @@ def adaptive_resource_policy(*, role: str | None = None) -> dict[str, Any]:
     worker_hard_override = _env_optional_mb("PITGUARD_WORKER_RSS_HARD_LIMIT_MB")
     worker_soft_override = _env_optional_mb("PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB")
     worker_max_override = _env_optional_mb("PITGUARD_WORKER_MEMORY_MAX_MB")
-    absolute_worker_cap = max(384 * 1024**2, effective_total - max(128 * 1024**2, reserve // 2))
-    dynamic_hard = min(int(effective_total * 0.82), rss + int(usable * 0.78), absolute_worker_cap)
-    worker_hard = min(max(512 * 1024**2, dynamic_hard), absolute_worker_cap)
+    # Engineering search must leave enough memory for the desktop, database and
+    # browser. The old 82% host-memory rule allowed a 32 GB workstation worker to
+    # grow beyond 18 GB before intervention. Use a conservative default cap and
+    # permit administrators to raise it explicitly for dedicated servers.
+    absolute_worker_cap = max(384 * 1024**2, effective_total - max(1024 * 1024**2, reserve))
+    default_cap_override = _env_optional_mb("PITGUARD_WORKER_DEFAULT_HARD_CAP_MB")
+    default_desktop_cap = default_cap_override if default_cap_override is not None else min(
+        6 * 1024**3, max(2 * 1024**3, int(effective_total * 0.20))
+    )
+    dynamic_hard = min(
+        int(effective_total * 0.45),
+        process_effective + int(usable * 0.50),
+        absolute_worker_cap,
+        default_desktop_cap,
+    )
+    minimum_worker_hard = min(2 * 1024**3, absolute_worker_cap, default_desktop_cap)
+    worker_hard = min(max(minimum_worker_hard, dynamic_hard), absolute_worker_cap, default_desktop_cap)
     if worker_hard_override is not None:
         worker_hard = min(worker_hard, worker_hard_override)
     if worker_max_override is not None:
         worker_hard = min(worker_hard, worker_max_override)
-    worker_soft = min(max(384 * 1024**2, int(worker_hard * 0.82)), worker_hard)
+    worker_soft = min(max(512 * 1024**2, int(worker_hard * 0.70)), worker_hard)
     if worker_soft_override is not None:
         worker_soft = min(worker_soft, worker_soft_override)
 
@@ -214,7 +226,7 @@ def adaptive_resource_policy(*, role: str | None = None) -> dict[str, Any]:
             cpu_parallel_cap = 1
         elif load_ratio >= 0.65:
             cpu_parallel_cap = min(cpu_parallel_cap, 2)
-        heavy_concurrency = max(1, min(3, usable // max(per_heavy, 1), cpu_parallel_cap))
+        heavy_concurrency = 1 if selected_role in {"worker", "api"} else max(1, min(2, usable // max(per_heavy, 1), cpu_parallel_cap))
 
     storage_compaction_allowed = disk_usable >= max(1024 * 1024**2, int(hard_cap * 0.35))
 
@@ -233,25 +245,21 @@ def adaptive_resource_policy(*, role: str | None = None) -> dict[str, Any]:
         "workspaceLimitBytes": int(workspace_limit),
         "workerSoftLimitBytes": int(worker_soft),
         "workerHardLimitBytes": int(worker_hard),
+        "workerDefaultHardCapBytes": int(default_desktop_cap),
         "recommendedHeavyConcurrency": int(heavy_concurrency),
         "workspaceFirst": True,
         "workerFullHydrationAllowed": usable >= 1024 * 1024**2,
         "policyExplanation": (
             "网页仅加载工作区投影；完整工程对象由独立 worker 按当前可用内存动态评估后加载。"
-            "阈值由有效物理/容器内存、系统保留量、当前进程RSS、CPU负载、磁盘余量和JSON放大系数共同确定。"
+            "阈值由有效物理/容器内存、系统保留量、当前进程RSS/私有提交量、CPU负载、磁盘余量和JSON放大系数共同确定；"
+            "默认worker最多使用主机内存20%且不超过6GB，专用服务器可通过环境变量显式提高。"
         ),
     }
 
 
-def classify_payload(payload_bytes: int, *, policy: dict[str, Any] | None = None) -> str:
+def classify_payload(payload_bytes: int, *, policy: dict[str, Any] | None = None) -> StorageStatus:
     resource = policy or adaptive_resource_policy()
-    limit = max(1, int(resource.get("apiFullLoadLimitBytes") or 1))
-    ratio = int(payload_bytes) / limit
-    if ratio >= 1.0:
-        return "workspace_only"
-    if ratio >= 0.7:
-        return "elevated"
-    return "normal"
+    return classify_storage_status(payload_bytes, int(resource.get("apiFullLoadLimitBytes") or 1))
 
 
 def mb(value: int | float | None) -> float:

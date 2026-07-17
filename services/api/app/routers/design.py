@@ -18,6 +18,7 @@ from app.services.calculation_resource_estimator import estimate_calculation_res
 from app.services.support_layout_import import import_support_layout_csv
 from app.services.design_qualification import build_design_qualification, build_support_system_options
 from app.services.progressive_design import build_progressive_design_session, merge_progressive_config, normalize_progressive_config
+from app.services.design_workspace_bootstrap import build_design_workspace_bootstrap, invalidate_design_workspace_bootstrap
 from app.storage.repository import ProjectRepository, get_repository
 
 router = APIRouter(prefix="/api/projects/{project_id}/design", tags=["design"])
@@ -101,22 +102,35 @@ def _require_excavation_workspace(project_id: str, repo: ProjectRepository):
 
 
 
+@router.get("/core-status")
+def get_core_design_status(
+    project_id: str,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    from app.services.core_workspace import build_core_workspace_status
+    project = repo.require_workspace_with_latest_calculation(project_id)
+    return build_core_workspace_status(project, repo.store.get_payload_info(project_id))
+
+
+@router.get("/workspace-bootstrap")
+def get_design_workspace_bootstrap(
+    project_id: str,
+    refresh: bool = False,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    return build_design_workspace_bootstrap(repo, project_id, force=bool(refresh))
+
+
 @router.get("/qualification")
 def get_design_qualification(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = repo.require_workspace(project_id)
-    storage_info = repo.store.get_payload_info(project_id) or {}
-    return build_design_qualification(project, storage_info=storage_info)
+    # Backward-compatible route backed by the shared single-flight snapshot.
+    return dict(build_design_workspace_bootstrap(repo, project_id).get("qualification") or {})
 
 
 @router.get("/progressive")
 def get_progressive_design(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = repo.require_workspace(project_id)
-    persisted = repo.store.get_progressive_design_config(project_id)
-    return build_progressive_design_session(
-        project,
-        persisted=persisted,
-        storage_info=repo.store.get_payload_info(project_id) or {},
-    )
+    # Backward-compatible route backed by the shared single-flight snapshot.
+    return dict(build_design_workspace_bootstrap(repo, project_id).get("progressive") or {})
 
 
 @router.put("/progressive")
@@ -130,17 +144,29 @@ def update_progressive_design(
     patch = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
     expected = patch.pop("expectedVersion", None)
     merged = normalize_progressive_config(project, merge_progressive_config(current, patch))
+    conflict_resolved = False
     try:
         stored = repo.store.save_progressive_design_config(
             project_id, merged, expected_version=expected,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return build_progressive_design_session(
-        project,
-        persisted=stored,
-        storage_info=repo.store.get_payload_info(project_id) or {},
-    )
+    except RuntimeError:
+        # Browser panels can submit adjacent decisions before the refreshed
+        # session version reaches every component.  Rebase the small patch on
+        # the latest server state once, preserving unrelated decisions instead
+        # of returning repeated 409 responses that stall the design workflow.
+        latest = normalize_progressive_config(
+            project, repo.store.get_progressive_design_config(project_id)
+        )
+        latest_version = int(latest.get("sessionVersion") or 0)
+        rebased = normalize_progressive_config(project, merge_progressive_config(latest, patch))
+        stored = repo.store.save_progressive_design_config(
+            project_id, rebased, expected_version=latest_version,
+        )
+        conflict_resolved = True
+    invalidate_design_workspace_bootstrap(project_id, db_path=str(repo.store.db_path))
+    result = dict(build_design_workspace_bootstrap(repo, project_id, force=True).get("progressive") or {})
+    result["conflictResolved"] = conflict_resolved
+    return result
 
 
 @router.get("/candidate-previews")
@@ -156,20 +182,11 @@ def get_candidate_previews(
 
 @router.get("/system-options")
 def get_support_system_options(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    return build_support_system_options(repo.require_workspace(project_id))
+    return dict(build_design_workspace_bootstrap(repo, project_id).get("systemOptions") or {})
 
 @router.get("/plan-shape-diagnostics")
 def get_plan_shape_diagnostics(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = _require_excavation_workspace(project_id, repo)
-    excavation = project.excavation
-    return plan_shape_diagnostics(
-        list(excavation.outline.points),
-        local_pit_count=len(excavation.local_pits or []),
-        has_center_island=any(
-            getattr(item, "obstacle_type", "") == "center_island" and getattr(item, "active", True)
-            for item in (excavation.obstacles or [])
-        ),
-    )
+    return dict(build_design_workspace_bootstrap(repo, project_id).get("shapeDiagnostics") or {})
 
 
 @router.get("/support-designer-audit")

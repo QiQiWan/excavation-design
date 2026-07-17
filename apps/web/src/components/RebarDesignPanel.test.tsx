@@ -24,6 +24,12 @@ const scheme = {
     supportTopology: { status: 'pass', message: '各墙面均有直接传力路径。', secondaryGridSupportCount: 2, maxCornerTributaryWidthM: 9.75 },
     categoryStatusCounts: { wall_reinforcement: { pass: 0, warning: 1, manual_review: 0, fail: 0 } },
     failureReasons: {}, actions: [{ id: 'REVIEW_WARNINGS', priority: 3, label: '处理复核项', description: '复核构造。' }],
+    deepeningGate: {
+      status: 'blocked', blockerCount: 1, warningCount: 1, canEnterDetailing: false, canRunP3: false,
+      steps: [{ id: 'calculation', label: '当前计算合同', status: 'pass', message: '计算合同有效' }],
+      blockers: [{ id: 'REBAR_SCHEME_NOT_APPLIED', reasonCode: 'REBAR_SCHEME_NOT_APPLIED', title: '配筋方案尚未应用', status: 'fail', count: 1, objects: ['DW-01'], message: '当前仍是配筋草案。', requiredAction: '点击生成并应用配筋草案。', targetStage: '配筋深化', canResolveAtDesignStage: true }],
+      warnings: [{ id: 'P3_NOT_RUN', reasonCode: 'P3_NOT_RUN', title: 'P3 深化闭环尚未运行', status: 'warning', count: 1, message: '需运行 P3。', requiredAction: '运行 P3 深化闭环。' }],
+    },
     canApply: true, canIssueConstructionDrawings: false, exportMode: 'review', reviewWatermarkRequired: true, sectionChangeCount: 0,
     headline: '仍有复核项，当前输出审查版图纸。'
   }
@@ -45,7 +51,10 @@ describe('RebarDesignPanel', () => {
     expect(await screen.findByText('配筋设计与施工图')).toBeInTheDocument();
     expect(await screen.findByText('仍有复核项，当前输出审查版图纸。')).toBeInTheDocument();
     expect(screen.getByText('下载审查版图纸')).toHaveAttribute('href', expect.stringContaining('issue_mode=review'));
-    expect(screen.getByText('1 校验计算')).toBeInTheDocument();
+    expect(screen.getByText('1 当前计算合同')).toBeInTheDocument();
+    expect(screen.getByText('配筋深化入口诊断')).toBeInTheDocument();
+    expect(screen.getByText('配筋方案尚未应用')).toBeInTheDocument();
+    expect(screen.getByText('点击生成并应用配筋草案。')).toBeInTheDocument();
     expect(screen.getByText('DW-01')).toBeInTheDocument();
   });
 

@@ -339,7 +339,7 @@ def _run_benchmark_case_isolated(case_id: str, timeout_s: int = 180) -> dict[str
     Isolation keeps the regression library deterministic and prevents global
     state from one public-paper case affecting the next case.
     """
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[2]
     code = (
         "import json, sys\n"
         "from pathlib import Path\n"

@@ -1,0 +1,44 @@
+{
+  "release": "3.54.0",
+  "verifiedAt": "2026-07-17",
+  "frontend": {
+    "testFiles": 21,
+    "tests": 41,
+    "status": "pass",
+    "productionBuild": "pass"
+  },
+  "backend": {
+    "targetedRegressionTests": 53,
+    "status": "pass",
+    "coveredReleases": [
+      "3.18.0",
+      "3.46.0",
+      "3.47.0",
+      "3.48.0",
+      "3.49.0",
+      "3.50.0",
+      "3.51.0",
+      "3.52.0",
+      "3.53.0",
+      "3.54.0"
+    ],
+    "compileAll": "pass",
+    "versionCoherence": "3.54.0"
+  },
+  "endToEnd": {
+    "status": "pass",
+    "workflow": [
+      "建立工程和确认设计基准",
+      "导入地质并建立开挖与围护体系",
+      "生成、修改并确认中文施工阶段",
+      "完整计算与安全储备闭环",
+      "配筋方案写入与自动复算",
+      "P3 企业节点与空间深化",
+      "审查版联合交付包生成"
+    ],
+    "authoritativeStageEvidenceReloaded": true,
+    "recalculationClearedAfterRebarApplication": true,
+    "p3EntryAllowedForP3ResolvableItems": true,
+    "coordinatedDeliveryGenerated": true
+  }
+}

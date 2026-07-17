@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import advanced, artifacts, assurance, auth, benchmarks, boreholes, cad_template, calculation, design, drawing_rules, excavation, expert_design, export, geology, industrial, issues, projects, rebar, standards, tasks, wall_optimization
+from app.routers import auth, boreholes, calculation, design, excavation, export, geology, projects, rebar, standards, tasks
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
@@ -30,7 +30,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.37.0 progressive design, adaptive resource governance and workspace-first delivery.",
+    description="PitGuard V3.55.0 intelligent verification-strengthening-recalculation closure with crown-beam force/rebar writeback and complete horizontal-support reinforcement contracts.",
 )
 
 app.add_middleware(
@@ -83,27 +83,42 @@ async def observe_http_requests(request: Request, call_next):
             slow_threshold_ms=float(os.getenv("PITGUARD_SLOW_REQUEST_MS", "1200")),
         )
 
-app.include_router(auth.router)
-app.include_router(projects.router)
-app.include_router(artifacts.router)
-app.include_router(standards.router)
-app.include_router(benchmarks.router)
-app.include_router(cad_template.router)
-app.include_router(drawing_rules.router)
-app.include_router(tasks.router)
-app.include_router(assurance.router)
-app.include_router(boreholes.router)
-app.include_router(geology.router)
-app.include_router(excavation.router)
-app.include_router(design.router)
-app.include_router(calculation.router)
-app.include_router(export.router)
-app.include_router(issues.router)
-app.include_router(rebar.router)
-app.include_router(wall_optimization.router)
-app.include_router(expert_design.router)
-app.include_router(advanced.router)
-app.include_router(industrial.router)
+PRODUCT_MODE = str(os.getenv("PITGUARD_PRODUCT_MODE", "core") or "core").strip().lower()
+if PRODUCT_MODE not in {"core", "full"}:
+    PRODUCT_MODE = "core"
+
+# The default product exposes only the endpoints needed by the dependable
+# retaining-design chain.  Historical expert, benchmark, monitoring and
+# maturity modules remain available in explicit ``full`` mode, but they are
+# neither imported nor registered during ordinary production startup.
+for _router in (
+    auth.router,
+    projects.router,
+    tasks.router,
+    boreholes.router,
+    geology.router,
+    excavation.router,
+    design.router,
+    calculation.router,
+    rebar.router,
+    standards.router,
+    export.router,
+):
+    app.include_router(_router)
+
+if PRODUCT_MODE == "full":
+    from app.routers import (
+        advanced, artifacts, assurance, benchmarks, cad_template,
+        drawing_rules, expert_design, industrial, issues, wall_optimization,
+    )
+
+    for _router in (
+        artifacts.router, benchmarks.router,
+        cad_template.router, drawing_rules.router, assurance.router,
+        issues.router, wall_optimization.router, expert_design.router,
+        advanced.router, industrial.router,
+    ):
+        app.include_router(_router)
 
 
 @app.get("/health")
@@ -165,6 +180,7 @@ def system_diagnostics() -> dict:
     return {
         "service": "pitguard-api",
         "version": app.version,
+        "productMode": PRODUCT_MODE,
         **version_manifest(),
         "pythonVersion": sys.version.split()[0],
         "databaseConfigured": bool(db_path),
@@ -241,6 +257,11 @@ def system_readiness() -> dict:
         blocking_reasons.append("API 进程内存接近软限制")
     if int(status_counts.get("queued") or 0) > 3:
         degraded_reasons.append("后台任务排队超过 3 个")
+    worker_heartbeat = dict(task_metrics.get("workerHeartbeat") or {})
+    if str(task_metrics.get("taskExecutionMode") or "") == "external" and not bool(worker_heartbeat.get("healthy")):
+        degraded_reasons.append("独立计算worker未运行或心跳已失效")
+        if int(status_counts.get("queued") or 0) + int(status_counts.get("running") or 0) > 0:
+            blocking_reasons.append("存在未完成任务，但独立计算worker不可用")
     ready = db_ok and not missing and not blocking_reasons
     status = "not_ready" if not ready else "degraded" if degraded_reasons else "ready"
     return {

@@ -9,13 +9,21 @@ $BackendPort = if ($env:PITGUARD_BACKEND_PORT) { $env:PITGUARD_BACKEND_PORT } el
 $FrontendPort = if ($env:PITGUARD_FRONTEND_PORT) { $env:PITGUARD_FRONTEND_PORT } else { "5173" }
 $InstallDeps = if ($env:PITGUARD_INSTALL_DEPS) { $env:PITGUARD_INSTALL_DEPS } else { "1" }
 $NumericThreads = if ($env:PITGUARD_NUMERIC_THREADS) { $env:PITGUARD_NUMERIC_THREADS } else { "1" }
+$WorkerDefaultHardCapMb = if ($env:PITGUARD_WORKER_DEFAULT_HARD_CAP_MB) { $env:PITGUARD_WORKER_DEFAULT_HARD_CAP_MB } else { "6144" }
+$CandidateTrialLimit = if ($env:PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT) { $env:PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT } else { "9" }
+$CandidatePoolLimit = if ($env:PITGUARD_SUPPORT_CANDIDATE_POOL_LIMIT) { $env:PITGUARD_SUPPORT_CANDIDATE_POOL_LIMIT } else { "6" }
+$DevReload = if ($env:PITGUARD_DEV_RELOAD) { $env:PITGUARD_DEV_RELOAD } else { "0" }
 $BackendLog = Join-Path $RuntimeDir "backend.log"
 $FrontendLog = Join-Path $RuntimeDir "frontend.log"
+$WorkerLog = Join-Path $RuntimeDir "worker.log"
+$WorkerHeartbeat = Join-Path $RuntimeDir "worker-heartbeat.json"
 $EnvChecker = Join-Path $RootDir "scripts\check-python-env.py"
 
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 Set-Content -Path $BackendLog -Value ""
 Set-Content -Path $FrontendLog -Value ""
+Set-Content -Path $WorkerLog -Value ""
+if (Test-Path $WorkerHeartbeat) { Remove-Item $WorkerHeartbeat -Force -ErrorAction SilentlyContinue }
 
 function Stop-WithMessage([string]$Message, [string]$InstallCommand = "") {
   Write-Host "[PitGuard] $Message" -ForegroundColor Red
@@ -80,20 +88,31 @@ if (-not (Test-Path (Join-Path $WebDir "node_modules")) -or $MissingFrontend.Cou
 
 $env:PITGUARD_DB_PATH = $DbPath
 $env:PITGUARD_NUMERIC_THREADS = $NumericThreads
+if (-not $env:PITGUARD_PRODUCT_MODE) { $env:PITGUARD_PRODUCT_MODE = "core" }
 $env:OPENBLAS_NUM_THREADS = $NumericThreads
 $env:OMP_NUM_THREADS = $NumericThreads
 $env:MKL_NUM_THREADS = $NumericThreads
 $env:NUMEXPR_NUM_THREADS = $NumericThreads
 $env:VECLIB_MAXIMUM_THREADS = $NumericThreads
+$env:PITGUARD_WORKER_DEFAULT_HARD_CAP_MB = $WorkerDefaultHardCapMb
+$env:PITGUARD_WORKER_OS_HARD_LIMIT_MB = $WorkerDefaultHardCapMb
+$env:PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS = "1"
+$env:PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT = $CandidateTrialLimit
+$env:PITGUARD_SUPPORT_CANDIDATE_POOL_LIMIT = $CandidatePoolLimit
+$env:PITGUARD_RUNTIME_DIAGNOSTICS = "1"
 $env:PYTHONPATH = "$ApiDir" + $(if ($env:PYTHONPATH) { ";$env:PYTHONPATH" } else { "" })
 
+$ReloadArg = if ($DevReload -in @("1", "true", "yes", "on")) { "--reload" } else { "" }
 $BackendCmdPath = Join-Path $RuntimeDir "run-backend.cmd"
 $BackendScript = @"
 cd /d "$ApiDir"
 set "PITGUARD_DB_PATH=$DbPath"
 set "PITGUARD_NUMERIC_THREADS=$NumericThreads"
+set "PITGUARD_PRODUCT_MODE=core"
+set "PITGUARD_TASK_EXECUTION_MODE=external"
+set "PITGUARD_PROCESS_ROLE=api"
 set "PYTHONPATH=$ApiDir;%PYTHONPATH%"
-"$PythonPath" -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 1>>"$BackendLog" 2>>&1
+"$PythonPath" -m uvicorn app.main:app $ReloadArg --host 127.0.0.1 --port $BackendPort 1>>"$BackendLog" 2>>&1
 "@
 Set-Content -Path $BackendCmdPath -Value $BackendScript -Encoding Default
 $BackendProcess = Start-Process cmd.exe -ArgumentList "/k", "`"$BackendCmdPath`"" -PassThru -WindowStyle Normal
@@ -117,6 +136,42 @@ if (-not $HealthOk) {
   Stop-WithMessage "Backend did not pass the health check." (Get-DependencyInstallCommand)
 }
 
+$WorkerCmdPath = Join-Path $RuntimeDir "run-worker.cmd"
+$WorkerScript = @"
+cd /d "$RootDir"
+set "PITGUARD_DB_PATH=$DbPath"
+set "PITGUARD_NUMERIC_THREADS=$NumericThreads"
+set "PITGUARD_PRODUCT_MODE=core"
+set "PITGUARD_TASK_EXECUTION_MODE=worker"
+set "PITGUARD_PROCESS_ROLE=worker"
+set "PITGUARD_WORKER_EXIT_AFTER_TASK=true"
+set "PITGUARD_WORKER_DEFAULT_HARD_CAP_MB=$WorkerDefaultHardCapMb"
+set "PITGUARD_WORKER_OS_HARD_LIMIT_MB=$WorkerDefaultHardCapMb"
+set "PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS=1"
+set "PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT=$CandidateTrialLimit"
+set "PITGUARD_SUPPORT_CANDIDATE_POOL_LIMIT=$CandidatePoolLimit"
+set "PITGUARD_RUNTIME_DIAGNOSTICS=1"
+set "PITGUARD_WORKER_HEARTBEAT_PATH=$WorkerHeartbeat"
+set "PYTHON_BIN=$PythonPath"
+set "PYTHONPATH=$ApiDir;%PYTHONPATH%"
+"$PythonPath" "$RootDir\scripts\run-worker-supervisor.py" 1>>"$WorkerLog" 2>>&1
+"@
+Set-Content -Path $WorkerCmdPath -Value $WorkerScript -Encoding Default
+$WorkerProcess = Start-Process cmd.exe -ArgumentList "/k", "`"$WorkerCmdPath`"" -PassThru -WindowStyle Normal
+$WorkerOk = $false
+for ($i = 0; $i -lt 30; $i++) {
+  if (Test-Path $WorkerHeartbeat) { $WorkerOk = $true; break }
+  if ($WorkerProcess.HasExited) {
+    Get-Content $WorkerLog -Tail 80
+    Stop-WithMessage "Calculation worker exited during startup."
+  }
+  Start-Sleep -Milliseconds 500
+}
+if (-not $WorkerOk) {
+  Get-Content $WorkerLog -Tail 80
+  Stop-WithMessage "Calculation worker did not publish a heartbeat."
+}
+
 $FrontendCmdPath = Join-Path $RuntimeDir "run-frontend.cmd"
 $FrontendScript = @"
 cd /d "$WebDir"
@@ -133,6 +188,9 @@ Write-Host "PitGuard is running." -ForegroundColor Green
 Write-Host "Backend API : http://127.0.0.1:$BackendPort/health"
 Write-Host "API docs    : http://127.0.0.1:$BackendPort/docs"
 Write-Host "Frontend UI : http://127.0.0.1:$FrontendPort"
+Write-Host "Calc worker : isolated supervisor (log: $WorkerLog)"
+Write-Host "Memory logs : $RuntimeDir\diagnostics"
+Write-Host "Worker cap  : $WorkerDefaultHardCapMb MB; candidate trials/pool: $CandidateTrialLimit/$CandidatePoolLimit"
 Write-Host "Database    : $DbPath"
 Write-Host "Python      : $PythonPath"
-Write-Host "Close the two service windows to stop PitGuard."
+Write-Host "Close the API, calculation worker and frontend windows to stop PitGuard."

@@ -1,0 +1,10 @@
+{
+  "catalogVersion": "2026.07-v3.46",
+  "boundary": "通用企业候选截面目录。正式设计应以项目采购标准、材质证明和现行钢结构标准复核。",
+  "profiles": [
+    {"id":"PIPE-609-16","family":"circular_hollow","label":"钢管 Φ609×16","diameterMm":609,"thicknessMm":16,"areaMm2":29800,"inertiaMm4":1310000000,"materialGrade":"Q355"},
+    {"id":"PIPE-800-20","family":"circular_hollow","label":"钢管 Φ800×20","diameterMm":800,"thicknessMm":20,"areaMm2":49000,"inertiaMm4":3720000000,"materialGrade":"Q355"},
+    {"id":"H-400-400-13-21","family":"h_section","label":"H400×400×13×21","depthMm":400,"widthMm":400,"webMm":13,"flangeMm":21,"areaMm2":21700,"inertiaMm4":666000000,"materialGrade":"Q355"},
+    {"id":"H-500-500-16-28","family":"h_section","label":"H500×500×16×28","depthMm":500,"widthMm":500,"webMm":16,"flangeMm":28,"areaMm2":34400,"inertiaMm4":1670000000,"materialGrade":"Q355"}
+  ]
+}

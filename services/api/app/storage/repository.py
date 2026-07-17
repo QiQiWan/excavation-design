@@ -2,29 +2,90 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import logging
 import os
+import time
+from collections import OrderedDict
 from functools import lru_cache
+from threading import Lock
 
 from fastapi import HTTPException, Request
+from pydantic import ValidationError
 
 from app.schemas.domain import Project, ProjectSummary
 from app.storage.database import ProjectPayloadTooLarge, SQLiteProjectStore
+from app.storage.artifact_store import ProjectArtifactStore, rehydrate_latest_calculation_evidence
+
+logger = logging.getLogger("pitguard.repository")
 
 
+_WORKSPACE_CACHE_LOCK = Lock()
+_WORKSPACE_CACHE: "OrderedDict[tuple[str, str, int, int], tuple[float, Project]]" = OrderedDict()
+
+def _workspace_cache_limits() -> tuple[int, float, int, int]:
+    try:
+        maximum = max(1, min(16, int(os.getenv("PITGUARD_WORKSPACE_MODEL_CACHE_SIZE", "4"))))
+    except (TypeError, ValueError):
+        maximum = 4
+    try:
+        ttl = max(5.0, min(180.0, float(os.getenv("PITGUARD_WORKSPACE_MODEL_CACHE_TTL_SECONDS", "30"))))
+    except (TypeError, ValueError):
+        ttl = 30.0
+    try:
+        item_max = max(1, int(float(os.getenv("PITGUARD_WORKSPACE_CACHE_ITEM_MAX_MB", "24")) * 1048576))
+    except (TypeError, ValueError):
+        item_max = 24 * 1048576
+    try:
+        total_max = max(item_max, int(float(os.getenv("PITGUARD_WORKSPACE_CACHE_TOTAL_MAX_MB", "96")) * 1048576))
+    except (TypeError, ValueError):
+        total_max = 96 * 1048576
+    return maximum, ttl, item_max, total_max
+
+def _cached_workspace(db_path: str, project_id: str, revision: int, workspace_bytes: int) -> Project | None:
+    key = (db_path, project_id, int(revision), int(workspace_bytes))
+    maximum, ttl, _item_max, _total_max = _workspace_cache_limits()
+    now = time.monotonic()
+    with _WORKSPACE_CACHE_LOCK:
+        item = _WORKSPACE_CACHE.get(key)
+        if item is None:
+            return None
+        created, project = item
+        if now - created > ttl:
+            _WORKSPACE_CACHE.pop(key, None)
+            return None
+        _WORKSPACE_CACHE.move_to_end(key)
+        while len(_WORKSPACE_CACHE) > maximum:
+            _WORKSPACE_CACHE.popitem(last=False)
+        return project
+
+def _store_workspace_cache(db_path: str, project_id: str, revision: int, workspace_bytes: int, project: Project) -> None:
+    key = (db_path, project_id, int(revision), int(workspace_bytes))
+    maximum, _ttl, item_max, total_max = _workspace_cache_limits()
+    with _WORKSPACE_CACHE_LOCK:
+        stale = [item for item in _WORKSPACE_CACHE if item[0] == db_path and item[1] == project_id and item != key]
+        for item in stale:
+            _WORKSPACE_CACHE.pop(item, None)
+        if int(workspace_bytes) > item_max:
+            # A 94 MB JSON workspace can occupy several hundred megabytes as a
+            # Pydantic graph. Re-reading the compact SQLite projection is safer
+            # than pinning it in the long-lived API process.
+            return
+        _WORKSPACE_CACHE[key] = (time.monotonic(), project)
+        _WORKSPACE_CACHE.move_to_end(key)
+        while len(_WORKSPACE_CACHE) > maximum or sum(int(item[0][3]) for item in _WORKSPACE_CACHE.items()) > total_max:
+            _WORKSPACE_CACHE.popitem(last=False)
 
 
 def _migrate_loaded_project(project: Project) -> bool:
-    """Invalidate legacy/stale results when stored topology and stages diverge.
+    """Apply lightweight version migrations and invalidate stale calculations."""
+    from app.services.engineering_templates import ensure_design_basis_defaults
 
-    V3.14 projects can contain A/B/C cards and a latest calculation produced for
-    an earlier support topology.  Hydration now performs a lightweight topology
-    audit so the UI never presents those values as current design evidence.
-    """
+    migration = ensure_design_basis_defaults(project)
+    changed = bool(migration.get("changedFields"))
     if not project.retaining_system or not project.calculation_results:
-        return False
+        return changed
     from app.calculation.engine import _case_support_audit, _support_topology_hash
     from app.services.calculation_state import invalidate_calculation_state
-
     from app.version import ALGORITHM_VERSION, RULE_SET_VERSION
 
     current_hash = _support_topology_hash(project)
@@ -33,10 +94,6 @@ def _migrate_loaded_project(project: Project) -> bool:
     iteration = dict(getattr(latest, "design_iteration_summary", {}) or {})
     stored_algorithm = str(iteration.get("algorithmVersion") or "")
     stored_rule_set = str(iteration.get("ruleSetVersion") or "")
-    # Results created before V3.15 do not carry a topology hash.  They cannot be
-    # proven to match the current support system, so migrate them to the audit
-    # archive and require one fresh calculation instead of displaying them as
-    # current engineering evidence.
     hash_mismatch = stored_hash != current_hash
     case_mismatch = any(_case_support_audit(project, case).get("requiresSynchronization") for case in project.calculation_cases)
     calculation_contract_mismatch = (
@@ -46,7 +103,7 @@ def _migrate_loaded_project(project: Project) -> bool:
         or stored_rule_set != RULE_SET_VERSION
     )
     if not hash_mismatch and not case_mismatch and not calculation_contract_mismatch:
-        return False
+        return changed
     reasons: list[str] = []
     if hash_mismatch:
         reasons.append(
@@ -136,7 +193,32 @@ class ProjectRepository:
         return projects
 
     def list_summaries(self) -> list[ProjectSummary]:
-        return [ProjectSummary.model_validate(item) for item in self.store.list_summaries()]
+        summaries: list[ProjectSummary] = []
+        for item in self.store.list_summaries():
+            try:
+                summaries.append(ProjectSummary.model_validate(item))
+            except ValidationError as exc:
+                # The project list is the application's initial route.  One
+                # legacy or partially migrated summary must not take the whole
+                # installation offline.  Preserve the project identity and
+                # expose a conservative storage state while logging the exact
+                # schema defect for maintenance.
+                logger.warning("Recovering invalid project summary %s: %s", item.get("id"), exc)
+                fallback = {
+                    "id": str(item.get("id") or "unknown-project"),
+                    "revision": int(item.get("revision") or 0),
+                    "name": str(item.get("name") or "未命名项目"),
+                    "location": item.get("location"),
+                    "created_at": item.get("created_at") or item.get("createdAt"),
+                    "updated_at": str(item.get("updated_at") or item.get("updatedAt") or _utc_now()),
+                    "payload_bytes": int(item.get("payload_bytes") or item.get("payloadBytes") or 0),
+                    "workspace_bytes": int(item.get("workspace_bytes") or item.get("workspaceBytes") or 0),
+                    "external_bytes": int(item.get("external_bytes") or item.get("externalBytes") or 0),
+                    "artifact_count": int(item.get("artifact_count") or item.get("artifactCount") or 0),
+                    "storage_status": "elevated",
+                }
+                summaries.append(ProjectSummary.model_validate(fallback))
+        return summaries
 
     def get(self, project_id: str) -> Project | None:
         try:
@@ -170,13 +252,64 @@ class ProjectRepository:
         return project
 
     def get_workspace(self, project_id: str) -> Project | None:
+        metadata = self.store.get_workspace_metadata(project_id)
+        if metadata is None:
+            return None
+        db_key = str(self.store.db_path)
+        revision = int(metadata.get("revision") or 0)
+        workspace_bytes = int(metadata.get("workspaceBytes") or 0)
+        cached = _cached_workspace(db_key, project_id, revision, workspace_bytes)
+        if cached is not None:
+            return cached
         data = self.store.get_workspace(project_id)
         if not data:
             return None
-        return Project.model_validate(data)
+        project = Project.model_validate(data)
+        _store_workspace_cache(db_key, project_id, revision, workspace_bytes, project)
+        return project
 
     def require_workspace(self, project_id: str) -> Project:
         project = self.get_workspace(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+        return project
+
+    def get_workspace_with_latest_calculation(self, project_id: str) -> Project | None:
+        """Return the bounded workspace plus authoritative latest stage evidence.
+
+        Only calculation stage chunks and the latest result detail bundle are
+        loaded.  Heavy geology, candidate, monitoring and manufacturing
+        artifacts remain external, keeping interactive engineering gates both
+        truthful and bounded.
+        """
+        data = self.store.get_workspace(project_id)
+        if not data:
+            return None
+        hydrated = rehydrate_latest_calculation_evidence(data, ProjectArtifactStore())
+        return Project.model_validate(hydrated)
+
+    def require_workspace_with_latest_calculation(self, project_id: str) -> Project:
+        project = self.get_workspace_with_latest_calculation(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+        return project
+
+    def get_with_latest_calculation(self, project_id: str) -> Project | None:
+        """Load the canonical project snapshot plus the latest stage evidence.
+
+        Mutation routes must not save a downsampled workspace projection, since
+        that could replace canonical geology/candidate data with UI previews.
+        This path starts from ``projects.data`` and hydrates only the latest
+        calculation when the API process has not already loaded all artifacts.
+        """
+        data = self.store.get(project_id)
+        if not data:
+            return None
+        hydrated = rehydrate_latest_calculation_evidence(data, ProjectArtifactStore())
+        return Project.model_validate(hydrated)
+
+    def require_with_latest_calculation(self, project_id: str) -> Project:
+        project = self.get_with_latest_calculation(project_id)
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
         return project

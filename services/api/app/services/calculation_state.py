@@ -10,6 +10,7 @@ def invalidate_calculation_state(
     *,
     reason: str,
     rebuild_cases: bool = True,
+    preserve_cases: bool = False,
     archive_limit: int = 20,
 ) -> dict[str, Any]:
     """Invalidate results after geometry/topology changes without losing audit history.
@@ -40,6 +41,8 @@ def invalidate_calculation_state(
         "invalidatedResultCount": len(previous),
         "requiresRecalculation": True,
     }
+    advanced["requiresRecalculation"] = True
+    advanced["invalidationReason"] = reason
     project.advanced_engineering = advanced
     project.calculation_results = []
 
@@ -52,7 +55,10 @@ def invalidate_calculation_state(
         project.retaining_system.layout_summary.pop("candidateFullCalculationComparison", None)
         project.retaining_system.layout_summary["calculationInvalidation"] = dict(advanced["calculationState"])
 
-    if rebuild_cases and project.excavation and project.retaining_system:
+    if preserve_cases:
+        advanced["calculationState"]["preservedCaseCount"] = len(project.calculation_cases)
+        advanced["calculationState"]["rebuiltCaseCount"] = 0
+    elif rebuild_cases and project.excavation and project.retaining_system:
         from app.calculation.engine import build_default_construction_cases
 
         project.calculation_cases = build_default_construction_cases(project)
@@ -65,9 +71,16 @@ def invalidate_calculation_state(
 
 def mark_calculation_state_current(project: Project, result_id: str) -> None:
     advanced = dict(project.advanced_engineering or {})
+    result = next((item for item in reversed(project.calculation_results or []) if item.id == result_id), None)
     advanced["calculationState"] = {
         "status": "current",
         "resultId": result_id,
         "requiresRecalculation": False,
+        "caseId": getattr(result, "case_id", None),
+        "calculationContractId": getattr(result, "calculation_contract_id", None),
+        "inputSnapshotHash": getattr(result, "input_snapshot_hash", None),
+        "supportTopologyHash": getattr(result, "support_topology_hash", None),
     }
+    advanced["requiresRecalculation"] = False
+    advanced.pop("invalidationReason", None)
     project.advanced_engineering = advanced

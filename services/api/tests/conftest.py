@@ -8,6 +8,8 @@ import pytest
 # Keep CI deterministic and prevent nested BLAS thread pools from competing
 # with PitGuard's project-level task concurrency.
 os.environ["PITGUARD_NUMERIC_THREADS"] = "1"
+# Historical compatibility tests exercise optional routers explicitly.
+os.environ.setdefault("PITGUARD_PRODUCT_MODE", "full")
 for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ[_name] = "1"
 

@@ -274,6 +274,13 @@ def _solve_spatial_frame_proxy(
     stage_id: str,
     stage_type: str | None,
     replacement_slab_state: dict[str, Any] | None = None,
+    wale_stiffness_factor: float = 1.0,
+    wall_stiffness_factor: float = 1.0,
+    long_term_stiffness_factor: float = 1.0,
+    joint_translational_factor: float = 1.0,
+    joint_rotational_factor: float = 0.65,
+    rigid_zone_length_factor: float = 0.04,
+    initial_imperfection_ratio: float = 0.001,
 ) -> dict[str, Any]:
     """Solve a reviewable spatial-frame proxy with rotational and vertical DOFs.
 
@@ -343,7 +350,7 @@ def _solve_spatial_frame_proxy(
     level_items: dict[int, list[tuple[int, dict[str, Any]]]] = {}
     for j, node in enumerate(wale_nodes):
         level_items.setdefault(node["support"].level_index, []).append((j, node))
-    wale_ei = max(2.0e5, wall_ei * 0.45)
+    wale_ei = max(2.0e5, wall_ei * 0.45 * max(0.25, min(float(wale_stiffness_factor), 2.0)))
     for _level, items in level_items.items():
         items = sorted(items, key=lambda item: item[1]["chainage"])
         for (ja, a), (jb, b) in zip(items, items[1:]):
@@ -353,8 +360,8 @@ def _solve_spatial_frame_proxy(
     for j, node in enumerate(wale_nodes):
         sup = node["support"]
         nearest = min(range(wall_count), key=lambda i: abs(wall_depths[i] - node["depth"]))
-        rigid_k = WALL_WALE_COUPLING_KN_M * 4.0
-        rot_k = max(rigid_k * 0.15, 1.0e5)
+        rigid_k = WALL_WALE_COUPLING_KN_M * 4.0 * max(0.05, min(float(joint_translational_factor), 5.0))
+        rot_k = max(WALL_WALE_COUPLING_KN_M * 0.60 * max(0.01, min(float(joint_rotational_factor), 5.0)), 1.0e4)
         _add_spring(K, wall_u[nearest], wale_u[j], rigid_k)
         _add_spring(K, wall_t[nearest], wale_t[j], rot_k)
         if slab_k:
@@ -365,6 +372,9 @@ def _solve_spatial_frame_proxy(
         # Support axial DOF is tied to the wale node through projected stiffness
         # and restrained at the far side by the opposite wall/support system.
         axial_k = spring * projection * projection
+        design_axial = max(float(getattr(sup, "design_axial_force", 0.0) or 0.0), float(getattr(sup, "preload", 0.0) or 0.0))
+        imperfection_load = design_axial * max(0.0, min(float(initial_imperfection_ratio), 0.02))
+        F[wale_u[j]] += imperfection_load
         _add_spring(K, wale_u[j], support_a[j], axial_k)
         _add_spring(K, support_a[j], None, axial_k * 0.65)
         # Column vertical DOF proxy: vertical stiffness participates as a real DOF;
@@ -377,7 +387,10 @@ def _solve_spatial_frame_proxy(
             "nearestWallNode": nearest,
             "rigidTranslationalStiffness": round(rigid_k, 3),
             "rigidRotationalStiffness": round(rot_k, 3),
-            "nodeZoneLength": round(max(0.8, min(2.5, sup_len * 0.04)), 3),
+            "nodeZoneLength": round(max(0.5, min(3.5, sup_len * max(0.0, min(float(rigid_zone_length_factor), 0.20)))), 3),
+            "jointTranslationalFactor": round(float(joint_translational_factor), 4),
+            "jointRotationalFactor": round(float(joint_rotational_factor), 4),
+            "imperfectionLateralLoad": round(imperfection_load, 3),
         })
     regularization = 0.0
     solve_failed = False
@@ -434,8 +447,8 @@ def _solve_spatial_frame_proxy(
             "normalProjectionFactor": round(projection, 3),
             "directionCosineX": round(cx, 5),
             "directionCosineY": round(cy, 5),
-            "rigidNodeFactor": 4.0,
-            "governingSource": "V2.0 spatial frame wall-wale-support matrix",
+            "rigidNodeFactor": round(float(joint_translational_factor), 4),
+            "governingSource": "V3.46 spatial frame with semi-rigid wall-wale joints and support imperfection",
         })
         support_axial_dofs.append({
             "supportCode": sup.code,
@@ -514,6 +527,15 @@ def _solve_spatial_frame_proxy(
         "rigidNodeZones": rigid_zones,
         "maxWallDisplacement": max((abs(p["horizontalDisplacement"]) for p in wall_profile), default=0.0),
         "maxSupportAxialForce": round(max_axial, 3),
+        "modelAssumptions": {
+            "wallStiffnessFactor": round(float(wall_stiffness_factor), 4),
+            "waleStiffnessFactor": round(float(wale_stiffness_factor), 4),
+            "longTermStiffnessFactor": round(float(long_term_stiffness_factor), 4),
+            "jointTranslationalFactor": round(float(joint_translational_factor), 4),
+            "jointRotationalFactor": round(float(joint_rotational_factor), 4),
+            "rigidZoneLengthFactor": round(float(rigid_zone_length_factor), 4),
+            "initialImperfectionRatio": round(float(initial_imperfection_ratio), 6),
+        },
     }
 
 def solve_global_wall_wale_support_system(
@@ -534,6 +556,12 @@ def solve_global_wall_wale_support_system(
     soil_modulus_factor: float = 1.0,
     support_stiffness_factor: float = 1.0,
     replacement_slab_properties: dict[str, Any] | None = None,
+    wale_stiffness_factor: float = 1.0,
+    joint_translational_factor: float = 1.0,
+    joint_rotational_factor: float = 0.65,
+    rigid_zone_length_factor: float = 0.04,
+    initial_imperfection_ratio: float = 0.001,
+    long_term_stiffness_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Solve a compact wall-wale-support global stiffness model.
 
@@ -599,7 +627,8 @@ def solve_global_wall_wale_support_system(
     f_global = np.zeros(n, dtype=float)
     wall_stiffness_factor = max(0.25, min(float(wall_stiffness_factor), 4.0))
     soil_modulus_factor = max(0.25, min(float(soil_modulus_factor), 4.0))
-    ei = _wall_ei_knm2(wall_thickness, concrete_grade) * wall_stiffness_factor
+    long_term_stiffness_factor = max(0.20, min(float(long_term_stiffness_factor), 1.0))
+    ei = _wall_ei_knm2(wall_thickness, concrete_grade) * wall_stiffness_factor * long_term_stiffness_factor
 
     # Wall beam translational chain stiffness. Rotational DOFs are condensed out
     # for this compact design-assist model, so the value is a screening lateral
@@ -739,6 +768,13 @@ def solve_global_wall_wale_support_system(
             stage_id=stage_id,
             stage_type=stage_type,
             replacement_slab_state=replacement_state,
+            wale_stiffness_factor=wale_stiffness_factor * long_term_stiffness_factor,
+            wall_stiffness_factor=wall_stiffness_factor,
+            long_term_stiffness_factor=long_term_stiffness_factor,
+            joint_translational_factor=joint_translational_factor,
+            joint_rotational_factor=joint_rotational_factor,
+            rigid_zone_length_factor=rigid_zone_length_factor,
+            initial_imperfection_ratio=initial_imperfection_ratio,
         )
     condensed_cond_raw, condensed_condition_method = _fast_matrix_condition(k_global + np.eye(n) * 1e-9) if n else (None, "unavailable")
     condensed_condition_number = (

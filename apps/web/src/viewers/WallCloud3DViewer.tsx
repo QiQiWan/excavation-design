@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, BoxGeometry, BufferGeometry, Color, DirectionalLight, GridHelper, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { CalculationResult, Project } from '../types/domain';
+import FullscreenShell from '../components/FullscreenShell';
 
 type Metric = 'displacement' | 'moment' | 'shear';
 type DisplayMode = 'signed' | 'absolute';
@@ -266,7 +267,7 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
 
   if (!data.rows.length) return null;
   return (
-    <section className="wallCloud3dPanel">
+    <FullscreenShell label="三维受力云图"><section className="wallCloud3dPanel">
       <div className="sectionLead">
         <h4>围护墙三维受力与变形云图</h4>
         <div className="segmentedControls">
@@ -287,6 +288,6 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
         <span>{displayMode === 'signed' ? data.maxValue.toFixed(metric === 'displacement' ? 2 : 0) : `高：${data.maxAbs.toFixed(metric === 'displacement' ? 2 : 0)}`}</span>
         {selected && <strong>{String(selected.wall)} · {String(selected.stage)} · 深度 {String(selected.depth)}m · 高程 {String(selected.elevation)}m · {String(selected.value)}</strong>}
       </div>
-    </section>
+    </section></FullscreenShell>
   );
 }

@@ -83,15 +83,17 @@ def test_concave_zones_generate_only_wall_to_wall_preliminary_supports_and_remai
     assert preflight["calculationReady"] is False
 
 
-def test_concave_optimizer_returns_one_controlled_preliminary_scheme() -> None:
+def test_concave_optimizer_returns_geometry_distinct_controlled_preliminary_schemes() -> None:
     project = project_for("T", [(0, 0), (80, 0), (80, 20), (50, 20), (50, 60), (30, 60), (30, 20), (0, 20)], "zoned_direct")
     _, candidates = optimize_support_layout_candidates(project, max_candidates=3, preset="clean_support_layout")
-    assert len(candidates) == 1
-    candidate = candidates[0]
-    assert candidate.variable_summary["capabilityOutcome"] == "controlled_block"
-    assert candidate.hard_constraints["shapeTransferSystemRequired"] is True
-    assert candidate.hard_constraints["shapeTransferSystemComplete"] is False
-    assert int(candidate.metrics.get("supportCrossingCount", 0) or 0) == 0
+    assert 1 <= len(candidates) <= 3
+    assert len({str((item.variable_summary or {}).get("geometryFingerprint")) for item in candidates}) == len(candidates)
+    for candidate in candidates:
+        assert candidate.variable_summary["capabilityOutcome"] == "controlled_block"
+        assert candidate.hard_constraints["shapeTransferSystemRequired"] is True
+        assert candidate.hard_constraints["shapeTransferSystemComplete"] is False
+        assert not bool(candidate.hard_constraints.get("passed"))
+        assert int(candidate.metrics.get("supportCrossingCount", 0) or 0) == 0
 
 
 def test_shape_intelligence_is_exposed_in_api_and_workspace() -> None:

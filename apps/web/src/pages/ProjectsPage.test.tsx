@@ -7,6 +7,9 @@ const project = {
   location: '测试地点',
   createdAt: '2026-07-13T00:00:00Z',
   updatedAt: '2026-07-13T00:00:00Z',
+  payloadBytes: 510 * 1024 * 1024,
+  workspaceBytes: 8 * 1024 * 1024,
+  storageStatus: 'workspace_only',
 };
 
 beforeEach(() => {
@@ -36,6 +39,7 @@ describe('ProjectsPage delete', () => {
   it('deletes a project after explicit confirmation', async () => {
     render(<ProjectsPage onOpen={vi.fn()} />);
     expect(await screen.findByText('待删除项目')).toBeInTheDocument();
+    expect(screen.getByText(/工作区模式/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     await waitFor(() => expect(screen.queryByText('待删除项目')).not.toBeInTheDocument());
     expect(window.confirm).toHaveBeenCalled();

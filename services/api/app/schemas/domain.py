@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.contracts.storage_status import StorageStatus, normalize_storage_status
+
 
 def to_camel(value: str) -> str:
     parts = value.split("_")
@@ -41,8 +43,67 @@ class CoordinateSystem(DomainModel):
 
 
 class DesignSettings(DomainModel):
+    # Project-level design basis.  V3.46 keeps these values as an explicit first
+    # workflow step so load combinations, safety reserves and RC checks share
+    # one auditable source instead of relying on scattered defaults.
+    design_basis_confirmed: bool = False
+    project_grade: Literal["一级", "二级", "三级"] = "二级"
     safety_grade: str = "二级"
+    excavation_safety_level: Literal["一级", "二级", "三级"] = "二级"
     environment_grade: str = "一般"
+    site_complexity: Literal["简单", "中等", "复杂"] = "中等"
+    surrounding_environment_level: Literal["一般", "较高", "高"] = "一般"
+    design_stage: Literal["temporary", "permanent_combined"] = "temporary"
+    standard_profile: Literal["national_core", "national_plus_local", "custom_review"] = "national_core"
+    load_combination_policy: Literal["standard", "conservative", "custom"] = "standard"
+    load_gamma_g: float = Field(default=1.35, ge=0.8, le=2.0)
+    load_gamma_q: float = Field(default=1.40, ge=0.8, le=2.0)
+    load_psi: float = Field(default=1.0, ge=0.0, le=1.0)
+    importance_factor: float = Field(default=1.0, ge=0.8, le=1.5)
+    bearing_capacity_kpa: float | None = Field(default=None, gt=0.0)
+    stability_reserve_ratio: float = Field(default=0.10, ge=0.0, le=0.50)
+    default_concrete_grade: str = "C35"
+    default_rebar_grade: str = "HRB400"
+    default_cover_mm: float = Field(default=50.0, ge=20.0, le=120.0)
+    flexure_design_method: str = "GB/T 50010 正截面承载力设计"
+    shear_design_method: str = "GB/T 50010 斜截面承载力设计"
+    # V3.46 P0-P2: the confirmed design basis also owns action groups,
+    # verification targets and analysis-model fidelity.  Defaults are transparent
+    # project templates, not automatic replacements for the project design brief.
+    design_basis_template_id: str = "standard_level_2"
+    action_group_catalog: list[dict[str, Any]] = Field(default_factory=list)
+    safety_factor_overrides: dict[str, float] = Field(default_factory=dict)
+    displacement_limit_overrides_mm: dict[str, float] = Field(default_factory=dict)
+    structural_analysis_model: Literal["compact_spatial", "engineering_spatial"] = "engineering_spatial"
+    wall_cracked_stiffness_factor: float = Field(default=0.72, ge=0.25, le=1.0)
+    wale_cracked_stiffness_factor: float = Field(default=0.75, ge=0.25, le=1.0)
+    joint_translational_stiffness_factor: float = Field(default=1.0, ge=0.05, le=5.0)
+    joint_rotational_stiffness_factor: float = Field(default=0.65, ge=0.01, le=5.0)
+    rigid_zone_length_factor: float = Field(default=0.04, ge=0.0, le=0.20)
+    initial_imperfection_ratio: float = Field(default=1.0 / 1000.0, ge=0.0, le=0.02)
+    enable_long_term_effects: bool = True
+    enable_adverse_scenarios: bool = True
+    dewatering_failure_rise_m: float = Field(default=1.0, ge=0.0, le=10.0)
+    overexcavation_depth_m: float = Field(default=0.30, ge=0.0, le=3.0)
+    local_seepage_amplification: float = Field(default=1.15, ge=1.0, le=3.0)
+    confined_head_adverse_offset_m: float = Field(default=0.50, ge=0.0, le=10.0)
+    rebar_congestion_limit: float = Field(default=0.72, ge=0.30, le=0.95)
+    rebar_mechanical_coupler_diameter_mm: float = Field(default=28.0, ge=16.0, le=50.0)
+    # V3.47 P3-1 to P3-3: project-selected enterprise resources and formal
+    # adverse-scenario execution controls.  These identifiers resolve to
+    # versioned JSON libraries and remain explicit in the calculation contract.
+    enterprise_library_id: str = "pitguard_default"
+    local_standard_template_id: str = "national_core_2026"
+    node_template_library_id: str = "default_rc_support_nodes"
+    rebar_combination_library_id: str = "default_rc_rebar_combinations"
+    formal_adverse_scenario_codes: list[str] = Field(default_factory=lambda: [
+        "DEWATERING_FAILURE", "OVEREXCAVATION", "LOCAL_SEEPAGE", "CONFINED_HEAD_RISE",
+        "PRELOAD_TEMPERATURE_DEVIATION",
+    ])
+    adverse_scenario_parallelism: int = Field(default=1, ge=1, le=2)
+    require_formal_scenario_rerun_for_issue: bool = False
+    enable_rebar_spatial_coordination: bool = True
+    enable_local_node_detailing: bool = True
     groundwater_level: float = -1.5
     groundwater_level_inside: float | None = None
     confined_water_head_elevation: float | None = None
@@ -81,6 +142,13 @@ class DesignSettings(DomainModel):
     hard_max_wale_support_bay_m: float = 9.0
     auto_strength_design_enabled: bool = True
     max_design_iterations: int = 3
+    # V3.55 turns verification from a read-only report into a bounded
+    # verification -> strengthening -> recalculation loop.  Only monotonic,
+    # traceable member strengthening is automatic; soil/water assumptions and
+    # construction sequencing are never silently changed.
+    auto_intelligent_design_closure_enabled: bool = True
+    max_intelligent_closure_iterations: int = Field(default=5, ge=1, le=8)
+    intelligent_closure_strategy: Literal["balanced", "stiffness_first", "section_first", "economic_zoned"] = "balanced"
     # Wall-toe design is a separate strength/stability loop.  It is enabled by
     # default because support-topology repair cannot close an embedment failure.
     auto_wall_embedment_design_enabled: bool = True
@@ -692,7 +760,11 @@ class CalculationCase(DomainModel):
     stages: list[ConstructionStage] = Field(default_factory=list)
     support_topology_hash: str | None = None
     synchronization_note: str | None = None
+    source: Literal["auto_default", "user_defined", "synchronized"] = "auto_default"
+    locked: bool = False
+    revision: int = Field(default=1, ge=1)
     created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
 
 
 class PressurePoint(DomainModel):
@@ -844,6 +916,7 @@ class GlobalCoupledSystemResult(DomainModel):
     slab_replacement_required: bool | None = None
     slab_replacement_components: dict[str, Any] = Field(default_factory=dict)
     rigid_node_zones: list[dict[str, Any]] = Field(default_factory=list)
+    model_assumptions: dict[str, Any] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -1065,6 +1138,7 @@ class CalculationResult(DomainModel):
     result_hash: str | None = None
     calculation_assurance: dict[str, Any] = Field(default_factory=dict)
     delivery_readiness: dict[str, Any] = Field(default_factory=dict)
+    stage_result_summary: dict[str, Any] = Field(default_factory=dict)
     stage_results: list[StageCalculationResult] = Field(default_factory=list)
     governing_values: GoverningValues = Field(default_factory=GoverningValues)
     warnings: list[str] = Field(default_factory=list)
@@ -1175,7 +1249,27 @@ class ProjectSummary(DomainModel):
     workspace_bytes: int = 0
     external_bytes: int = 0
     artifact_count: int = 0
-    storage_status: Literal["normal", "elevated", "large"] = "normal"
+    storage_status: StorageStatus = "normal"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_storage_status(cls, value: Any) -> Any:
+        """Keep project-list startup resilient across storage policy upgrades.
+
+        V3.37 introduced ``workspace_only`` from the adaptive resource policy,
+        while the response schema still accepted only the three legacy values.
+        A single large project could therefore make ``GET /api/projects`` fail
+        for the entire installation.  Normalize legacy/unknown persisted values
+        at the API boundary so future policy additions degrade safely instead of
+        taking down the initial project list.
+        """
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        raw = data.get("storage_status", data.get("storageStatus", "normal"))
+        data["storage_status"] = normalize_storage_status(raw)
+        data.pop("storageStatus", None)
+        return data
 
 
 class Project(DomainModel):

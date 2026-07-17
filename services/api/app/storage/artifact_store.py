@@ -183,6 +183,44 @@ class ProjectArtifactStore:
             output.append(item)
         return output
 
+    def scan_project(self, project_id: str) -> list[dict[str, Any]]:
+        """Return a lightweight manifest directly from the artifact directory.
+
+        This fallback deliberately avoids parsing the complete project snapshot.
+        Older installations may not have artifact references in the workspace
+        projection, but their content-addressed files can still be indexed by
+        directory and kind.
+        """
+        directory = self.root / _safe(project_id)
+        if not directory.exists():
+            return []
+        output: list[dict[str, Any]] = []
+        for path in sorted(directory.glob("*/*.json.gz")):
+            try:
+                relative = path.relative_to(self.root)
+                digest = path.name.split(".json.gz", 1)[0]
+                kind = path.parent.name
+                stat = path.stat()
+            except (OSError, ValueError):
+                continue
+            output.append({
+                "artifactId": f"artifact-{digest[:20]}",
+                "schemaVersion": ARTIFACT_SCHEMA_VERSION,
+                "projectId": project_id,
+                "kind": kind,
+                "sha256": digest,
+                "relativePath": relative.as_posix(),
+                "contentType": "application/json",
+                "contentEncoding": "gzip",
+                "logicalBytes": 0,
+                "storedBytes": int(stat.st_size),
+                "itemCount": None,
+                "createdAt": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                "metadata": {"indexSource": "artifact_directory_scan"},
+                "available": True,
+            })
+        return output
+
     def delete_project(self, project_id: str) -> int:
         directory = self.root / _safe(project_id)
         if not directory.exists():
@@ -232,6 +270,51 @@ def _compact_calculation_result(result: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _calculation_stage_refs(
+    refs_by_key: dict[str, dict[str, Any]],
+    result_id: str,
+) -> list[tuple[str, dict[str, Any]]]:
+    prefix = f"calculation:{result_id}:stages:"
+
+    def chunk_index(item: tuple[str, dict[str, Any]]) -> int:
+        try:
+            return int(item[0].rsplit(":", 1)[-1])
+        except (TypeError, ValueError):
+            return 0
+
+    return sorted(
+        ((key, ref) for key, ref in refs_by_key.items() if key.startswith(prefix)),
+        key=chunk_index,
+    )
+
+
+def _stage_result_summary(
+    result: dict[str, Any],
+    *,
+    stage_count: int,
+    stage_refs: list[tuple[str, dict[str, Any]]],
+    storage_state: str,
+) -> dict[str, Any]:
+    previous = dict(result.get("stageResultSummary") or {})
+    assurance = dict(result.get("calculationAssurance") or {})
+    coverage = dict(assurance.get("stageCoverage") or {})
+    expected = int(
+        coverage.get("expected")
+        or previous.get("expectedCount")
+        or stage_count
+        or 0
+    )
+    return {
+        **previous,
+        "actualCount": int(stage_count),
+        "expectedCount": expected,
+        "chunkCount": len(stage_refs),
+        "storedBytes": sum(int(ref.get("storedBytes") or 0) for _key, ref in stage_refs),
+        "storageState": storage_state,
+        "complete": bool(stage_count > 0 and (expected <= 0 or stage_count >= expected)),
+    }
+
+
 def _chunk(values: list[Any], size: int) -> Iterable[tuple[int, list[Any]]]:
     for offset in range(0, len(values), size):
         yield offset // size, values[offset:offset + size]
@@ -271,18 +354,41 @@ def externalize_project_payload(
                 continue
             result_id = str(result.get("id") or f"result-{len(compact_results)}")
             stages = list(result.get("stageResults") or [])
+            current_stage_refs: list[tuple[str, dict[str, Any]]] = []
             if stages:
                 for chunk_index, values in _chunk(stages, max(25, int(os.getenv("PITGUARD_STAGE_RESULT_CHUNK_SIZE", "100")))):
-                    store_value(
-                        f"calculation:{result_id}:stages:{chunk_index}",
+                    storage_key = f"calculation:{result_id}:stages:{chunk_index}"
+                    ref = store_value(
+                        storage_key,
                         "calculation-stage-results",
                         values,
                         metadata={"resultId": result_id, "chunkIndex": chunk_index, "recordCount": len(values)},
                     )
+                    current_stage_refs.append((storage_key, ref))
             else:
-                for key in refs_by_key:
-                    if key.startswith(f"calculation:{result_id}:stages:"):
-                        preserve(key)
+                current_stage_refs = _calculation_stage_refs(refs_by_key, result_id)
+                for key, _ref in current_stage_refs:
+                    preserve(key)
+            previous_stage_summary = dict(result.get("stageResultSummary") or {})
+            stage_count = len(stages) if stages else sum(
+                int((ref.get("metadata") or {}).get("recordCount") or ref.get("itemCount") or 0)
+                for _key, ref in current_stage_refs
+            )
+            if not stage_count and current_stage_refs:
+                stage_count = int(previous_stage_summary.get("actualCount") or 0)
+            storage_state = (
+                "externalized"
+                if current_stage_refs
+                else "artifact_missing"
+                if int(previous_stage_summary.get("actualCount") or 0) > 0
+                else "not_generated"
+            )
+            result["stageResultSummary"] = _stage_result_summary(
+                result,
+                stage_count=stage_count,
+                stage_refs=current_stage_refs,
+                storage_state=storage_state,
+            )
             details = {
                 "reportDiagramData": result.get("reportDiagramData") or {},
                 "drawingSheets": result.get("drawingSheets") or [],
@@ -417,6 +523,103 @@ def externalize_project_payload(
     for ref in new_refs:
         deduplicated[str(ref.get("storageKey") or ref.get("artifactId"))] = ref
     _set_artifact_refs(project, list(deduplicated.values()))
+    return project
+
+
+def rehydrate_latest_calculation_evidence(
+    project: dict[str, Any],
+    store: ProjectArtifactStore,
+    *,
+    include_details: bool = True,
+) -> dict[str, Any]:
+    """Load only the latest calculation stages required by interactive gates.
+
+    The ordinary workspace projection intentionally omits large stage arrays.
+    Engineering status, verification and reinforcement routes still need the
+    authoritative latest envelope, so they hydrate only the matching stage
+    chunks instead of loading geology meshes, candidate histories and rebar
+    manufacturing geometry.
+    """
+    results = [item for item in list(project.get("calculationResults") or []) if isinstance(item, dict)]
+    advanced = dict(project.get("advancedEngineering") or {})
+    if not results:
+        advanced["workspaceCalculationEvidence"] = {
+            "state": "no_result",
+            "resultId": None,
+            "stageResultCount": 0,
+            "message": "尚未生成计算结果。",
+        }
+        project["advancedEngineering"] = advanced
+        return project
+
+    result = results[-1]
+    result_id = str(result.get("id") or "")
+    inline_stages = list(result.get("stageResults") or [])
+    refs_by_key = {
+        str(item.get("storageKey") or ""): item
+        for item in artifact_refs(project)
+        if item.get("storageKey")
+    }
+    stage_refs = _calculation_stage_refs(refs_by_key, result_id)
+    persisted_summary = dict(result.get("stageResultSummary") or {})
+    expected = int(persisted_summary.get("expectedCount") or 0)
+    errors: list[str] = []
+    loaded_stages: list[Any] = inline_stages
+    state = "inline" if inline_stages else "not_generated"
+
+    if not loaded_stages and stage_refs:
+        loaded_stages = []
+        for key, ref in stage_refs:
+            try:
+                value = store.read_json(ref)
+                loaded_stages.extend(list(value or []))
+            except (FileNotFoundError, RuntimeError, OSError, ValueError, TypeError) as exc:
+                errors.append(f"{key}: {exc}")
+        state = "loaded" if loaded_stages and not errors else "partial" if loaded_stages else "artifact_missing"
+        result["stageResults"] = loaded_stages
+    elif not loaded_stages and int(persisted_summary.get("actualCount") or 0) > 0:
+        state = "artifact_missing"
+
+    if include_details:
+        detail_ref = refs_by_key.get(f"calculation:{result_id}:details")
+        if detail_ref:
+            try:
+                details = store.read_json(detail_ref)
+                if isinstance(details, dict):
+                    result.update(details)
+            except (FileNotFoundError, RuntimeError, OSError, ValueError, TypeError) as exc:
+                errors.append(f"calculation:{result_id}:details: {exc}")
+
+    actual = len(loaded_stages)
+    complete = bool(actual > 0 and (expected <= 0 or actual >= expected) and state in {"inline", "loaded"})
+    result["stageResultSummary"] = {
+        **persisted_summary,
+        "actualCount": actual if actual else int(persisted_summary.get("actualCount") or 0),
+        "loadedCount": actual,
+        "expectedCount": expected,
+        "chunkCount": len(stage_refs),
+        "loadState": state,
+        "complete": complete,
+    }
+    message = {
+        "inline": "施工阶段结果已随项目快照载入。",
+        "loaded": "施工阶段结果已从外部成果按需载入。",
+        "partial": "部分施工阶段成果无法读取，请检查外部成果完整性。",
+        "artifact_missing": "项目记录声明存在施工阶段成果，但对应外部成果缺失或损坏。",
+        "not_generated": "尚未生成施工阶段计算结果。",
+    }.get(state, state)
+    advanced["workspaceCalculationEvidence"] = {
+        "state": state,
+        "resultId": result_id,
+        "stageResultCount": actual,
+        "persistedStageResultCount": int(persisted_summary.get("actualCount") or 0),
+        "expectedStageResultCount": expected,
+        "chunkCount": len(stage_refs),
+        "complete": complete,
+        "errors": errors[:10],
+        "message": message,
+    }
+    project["advancedEngineering"] = advanced
     return project
 
 

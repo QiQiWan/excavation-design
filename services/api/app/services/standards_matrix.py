@@ -98,7 +98,7 @@ STANDARD_CATALOG: list[dict[str, Any]] = [
         "appliesTo": ["retaining", "calculation", "assurance", "export"],
         "implementedScope": "混凝土结构安全、耐久、承载能力和正常使用的强制性门禁。",
         "boundary": "系统仅将已实现的计算和构造子集映射到门禁，未覆盖条文须人工复核。",
-        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_762454.html09",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_762454.html",
     },
     {
         "id": "GB50017-2017",

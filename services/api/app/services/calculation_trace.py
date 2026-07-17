@@ -40,6 +40,44 @@ def _locator(workflow_step: str, target_panel: str, object_type: str | None, obj
     return data
 
 
+
+
+def _as_numeric(value: Any) -> float | None:
+    """Return a scalar engineering value without crashing on structured evidence.
+
+    Some rule checks intentionally store a value together with its governing
+    component, range or source in a dictionary.  The trace endpoint is a read
+    model and must tolerate those records instead of turning one non-scalar
+    check into an HTTP 500.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except (TypeError, ValueError):
+            return None
+    if isinstance(value, dict):
+        for key in (
+            "value", "designValue", "calculatedValue", "demand",
+            "maximum", "max", "minimum", "min", "result",
+            "factor", "ratio",
+        ):
+            if key in value:
+                scalar = _as_numeric(value.get(key))
+                if scalar is not None:
+                    return scalar
+        numeric = [_as_numeric(item) for item in value.values()]
+        numeric = [item for item in numeric if item is not None]
+        return max(numeric, key=abs) if numeric else None
+    if isinstance(value, (list, tuple)):
+        numeric = [_as_numeric(item) for item in value]
+        numeric = [item for item in numeric if item is not None]
+        return max(numeric, key=abs) if numeric else None
+    return None
+
 def _entry(
     *,
     index: int,
@@ -50,8 +88,8 @@ def _entry(
     stage_id: str | None,
     stage_name: str,
     demand_name: str,
-    demand_value: float | None,
-    capacity_value: float | None = None,
+    demand_value: Any,
+    capacity_value: Any = None,
     unit: str = "",
     status: str | None = None,
     formula: str = "",
@@ -61,12 +99,11 @@ def _entry(
     result_path: str | None = None,
     locator: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    demand_scalar = _as_numeric(demand_value)
+    capacity_scalar = _as_numeric(capacity_value)
     utilization = None
-    if demand_value is not None and capacity_value not in (None, 0):
-        try:
-            utilization = abs(float(demand_value)) / abs(float(capacity_value))
-        except Exception:
-            utilization = None
+    if demand_scalar is not None and capacity_scalar not in (None, 0):
+        utilization = abs(demand_scalar) / abs(capacity_scalar)
     return {
         "id": f"trace-{index:04d}",
         "category": category,
@@ -76,8 +113,10 @@ def _entry(
         "stageId": stage_id,
         "stageName": stage_name,
         "demandName": demand_name,
-        "demandValue": round(float(demand_value), 6) if demand_value is not None else None,
-        "capacityValue": round(float(capacity_value), 6) if capacity_value is not None else None,
+        "demandValue": round(demand_scalar, 6) if demand_scalar is not None else None,
+        "capacityValue": round(capacity_scalar, 6) if capacity_scalar is not None else None,
+        "demandEvidence": demand_value if isinstance(demand_value, (dict, list, tuple)) else None,
+        "capacityEvidence": capacity_value if isinstance(capacity_value, (dict, list, tuple)) else None,
         "utilization": round(float(utilization), 4) if utilization is not None else None,
         "unit": unit,
         "status": _status_from_utilization(utilization, status),

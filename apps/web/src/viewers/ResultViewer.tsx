@@ -210,22 +210,29 @@ function InternalForceVisualization({ latest, highlightLocator }: { latest: Calc
 }
 
 function candidateDifferenceLabel(candidate: SupportLayoutOptimizationCandidate) {
-  const score = Number(candidate.variableSummary?.geometryDifferenceScore ?? 0);
+  const actual = Number(candidate.variableSummary?.minimumGeometryDeltaToSelected ?? 0);
+  const declared = Number(candidate.variableSummary?.geometryDifferenceScore ?? 0);
   const moved = Number(candidate.variableSummary?.adjustedLineCount ?? 0);
-  if (candidate.rank === 1 && score <= 0) return '基准';
-  if (score >= 0.18 || moved >= 8) return '明显差异';
-  if (score >= 0.08 || moved >= 3) return '中等差异';
-  return '高度相似';
+  const score = Math.max(actual, declared);
+  if (candidate.rank === 1) return '基准方案';
+  if (score >= 0.22 || moved >= 8) return '结构差异明显';
+  if (score >= 0.10 || moved >= 3) return '结构差异可辨';
+  return '仅线位微调';
 }
 
 function CandidateDiversityNotice({ candidates }: { candidates: SupportLayoutOptimizationCandidate[] }) {
-  if (candidates.length <= 1) return <div className="warning">当前几何约束下只形成 1 个可区分候选方案；系统已隐藏重复方案，不再要求用户在相同布置之间选择。</div>;
-  const structural = new Set(candidates.map((c) => `${c.supportCount}-${c.columnCount}-${c.maxBaySpacing}-${c.maxSpanLength}`)).size;
-  const weak = candidates.filter((c) => candidateDifferenceLabel(c) === '高度相似').length;
-  if (structural <= 1 || weak >= Math.max(2, candidates.length - 1)) {
-    return <div className="warning">当前候选方案在支撑数量、立柱数量和最大分仓上仍接近。系统会优先推荐结构路径不同的方案；若 A/B/C 完整计算结果完全相同，说明这些候选只属于线位微调，不应作为正式方案比选依据。</div>;
+  if (candidates.length <= 1) return <div className="warning">当前几何约束下只形成 1 个可区分方案。重复布置已被隐藏，请调整体系、分仓或施工约束后重新搜索。</div>;
+  const fingerprints = new Set(candidates.map((candidate) => JSON.stringify(candidate.variableSummary?.actualGeometrySignature ?? {
+    supportCount: candidate.supportCount,
+    columnCount: candidate.columnCount,
+    maxBaySpacing: candidate.maxBaySpacing,
+    maxSpanLength: candidate.maxSpanLength,
+  })));
+  const cosmetic = candidates.filter((candidate) => candidateDifferenceLabel(candidate) === '仅线位微调').length;
+  if (fingerprints.size < candidates.length || cosmetic > 0) {
+    return <div className="warning">候选中仍有几何高度接近项。正式比选只应采用实际传力路径、支撑角色、构件数量或分仓发生明确变化的方案；仅标签变化或小幅线位平移不会形成独立工程方案。</div>;
   }
-  return <div className="success">当前候选已按支撑数量、立柱数量、分仓间距和线位几何进行去重，A/B/C 比选优先展示结构路径可区分的方案。</div>;
+  return <div className="success">候选已按实际支撑线、角色构成、角度分布、支撑数量和立柱数量去重，可进入完整施工阶段比选。</div>;
 }
 
 function RadarBar({ label, value }: { label: string; value: number }) {
@@ -233,62 +240,83 @@ function RadarBar({ label, value }: { label: string; value: number }) {
   return <div className="radarBar"><span>{label}</span><div><em style={{ width: `${pct}%` }} /></div><strong>{pct.toFixed(0)}</strong></div>;
 }
 
-function CandidatePlanSvg({ candidate, selected = false, onClick }: { candidate: SupportLayoutOptimizationCandidate; selected?: boolean; onClick?: () => void }) {
+function candidateGeometry(candidate: SupportLayoutOptimizationCandidate) {
   const geom = (candidate.planGeometry ?? {}) as Record<string, any>;
-  const outline = (geom.outline ?? []) as { x: number; y: number }[];
-  const supports = (geom.supports ?? []) as Record<string, any>[];
-  const columns = (geom.columns ?? []) as Record<string, any>[];
-  const obstacles = (geom.obstacles ?? []) as Record<string, any>[];
+  return {
+    outline: (geom.outline ?? []) as { x: number; y: number }[],
+    supports: (geom.supports ?? []) as Record<string, any>[],
+    columns: (geom.columns ?? []) as Record<string, any>[],
+    obstacles: (geom.obstacles ?? []) as Record<string, any>[],
+  };
+}
+
+function candidateBounds(candidate: SupportLayoutOptimizationCandidate) {
+  const { outline, supports, columns } = candidateGeometry(candidate);
   const adjustments = (candidate.lineAdjustments ?? []) as Record<string, any>[];
-  const adjustmentPts = adjustments.flatMap((a) => [a.before?.start, a.before?.end, a.after?.start, a.after?.end]).filter(Boolean) as { x: number; y: number }[];
-  const xs = [...outline.map((p) => Number(p.x)), ...supports.flatMap((s) => [Number(s.start?.x), Number(s.end?.x)]), ...columns.map((c) => Number(c.location?.x)), ...adjustmentPts.map((p) => Number(p.x))].filter(Number.isFinite);
-  const ys = [...outline.map((p) => Number(p.y)), ...supports.flatMap((s) => [Number(s.start?.y), Number(s.end?.y)]), ...columns.map((c) => Number(c.location?.y)), ...adjustmentPts.map((p) => Number(p.y))].filter(Number.isFinite);
-  const minX = Math.min(...xs, 0);
-  const maxX = Math.max(...xs, 100);
-  const minY = Math.min(...ys, 0);
-  const maxY = Math.max(...ys, 100);
-  const pad = Math.max(2, Math.max(maxX - minX, maxY - minY) * 0.08);
-  const viewBox = `${minX - pad} ${minY - pad} ${Math.max(1, maxX - minX + pad * 2)} ${Math.max(1, maxY - minY + pad * 2)}`;
-  const outlinePts = outline.map((p) => `${p.x},${p.y}`).join(' ');
-  const motionKey = `${candidate.id ?? candidate.rank}-${selected ? 'motion' : 'static'}`;
+  const adjustmentPts = adjustments.flatMap((item) => [item.before?.start, item.before?.end, item.after?.start, item.after?.end]).filter(Boolean) as { x: number; y: number }[];
+  const xs = [...outline.map((p) => Number(p.x)), ...supports.flatMap((item) => [Number(item.start?.x), Number(item.end?.x)]), ...columns.map((item) => Number(item.location?.x)), ...adjustmentPts.map((p) => Number(p.x))].filter(Number.isFinite);
+  const ys = [...outline.map((p) => Number(p.y)), ...supports.flatMap((item) => [Number(item.start?.y), Number(item.end?.y)]), ...columns.map((item) => Number(item.location?.y)), ...adjustmentPts.map((p) => Number(p.y))].filter(Number.isFinite);
+  if (!xs.length || !ys.length) return { minX: 0, maxX: 100, minY: 0, maxY: 50 };
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+}
+
+function sharedCandidateViewBox(candidates: SupportLayoutOptimizationCandidate[]) {
+  const rows = candidates.map(candidateBounds);
+  const minX = Math.min(...rows.map((item) => item.minX), 0);
+  const maxX = Math.max(...rows.map((item) => item.maxX), 1);
+  const minY = Math.min(...rows.map((item) => item.minY), 0);
+  const maxY = Math.max(...rows.map((item) => item.maxY), 1);
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  const padX = Math.max(2, width * 0.07);
+  const padY = Math.max(2, height * 0.14);
+  return `${minX - padX} ${minY - padY} ${width + padX * 2} ${height + padY * 2}`;
+}
+
+function CandidatePlanGraphic({ candidate, viewBox, selected = false }: { candidate: SupportLayoutOptimizationCandidate; viewBox: string; selected?: boolean }) {
+  const { outline, supports, columns, obstacles } = candidateGeometry(candidate);
+  const adjustments = (candidate.lineAdjustments ?? []) as Record<string, any>[];
+  const outlinePts = outline.map((point) => `${point.x},${point.y}`).join(' ');
+  return <svg viewBox={viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`方案 ${schemeLetter(candidate.rank)} 平面支撑布置`}>
+    {outlinePts && <polygon points={outlinePts} className="candidateOutline" />}
+    {obstacles.map((obs, index) => {
+      const pts = ((obs.points ?? []) as { x: number; y: number }[]).map((point) => `${point.x},${point.y}`).join(' ');
+      return pts ? <polygon key={`obs-${index}`} points={pts} className="candidateObstacle" /> : null;
+    })}
+    {selected && adjustments.slice(0, 24).map((item, index) => {
+      const before = item.before ?? {}; const after = item.after ?? {};
+      if (!before.start || !before.end || !after.start || !after.end) return null;
+      return <g key={`motion-${index}`}>
+        <line x1={before.start.x ?? 0} y1={before.start.y ?? 0} x2={before.end.x ?? 0} y2={before.end.y ?? 0} className="candidateSupportBefore" />
+        <line x1={before.start.x ?? 0} y1={before.start.y ?? 0} x2={before.end.x ?? 0} y2={before.end.y ?? 0} className="candidateSupportMoving">
+          <animate attributeName="x1" from={before.start.x ?? 0} to={after.start.x ?? 0} dur="1.1s" fill="freeze" />
+          <animate attributeName="y1" from={before.start.y ?? 0} to={after.start.y ?? 0} dur="1.1s" fill="freeze" />
+          <animate attributeName="x2" from={before.end.x ?? 0} to={after.end.x ?? 0} dur="1.1s" fill="freeze" />
+          <animate attributeName="y2" from={before.end.y ?? 0} to={after.end.y ?? 0} dur="1.1s" fill="freeze" />
+        </line>
+      </g>;
+    })}
+    {supports.map((item, index) => {
+      const role = String(item.role ?? item.supportRole ?? 'main_strut');
+      const lockState = (item.lockState ?? {}) as Record<string, unknown>;
+      const locked = Boolean(item.locked || lockState.line || lockState.start || lockState.end);
+      return <line key={String(item.id ?? index)} x1={item.start?.x ?? 0} y1={item.start?.y ?? 0} x2={item.end?.x ?? 0} y2={item.end?.y ?? 0} className={`candidateSupport ${role} ${item.changed ? 'changed' : ''} ${locked ? 'locked' : ''}`} />;
+    })}
+    {columns.map((item, index) => <circle key={`column-${index}`} cx={item.location?.x ?? 0} cy={item.location?.y ?? 0} r="0.55" className="candidateColumnCircle" />)}
+  </svg>;
+}
+
+function CandidatePlanSvg({ candidate, selected = false, onClick, viewBox }: { candidate: SupportLayoutOptimizationCandidate; selected?: boolean; onClick?: () => void; viewBox?: string }) {
+  const resolvedViewBox = viewBox ?? sharedCandidateViewBox([candidate]);
+  const adjustments = (candidate.lineAdjustments ?? []) as Record<string, any>[];
   return (
     <button type="button" className={`candidatePlan ${selected ? 'selected' : ''}`} onClick={onClick}>
-      <div className="candidatePlanHeader"><strong>方案 {candidate.rank}</strong><span>{candidate.score} 分</span></div>
-      <svg key={motionKey} viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
-        {outlinePts && <polygon points={outlinePts} className="candidateOutline" />}
-        {obstacles.map((obs, idx) => {
-          const pts = ((obs.points ?? []) as { x: number; y: number }[]).map((p) => `${p.x},${p.y}`).join(' ');
-          return pts ? <polygon key={`obs-${idx}`} points={pts} className="candidateObstacle" /> : null;
-        })}
-        {selected && adjustments.slice(0, 24).map((a, idx) => {
-          const before = a.before ?? {};
-          const after = a.after ?? {};
-          if (!before.start || !before.end || !after.start || !after.end) return null;
-          return <g key={`motion-${idx}`}>
-            <line x1={before.start.x ?? 0} y1={before.start.y ?? 0} x2={before.end.x ?? 0} y2={before.end.y ?? 0} className="candidateSupportBefore" />
-            <line x1={before.start.x ?? 0} y1={before.start.y ?? 0} x2={before.end.x ?? 0} y2={before.end.y ?? 0} className="candidateSupportMoving">
-              <animate attributeName="x1" from={before.start.x ?? 0} to={after.start.x ?? 0} dur="1.1s" fill="freeze" />
-              <animate attributeName="y1" from={before.start.y ?? 0} to={after.start.y ?? 0} dur="1.1s" fill="freeze" />
-              <animate attributeName="x2" from={before.end.x ?? 0} to={after.end.x ?? 0} dur="1.1s" fill="freeze" />
-              <animate attributeName="y2" from={before.end.y ?? 0} to={after.end.y ?? 0} dur="1.1s" fill="freeze" />
-            </line>
-          </g>;
-        })}
-        {supports.map((s, idx) => {
-          const changed = Boolean(s.changed);
-          const lockState = (s.lockState ?? {}) as Record<string, unknown>;
-          const locked = Boolean(s.locked || lockState.line || lockState.start || lockState.end);
-          return <line key={`${s.id ?? idx}`} x1={s.start?.x ?? 0} y1={s.start?.y ?? 0} x2={s.end?.x ?? 0} y2={s.end?.y ?? 0} className={`candidateSupport ${changed ? 'changed' : ''} ${locked ? 'locked' : ''}`} />;
-        })}
-        {columns.map((c, idx) => <rect key={`col-${idx}`} x={(c.location?.x ?? 0) - 0.5} y={(c.location?.y ?? 0) - 0.5} width="1" height="1" className="candidateColumn" />)}
-      </svg>
-      <p className="small">{String(candidate.variableSummary?.positionPattern ?? '-')} · 位移线 {String((candidate.deltaGeometry?.changedSupportCount as number | string | undefined) ?? adjustments.length ?? 0)} · 交叉 {candidate.crossingCount ?? 0} · 障碍 {candidate.obstacleConflictCount ?? 0}</p>
+      <div className="candidatePlanHeader"><strong>方案 {schemeLetter(candidate.rank)}</strong><span>{candidate.score} 分</span></div>
+      <CandidatePlanGraphic candidate={candidate} viewBox={resolvedViewBox} selected={selected} />
+      <p className="small">{candidateDifferenceLabel(candidate)} · 位移线 {String((candidate.deltaGeometry?.changedSupportCount as number | string | undefined) ?? adjustments.length)} · 交叉 {candidate.crossingCount ?? 0} · 障碍 {candidate.obstacleConflictCount ?? 0}</p>
     </button>
   );
 }
-
-
-
 
 function schemeLetter(rank: number) {
   return String.fromCharCode(64 + Math.max(1, Math.min(26, rank || 1)));
@@ -298,52 +326,26 @@ function candidateSchemeName(candidate: SupportLayoutOptimizationCandidate) {
   return String(candidate.variableSummary?.schemeLabel ?? candidate.variableSummary?.topologyFamily ?? `方案 ${schemeLetter(candidate.rank)}`);
 }
 
-function CandidateScheme3D({ candidate, selected = false, onClick, fullCalculation }: { candidate: SupportLayoutOptimizationCandidate; selected?: boolean; onClick?: () => void; fullCalculation?: Record<string, unknown> }) {
-  const geom = (candidate.planGeometry ?? {}) as Record<string, any>;
-  const outline = (geom.outline ?? []) as { x: number; y: number }[];
-  const supports = (geom.supports ?? []) as Record<string, any>[];
-  const columns = (geom.columns ?? []) as Record<string, any>[];
-  const allX = [...outline.map((p) => Number(p.x)), ...supports.flatMap((item) => [Number(item.start?.x), Number(item.end?.x)])].filter(Number.isFinite);
-  const allY = [...outline.map((p) => Number(p.y)), ...supports.flatMap((item) => [Number(item.start?.y), Number(item.end?.y)])].filter(Number.isFinite);
-  const minX = Math.min(...allX, 0); const maxX = Math.max(...allX, 1);
-  const minY = Math.min(...allY, 0); const maxY = Math.max(...allY, 1);
-  const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
-  const planSpan = Math.max(1, maxX - minX, maxY - minY);
-  const elevations = supports.map((item) => Number(item.elevation ?? 0)).filter(Number.isFinite);
-  const topZ = Math.max(...elevations, 0); const bottomZ = Math.min(...elevations, -1);
-  const zSpan = Math.max(1, topZ - bottomZ);
-  const project = (x: number, y: number, z = 0) => ({
-    x: 160 + ((x - cx) - (y - cy)) * (112 / planSpan),
-    y: 118 + ((x - cx) + (y - cy)) * (46 / planSpan) - (z - bottomZ) * (72 / zSpan),
-  });
-  const outlineProjected = outline.map((point) => project(point.x, point.y, topZ)).map((point) => `${point.x},${point.y}`).join(' ');
+function CandidateSchemePlanCard({ candidate, selected = false, onClick, fullCalculation, viewBox }: { candidate: SupportLayoutOptimizationCandidate; selected?: boolean; onClick?: () => void; fullCalculation?: Record<string, unknown>; viewBox: string }) {
   const family = String(candidate.variableSummary?.topologyFamily ?? 'direct_grid');
   const schemeName = candidateSchemeName(candidate);
   const letter = schemeLetter(candidate.rank);
   const decisionScore = fullCalculation?.decisionScore;
   const recommended = Boolean(fullCalculation?.recommendedByFullCalculation);
+  const formalAxial = fullCalculation?.maxSupportAxialForce;
+  const formalDisplacement = fullCalculation?.maxDisplacement;
   return (
-    <button type="button" className={`candidateScheme3d ${selected ? 'selected' : ''} ${recommended ? 'recommended' : ''}`} onClick={onClick} aria-pressed={selected}>
+    <button type="button" className={`candidateScheme3d candidateSchemePlanCard ${selected ? 'selected' : ''} ${recommended ? 'recommended' : ''}`} onClick={onClick} aria-pressed={selected}>
       <div className="candidatePlanHeader"><strong>方案 {letter} · {schemeName}</strong><span>{decisionScore != null ? `决策 ${String(decisionScore)} 分` : `预筛 ${candidate.score} 分`}</span></div>
       {recommended && <div className="schemeRecommendationBadge">完整计算推荐</div>}
-      <svg viewBox="0 0 320 220" role="img" aria-label={`方案 ${letter} 三维支撑模型`}>
-        <defs><linearGradient id={`pit-${candidate.id ?? candidate.rank}`} x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#dbeafe" stopOpacity=".9"/><stop offset="1" stopColor="#eff6ff" stopOpacity=".35"/></linearGradient></defs>
-        {outlineProjected && <polygon points={outlineProjected} fill={`url(#pit-${candidate.id ?? candidate.rank})`} stroke="#475569" strokeWidth="1.5" />}
-        {supports.map((item, index) => {
-          const a = project(Number(item.start?.x ?? 0), Number(item.start?.y ?? 0), Number(item.elevation ?? bottomZ));
-          const b = project(Number(item.end?.x ?? 0), Number(item.end?.y ?? 0), Number(item.elevation ?? bottomZ));
-          const role = String(item.role ?? item.supportRole ?? 'main_strut');
-          return <line key={`${item.id ?? index}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`scheme3dSupport ${role}`} />;
-        })}
-        {columns.map((item, index) => {
-          const top = project(Number(item.location?.x ?? 0), Number(item.location?.y ?? 0), topZ);
-          const bottom = project(Number(item.location?.x ?? 0), Number(item.location?.y ?? 0), bottomZ);
-          return <line key={`column-${index}`} x1={top.x} y1={top.y} x2={bottom.x} y2={bottom.y} className="scheme3dColumn" />;
-        })}
-      </svg>
+      <CandidatePlanGraphic candidate={candidate} viewBox={viewBox} selected={selected} />
       <div className="schemeMetricStrip"><span>{candidate.supportCount} 支撑</span><span>{candidate.columnCount} 立柱</span><span>最长 {candidate.maxSpanLength ?? '-'}m</span><span>{family === 'hybrid_diagonal' ? '斜撑混合' : family === 'bidirectional_grid' ? '双向网格' : '直对撑'}</span></div>
-      <div className="schemeOutcomeRow"><span>轴力 {String(fullCalculation?.maxSupportAxialForce ?? candidate.axialPeakProxy ?? '-')}</span><span>位移 {String(fullCalculation?.maxDisplacement ?? '-')}</span><span className={Number(fullCalculation?.failCount ?? candidate.failCount ?? 0) > 0 ? 'bad' : 'good'}>Fail {String(fullCalculation?.failCount ?? candidate.failCount ?? 0)}</span></div>
-      {Boolean(fullCalculation?.decisionReason) && <p className="schemeDecisionReason">{String(fullCalculation?.decisionReason)}</p>}
+      <div className="schemeOutcomeRow">
+        <span>{formalAxial != null ? `最大轴力 ${String(formalAxial)} kN` : `轴力代理 ${String(candidate.axialPeakProxy ?? '-')}（无量纲）`}</span>
+        <span>{formalDisplacement != null ? `最大位移 ${String(formalDisplacement)} mm` : '位移待完整计算'}</span>
+        <span className={Number(fullCalculation?.failCount ?? candidate.failCount ?? 0) > 0 ? 'bad' : 'good'}>Fail {String(fullCalculation?.failCount ?? candidate.failCount ?? 0)}</span>
+      </div>
+      <p className="schemeDecisionReason">{candidateDifferenceLabel(candidate)}。{Boolean(fullCalculation?.decisionReason) ? String(fullCalculation?.decisionReason) : '当前仅完成几何与拓扑预筛。'}</p>
     </button>
   );
 }
@@ -413,7 +415,7 @@ function ExpertDesignPanel({ project, runStep }: { project: Project; runStep?: (
   </section>;
 }
 
-function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
+function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full' | 'candidate_comparison', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
   const [mode, setMode] = useState('balanced');
   const [data, setData] = useState<Record<string, any> | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -504,7 +506,7 @@ function CheckSummaryPills({ summary }: { summary?: Record<string, unknown> }) {
   return <div className="checkSummary"><span className="checkTag pass">合规 {pass}</span><span className="checkTag fail">不合规 {fail}</span><span className="checkTag warning">预警 {warning}</span><span className="checkTag manual_review">复核 {manual}</span></div>;
 }
 
-export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional' }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional' }) {
+export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional', coreMode = false }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full' | 'candidate_comparison', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional'; coreMode?: boolean }) {
   const calculationState = (project.advancedEngineering?.calculationState ?? {}) as Record<string, unknown>;
   const requiresRecalculation = Boolean(calculationState.requiresRecalculation);
   const latest = requiresRecalculation || !project.calculationResults.length
@@ -550,8 +552,8 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
           <OnDemandResultDetails project={project} latest={latest} highlightLocator={highlightLocator}>{(hydrated) => <>
             <InternalForceVisualization latest={hydrated} highlightLocator={highlightLocator} />
             <WallCloud3DViewer project={project} latest={hydrated} highlightLocator={highlightLocator} />
-            <ExpertDesignPanel project={project} runStep={runStep} />
-            <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} />
+            {!coreMode ? <ExpertDesignPanel project={project} runStep={runStep} /> : null}
+            {!coreMode ? <WallLengthRedundancyPanel project={project} runStep={runStep} runTask={runTask} /> : null}
           </>}</OnDemandResultDetails>
           <p>专业复核：{latest.professionalReviewRequired ? '需要' : '否'}</p>
           <h4>校核汇总</h4>
@@ -590,18 +592,20 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
                 <>
                   <h4>整体支撑方案 A/B/C 比选</h4>
                   <CandidateDiversityNotice candidates={candidates.slice(0, 3)} />
-                  <p className="small">每个卡片代表一套完整支撑体系。先比较三维传力路径、支撑跨度、立柱数量和完整计算指标，再整体采用；单墙长度微调已收纳到高级详情。</p>
+                  <p className="small">每个卡片代表一套完整支撑体系。先比较平面传力路径、支撑跨度、立柱数量和完整计算指标，再整体采用；单墙长度微调已收纳到高级详情。</p>
                   {(() => {
+                    const displayedCandidates = candidates.slice(0, 3);
                     const fullRows = ((latest.supportLayoutRepair?.candidateFullCalculations ?? (latest.reportDiagramData?.candidateFullCalculationComparison as any[]) ?? []) as Record<string, unknown>[]);
                     const byId = new Map(fullRows.map((row) => [String(row.candidateId ?? ''), row]));
+                    const comparisonViewBox = sharedCandidateViewBox(displayedCandidates);
                     return <>
                       <div className="candidateSchemeGrid">
-                        {candidates.slice(0, 3).map((candidate) => <CandidateScheme3D key={candidate.id ?? candidate.rank} candidate={candidate} fullCalculation={byId.get(String(candidate.id ?? '')) ?? candidate.fullCalculation} selected={(selectedCandidate?.id ?? selectedCandidateId) === candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} />)}
+                        {displayedCandidates.map((candidate) => <CandidateSchemePlanCard key={candidate.id ?? candidate.rank} candidate={candidate} viewBox={comparisonViewBox} fullCalculation={byId.get(String(candidate.id ?? '')) ?? candidate.fullCalculation} selected={(selectedCandidate?.id ?? selectedCandidateId) === candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} />)}
                       </div>
-                      {selectedCandidate && <div className="candidateSelectionPanel schemeSelectionPanel"><div><strong>当前选中：方案 {schemeLetter(selectedCandidate.rank)} · {candidateSchemeName(selectedCandidate)}</strong><p className="small">{selectedCandidate.constructabilityNote}</p><div className="schemeSelectedMetrics"><span>目标分仓 {selectedCandidate.targetSpacing}m</span><span>立柱服务跨 {selectedCandidate.columnMaxSpan}m</span><span>最大支撑跨 {selectedCandidate.maxSpanLength ?? '-'}m</span><span>硬约束 {Boolean(selectedCandidate.hardConstraints?.passed) ? '满足' : '未满足'}</span></div></div>{runStep && selectedCandidate.id && <button onClick={() => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, selectedCandidate.id!))}>整体采用方案 {schemeLetter(selectedCandidate.rank)}</button>}</div>}
-                      {fullRows.length ? <table className="table compactTable schemeComparisonTable"><thead><tr><th>整体方案</th><th>完整排名/得分</th><th>体系</th><th>支撑/立柱</th><th>最长跨/超长直撑</th><th>最大轴力</th><th>最大位移</th><th>围檩弯矩</th><th>Fail/Warning</th><th>正式闸门</th></tr></thead><tbody>{fullRows.slice(0, 3).map((item, index) => <tr className={item.recommendedByFullCalculation ? 'recommendedSchemeRow' : ''} key={String(item.candidateId ?? index)}><td>方案 {String(item.schemeLabel ?? schemeLetter(index + 1))}{item.recommendedByFullCalculation ? ' · 推荐' : ''}</td><td>{String(item.decisionRank ?? '-')} / {String(item.decisionScore ?? '-')}</td><td>{String(item.schemeName ?? item.topologyFamily ?? '-')}</td><td>{String(item.supportCount ?? '-')} / {String(item.columnCount ?? '-')}</td><td>{String(item.maxSpanLength ?? '-')} / {String(item.excessiveDirectStrutCount ?? 0)}</td><td>{String(item.maxSupportAxialForce ?? '-')}</td><td>{String(item.maxDisplacement ?? '-')}</td><td>{String(item.maxWaleMoment ?? '-')}</td><td>{String(item.failCount ?? 0)} / {String(item.warningCount ?? 0)}</td><td>{item.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table> : <div className="warning">尚未执行 A/B/C 完整并行计算；当前卡片使用代理评分。请运行候选方案完整计算后再正式定案。</div>}
+                      {selectedCandidate && <div className="candidateSelectionPanel schemeSelectionPanel"><div><strong>当前选中：方案 {schemeLetter(selectedCandidate.rank)} · {candidateSchemeName(selectedCandidate)}</strong><p className="small">{selectedCandidate.constructabilityNote}</p><div className="schemeSelectedMetrics"><span>目标分仓 {selectedCandidate.targetSpacing}m</span><span>立柱服务跨 {selectedCandidate.columnMaxSpan}m</span><span>最大支撑跨 {selectedCandidate.maxSpanLength ?? '-'}m</span><span>硬约束 {Boolean(selectedCandidate.hardConstraints?.passed) ? '满足' : '未满足'}</span></div></div>{runStep && selectedCandidate.id && <button disabled={!Boolean(selectedCandidate.hardConstraints?.passed) || selectedCandidate.variableSummary?.formalSchemeEligible === false} onClick={() => runStep('正在整体采用支撑优化方案', () => api.adoptSupportCandidate(project.id, selectedCandidate.id!))}>{!Boolean(selectedCandidate.hardConstraints?.passed) || selectedCandidate.variableSummary?.formalSchemeEligible === false ? '诊断方案不可采用' : `整体采用方案 ${schemeLetter(selectedCandidate.rank)}`}</button>}</div>}
+                      {fullRows.length ? <table className="table compactTable schemeComparisonTable"><thead><tr><th>整体方案</th><th>完整排名/得分</th><th>体系</th><th>支撑/立柱</th><th>最长跨/超长直撑</th><th>最大轴力</th><th>最大位移</th><th>围檩弯矩</th><th>Fail/Warning</th><th>正式闸门</th></tr></thead><tbody>{fullRows.slice(0, 3).map((item, index) => <tr className={item.recommendedByFullCalculation ? 'recommendedSchemeRow' : ''} key={String(item.candidateId ?? index)}><td>方案 {String(item.schemeLabel ?? schemeLetter(index + 1))}{item.recommendedByFullCalculation ? ' · 推荐' : ''}</td><td>{String(item.decisionRank ?? '-')} / {String(item.decisionScore ?? '-')}</td><td>{String(item.schemeName ?? item.topologyFamily ?? '-')}</td><td>{String(item.supportCount ?? '-')} / {String(item.columnCount ?? '-')}</td><td>{String(item.maxSpanLength ?? '-')} / {String(item.excessiveDirectStrutCount ?? 0)}</td><td>{String(item.maxSupportAxialForce ?? '-')}</td><td>{String(item.maxDisplacement ?? '-')}</td><td>{String(item.maxWaleMoment ?? '-')}</td><td>{String(item.failCount ?? 0)} / {String(item.warningCount ?? 0)}</td><td>{item.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table> : <div className="warning comparisonActionWarning"><span>尚未执行 A/B/C 完整施工阶段计算。当前只显示几何与拓扑预筛，轴力代理不得作为正式设计值。</span>{runTask ? <button disabled={displayedCandidates.some((item) => !Boolean(item.hardConstraints?.passed) || item.variableSummary?.formalSchemeEligible === false)} onClick={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: Math.min(3, displayedCandidates.length) })}>{displayedCandidates.some((item) => !Boolean(item.hardConstraints?.passed) || item.variableSummary?.formalSchemeEligible === false) ? '诊断方案不可完整比选' : '运行完整比选'}</button> : null}</div>}
                       <details className="engineeringDetails compactDetails"><summary>查看评分分解、原方案动画和完整候选参数</summary>
-                        <div className="candidatePlanGrid">{candidates.slice(0, 3).map((candidate) => <CandidatePlanSvg key={`plan-${candidate.id ?? candidate.rank}`} candidate={candidate} selected={(selectedCandidate?.id ?? selectedCandidateId) === candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} />)}</div>
+                        <div className="candidatePlanGrid">{displayedCandidates.map((candidate) => <CandidatePlanSvg key={`plan-${candidate.id ?? candidate.rank}`} candidate={candidate} viewBox={comparisonViewBox} selected={(selectedCandidate?.id ?? selectedCandidateId) === candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} />)}</div>
                         <table className="table compactTable"><thead><tr><th>方案</th><th>评分</th><th>拓扑</th><th>分仓</th><th>立柱跨</th><th>支撑数</th><th>最长跨</th><th>交叉/障碍</th></tr></thead><tbody>{candidates.slice(0, 3).map((candidate) => <tr key={`detail-${candidate.id ?? candidate.rank}`}><td>{schemeLetter(candidate.rank)}</td><td>{candidate.score}</td><td>{candidateSchemeName(candidate)}</td><td>{candidate.targetSpacing}m</td><td>{candidate.columnMaxSpan}m</td><td>{candidate.supportCount}</td><td>{candidate.maxSpanLength ?? '-'}m</td><td>{candidate.crossingCount ?? 0}/{candidate.obstacleConflictCount ?? 0}</td></tr>)}</tbody></table>
                         <div className="candidateCompareGrid">{candidates.slice(0, 3).map((candidate) => <div className={`candidateCard ${(selectedCandidate?.id ?? selectedCandidateId) === candidate.id ? 'selected' : ''}`} key={`card-${candidate.id ?? candidate.rank}`}><h5>方案 {schemeLetter(candidate.rank)} · {candidate.score} 分</h5><div className="radarBars"><RadarBar label="间距" value={Number(candidate.softObjectives?.spacingCloseTo3To6m ?? 0)} /><RadarBar label="短跨" value={Number(candidate.softObjectives?.shortSpanLength ?? 0)} /><RadarBar label="立柱" value={Number(candidate.softObjectives?.reasonableColumnCount ?? 0)} /><RadarBar label="轴力" value={Number(candidate.softObjectives?.lowAxialPeakProxy ?? 0)} /><RadarBar label="出土" value={Number(candidate.softObjectives?.continuousMuckPath ?? 0)} /><RadarBar label="对称" value={Number(candidate.softObjectives?.planSymmetry ?? 0)} /></div></div>)}</div>
                       </details>

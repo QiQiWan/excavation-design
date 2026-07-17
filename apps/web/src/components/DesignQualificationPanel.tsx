@@ -26,7 +26,7 @@ type SystemOption = {
   nextAction?: string;
 };
 
-type Qualification = {
+export type Qualification = {
   status: string;
   interactionMode: 'normal' | 'degraded' | 'diagnostic';
   workspaceProfileRequired?: boolean;
@@ -80,21 +80,28 @@ const statusText: Record<string, string> = {
 export default function DesignQualificationPanel({
   project,
   runTask,
+  initialData,
 }: {
   project: Project;
   runTask: (title: string, operation: 'storage_compaction' | 'support_layout_optimization', payload?: Record<string, unknown>) => Promise<void>;
+  initialData?: Qualification;
 }) {
-  const [data, setData] = useState<Qualification | null>(null);
+  const [data, setData] = useState<Qualification | null>(initialData ?? null);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
+    if (initialData) {
+      setData(initialData);
+      setError(undefined);
+      return;
+    }
     let alive = true;
     setError(undefined);
     api.getDesignQualification(project.id)
       .then((value) => { if (alive) setData(value as Qualification); })
       .catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); });
     return () => { alive = false; };
-  }, [project.id, project.updatedAt, project.retainingSystem?.supportLayoutRepair?.selectedCandidateId]);
+  }, [initialData, project.id, project.updatedAt, project.retainingSystem?.supportLayoutRepair?.selectedCandidateId]);
 
   if (error) return <section className="designQualificationPanel errorPanel"><strong>设计资格读取失败</strong><p>{error}</p></section>;
   if (!data) return <section className="designQualificationPanel loadingPanel"><strong>正在建立设计资格矩阵…</strong></section>;

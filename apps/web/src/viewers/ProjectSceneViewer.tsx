@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, AxesHelper, Box3, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, GridHelper, Group, Intersection, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Points, PointsMaterial, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { ExcavationSegment, Point2D, Project, VtuMesh } from '../types/domain';
 import { effectiveGeologicalSurfaces } from '../utils/geology';
+import FullscreenShell from '../components/FullscreenShell';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'supports' | 'results';
 
@@ -425,7 +426,7 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
   };
 
   return (
-    <div className="sceneShell">
+    <FullscreenShell label="项目三维模型"><div className="sceneShell">
       <div className="layerControls">
         {(Object.keys(layerLabels) as LayerKey[]).map((key) => (
           <label key={key}>
@@ -444,6 +445,6 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
         <strong>对象属性</strong>
         {selected ? <ObjectPropertyTable data={selected} /> : <span className="small">点击三维对象查看构件、地层或 VTU 属性。</span>}
       </div>
-    </div>
+    </div></FullscreenShell>
   );
 }

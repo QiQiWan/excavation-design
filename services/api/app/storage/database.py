@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from uuid import uuid4
 
 from app.storage.artifact_store import ProjectArtifactStore, artifact_refs, externalize_project_payload, rehydrate_project_payload
 from app.services.runtime_resource_policy import adaptive_resource_policy, classify_payload
+from app.services.runtime_diagnostics import append_event, memory_event
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "pitguard.sqlite3"
 
@@ -44,7 +46,7 @@ def _compact_result_for_workspace(value: Any) -> dict[str, Any]:
     keep = {
         "id", "projectId", "caseId", "supportTopologyHash", "inputSnapshotHash",
         "adoptedDesignSnapshotHash", "calculationContractId", "resultHash",
-        "calculationAssurance", "deliveryReadiness", "governingValues", "warnings",
+        "calculationAssurance", "deliveryReadiness", "stageResultSummary", "governingValues", "warnings",
         "checkSummary", "designIterationSummary", "designReviewSummary",
         "supportLayoutQuality", "ifcCompatibility", "formalReportGate", "standards",
         "professionalReviewRequired", "calculatedAt",
@@ -216,6 +218,10 @@ def _aggressively_compact_workspace(workspace: dict[str, Any]) -> dict[str, Any]
     retaining = bounded.get("retainingSystem")
     if isinstance(retaining, dict):
         ret = dict(retaining)
+        layout_summary = dict(ret.get("layoutSummary") or {})
+        layout_summary.pop("autoRepair", None)
+        layout_summary.pop("supportOptimizationCandidates", None)
+        ret["layoutSummary"] = layout_summary
         repair = ret.get("supportLayoutRepair")
         if isinstance(repair, dict):
             rep = dict(repair)
@@ -277,6 +283,10 @@ def _compact_project_for_workspace(project: dict[str, Any]) -> dict[str, Any]:
     retaining = project.get("retainingSystem")
     if isinstance(retaining, dict):
         compact_retaining = dict(retaining)
+        layout_summary = dict(compact_retaining.get("layoutSummary") or {})
+        layout_summary.pop("autoRepair", None)
+        layout_summary.pop("supportOptimizationCandidates", None)
+        compact_retaining["layoutSummary"] = layout_summary
         repair = retaining.get("supportLayoutRepair")
         if isinstance(repair, dict):
             compact_repair = dict(repair)
@@ -547,9 +557,38 @@ class SQLiteProjectStore:
                 "'advancedEngineering', json_object('workspaceStorage', json_object('profile','minimal'))) "
                 "WHERE workspace_data IS NULL OR workspace_data = '' OR workspace_data = '{}'"
             )
+        # V3.44 removes two historical copies of the same A/B/C candidate set.
+        # Run in SQLite JSON1 so a 100+ MB legacy project is compacted without
+        # hydrating it in the API process. The canonical copy remains under
+        # retainingSystem.supportLayoutRepair.
+        try:
+            conn.execute(
+                """
+                UPDATE projects
+                SET data = json_remove(
+                        data,
+                        '$.retainingSystem.layoutSummary.autoRepair',
+                        '$.retainingSystem.layoutSummary.supportOptimizationCandidates'
+                    ),
+                    workspace_data = json_remove(
+                        workspace_data,
+                        '$.retainingSystem.layoutSummary.autoRepair',
+                        '$.retainingSystem.layoutSummary.supportOptimizationCandidates'
+                    )
+                WHERE json_valid(data)
+                  AND (
+                    json_type(data, '$.retainingSystem.layoutSummary.autoRepair') IS NOT NULL
+                    OR json_type(data, '$.retainingSystem.layoutSummary.supportOptimizationCandidates') IS NOT NULL
+                    OR json_type(workspace_data, '$.retainingSystem.layoutSummary.autoRepair') IS NOT NULL
+                    OR json_type(workspace_data, '$.retainingSystem.layoutSummary.supportOptimizationCandidates') IS NOT NULL
+                  )
+                """
+            )
+        except sqlite3.OperationalError:
+            pass
         conn.execute(
-            "UPDATE projects SET workspace_bytes = length(CAST(workspace_data AS BLOB)) "
-            "WHERE workspace_bytes <= 0 OR workspace_bytes IS NULL"
+            "UPDATE projects SET payload_bytes = length(CAST(data AS BLOB)), "
+            "workspace_bytes = length(CAST(workspace_data AS BLOB))"
         )
         # If a legacy workspace is unusually large, remove candidate calculation
         # deltas while preserving the lightweight plan preview.  Engineering metrics and the complete snapshot
@@ -594,6 +633,15 @@ class SQLiteProjectStore:
         # V3.31 stores large arrays as immutable content-addressed objects.
         # ``project`` is a fresh model_dump dictionary, so it is safe to compact
         # it in place without mutating the caller's Pydantic model.
+        started = time.perf_counter()
+        memory_event(
+            "project-storage",
+            "save-start",
+            projectId=project.get("id"),
+            action=action,
+            calculationResultCount=len(project.get("calculationResults") or []),
+            candidateCount=len((((project.get("retainingSystem") or {}).get("supportLayoutRepair") or {}).get("candidates") or [])),
+        )
         artifact_store = ProjectArtifactStore()
         project = externalize_project_payload(project, artifact_store)
         refs = artifact_refs(project)
@@ -604,10 +652,24 @@ class SQLiteProjectStore:
         workspace_encoded = _canonical_json(workspace_project)
         payload_bytes = len(encoded.encode("utf-8"))
         workspace_bytes = len(workspace_encoded.encode("utf-8"))
+        aggressively_compacted = False
         if workspace_bytes > _workspace_limit_bytes():
             workspace_project = _aggressively_compact_workspace(workspace_project)
             workspace_encoded = _canonical_json(workspace_project)
             workspace_bytes = len(workspace_encoded.encode("utf-8"))
+            aggressively_compacted = True
+        append_event(
+            "project-storage",
+            "save-serialized",
+            projectId=project.get("id"),
+            action=action,
+            payloadMb=round(payload_bytes / 1048576.0, 3),
+            workspaceMb=round(workspace_bytes / 1048576.0, 3),
+            externalMb=round(external_bytes / 1048576.0, 3),
+            artifactCount=artifact_count,
+            aggressivelyCompacted=aggressively_compacted,
+            serializeSeconds=round(time.perf_counter() - started, 3),
+        )
         content_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         updated_at = str(project.get("updatedAt") or project.get("updated_at") or _now())
         with self._connect() as conn:
@@ -682,6 +744,16 @@ class SQLiteProjectStore:
                 (project["id"], project["id"], retain),
             )
             conn.commit()
+            memory_event(
+                "project-storage",
+                "save-complete",
+                projectId=project.get("id"),
+                action=action,
+                revision=revision,
+                payloadMb=round(payload_bytes / 1048576.0, 3),
+                workspaceMb=round(workspace_bytes / 1048576.0, 3),
+                elapsedSeconds=round(time.perf_counter() - started, 3),
+            )
             return revision
 
     def append_audit(
@@ -1056,8 +1128,11 @@ class SQLiteProjectStore:
             config = json.loads(str(row["config"] or "{}"))
         except json.JSONDecodeError:
             config = {}
-        config.setdefault("sessionVersion", int(row["version"] or 1))
-        config.setdefault("updatedAt", row["updated_at"])
+        # The database version is authoritative. Older rows could persist a
+        # stale sessionVersion inside the JSON body, which caused every later
+        # optimistic update to conflict even after a successful save.
+        config["sessionVersion"] = int(row["version"] or 1)
+        config["updatedAt"] = row["updated_at"]
         return config
 
     def save_progressive_design_config(
@@ -1068,7 +1143,6 @@ class SQLiteProjectStore:
         expected_version: int | None = None,
     ) -> dict[str, Any]:
         now = _now()
-        encoded = _canonical_json(dict(config or {}))
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -1082,6 +1156,10 @@ class SQLiteProjectStore:
                     f"Progressive design session revision conflict: expected {expected_version}, current {current}"
                 )
             version = current + 1
+            stored_config = dict(config or {})
+            stored_config["sessionVersion"] = version
+            stored_config["updatedAt"] = now
+            encoded = _canonical_json(stored_config)
             conn.execute(
                 """
                 INSERT INTO project_design_sessions(project_id, version, config, updated_at)
@@ -1092,10 +1170,7 @@ class SQLiteProjectStore:
                 (project_id, version, encoded, now),
             )
             conn.commit()
-        output = dict(config or {})
-        output["sessionVersion"] = version
-        output["updatedAt"] = now
-        return output
+        return stored_config
 
     def get_candidate_preview_bundle(self, project_id: str, *, limit: int = 12) -> dict[str, Any]:
         """Read candidate previews without hydrating the complete project.
@@ -1194,6 +1269,28 @@ class SQLiteProjectStore:
             conn.commit()
         return {"projectId": project_id, "source": source, "previews": previews}
 
+    def get_workspace_metadata(self, project_id: str) -> dict[str, Any] | None:
+        """Return workspace identity without copying the JSON payload into Python.
+
+        Read-only design endpoints call this method before hydrating the workspace.
+        It allows the repository-level model cache to reuse one validated Project
+        across concurrent panels while still invalidating immediately on revision
+        changes.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT revision, updated_at, payload_bytes, workspace_bytes FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "revision": int(row["revision"] or 0),
+            "updatedAt": row["updated_at"],
+            "payloadBytes": int(row["payload_bytes"] or 0),
+            "workspaceBytes": int(row["workspace_bytes"] or 0),
+        }
+
     def get_workspace_json(self, project_id: str) -> tuple[str, dict[str, Any]] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -1236,12 +1333,27 @@ class SQLiteProjectStore:
         return project
 
     def list_artifacts(self, project_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            row = conn.execute("SELECT data FROM projects WHERE id = ?", (project_id,)).fetchone()
-        if row is None:
+        """List external objects without hydrating the complete snapshot.
+
+        The V3.38 implementation parsed ``projects.data`` for every manifest
+        request.  On a 500 MB project that single UI panel could occupy the API
+        for tens of seconds.  The workspace projection normally retains the
+        bounded artifact index; legacy projects fall back to a direct directory
+        scan.
+        """
+        result = self.get_workspace_json(project_id)
+        if result is None:
             return []
-        project = json.loads(row["data"])
-        return ProjectArtifactStore().list_existing(artifact_refs(project))
+        refs: list[dict[str, Any]] = []
+        try:
+            workspace = json.loads(result[0])
+            refs = artifact_refs(workspace)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            refs = []
+        store = ProjectArtifactStore()
+        if refs:
+            return store.list_existing(refs)
+        return store.scan_project(project_id)
 
     def get_artifact(self, project_id: str, artifact_id: str) -> dict[str, Any] | None:
         for ref in self.list_artifacts(project_id):

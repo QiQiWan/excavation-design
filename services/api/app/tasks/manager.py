@@ -27,6 +27,8 @@ from app.storage.task_store import SQLiteTaskStore
 from app.version import SOFTWARE_VERSION
 from app.services.calculation_resource_estimator import estimate_calculation_resources
 from app.services.runtime_resource_policy import adaptive_resource_policy, mb
+from app.services.system_resources import physical_memory_bytes, process_effective_memory_bytes, process_memory_counters, process_rss_bytes
+from app.services.runtime_diagnostics import append_event, memory_event
 
 HEAVY_TASK_CONCURRENCY_ENV = "PITGUARD_HEAVY_TASK_CONCURRENCY"
 TASK_MEMORY_SOFT_LIMIT_ENV = "PITGUARD_TASK_MEMORY_SOFT_LIMIT_MB"
@@ -49,30 +51,16 @@ def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 262144) -
 
 
 def _process_memory_mb() -> float:
-    try:
-        with open("/proc/self/status", "r", encoding="utf-8") as stream:
-            for line in stream:
-                if line.startswith("VmRSS:"):
-                    return round(float(line.split()[1]) / 1024.0, 2)
-    except OSError:
-        pass
-    if resource is not None:
-        value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        return round(float(value) / 1024.0, 2)
-    return 0.0
+    return round(float(process_effective_memory_bytes()) / 1048576.0, 2)
 
 
+def _process_rss_mb() -> float:
+    return round(float(process_rss_bytes()) / 1048576.0, 2)
 
 
 def _system_available_memory_mb() -> float:
-    try:
-        with open("/proc/meminfo", "r", encoding="utf-8") as stream:
-            for line in stream:
-                if line.startswith("MemAvailable:"):
-                    return round(float(line.split()[1]) / 1024.0, 2)
-    except OSError:
-        pass
-    return 0.0
+    _total, available = physical_memory_bytes()
+    return round(float(available or 0) / 1048576.0, 2)
 
 def _release_process_memory() -> None:
     gc.collect()
@@ -172,11 +160,14 @@ class TaskManager:
         self._heavy_concurrency = max(1, min(3, int(startup_policy.get("recommendedHeavyConcurrency") or 1)))
         self._memory_soft_limit_mb = max(192, int(mb(startup_policy.get("workerSoftLimitBytes"))))
         self._task_timeout_seconds = _env_int("PITGUARD_TASK_TIMEOUT_SECONDS", 1800, 60, 86400)
-        self._resource_watch_interval_seconds = _env_int("PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS", 3, 1, 30)
+        self._resource_watch_interval_seconds = _env_int("PITGUARD_RESOURCE_WATCH_INTERVAL_SECONDS", 1, 1, 30)
         self._worker_rss_hard_limit_mb = max(256, int(mb(startup_policy.get("workerHardLimitBytes"))))
         self._system_memory_reserve_mb = max(256, int(mb(startup_policy.get("reserveBytes"))))
         default_heartbeat = Path(os.getenv("PITGUARD_DB_PATH", str(Path(__file__).resolve().parents[2] / "pitguard.sqlite3"))).with_name("worker-heartbeat.json")
         self._worker_heartbeat_path = Path(os.getenv("PITGUARD_WORKER_HEARTBEAT_PATH", str(default_heartbeat)))
+        self._worker_stale_seconds = _env_int("PITGUARD_WORKER_STALE_SECONDS", 45, 15, 600)
+        self._worker_queue_stale_seconds = _env_int("PITGUARD_WORKER_QUEUE_STALE_SECONDS", 60, 20, 1800)
+        self._last_external_reconcile_monotonic = 0.0
         self._heavy_condition = Condition(RLock())
         self._heavy_active = 0
         self._executor = (
@@ -185,6 +176,7 @@ class TaskManager:
         )
         self._heavy_operations = {
             "calculation_full", "candidate_comparison", "candidate_scheme_calculation", "support_layout_optimization",
+            "adopt_support_candidate", "core_design", "rebar_design", "formal_adverse_scenarios", "p3_detailing_closure",
             "full_delivery", "industrial_closure", "export_rebar_detailing",
             "export_ifc_detailed", "export_ifc_construction_visual", "export_coordinated_delivery",
             "storage_compaction",
@@ -245,7 +237,8 @@ class TaskManager:
             "taskId": task_id,
             "updatedAt": _now(),
             "pid": os.getpid(),
-            "rssMb": _process_memory_mb(),
+            "rssMb": _process_rss_mb(),
+            "effectiveProcessMemoryMb": _process_memory_mb(),
             "systemAvailableMemoryMb": _system_available_memory_mb(),
         }
         try:
@@ -267,6 +260,63 @@ class TaskManager:
         except Exception:
             return {"status": "unknown", "healthy": False, "ageSeconds": None}
 
+
+    @staticmethod
+    def _timestamp_age_seconds(value: str | None) -> float | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds())
+        except (TypeError, ValueError):
+            return None
+
+    def _reconcile_external_task_health(self, *, force: bool = False) -> None:
+        if self._execution_mode != "external":
+            return
+        now_monotonic = time.monotonic()
+        if not force and now_monotonic - self._last_external_reconcile_monotonic < 5.0:
+            return
+        self._last_external_reconcile_monotonic = now_monotonic
+        heartbeat = self._worker_heartbeat_snapshot()
+        worker_healthy = bool(heartbeat.get("healthy"))
+        for raw in self._store.list(limit=500):
+            status = str(raw.get("status") or "")
+            if status not in {"queued", "running"}:
+                continue
+            task_id = str(raw.get("id") or "")
+            if not task_id:
+                continue
+            if status == "running":
+                age = self._timestamp_age_seconds(raw.get("heartbeatAt") or raw.get("updatedAt"))
+                if age is not None and age > float(self._worker_stale_seconds):
+                    self._store.mark_interrupted(
+                        task_id,
+                        f"计算worker心跳已中断 {age:.0f} 秒。任务已停止等待，请检查 worker.log 后重试。",
+                        "计算worker失联，任务已中断",
+                    )
+            elif not worker_healthy:
+                age = self._timestamp_age_seconds(raw.get("createdAt") or raw.get("updatedAt"))
+                if age is not None and age > float(self._worker_queue_stale_seconds):
+                    self._store.mark_interrupted(
+                        task_id,
+                        f"任务排队 {age:.0f} 秒仍未检测到可用计算worker。请使用一键启动脚本同时启动 API、worker 和前端。",
+                        "未检测到计算worker，任务已中断",
+                    )
+
+    def ensure_worker_available(self) -> None:
+        if self._execution_mode != "external":
+            return
+        self._reconcile_external_task_health(force=True)
+        heartbeat = self._worker_heartbeat_snapshot()
+        if bool(heartbeat.get("healthy")):
+            return
+        raise RuntimeError(
+            "独立计算worker未运行或心跳已失效。为防止计算占满API进程，当前不会退回嵌入式执行。"
+            "请通过 start-windows.ps1、start-linux-dev.sh 或生产服务同时启动 worker。"
+        )
 
     def _mark_worker_resource_abort(self, task_id: str, reason: str, exit_code: int = 137) -> None:
         raw_task = self._store.get(task_id)
@@ -306,6 +356,21 @@ class TaskManager:
                     self._write_worker_heartbeat("running", task.id)
                     last_heartbeat = now_monotonic
                 runtime_policy = adaptive_resource_policy(role="worker")
+                counters = process_memory_counters()
+                append_event(
+                    "worker-memory",
+                    "watchdog-sample",
+                    taskId=task.id,
+                    projectId=task.project_id,
+                    operation=task.operation,
+                    currentStep=task.current_step,
+                    progress=task.progress,
+                    rssMb=round(float(counters.get("rssBytes") or 0) / 1048576.0, 2),
+                    privateMb=round(float(counters.get("privateBytes") or 0) / 1048576.0, 2),
+                    effectiveMemoryMb=rss,
+                    peakRssMb=round(float(counters.get("peakRssBytes") or 0) / 1048576.0, 2),
+                    systemAvailableMb=available,
+                )
                 hard_limit_mb = max(256.0, mb(runtime_policy.get("workerHardLimitBytes")))
                 reserve_mb = max(128.0, mb(runtime_policy.get("reserveBytes")))
                 self._worker_rss_hard_limit_mb = int(hard_limit_mb)
@@ -313,7 +378,7 @@ class TaskManager:
                 if rss > hard_limit_mb:
                     self._mark_worker_resource_abort(
                         task.id,
-                        f"计算worker RSS达到 {rss:.0f} MB，超过当前动态硬上限 {hard_limit_mb:.0f} MB，已终止当前计算进程。",
+                        f"计算worker有效内存达到 {rss:.0f} MB，超过当前动态硬上限 {hard_limit_mb:.0f} MB，已终止当前计算进程。",
                     )
                 if available > 0 and available < reserve_mb:
                     consecutive_low_memory += 1
@@ -354,13 +419,32 @@ class TaskManager:
         rss_after = _process_memory_mb()
         self._append_log(
             task,
-            f"{stage}检测到内存压力：RSS {rss_after:.2f} MB，当前动态软上限 {soft_limit_mb:.0f} MB。",
+            f"{stage}检测到内存压力：有效内存 {rss_after:.2f} MB，当前动态软上限 {soft_limit_mb:.0f} MB。",
         )
         if rss_after > soft_limit_mb:
             raise RuntimeError(
-                f"服务器内存不足，已在{stage}前受控终止任务（RSS {rss_after:.0f} MB > "
+                f"服务器内存不足，已在{stage}前受控终止任务（有效内存 {rss_after:.0f} MB > "
                 f"动态软上限 {soft_limit_mb:.0f} MB）。系统将保留已完成步骤，可改为逐方案计算或增加worker资源。"
             )
+
+    def _memory_checkpoint(self, task: TaskRecord, label: str) -> None:
+        """Release completed-stage objects before hydrating the next full project."""
+        before = _process_memory_mb()
+        _release_process_memory()
+        after = _process_memory_mb()
+        self._append_log(task, f"{label}内存检查：有效内存 {before:.1f} -> {after:.1f} MB。")
+        memory_event(
+            "task-lifecycle",
+            "memory-checkpoint",
+            taskId=task.id,
+            projectId=task.project_id,
+            operation=task.operation,
+            stage=label,
+            beforeEffectiveMb=before,
+            afterEffectiveMb=after,
+        )
+        if self._execution_mode == "worker":
+            self._enforce_memory_budget(task, label)
 
     @staticmethod
     def _deduplication_key(project_id: str, operation: str, payload: dict[str, Any]) -> str:
@@ -480,6 +564,8 @@ class TaskManager:
         }
 
     def list(self, project_id: str | None = None) -> list[TaskRecord]:
+        if self._execution_mode == "external":
+            self._reconcile_external_task_health()
         if self._execution_mode in {"external", "worker"}:
             records = [TaskRecord.from_dict(raw) for raw in self._store.list(project_id=project_id, limit=500)]
             with self._lock:
@@ -493,6 +579,8 @@ class TaskManager:
         return sorted(records, key=lambda item: item.created_at, reverse=True)
 
     def get(self, task_id: str) -> TaskRecord | None:
+        if self._execution_mode == "external":
+            self._reconcile_external_task_health()
         if self._execution_mode in {"external", "worker"}:
             return self._refresh_record(task_id)
         with self._lock:
@@ -536,14 +624,21 @@ class TaskManager:
         }
 
     def cancel(self, task_id: str) -> TaskRecord | None:
+        task = self.get(task_id) if self._execution_mode in {"external", "worker"} else self._tasks.get(task_id)
+        if not task:
+            return None
         with self._lock:
-            task = self._tasks.get(task_id)
-            if not task:
-                return None
             task.cancel_requested = True
-            self._append_log(task, "已请求取消。当前原型会在阶段边界检查取消状态。")
+            self._append_log(task, "已请求取消。计算worker将在当前阶段边界停止，并保留已完成步骤。")
             future = self._futures.get(task_id) if self._executor is not None else None
-            if future and future.cancel():
+            if task.status == "queued" and self._execution_mode in {"external", "worker"}:
+                task.status = "cancelled"
+                task.progress = max(task.progress, 1)
+                task.current_step = "排队任务已取消"
+                task.finished_at = _now()
+                task.updated_at = task.finished_at
+                self._persist(task)
+            elif future and future.cancel():
                 task.status = "cancelled"
                 task.progress = max(task.progress, 1)
                 task.current_step = "任务已取消"
@@ -560,7 +655,19 @@ class TaskManager:
             project_lock = self._project_locks.setdefault(task.project_id, RLock())
         heavy_guard = self._dynamic_heavy_guard(task) if task.operation in self._heavy_operations else nullcontext()
         memory_before = _process_memory_mb()
+        memory_event(
+            "task-lifecycle",
+            "task-start",
+            taskId=task.id,
+            projectId=task.project_id,
+            operation=task.operation,
+            memoryBaselineMb=memory_before,
+            payloadKeys=sorted(payload.keys()),
+        )
         watchdog = self._start_resource_watchdog(task)
+        failure_type: str | None = None
+        failure_message: str | None = None
+        failure_traceback_tail: list[str] = []
         try:
             self._set(task, status="running", progress=2, current_step="启动任务")
             self._append_log(task, f"任务内存基线 {memory_before:.2f} MB；重任务并发上限 {self._heavy_concurrency}。")
@@ -588,15 +695,45 @@ class TaskManager:
             self._append_log(task, "任务完成。")
         except Exception as exc:  # pragma: no cover - defensive task boundary
             status = "cancelled" if task.cancel_requested else "failed"
+            failure_type = type(exc).__name__
+            failure_message = str(exc)
+            trace = traceback.format_exc(limit=12)
+            failure_traceback_tail = [line for line in trace.strip().splitlines()[-12:] if line.strip()]
             self._set(task, status=status, error=str(exc), current_step="任务已取消" if status == "cancelled" else "任务失败", finished_at=_now())
-            self._append_log(task, traceback.format_exc(limit=8))
+            self._append_log(task, trace)
+            memory_event(
+                "task-lifecycle",
+                "task-error",
+                taskId=task.id,
+                projectId=task.project_id,
+                operation=task.operation,
+                status=status,
+                errorType=failure_type,
+                errorMessage=failure_message,
+                currentStep=task.current_step,
+                tracebackTail=failure_traceback_tail,
+            )
         finally:
             if watchdog is not None:
                 watchdog[0].set()
                 watchdog[1].join(timeout=1.0)
             _release_process_memory()
             memory_after = _process_memory_mb()
-            self._append_log(task, f"任务结束内存 {memory_after:.2f} MB；已执行 Python GC 与 malloc_trim。")
+            self._append_log(task, f"任务结束有效内存 {memory_after:.2f} MB；已执行 Python GC 与 malloc_trim。")
+            memory_event(
+                "task-lifecycle",
+                "task-finish",
+                taskId=task.id,
+                projectId=task.project_id,
+                operation=task.operation,
+                status=task.status,
+                memoryBaselineMb=memory_before,
+                memoryAfterMb=memory_after,
+                memoryDeltaMb=round(memory_after - memory_before, 2),
+                errorType=failure_type,
+                errorMessage=failure_message,
+                tracebackTail=failure_traceback_tail,
+            )
 
     def recover_external_worker(self) -> int:
         if self._execution_mode != "worker":
@@ -655,10 +792,20 @@ class TaskManager:
                 return
 
     def _execute_operation(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
-        if task.operation == "calculation_full":
+        if task.operation == "core_design":
+            result = self._run_core_design(task, payload)
+        elif task.operation == "calculation_full":
             result = self._run_calculation_full(task, payload)
+        elif task.operation == "rebar_design":
+            result = self._run_rebar_design(task, payload)
+        elif task.operation == "formal_adverse_scenarios":
+            result = self._run_formal_adverse_scenarios(task, payload)
+        elif task.operation == "p3_detailing_closure":
+            result = self._run_p3_detailing_closure(task, payload)
         elif task.operation == "support_layout_optimization":
             result = self._run_support_layout_optimization(task, payload)
+        elif task.operation == "adopt_support_candidate":
+            result = self._run_adopt_support_candidate(task, payload)
         elif task.operation == "candidate_comparison":
             result = self._run_candidate_comparison(task, payload)
         elif task.operation == "candidate_scheme_calculation":
@@ -702,24 +849,542 @@ class TaskManager:
     def _repo(self) -> ProjectRepository:
         return ProjectRepository()
 
-    def _assert_calculation_qualified(self, repo: ProjectRepository, project: Any) -> dict[str, Any]:
-        from app.services.design_qualification import build_design_qualification
+    def _attempt_legacy_topology_recovery(self, repo: ProjectRepository, project: Any, task: TaskRecord | None = None) -> dict[str, Any]:
+        """Regenerate and adopt a qualified topology when legacy candidates block calculation.
 
+        V3.48 and earlier could leave diagnostic-only A/B/C rows in the workspace
+        while the current retaining system contained no support members.  Merely
+        upgrading the application did not invalidate those rows, so the
+        calculation gate remained blocked even though the current generator can
+        produce a qualified stepped-strip scheme.  Recovery is bounded and runs
+        only inside the isolated calculation worker.
+        """
+        from app.geology.model_builder import ensure_geological_model_covers_excavation
+        from app.services.calculation_state import invalidate_calculation_state
+        from app.services.design_service import auto_diaphragm_wall
+        from app.services.support_layout_optimizer import SUPPORT_CANDIDATE_CONTRACT_VERSION
+        from app.services.support_layout_repair import auto_repair_support_layout
+
+        ret = getattr(project, "retaining_system", None)
+        repair = getattr(ret, "support_layout_repair", None) if ret else None
+        candidates = list(getattr(repair, "candidates", None) or [])
+        candidate_versions = {
+            str((getattr(item, "variable_summary", None) or {}).get("candidateContractVersion") or "legacy")
+            for item in candidates
+        }
+        selected_id = str(getattr(repair, "selected_candidate_id", None) or "") if repair else ""
+        selected = next((item for item in candidates if str(getattr(item, "id", "") or "") == selected_id), None)
+        selected_passed = bool(selected and (getattr(selected, "hard_constraints", None) or {}).get("passed"))
+        current_support_count = len(getattr(ret, "supports", None) or []) if ret else 0
+        stale_contract = bool(candidates) and candidate_versions != {SUPPORT_CANDIDATE_CONTRACT_VERSION}
+        missing_current_scheme = current_support_count == 0 or not selected_passed
+        if not (stale_contract or missing_current_scheme):
+            return {
+                "attempted": False,
+                "reason": "current candidate contract and selected topology are already valid",
+                "candidateContractVersions": sorted(candidate_versions),
+            }
+        if not getattr(project, "excavation", None):
+            return {"attempted": False, "reason": "missing excavation"}
+
+        if task is not None:
+            self._stage(task, 6, "检测到旧候选或缺失当前支撑体系，正在执行有界拓扑恢复")
+        ensure_geological_model_covers_excavation(project)
+        if project.retaining_system is None or not project.retaining_system.diaphragm_walls:
+            project.retaining_system = auto_diaphragm_wall(project.excavation, project.retaining_system, project.design_settings)
+        runtime_cap = max(6, min(24, int(os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT", "12"))))
+
+        def progress(index: int, total: int, family: str) -> None:
+            if task is not None:
+                self._stage(task, 6 + int(18 * max(0, min(index, total)) / max(total, 1)), f"拓扑恢复候选 {index}/{total} · {family}")
+
+        result = auto_repair_support_layout(
+            project,
+            preset="balanced",
+            max_candidates=3,
+            search_config={
+                "coreMode": True,
+                "maxTrials": runtime_cap,
+                "candidatePoolLimit": 6,
+                "maxSupportElements": 800,
+                "requireDiverseSchemes": True,
+                "recoveryReason": "legacy_or_missing_current_topology",
+            },
+            progress_callback=progress,
+        )
+        recovered = bool(result.selected_candidate_id)
+        if recovered:
+            invalidate_calculation_state(
+                project,
+                reason="V3.51 bounded adaptive topology recovery replaced legacy diagnostic candidates before calculation",
+                rebuild_cases=True,
+            )
+        repo.save(
+            project,
+            action="task.calculation.topology_recovery",
+            summary=(
+                f"Recovered support topology using candidate {result.selected_candidate_id}"
+                if recovered else "Topology recovery completed without a formal candidate"
+            ),
+        )
+        memory_event(
+            "candidate-geometry",
+            "calculation-topology-recovery",
+            projectId=project.id,
+            taskId=getattr(task, "id", None),
+            attempted=True,
+            recovered=recovered,
+            oldCandidateContractVersions=sorted(candidate_versions),
+            candidateContractVersion=SUPPORT_CANDIDATE_CONTRACT_VERSION,
+            selectedCandidateId=result.selected_candidate_id,
+            candidateCount=len(result.candidates or []),
+            supportCount=len(project.retaining_system.supports or []) if project.retaining_system else 0,
+            columnCount=len(project.retaining_system.columns or []) if project.retaining_system else 0,
+        )
+        return {
+            "attempted": True,
+            "recovered": recovered,
+            "selectedCandidateId": result.selected_candidate_id,
+            "candidateCount": len(result.candidates or []),
+            "candidateContractVersions": sorted(candidate_versions),
+        }
+
+    def _assert_calculation_qualified(self, repo: ProjectRepository, project: Any, task: TaskRecord | None = None) -> dict[str, Any]:
+        from app.services.design_qualification import build_design_qualification
+        from app.services.support_layout import normalize_existing_support_wall_connections
+
+        if not bool(project.design_settings.design_basis_confirmed):
+            raise ValueError(
+                "完整计算已阻断：请先在‘设计基准’中确认工程等级、基坑安全等级、场地条件、"
+                "规范体系和荷载组合。"
+            )
+        topology_repair = normalize_existing_support_wall_connections(project)
+        if bool(topology_repair.get("changed")):
+            from app.services.calculation_state import invalidate_calculation_state
+            invalidate_calculation_state(
+                project,
+                reason="legacy support wall bearing semantics normalized before calculation qualification",
+                rebuild_cases=True,
+            )
+            repo.save(
+                project,
+                action="task.calculation.normalize_support_wall_bearings",
+                summary=(
+                    f"Recovered direction-aware wall/wale bearings for "
+                    f"{int(topology_repair.get('changedSupportCount') or 0)} supports before qualification"
+                ),
+            )
+            memory_event(
+                "candidate-geometry",
+                "legacy-support-bearing-normalized",
+                projectId=project.id,
+                changedSupportCount=int(topology_repair.get("changedSupportCount") or 0),
+                changedSupportCodes=list(topology_repair.get("changedSupportCodes") or [])[:80],
+                unresolvedSupportCodes=list(topology_repair.get("unresolvedSupportCodes") or [])[:80],
+                targetClearanceM=topology_repair.get("targetClearanceM"),
+            )
         qualification = build_design_qualification(
             project,
             storage_info=repo.store.get_payload_info(project.id),
+            topology_detail="full",
         )
         if bool(qualification.get("calculationAllowed")):
             return qualification
+
+        calculation_blockers = [
+            gate for gate in qualification.get("gates") or []
+            if "calculation" in (gate.get("blocks") or [])
+        ]
+        blocker_codes = {str(gate.get("code") or "") for gate in calculation_blockers}
+        # Automatic recovery is intentionally limited to a topology-only block.
+        # Geometry, coordinate and geology failures remain explicit engineering
+        # blockers and are never bypassed by candidate regeneration.
+        if blocker_codes and blocker_codes.issubset({"Q-TOPOLOGY"}):
+            recovery = self._attempt_legacy_topology_recovery(repo, project, task)
+            if recovery.get("attempted"):
+                qualification = build_design_qualification(
+                    project,
+                    storage_info=repo.store.get_payload_info(project.id),
+                    topology_detail="full",
+                )
+                if bool(qualification.get("calculationAllowed")):
+                    if task is not None:
+                        self._append_log(task, "旧候选已由当前算法重新生成并采用，继续执行正式计算。")
+                    return qualification
+
         blockers = []
         for gate in qualification.get("gates") or []:
             if "calculation" in (gate.get("blocks") or []):
-                blockers.append(f"{gate.get('title')}: {gate.get('message')}")
+                evidence = gate.get("evidence") or {}
+                detail = ""
+                if gate.get("code") == "Q-TOPOLOGY":
+                    categories = (
+                        evidence.get("currentHardFailureCategories")
+                        or evidence.get("candidateBlockingCategories")
+                        or []
+                    )
+                    if categories:
+                        detail = f"（控制类别：{', '.join(map(str, categories))}）"
+                blockers.append(f"{gate.get('title')}: {gate.get('message')}{detail}")
         detail = "；".join(blockers) or "当前设计资格未允许启动完整计算。"
         raise ValueError(
             "完整计算已由设计资格门禁阻断。" + detail
             + " 请先完成几何修复、坐标/地质确认或支撑体系闭合，再重新提交任务。"
         )
+
+    def _run_core_design(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        """Execute the minimum dependable design chain.
+
+        The core path intentionally avoids industrial maturity suites, benchmark
+        cases, monitoring calibration, multi-profile IFC and repeated automatic
+        A/B/C full calculations.  It keeps up to three topology/spacing alternatives,
+        adopts one qualified scheme for the current calculation and applies one
+        reinforcement scheme.  Full A/B/C comparison remains an explicit task.
+        """
+        repo = self._repo()
+        # Orchestration only needs the bounded workspace projection.  Keeping a
+        # fully hydrated project alive while the optimization and solver each
+        # hydrate their own copy previously doubled peak memory on large jobs.
+        workspace_project = repo.require_workspace(task.project_id)
+        if not bool(workspace_project.design_settings.design_basis_confirmed):
+            raise ValueError(
+                "请先确认设计基准，包括工程等级、基坑安全等级、场地复杂程度、荷载组合和材料设计取值。"
+            )
+        if workspace_project.excavation is None:
+            raise ValueError("请先录入闭合基坑轮廓、坑顶标高和坑底标高。")
+        if not workspace_project.strata and not workspace_project.boreholes:
+            raise ValueError("请先导入地层或钻孔数据。")
+
+        self._stage(task, 6, "校核核心输入与地质覆盖")
+        self._resource_preflight(task, workspace_project, candidate_count=0)
+        self._check_cancel(task)
+        del workspace_project
+        self._memory_checkpoint(task, "核心输入检查完成")
+
+        # Reuse the proven topology generator, but cap the search at three
+        # candidates.  The selected scheme is written back before calculation.
+        design_payload = {
+            "preset": str(payload.get("preset") or "balanced"),
+            "topologyFamily": payload.get("topologyFamily"),
+            "maxCandidates": max(1, min(3, int(payload.get("maxCandidates") or 3))),
+            "objectiveWeights": dict(payload.get("objectiveWeights") or {}),
+            "searchConfig": {
+                **dict(payload.get("searchConfig") or {}),
+                "coreMode": True,
+                "requireDiverseSchemes": bool(dict(payload.get("searchConfig") or {}).get("requireDiverseSchemes", True)),
+            },
+        }
+        self._stage(task, 18, "生成围护墙与最多三个可施工支撑候选")
+        design_result = self._run_support_layout_optimization(task, design_payload)
+        self._check_cancel(task)
+        self._memory_checkpoint(task, "候选方案生成完成")
+        if not design_result.get("selectedCandidateId"):
+            raise ValueError(
+                "未生成通过硬约束的正式围护支撑方案。系统已保留真实几何不同的诊断候选，"
+                "请调整结构体系、分区或支撑约束后重新生成；诊断候选不会自动进入计算和配筋。"
+            )
+
+        self._stage(task, 46, "执行当前采用方案的施工阶段计算")
+        calculation_result = self._run_calculation_full(task, {"topN": 0})
+        self._check_cancel(task)
+        self._memory_checkpoint(task, "施工阶段计算完成")
+
+        self._stage(task, 82, "按当前内力包络完成墙、围檩和支撑配筋")
+        from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme
+        # Calculation stage envelopes are externalized after persistence.  A
+        # reinforcement task must hydrate the authoritative latest result;
+        # loading only the compact project made a valid calculation look as if
+        # it had no construction-stage data and caused a false "structure not
+        # closed" gate.
+        project = repo.require_with_latest_calculation(task.project_id)
+        rebar_mode = str(payload.get("rebarMode") or "balanced")
+        if rebar_mode not in {"conservative", "balanced", "economic"}:
+            rebar_mode = "balanced"
+        rebar_scheme = apply_rebar_design_scheme(project, mode=rebar_mode)
+        rebar_recalculated = False
+        if bool(rebar_scheme.get("requiresRecalculation")):
+            self._stage(task, 88, "配筋导致截面调整，重新计算并闭合内力包络")
+            repo.save(project, action="task.core_design.rebar_section_update", summary="Applied reinforcement-driven section changes before core recalculation")
+            calculation_result = self._run_calculation_full(task, {"topN": 0})
+            project = repo.require_with_latest_calculation(task.project_id)
+            rebar_scheme = apply_rebar_design_scheme(project, mode=rebar_mode)
+            rebar_recalculated = True
+        project.advanced_engineering = dict(project.advanced_engineering or {})
+        project.advanced_engineering["coreDesign"] = {
+            "status": "completed",
+            "candidateCount": int(design_result.get("candidateCount") or 0),
+            "selectedCandidateId": design_result.get("selectedCandidateId"),
+            "calculationResultId": calculation_result.get("calculationResultId"),
+            "rebarMode": rebar_mode,
+            "rebarRecalculatedAfterSectionChange": rebar_recalculated,
+            "supportRebarContract": rebar_scheme.get("supportRebarContractSummary"),
+            "workflow": ["input", "scheme", "calculation", "reinforcement", "deliverables"],
+        }
+        repo.save(
+            project,
+            action="task.core_design",
+            summary="Core retaining design, staged calculation and reinforcement completed",
+        )
+        self._stage(task, 96, "汇总核心结果与交付资格")
+        return {
+            "projectId": project.id,
+            "design": design_result,
+            "calculation": calculation_result,
+            "rebar": {
+                "mode": rebar_mode,
+                "status": rebar_scheme.get("status"),
+                "checkCount": len(rebar_scheme.get("checks") or []),
+            },
+            "refreshProject": True,
+            "coreFlow": True,
+        }
+
+    def _run_rebar_design(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        """Generate or apply a reinforcement scheme in the isolated worker.
+
+        Reinforcement drafting is intentionally separated from construction
+        drawing eligibility.  Engineering warnings remain visible in the
+        returned scheme; only missing calculation evidence or an invalid
+        structural model blocks the operation.
+        """
+        from app.services.deepening_readiness import calculation_readiness
+        from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme, build_rebar_design_scheme
+
+        repo = self._repo()
+        project = repo.require_with_latest_calculation(task.project_id)
+        if not bool(project.design_settings.design_basis_confirmed):
+            raise ValueError("请先确认设计基准和材料设计取值，再生成配筋方案。")
+        if project.retaining_system is None:
+            raise ValueError("当前项目尚未生成围护结构体系。")
+        calculation_gate = calculation_readiness(project)
+        if not calculation_gate.get("valid"):
+            details = "；".join(str(item) for item in list(calculation_gate.get("messages") or [])[:4])
+            raise ValueError(
+                "配筋入口校验未通过：" + details
+                + "。请运行当前方案完整计算，确认计算合同与当前设计快照一致，并关闭计算质量硬失败。"
+            )
+        mode = str(payload.get("mode") or payload.get("rebarMode") or "balanced")
+        if mode not in {"conservative", "balanced", "economic"}:
+            mode = "balanced"
+        apply_scheme = bool(payload.get("apply", True))
+        recalculate = bool(payload.get("recalculate", True))
+        append_event("rebar-task", "task-start", taskId=task.id, projectId=project.id, mode=mode, apply=apply_scheme, recalculate=recalculate)
+        self._stage(task, 12, "读取当前计算包络与构件截面")
+        self._enforce_memory_budget(task, "配筋深化")
+        self._stage(task, 34, "生成围护墙、围檩、支撑和节点配筋草案")
+        scheme = apply_rebar_design_scheme(project, mode=mode) if apply_scheme else build_rebar_design_scheme(project, mode=mode)
+        self._check_cancel(task)
+        recalculated = False
+        if apply_scheme and bool(scheme.get("requiresRecalculation")) and recalculate:
+            # Section changes alter stiffness, axial-force distribution and node
+            # bearing. Persist the first-pass proposal, rerun the adopted scheme,
+            # then regenerate reinforcement against the updated envelope. This
+            # avoids the former dead-end where clicking "深化配筋" immediately
+            # invalidated calculation results and left the page unusable.
+            self._stage(task, 52, "应用截面调整并重新计算当前支撑体系")
+            project.advanced_engineering = dict(project.advanced_engineering or {})
+            project.advanced_engineering["rebarDesignState"] = {"mode": mode, "status": "recalculating_after_section_change", "checkCount": len(scheme.get("checks") or []), "requiresRecalculation": True}
+            repo.save(project, action="task.rebar_design.section_update", summary="Applied reinforcement-driven section updates before recalculation")
+            append_event("rebar-task", "section-recalculation-start", taskId=task.id, projectId=project.id, sectionChangeCount=int((scheme.get("diagnostics") or {}).get("sectionChangeCount") or 0))
+            self._run_calculation_full(task, {"topN": 0})
+            project = repo.require_with_latest_calculation(task.project_id)
+            self._stage(task, 76, "按更新后内力包络重新生成并应用配筋")
+            scheme = apply_rebar_design_scheme(project, mode=mode)
+            recalculated = True
+            append_event("rebar-task", "section-recalculation-complete", taskId=task.id, projectId=project.id, remainingSectionChangeCount=int((scheme.get("diagnostics") or {}).get("sectionChangeCount") or 0))
+        self._check_cancel(task)
+        self._stage(task, 84, "执行承载力、构造和可施工性检查")
+        if apply_scheme:
+            project.advanced_engineering = dict(project.advanced_engineering or {})
+            project.advanced_engineering["rebarDesignState"] = {
+                "mode": mode,
+                "status": scheme.get("status"),
+                "checkCount": len(scheme.get("checks") or []),
+                "requiresRecalculation": bool(scheme.get("requiresRecalculation")),
+                "recalculatedAfterSectionChange": recalculated,
+                "supportRebarContract": scheme.get("supportRebarContractSummary"),
+                "deepeningGate": {
+                    "status": (scheme.get("diagnostics") or {}).get("deepeningGate", {}).get("status"),
+                    "blockerCount": (scheme.get("diagnostics") or {}).get("deepeningGate", {}).get("blockerCount"),
+                    "warningCount": (scheme.get("diagnostics") or {}).get("deepeningGate", {}).get("warningCount"),
+                },
+            }
+            repo.save(
+                project,
+                action="task.rebar_design",
+                summary=f"Applied {mode} reinforcement scheme in isolated worker",
+            )
+        self._memory_checkpoint(task, "配筋深化完成")
+        self._stage(task, 94, "汇总配筋结果与出图资格")
+        diagnostics = dict(scheme.get("diagnostics") or {})
+        deepening_gate = dict(diagnostics.get("deepeningGate") or {})
+        return {
+            "projectId": project.id,
+            "mode": mode,
+            "applied": apply_scheme,
+            "status": scheme.get("status"),
+            "checkCount": len(scheme.get("checks") or []),
+            "failCount": int((scheme.get("summary") or {}).get("failCount") or 0),
+            "warningCount": int((scheme.get("summary") or {}).get("warningCount") or 0),
+            "canIssueConstructionDrawings": bool(diagnostics.get("canIssueConstructionDrawings")),
+            "canEnterDetailing": bool(deepening_gate.get("canEnterDetailing")),
+            "canRunP3": bool(deepening_gate.get("canRunP3")),
+            "deepeningGate": {
+                "status": deepening_gate.get("status"),
+                "blockerCount": deepening_gate.get("blockerCount"),
+                "warningCount": deepening_gate.get("warningCount"),
+                "blockers": list(deepening_gate.get("blockers") or [])[:12],
+                "nextActions": list(deepening_gate.get("nextActions") or [])[:12],
+            },
+            "requiresRecalculation": bool(scheme.get("requiresRecalculation")),
+            "recalculatedAfterSectionChange": recalculated if apply_scheme else False,
+            "supportRebarContract": scheme.get("supportRebarContractSummary"),
+            "refreshProject": apply_scheme,
+        }
+
+    def _run_formal_adverse_scenarios(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.adverse_scenario_execution import run_formal_adverse_scenario_suite
+        from app.storage.artifact_store import ProjectArtifactStore
+
+        repo = self._repo()
+        project = repo.require(task.project_id)
+        self._assert_calculation_qualified(repo, project, task)
+        if not project.calculation_results:
+            raise ValueError("请先完成当前采用方案的施工阶段计算，再执行正式不利工况复算。")
+        codes = [str(item) for item in list(payload.get("codes") or project.design_settings.formal_adverse_scenario_codes)]
+        self._stage(task, 6, "准备正式不利工况复算")
+        self._resource_preflight(task, project, candidate_count=0)
+
+        def report(progress: int, message: str) -> None:
+            self._stage(task, max(8, min(86, int(progress))), message)
+            self._enforce_memory_budget(task, message)
+
+        suite = run_formal_adverse_scenario_suite(project, codes, progress=report)
+        full_results = list(suite.pop("fullResults", []) or [])
+        self._stage(task, 88, "外部化不利工况完整计算结果")
+        artifact = ProjectArtifactStore().write_json(
+            project.id,
+            "formal-adverse-scenarios",
+            full_results,
+            metadata={
+                "scenarioCount": len(full_results),
+                "requestedCodes": codes,
+                "softwareVersion": SOFTWARE_VERSION,
+            },
+        )
+        suite["artifact"] = artifact
+        suite["calculatedAt"] = _now()
+        project.advanced_engineering = dict(project.advanced_engineering or {})
+        project.advanced_engineering["formalAdverseScenarioSuite"] = suite
+        latest = project.calculation_results[-1]
+        latest.report_diagram_data = dict(latest.report_diagram_data or {})
+        latest.report_diagram_data["formalAdverseScenarioSuite"] = suite
+        repo.save(
+            project,
+            action="task.formal_adverse_scenarios",
+            summary=f"Completed {len(full_results)} formal adverse-scenario reruns",
+        )
+        append_event(
+            "analysis-scenarios", "formal_rerun_completed",
+            projectId=project.id, taskId=task.id,
+            scenarioCount=int((suite.get("summary") or {}).get("scenarioCount") or 0),
+            failedExecutionCount=int((suite.get("summary") or {}).get("failedExecutionCount") or 0),
+            controllingScenarioCode=(suite.get("summary") or {}).get("controllingScenarioCode"),
+            minimumSafetyFactor=(suite.get("summary") or {}).get("minimumSafetyFactor"),
+            artifactBytes=int((artifact or {}).get("sizeBytes") or 0),
+        )
+        self._memory_checkpoint(task, "正式不利工况复算完成")
+        self._stage(task, 96, "汇总控制工况与安全系数")
+        return {
+            "projectId": project.id,
+            "scenarioCount": int((suite.get("summary") or {}).get("scenarioCount") or 0),
+            "failedExecutionCount": int((suite.get("summary") or {}).get("failedExecutionCount") or 0),
+            "controllingScenarioCode": (suite.get("summary") or {}).get("controllingScenarioCode"),
+            "minimumSafetyFactor": (suite.get("summary") or {}).get("minimumSafetyFactor"),
+            "artifact": artifact,
+            "refreshProject": True,
+        }
+
+    def _run_p3_detailing_closure(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.p3_detailing_closure import build_p3_detailing_closure
+        from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
+        from app.storage.artifact_store import ProjectArtifactStore
+
+        repo = self._repo()
+        project = repo.require(task.project_id)
+        if not bool(project.design_settings.design_basis_confirmed):
+            raise ValueError("请先确认设计基准。")
+        if project.retaining_system is None or not project.calculation_results:
+            raise ValueError("请先完成围护方案和当前施工阶段计算。")
+        if not project.retaining_system.rebar_design_scheme:
+            raise ValueError("请先生成并应用配筋方案。")
+        mode = str(payload.get("mode") or "balanced")
+        if mode not in {"conservative", "balanced", "economic"}:
+            mode = "balanced"
+        entry_scheme = build_rebar_design_scheme(project, mode=mode, scheme_applied_override=True)
+        entry_gate = dict((entry_scheme.get("diagnostics") or {}).get("deepeningGate") or {})
+        if not entry_gate.get("canRunP3"):
+            groups = list(entry_gate.get("blockers") or [])
+            details = "；".join(
+                f"{row.get('title')} {row.get('count')} 项（{row.get('requiredAction')}）"
+                for row in groups[:4]
+            )
+            raise ValueError(
+                f"P3 深化入口仍有 {int(entry_gate.get('blockerCount') or 0)} 个阻断：{details or '请查看配筋深化入口诊断'}。"
+            )
+        top_nodes = max(1, min(20, int(payload.get("topNodeCount") or 8)))
+        self._stage(task, 5, "准备企业节点与钢筋深化闭环")
+        self._resource_preflight(task, project, candidate_count=0)
+
+        def report(progress: int, message: str) -> None:
+            self._stage(task, max(6, min(88, int(progress))), message)
+            self._enforce_memory_budget(task, message)
+
+        closure = build_p3_detailing_closure(project, mode=mode, progress=report, top_node_count=top_nodes)
+        compact = dict(closure.get("compact") or {})
+        full = dict(closure.get("full") or {})
+        self._stage(task, 90, "外部化逐根钢筋、节点子模型和碰撞数据")
+        artifact = ProjectArtifactStore().write_json(
+            project.id,
+            "p3-detailing-closure",
+            full,
+            metadata={
+                "mode": mode,
+                "status": compact.get("status"),
+                "softwareVersion": SOFTWARE_VERSION,
+                "nodeSubmodelCount": int((compact.get("summary") or {}).get("nodeSubmodelCount") or 0),
+            },
+        )
+        compact["artifact"] = artifact
+        compact["calculatedAt"] = _now()
+        project.advanced_engineering = dict(project.advanced_engineering or {})
+        project.advanced_engineering["p3DetailingClosure"] = compact
+        project.retaining_system.rebar_design_scheme = dict(project.retaining_system.rebar_design_scheme or {})
+        project.retaining_system.rebar_design_scheme["p3DetailingClosure"] = compact
+        repo.save(
+            project,
+            action="task.p3_detailing_closure",
+            summary="Completed enterprise node, reinforcement and spatial coordination closure",
+        )
+        append_event(
+            "rebar-detailing", "p3_closure_completed",
+            projectId=project.id, taskId=task.id, mode=mode,
+            status=compact.get("status"), summary=compact.get("summary"),
+            blockingGroups=list(compact.get("blockingGroups") or [])[:12],
+            warningGroups=list(compact.get("warningGroups") or [])[:12],
+            resolutionGuide=list(compact.get("resolutionGuide") or [])[:12],
+            artifactBytes=int((artifact or {}).get("sizeBytes") or 0),
+        )
+        self._memory_checkpoint(task, "P3节点与钢筋深化闭环完成")
+        self._stage(task, 97, "汇总节点、套筒、锚固与碰撞校核")
+        return {
+            "projectId": project.id,
+            "mode": mode,
+            "status": compact.get("status"),
+            "summary": compact.get("summary"),
+            "artifact": artifact,
+            "refreshProject": True,
+        }
 
     def _run_support_layout_optimization(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         from app.services.support_layout_repair import auto_repair_support_layout
@@ -728,6 +1393,8 @@ class TaskManager:
         from app.services.design_service import auto_diaphragm_wall
         repo = self._repo()
         project = repo.require(task.project_id)
+        if not bool(getattr(project.design_settings, "design_basis_confirmed", False)):
+            raise ValueError("请先确认工程等级、基坑安全等级、规范体系和荷载组合，再生成围护方案。")
         if project.excavation is None:
             raise ValueError("Project has no excavation")
         self._resource_preflight(task, project, candidate_count=0)
@@ -742,20 +1409,53 @@ class TaskManager:
         )
         effective_payload = dict(session_payload)
         effective_payload.update({key: value for key, value in payload.items() if value is not None})
+        search_config = dict(effective_payload.get("searchConfig") or {})
+        requested_trials = int(search_config.get("maxTrials") or 0)
+        product_mode = str(os.getenv("PITGUARD_PRODUCT_MODE", "core") or "core").strip().lower()
+        core_product = product_mode != "full"
+        runtime_cap = max(6, min(24, int(os.getenv("PITGUARD_SUPPORT_CANDIDATE_TRIAL_LIMIT", "12"))))
+        if core_product:
+            search_config["coreMode"] = True
+            search_config["maxTrials"] = min(requested_trials or runtime_cap, runtime_cap)
+            search_config["candidatePoolLimit"] = min(
+                int(search_config.get("candidatePoolLimit") or 6),
+                6,
+            )
+            search_config["maxSupportElements"] = min(
+                int(search_config.get("maxSupportElements") or 800),
+                800,
+            )
+        memory_event(
+            "candidate-search",
+            "search-budget-resolved",
+            taskId=task.id,
+            projectId=project.id,
+            productMode=product_mode,
+            requestedMaxTrials=requested_trials or None,
+            effectiveMaxTrials=int(search_config.get("maxTrials") or runtime_cap),
+            candidatePoolLimit=int(search_config.get("candidatePoolLimit") or 6),
+            maxSupportElements=int(search_config.get("maxSupportElements") or 800),
+        )
+        def report_candidate_progress(index: int, total: int, family: str) -> None:
+            progress = 28 + int(42 * max(0, min(index, total)) / max(total, 1))
+            self._stage(task, progress, f"生成支撑候选 {index}/{total} · {family}")
+
         result = auto_repair_support_layout(
             project,
             objective_weights=dict(effective_payload.get("objectiveWeights") or effective_payload.get("objective_weights") or {}),
             preset=str(effective_payload.get("preset") or "balanced"),
             topology_family=(str(effective_payload.get("topologyFamily") or effective_payload.get("topology_family") or "").strip() or None),
             max_candidates=max(1, min(8, int(effective_payload.get("maxCandidates") or 5))),
-            search_config=dict(effective_payload.get("searchConfig") or {}),
+            search_config=search_config,
+            progress_callback=report_candidate_progress,
         )
         self._stage(task, 82, "执行零非法交叉、墙—墙传力与围檩跨审查")
-        invalidate_calculation_state(
-            project,
-            reason="support optimization candidate set regenerated by isolated worker",
-            rebuild_cases=True,
-        )
+        if result.selected_candidate_id:
+            invalidate_calculation_state(
+                project,
+                reason="support optimization candidate set regenerated and a qualified scheme was selected by isolated worker",
+                rebuild_cases=True,
+            )
         from app.services.support_scheme_designer_audit import audit_support_scheme_designer
         project.retaining_system.layout_summary = dict(project.retaining_system.layout_summary or {})
         project.retaining_system.layout_summary["schemeDesignerAudit"] = audit_support_scheme_designer(project)
@@ -769,27 +1469,87 @@ class TaskManager:
             "refreshProject": True,
         }
 
+    def _run_adopt_support_candidate(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.services.support_layout_repair import adopt_support_layout_candidate
+        repo = self._repo()
+        candidate_id = str(payload.get("candidateId") or payload.get("candidate_id") or "").strip()
+        if not candidate_id:
+            raise ValueError("缺少候选方案 ID。")
+        self._stage(task, 12, "读取候选摘要并清理历史重复数据")
+        project = repo.require(task.project_id)
+        self._enforce_memory_budget(task, "采用候选方案")
+        self._stage(task, 42, "按候选参数重建围护支撑体系")
+        result = adopt_support_layout_candidate(project, candidate_id)
+        # Engineering quality may still be ``fail`` or ``warning`` after a
+        # candidate is applied. That is a design conclusion, not an execution
+        # failure. Treat the task as operationally successful once the selected
+        # candidate is present in the rebuilt system; only missing/rebuild errors
+        # should fail the worker task.
+        applied_candidate_id = str(getattr(result, "selected_candidate_id", "") or "")
+        if applied_candidate_id != candidate_id:
+            raise ValueError(result.summary)
+        self._stage(task, 76, "保存采用方案并失效旧计算结果")
+        repo.save(
+            project,
+            action="task.adopt_support_candidate",
+            summary=f"Adopted support candidate {candidate_id} using bounded reconstruction",
+        )
+        self._memory_checkpoint(task, "候选方案采用完成")
+        return {
+            "projectId": project.id,
+            "candidateId": candidate_id,
+            "status": result.status,
+            "summary": result.summary,
+            "refreshProject": True,
+        }
+
     def _run_calculation_full(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
-        from app.calculation.engine import build_default_construction_cases, run_calculation, run_candidate_comparison_for_project
+        from app.calculation.engine import run_calculation, run_candidate_comparison_for_project
         from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
         from app.quality.formal_gate import build_formal_report_gate
+        from app.services.construction_stages import select_calculation_case_for_run
         from app.services.calculation_state import mark_calculation_state_current
         from app.services.wall_length_optimizer import mark_wall_length_recalculated
+        from app.services.intelligent_design_closure import run_intelligent_design_closure
         repo = self._repo()
         project = repo.require(task.project_id)
-        self._assert_calculation_qualified(repo, project)
+        self._assert_calculation_qualified(repo, project, task)
         requested_top_n = max(0, min(3, int(payload.get("topN") if payload.get("topN") is not None else payload.get("top_n") or 0)))
         resource_estimate = self._resource_preflight(task, project, candidate_count=requested_top_n)
         if resource_estimate.get("safeModeRequired") and requested_top_n > 0:
             self._append_log(task, "资源预估要求安全模式：当前任务只计算已采用方案，A/B/C请逐个提交。")
             requested_top_n = 0
-        self._stage(task, 12, "生成施工工况")
-        project.calculation_cases = build_default_construction_cases(project)
+        self._stage(task, 12, "校验并冻结施工工况")
+        case, stage_selection = select_calculation_case_for_run(project)
+        if stage_selection.get("source") == "auto_default":
+            project.calculation_cases = [case]
+            self._append_log(task, f"已按当前支撑标高生成 {len(case.stages)} 个推荐施工阶段。")
+        else:
+            self._append_log(task, f"已保留用户锁定的施工阶段：{len(case.stages)} 个阶段，未被默认工况覆盖。")
         self._check_cancel(task)
 
         self._stage(task, 48, "运行结构、围檩、支撑与稳定计算")
-        case = project.calculation_cases[-1] if project.calculation_cases else None
-        result = run_calculation(project, case)
+        if project.design_settings.auto_intelligent_design_closure_enabled:
+            result, closure = run_intelligent_design_closure(
+                project,
+                case,
+                auto_repair=not bool(stage_selection.get("preserved")),
+                strategy=str(payload.get("closureStrategy") or project.design_settings.intelligent_closure_strategy),
+                max_iterations=payload.get("closureMaxIterations"),
+            )
+            self._append_log(
+                task,
+                f"智能设计闭环执行 {closure.get('executedIterations', 0)} 轮："
+                f"结构闭合={closure.get('structuralClosed')}，剩余定量项={closure.get('quantitativeOpenCount', 0)}。",
+            )
+        else:
+            result = run_calculation(
+                project,
+                case,
+                auto_repair=not bool(stage_selection.get("preserved")),
+            )
+        result.design_iteration_summary = dict(result.design_iteration_summary or {})
+        result.design_iteration_summary["constructionStageSelection"] = stage_selection
         project.calculation_results.append(result)
         mark_calculation_state_current(project, result.id)
         mark_wall_length_recalculated(project, result.id)
@@ -811,8 +1571,10 @@ class TaskManager:
                 evaluate_ifc_model_compatibility(project),
                 latest_result=latest,
             )
+        elif top_n == 0:
+            self._append_log(task, "核心模式仅计算当前采用方案，未启动 A/B/C 完整比选。")
         else:
-            self._append_log(task, "未发现候选方案，跳过 A/B/C 完整比选。")
+            self._append_log(task, "当前没有可用于完整比选的候选方案。")
         # Persist one immutable project revision per completed calculation task.
         # Intermediate construction-case and result saves used to duplicate a
         # multi-megabyte project blob two or three times and amplify SQLite/WAL
@@ -827,7 +1589,7 @@ class TaskManager:
         from app.quality.formal_gate import build_formal_report_gate
         repo = self._repo()
         project = repo.require(task.project_id)
-        self._assert_calculation_qualified(repo, project)
+        self._assert_calculation_qualified(repo, project, task)
         top_n = int(payload.get("topN") or payload.get("top_n") or 3)
         estimate = self._resource_preflight(task, project, candidate_count=top_n)
         if estimate.get("safeModeRequired"):
@@ -855,7 +1617,7 @@ class TaskManager:
         from app.calculation.engine import run_single_candidate_calculation
         repo = self._repo()
         project = repo.require(task.project_id)
-        self._assert_calculation_qualified(repo, project)
+        self._assert_calculation_qualified(repo, project, task)
         self._resource_preflight(task, project, candidate_count=1)
         candidate_id = str(payload.get("candidateId") or "")
         candidate_index = int(payload.get("candidateIndex") or 0)
@@ -1161,6 +1923,11 @@ class TaskManager:
 
     def _title_for(self, operation: str) -> str:
         return {
+            "core_design": "核心设计：方案、计算与配筋",
+            "rebar_design": "配筋深化与构造校核",
+            "formal_adverse_scenarios": "正式不利工况专项复算",
+            "p3_detailing_closure": "企业节点与钢筋深化闭环",
+            "adopt_support_candidate": "采用支撑候选方案",
             "calculation_full": "一键计算校核",
             "support_layout_optimization": "按平面类型优化水平支撑候选",
             "candidate_comparison": "候选方案 A/B/C 完整比选",
@@ -1191,6 +1958,15 @@ class TaskManager:
         self._check_cancel(task)
         self._set(task, progress=progress, current_step=step)
         self._append_log(task, step)
+        memory_event(
+            "task-lifecycle",
+            "stage",
+            taskId=task.id,
+            projectId=task.project_id,
+            operation=task.operation,
+            progress=progress,
+            stage=step,
+        )
 
     def _check_cancel(self, task: TaskRecord) -> None:
         if self._execution_mode in {"external", "worker"}:

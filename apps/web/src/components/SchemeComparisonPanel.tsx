@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { api } from '../api/client';
+import { waitForTaskWithHealth } from '../utils/taskPolling';
 import type { PitTask, Project, SupportLayoutOptimizationCandidate } from '../types/domain';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
+import { beginGlobalActivity, finishGlobalActivity, updateGlobalActivity } from '../app/GlobalRequestProgress';
 
 function letter(rank: number) {
   return String.fromCharCode(64 + Math.max(1, Math.min(26, rank || 1)));
@@ -20,6 +22,20 @@ function toRecord(value: unknown): Record<string, any> {
 
 type XY = { x: number; y: number };
 type SchemeGeometry = { outline: XY[]; supports: Record<string, any>[]; columns: Record<string, any>[]; hasData: boolean; bounds: { x: number; y: number; width: number; height: number } };
+
+function fittedBounds(minX: number, maxX: number, minY: number, maxY: number, targetAspect = 2.25) {
+  const spanX = Math.max(maxX - minX, 1);
+  const spanY = Math.max(maxY - minY, 1);
+  const cx = (minX + maxX) / 2;
+  const cy = -(minY + maxY) / 2;
+  const pad = Math.max(Math.min(spanX, spanY) * 0.10, 1);
+  let width = spanX + 2 * pad;
+  let height = spanY + 2 * pad;
+  const ratio = width / height;
+  if (ratio > targetAspect) height = width / targetAspect;
+  else width = height * targetAspect;
+  return { x: cx - width / 2, y: cy - height / 2, width, height };
+}
 
 function schemeGeometry(candidate: SupportLayoutOptimizationCandidate): SchemeGeometry {
   const geom = toRecord(candidate.planGeometry);
@@ -40,15 +56,12 @@ function schemeGeometry(candidate: SupportLayoutOptimizationCandidate): SchemeGe
   const maxX = xs.length ? Math.max(...xs) : 1;
   const minY = ys.length ? Math.min(...ys) : 0;
   const maxY = ys.length ? Math.max(...ys) : 1;
-  const spanX = Math.max(maxX - minX, 1);
-  const spanY = Math.max(maxY - minY, 1);
-  const padding = Math.max(Math.min(spanX, spanY) * 0.08, 0.8);
   return {
     outline,
     supports,
     columns,
     hasData: outline.length >= 3 && supports.length > 0,
-    bounds: { x: minX - padding, y: -(maxY + padding), width: spanX + 2 * padding, height: spanY + 2 * padding },
+    bounds: fittedBounds(minX, maxX, minY, maxY),
   };
 }
 
@@ -158,20 +171,8 @@ function InteractiveSchemeViewer({ candidate }: { candidate: SupportLayoutOptimi
         <JunctionMarkers candidate={candidate} />
       </> : <g className="schemePreviewEmpty"><rect x={b.x} y={b.y} width={b.width} height={b.height} /><text x={b.x + b.width / 2} y={b.y + b.height / 2} fontSize={emptyFontSize}>未取得方案几何，请刷新候选预览</text></g>}
     </svg>
-    <p className="schemeViewerHint">滚轮缩放，按住拖动平移；模型已按实际外包范围自动居中并最大化利用视口。</p>
+    <p className="schemeViewerHint">滚轮缩放 · 拖动平移 · 自动居中</p>
   </div>;
-}
-
-async function waitForTask(task: PitTask, onUpdate: (task: PitTask) => void): Promise<PitTask> {
-  let current = task;
-  const started = Date.now();
-  while (!['success', 'failed', 'cancelled'].includes(current.status)) {
-    await new Promise((resolve) => window.setTimeout(resolve, 700));
-    current = await api.getTask(current.id);
-    onUpdate(current);
-    if (Date.now() - started > 35 * 60 * 1000) throw new Error(`方案任务 ${current.title} 超时。`);
-  }
-  return current;
 }
 
 export default function SchemeComparisonPanel({
@@ -180,6 +181,7 @@ export default function SchemeComparisonPanel({
   onRunComparison,
   onAdopt,
   onRefresh,
+  onSelectCandidate,
   compact = false,
 }: {
   project: Project;
@@ -187,6 +189,7 @@ export default function SchemeComparisonPanel({
   onRunComparison?: () => Promise<unknown> | void;
   onAdopt?: (candidateId: string) => Promise<unknown> | void;
   onRefresh?: () => Promise<unknown> | void;
+  onSelectCandidate?: (candidate: SupportLayoutOptimizationCandidate) => void;
   compact?: boolean;
 }) {
   const rawCandidates = project.retainingSystem?.supportLayoutRepair?.candidates?.slice(0, 6) ?? [];
@@ -194,10 +197,16 @@ export default function SchemeComparisonPanel({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string>();
   const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
-  const controlledCandidate = rawCandidates.find((candidate) => String(candidate.variableSummary?.capabilityOutcome ?? '') === 'controlled_block');
-  const baseCandidates = controlledCandidate
-    ? rawCandidates.filter((candidate) => candidate !== controlledCandidate && Boolean(candidate.hardConstraints?.passed)).slice(0, 3)
-    : rawCandidates.slice(0, 3);
+  const controlledCandidates = rawCandidates.filter((candidate) => String(candidate.variableSummary?.capabilityOutcome ?? '') === 'controlled_block');
+  const qualifiedCandidates = rawCandidates.filter((candidate) => Boolean(candidate.hardConstraints?.passed));
+  const controlledBlock = controlledCandidates.length > 0 && qualifiedCandidates.length === 0;
+  const controlledCandidate = controlledCandidates[0];
+  // Controlled-block cards may still be shown when their actual geometry is
+  // different. They are diagnostic alternatives only and cannot be adopted or
+  // sent to formal A/B/C calculation until the hard constraints pass.
+  const baseCandidates = controlledBlock
+    ? controlledCandidates.slice(0, 3)
+    : (qualifiedCandidates.length ? qualifiedCandidates : rawCandidates).slice(0, 3);
   const missingPreviewIds = baseCandidates
     .filter((candidate) => !schemeGeometry(candidate).hasData)
     .map((candidate) => String(candidate.id ?? ''))
@@ -247,6 +256,7 @@ export default function SchemeComparisonPanel({
   const [batchTasks, setBatchTasks] = useState<PitTask[]>([]);
   const [batchError, setBatchError] = useState<string>();
   const [batchBusy, setBatchBusy] = useState(false);
+  const batchActivityId = useRef<string | undefined>(undefined);
   const selected = candidates.find((candidate) => String(candidate.id) === selectedId) ?? candidates[0];
   const controlledAlternatives = (controlledCandidate?.variableSummary?.alternativeSystemRecommendations ?? []) as string[];
   const shapeDiagnostics = toRecord(controlledCandidate?.variableSummary?.shapeDiagnostics);
@@ -255,14 +265,48 @@ export default function SchemeComparisonPanel({
     if (!selectedId && candidates[0]?.id) setSelectedId(String(candidates[0].id));
   }, [candidates, selectedId]);
 
+  useEffect(() => {
+    if (selected) onSelectCandidate?.(selected);
+  }, [selected, onSelectCandidate]);
+
+  useEffect(() => {
+    if (batchBusy && !batchActivityId.current) {
+      batchActivityId.current = beginGlobalActivity({
+        label: '正在完整计算 A/B/C 支撑方案',
+        phase: '提交候选方案并建立独立施工阶段任务',
+        expectedMs: 180000,
+        blocking: true,
+        progress: 2,
+        path: `local://project/${project.id}/candidate-comparison`,
+      });
+    }
+    if (!batchActivityId.current) return;
+    const progress = batchTasks.length
+      ? batchTasks.reduce((sum, task) => sum + Number(task.progress || 0), 0) / batchTasks.length
+      : 2;
+    const activeTask = batchTasks.find((task) => !['success', 'failed', 'cancelled', 'interrupted'].includes(task.status));
+    updateGlobalActivity(batchActivityId.current, {
+      phase: batchError || activeTask?.currentStep || (batchBusy ? '后台正在并行计算候选方案' : '候选方案计算已结束'),
+      progress: Math.max(2, Math.min(100, progress)),
+      blocking: true,
+    });
+    if (batchError) {
+      finishGlobalActivity(batchActivityId.current, { ok: false, error: batchError, progress });
+      batchActivityId.current = undefined;
+    } else if (!batchBusy) {
+      finishGlobalActivity(batchActivityId.current, { ok: true, phase: 'A/B/C 完整计算已完成', progress: 100 });
+      batchActivityId.current = undefined;
+    }
+  }, [batchBusy, batchError, batchTasks, project.id]);
+
   async function adopt() {
-    if (!selected?.id) return;
+    if (!selected?.id || controlledBlock || !Boolean(selected.hardConstraints?.passed)) return;
     if (onAdopt) await onAdopt(selected.id);
     else await api.adoptSupportCandidate(project.id, selected.id);
   }
 
   async function runParallelComparison() {
-    if (!candidates.length) return;
+    if (!candidates.length || controlledBlock) return;
     if (!onRefresh) {
       if (onRunComparison) await onRunComparison();
       return;
@@ -273,7 +317,7 @@ export default function SchemeComparisonPanel({
       const created = await api.createCandidateComparisonBatch(project.id, Math.min(3, candidates.length), true);
       setBatchTasks(created.tasks);
       const update = (updated: PitTask) => setBatchTasks((items) => items.map((item) => item.id === updated.id ? updated : item));
-      const finished = await Promise.all(created.tasks.map((task) => waitForTask(task, update)));
+      const finished = await Promise.all(created.tasks.map((task) => waitForTaskWithHealth(task, update, { timeoutMs: 35 * 60 * 1000 })));
       const failed = finished.filter((task) => task.status !== 'success');
       if (failed.length) throw new Error(failed.map((task) => task.error || `${task.title}：${task.status}`).join('；'));
       await onRefresh();
@@ -290,18 +334,18 @@ export default function SchemeComparisonPanel({
       <div>
         <span className="sectionKicker">整体方案决策</span>
         <h3>A / B / C 支撑方案比选</h3>
-        <p>候选卡片先展示几何拓扑预检；只有完成独立施工阶段计算后，才显示轴力、位移、围檩内力和工程排名。几何代理值不作为设计内力。</p>
+        <p>先比较体系与传力路径；完整计算后比较轴力、位移、围檩内力和安全系数。</p>
       </div>
       <div className="schemeHeaderActions">
         <span className={`schemeState ${fullRows.length >= 3 ? 'ready' : 'pending'}`}>{requiresRecalculation ? '旧结果已失效' : fullRows.length >= 3 ? '完整计算已完成' : '待完整计算'}</span>
         {!candidates.length && onGenerateCandidates ? <button onClick={() => void onGenerateCandidates()}>生成 A/B/C 候选</button> : null}
-        {candidates.length ? <button className="secondary" disabled={batchBusy} onClick={() => void runParallelComparison()}>{batchBusy ? 'A/B/C 完整计算中…' : '完整计算 A/B/C'}</button> : null}
+        {candidates.length ? <button className="secondary" disabled={batchBusy || controlledBlock} onClick={() => void runParallelComparison()}>{controlledBlock ? '诊断方案不可完整计算' : batchBusy ? 'A/B/C 完整计算中…' : '完整计算 A/B/C'}</button> : null}
       </div>
     </div>
 
-    {controlledCandidate ? <div className="warning schemeStateWarning controlledTopologyWarning" role="alert">
-      <strong>当前平面未形成可计算的墙—墙轴压支撑闭环。</strong>
-      <span>平面类型：{String(shapeDiagnostics.classification ?? '复杂平面')}；系统已停止生成重复失败的 A/B/C 方案，并禁止通过任意斜撑或支撑中部 T/Y 节点强行补齐。</span>
+    {controlledBlock ? <div className="warning schemeStateWarning controlledTopologyWarning" role="alert">
+      <strong>当前平面未形成可正式采用的墙—墙轴压支撑闭环。</strong>
+      <span>平面类型：{String(shapeDiagnostics.classification ?? '复杂平面')}；下方保留的 A/B/C 是真实几何不同的诊断替代方案，用于比较分仓、端部支撑和立柱服务跨。其硬约束未通过，不能采用、完整计算或正式出图。</span>
       {controlledAlternatives.length ? <span>建议结构体系：{controlledAlternatives.join('、')}。</span> : null}
     </div> : null}
 
@@ -315,8 +359,8 @@ export default function SchemeComparisonPanel({
     </div> : null}
 
     {!candidates.length ? <div className="emptyDecisionState">
-      <strong>{controlledCandidate ? '当前没有具备计算资格的 A/B/C 方案' : '尚未生成整体候选方案'}</strong>
-      <p>{controlledCandidate ? '诊断候选只用于说明现有轴压杆体系的闭合失败，不再绘制为空白设计方案。请在上方“体系级候选”中选择可自动生成的体系，或先定义环梁、中心岛、分区/框架模型。' : '先生成候选方案，系统将按已识别平面和结构体系返回完整方案。'}</p>
+      <strong>{controlledBlock ? '当前没有具备正式计算资格的 A/B/C 方案' : '尚未生成整体候选方案'}</strong>
+      <p>{controlledBlock ? '诊断候选仅用于说明不同支撑密度和端部处理下的闭合失败。请调整体系、约束或分区后重新生成。' : '先生成候选方案，系统将按已识别平面和结构体系返回完整方案。'}</p>
     </div> : <>
       <div className="schemeOverviewGrid">
         {candidates.map((candidate) => {
@@ -343,10 +387,10 @@ export default function SchemeComparisonPanel({
         <InteractiveSchemeViewer candidate={selected} />
         <div className="schemeDecisionBar">
           <div><strong>当前选择：方案 {letter(selected.rank)} · {familyLabel(selected)}</strong><span>{String(fullById.get(String(selected.id ?? ''))?.decisionReason ?? selected.constructabilityNote ?? '选择后将整体替换支撑、立柱和节点，并要求重新计算。')}</span></div>
-          <button onClick={() => void adopt()} disabled={!selected.id}>采用整套方案</button>
+          <button onClick={() => void adopt()} disabled={!selected.id || controlledBlock || !Boolean(selected.hardConstraints?.passed)}>{controlledBlock ? '诊断方案不可采用' : '采用整套方案'}</button>
         </div>
       </> : null}
-      {!compact && fullRows.length ? <div className="tableScroll"><table className="table compactTable schemeDecisionTable"><thead><tr><th>方案</th><th>完整排名</th><th>得分</th><th>{withUnitLabel('最大轴力', 'force')}</th><th>{withUnitLabel('最大位移', 'displacement')}</th><th>{withUnitLabel('围檩弯矩', 'moment')}</th><th>Fail / Warning</th><th>出图闸门</th></tr></thead><tbody>{fullRows.slice(0, 3).map((row, index) => <tr key={String(row.candidateId ?? index)} className={row.recommendedByFullCalculation ? 'recommendedSchemeRow' : ''}><td>方案 {String(row.schemeLabel ?? letter(index + 1))}</td><td>{String(row.decisionRank ?? '—')}</td><td>{String(row.decisionScore ?? '—')}</td><td>{formatEngineeringValue(row.maxSupportAxialForce, 'force')}</td><td>{formatEngineeringValue(row.maxDisplacement, 'displacement')}</td><td>{formatEngineeringValue(row.maxWaleMoment, 'moment')}</td><td>{String(row.failCount ?? 0)} / {String(row.warningCount ?? 0)}</td><td>{row.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table></div> : null}
+      {!compact && fullRows.length ? <div className="tableScroll"><table className="table compactTable schemeDecisionTable"><thead><tr><th>方案</th><th>Pareto</th><th>综合排名</th><th>得分</th><th>{withUnitLabel('最大轴力', 'force')}</th><th>{withUnitLabel('最大位移', 'displacement')}</th><th>{withUnitLabel('围檩弯矩', 'moment')}</th><th>Fail / Warning</th><th>出图闸门</th></tr></thead><tbody>{fullRows.slice(0, 3).map((row, index) => <tr key={String(row.candidateId ?? index)} className={row.recommendedByFullCalculation ? 'recommendedSchemeRow' : ''}><td>方案 {String(row.schemeLabel ?? letter(index + 1))}</td><td>{row.paretoFront ? `前沿 F${String(row.paretoRank ?? 1)}` : `F${String(row.paretoRank ?? '—')}`}</td><td>{String(row.decisionRank ?? '—')}</td><td>{String(row.decisionScore ?? '—')}</td><td>{formatEngineeringValue(row.maxSupportAxialForce, 'force')}</td><td>{formatEngineeringValue(row.maxDisplacement, 'displacement')}</td><td>{formatEngineeringValue(row.maxWaleMoment, 'moment')}</td><td>{String(row.failCount ?? 0)} / {String(row.warningCount ?? 0)}</td><td>{row.formalGateAllowed ? '允许' : '不允许'}</td></tr>)}</tbody></table></div> : null}
     </>}
   </section>;
 }

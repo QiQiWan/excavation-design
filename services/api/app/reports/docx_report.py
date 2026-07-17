@@ -3,87 +3,322 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from docx import Document
-from docx.enum.text import WD_BREAK
-from docx.shared import Pt, Inches
+from docx.enum.section import WD_SECTION
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
 
-from app.schemas.domain import Project
 from app.reports.charts import generate_report_charts
-from app.services.standards_matrix import build_online_documentation, build_standards_process_matrix
-from app.version import SOFTWARE_VERSION
+from app.schemas.domain import Project
+from app.services.core_engineering_presentation import (
+    build_core_standard_guidance,
+    build_scheme_comparison,
+    build_stability_distribution,
+    build_verification_distribution,
+)
+from app.services.design_basis import build_design_basis
+from app.services.standards_matrix import build_standards_process_matrix
+from app.version import SOFTWARE_VERSION, version_manifest
+
 
 DISCLAIMER = (
-    "本计算书由软件根据输入资料和当前规则库自动生成。当前结果用于方案设计和技术复核辅助，"
-    "不应替代注册岩土工程师、结构工程师的专业判断。施工图设计、专家论证和正式报审前，"
-    "应由具备相应资质的专业人员复核全部输入参数、计算模型、规范适用性和构造措施。"
+    "本计算书由软件依据项目输入、当前规则库和已实现的计算模型自动生成，用于方案设计、"
+    "技术复核和项目沟通。正式施工图、专家论证和报审前，必须由具备相应资质的岩土及结构"
+    "专业人员复核输入资料、计算模型、规范适用性、施工阶段和构造措施。"
 )
 
+STATUS_TEXT = {
+    "pass": "通过",
+    "warning": "预警",
+    "fail": "不通过",
+    "manual_review": "需人工复核",
+    "missing_input": "缺资料",
+    "not_calculated": "待重算",
+    "not_applicable": "不适用",
+    "not_implemented": "未实现",
+    "missing": "缺失",
+    "ready": "已完成",
+    "completed": "已完成",
+}
 
-def _text(value: Any) -> str:
+
+def _text(value: Any, fallback: str = "-") -> str:
     if value is None:
-        return "-"
+        return fallback
     if isinstance(value, float):
-        return f"{value:.3f}".rstrip("0").rstrip(".")
+        return f"{value:,.3f}".rstrip("0").rstrip(".")
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    if isinstance(value, dict):
+        for key in ("value", "calculatedValue", "result", "factor", "ratio"):
+            if key in value:
+                return _text(value.get(key), fallback)
+        return fallback
     return str(value)
 
 
-def _short(value: Any, limit: int = 80) -> str:
-    text = _text(value).replace("\n", " ")
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+def _status(value: Any) -> str:
+    key = str(value or "").strip().lower()
+    return STATUS_TEXT.get(key, str(value or "未判定"))
 
 
-def _status_label(value: Any) -> str:
-    text = _text(value)
-    return {
-        "manual_review": "review",
-        "preliminary": "prelim",
-        "not_applicable": "n/a",
-    }.get(text, text)
+def _number(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        for key in ("value", "calculatedValue", "result", "factor", "ratio"):
+            if key in value:
+                return _number(value.get(key))
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number
 
 
-def _stage_label(value: Any) -> str:
-    text = _text(value)
-    if text.startswith("stage-") and len(text) > 14:
-        return text[:14]
-    return text
+def _short(value: Any, limit: int = 90) -> str:
+    value_text = _text(value).replace("\n", " ")
+    return value_text if len(value_text) <= limit else value_text[: limit - 1] + "…"
+
+def _human_rule_name(item: dict[str, Any]) -> str:
+    rule_id = str(item.get("ruleId") or item.get("category") or "检查")
+    exact = {
+        "GB50010-NODE-BEARING-SUBSET": "支撑端部及围檩节点局部承压",
+        "JGJ120-2012-BASE-HEAVE-SUBSET": "坑底抗隆起稳定",
+        "JGJ120-2012-SEEPAGE-STABILITY-SUBSET": "渗流稳定",
+        "JGJ120-2012-CONFINED-WATER-UPLIFT-SCREEN": "承压水突涌稳定",
+        "JGJ120-2012-OVERALL-STABILITY-CIRCULAR-SCREEN": "整体稳定",
+        "JGJ120-2012-4.2-EMBEDMENT-STABILITY-SCREEN": "围护墙嵌固稳定",
+    }
+    if rule_id in exact:
+        return exact[rule_id]
+    token_map = (
+        ("WALE-DEFLECTION", "围檩挠度"),
+        ("WALE-NODE-REBAR", "围檩节点附加钢筋"),
+        ("WALE-SHEAR", "围檩抗剪"),
+        ("WALE-FLEXURE", "围檩抗弯"),
+        ("WALE_SUPPORT_BAY", "围檩支点间距"),
+        ("SUPPORT-DEEP-DESIGN-STABILITY", "支撑构件强度与稳定"),
+        ("SUPPORT-CONSTRUCTION-EFFECTS", "支撑预加轴力及施工效应"),
+        ("LAYOUT-SCREEN-SPAN", "支撑跨度与构造"),
+        ("GEOLOGICAL-EXTRAPOLATION", "地质模型外推范围"),
+        ("LAYOUT-SCREEN-SPACING", "支撑间距"),
+    )
+    upper = rule_id.upper()
+    for token, label in token_map:
+        if token in upper:
+            return label
+    return rule_id
 
 
-def _add_table(document: Document, headers: list[str], rows: list[list[Any]], font_size: int = 8) -> None:
+def _human_standard_reference(item: dict[str, Any]) -> str:
+    rule_id = str(item.get("ruleId") or "")
+    raw = str(item.get("clauseReference") or item.get("clause_reference") or item.get("standardReference") or "").strip()
+    upper = rule_id.upper()
+    if rule_id == "GB50010-NODE-BEARING-SUBSET" or "local compression/detailing subset" in raw.lower():
+        return "GB/T 50010-2010（2024局部修订）：局部受压、节点附加钢筋和构造要求；正式条文适用性需复核"
+    if "WALE-DEFLECTION" in upper:
+        return "围檩正常使用极限状态：挠度限值按项目控制标准和适用规范确认"
+    if "WALE-NODE-REBAR" in upper:
+        return "GB/T 50010-2010（2024局部修订）：围檩节点锚固、附加钢筋与构造协调"
+    if "WALE-SHEAR" in upper:
+        return "GB/T 50010-2010（2024局部修订）：钢筋混凝土围檩抗剪与箍筋构造"
+    if "WALE-FLEXURE" in upper:
+        return "GB/T 50010-2010（2024局部修订）：钢筋混凝土围檩正截面受弯与配筋构造"
+    if "SUPPORT-DEEP-DESIGN-STABILITY" in upper:
+        return "JGJ 120-2012、GB 50017-2017、GB/T 50010-2010：支撑传力、构件稳定和节点构造"
+    if "WALE_SUPPORT_BAY" in upper:
+        return "围檩支点间距项目硬限值及支撑传力连续性控制"
+    if "SUPPORT-CONSTRUCTION-EFFECTS" in upper:
+        return "JGJ 120-2012：内支撑预加轴力、温度效应和施工偏差控制"
+    if "LAYOUT-SCREEN-SPAN" in upper or "LAYOUT-SCREEN-SPACING" in upper:
+        return "JGJ 120-2012 第4.7节：内支撑布置、跨度、间距和构造原则"
+    if "GEOLOGICAL-EXTRAPOLATION" in upper:
+        return "GB 55017-2021：工程勘察资料完整性、外推边界和补充勘察要求"
+    if rule_id.startswith("JGJ120") and not raw:
+        return "JGJ 120-2012：基坑支护结构计算与稳定性验算"
+    return _short(raw or "见规则编号和规范对应矩阵", 90)
+
+
+def _group_review_checks(checks: list[dict[str, Any]], limit: int = 16) -> list[list[Any]]:
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in checks:
+        status = str(item.get("status") or "manual_review")
+        rule_id = str(item.get("ruleId") or item.get("category") or "检查")
+        message = _short(item.get("message"), 130)
+        key = (status, rule_id, message)
+        group = groups.setdefault(key, {
+            "status": status,
+            "item": item,
+            "count": 0,
+            "values": [],
+            "limits": [],
+            "objects": set(),
+        })
+        group["count"] += 1
+        value = _number(item.get("calculatedValue") if "calculatedValue" in item else item.get("calculated_value"))
+        threshold = _number(item.get("limitValue") if "limitValue" in item else item.get("limit_value"))
+        if value is not None:
+            group["values"].append(value)
+        if threshold is not None:
+            group["limits"].append(threshold)
+        object_id = item.get("objectId") or item.get("object_id")
+        if object_id:
+            group["objects"].add(str(object_id))
+
+    order = {"fail": 0, "warning": 1, "manual_review": 2, "pass": 3}
+    ranked = sorted(groups.values(), key=lambda row: (order.get(row["status"], 4), -row["count"], _human_rule_name(row["item"])))
+    rows: list[list[Any]] = []
+    for group in ranked[:limit]:
+        item = group["item"]
+        values = list(group["values"])
+        thresholds = list(group["limits"])
+        haystack = f"{item.get('ruleId') or ''} {item.get('message') or ''}".lower()
+        lower_controls = any(token in haystack for token in ("安全系数", "safety factor", "稳定", "stability", "抗隆起", "嵌固"))
+        governing = min(values) if values and lower_controls else max(values) if values else None
+        threshold = max(thresholds) if thresholds and lower_controls else min(thresholds) if thresholds else None
+        count_text = f"共 {group['count']} 条"
+        if group["objects"]:
+            count_text += f"，涉及 {len(group['objects'])} 个对象"
+        message = f"{_short(item.get('message'), 105)}；{count_text}。"
+        rows.append([
+            group["status"],
+            _human_rule_name(item),
+            f"{_text(governing)} / {_text(threshold)}",
+            message,
+            _human_standard_reference(item),
+        ])
+    return rows
+
+
+def _set_cell_fill(cell, color: str) -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:fill"), color)
+
+
+def _set_repeat_table_header(row) -> None:
+    tr_pr = row._tr.get_or_add_trPr()
+    tbl_header = OxmlElement("w:tblHeader")
+    tbl_header.set(qn("w:val"), "true")
+    tr_pr.append(tbl_header)
+
+
+def _set_cell_text(cell, value: Any, *, bold: bool = False, size: float = 8.5, color: str | None = None) -> None:
+    cell.text = ""
+    paragraph = cell.paragraphs[0]
+    paragraph.paragraph_format.space_after = Pt(0)
+    run = paragraph.add_run(_text(value))
+    run.bold = bold
+    run.font.size = Pt(size)
+    run.font.name = "Arial"
+    run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+    if color:
+        run.font.color.rgb = RGBColor.from_string(color)
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+
+def _add_table(
+    document: Document,
+    headers: list[str],
+    rows: Iterable[Iterable[Any]],
+    *,
+    widths: list[float] | None = None,
+    font_size: float = 8.2,
+    status_column: int | None = None,
+) -> None:
+    row_values = [list(row) for row in rows]
+    if not row_values:
+        row_values = [["-"] * len(headers)]
     table = document.add_table(rows=1, cols=len(headers))
     table.style = "Table Grid"
-    hdr = table.rows[0].cells
-    for i, header in enumerate(headers):
-        hdr[i].text = header
-    for row in rows or [["-"] * len(headers)]:
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    header = table.rows[0]
+    _set_repeat_table_header(header)
+    for index, label in enumerate(headers):
+        _set_cell_text(header.cells[index], label, bold=True, size=font_size, color="FFFFFF")
+        _set_cell_fill(header.cells[index], "355B83")
+        if widths and index < len(widths):
+            header.cells[index].width = Inches(widths[index])
+    for row in row_values:
         cells = table.add_row().cells
-        for i, value in enumerate(row):
-            cells[i].text = _text(value)
-    for row in table.rows:
-        for cell in row.cells:
-            for para in cell.paragraphs:
-                para.paragraph_format.space_after = Pt(0)
-                for run in para.runs:
-                    run.font.size = Pt(font_size)
+        for index, value in enumerate(row):
+            text = _status(value) if status_column == index else value
+            _set_cell_text(cells[index], text, size=font_size)
+            if status_column == index:
+                normalized = str(value or "").lower()
+                if normalized == "fail":
+                    _set_cell_fill(cells[index], "FDE2E2")
+                elif normalized == "warning":
+                    _set_cell_fill(cells[index], "FFF1CC")
+                elif normalized == "pass":
+                    _set_cell_fill(cells[index], "E4F5E8")
+    document.add_paragraph().paragraph_format.space_after = Pt(0)
+
+
+def _add_key_value_table(document: Document, rows: list[tuple[str, Any]], columns: int = 2) -> None:
+    table = document.add_table(rows=0, cols=columns * 2)
+    table.style = "Table Grid"
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for offset in range(0, len(rows), columns):
+        cells = table.add_row().cells
+        group = rows[offset: offset + columns]
+        for index in range(columns):
+            label_cell = cells[index * 2]
+            value_cell = cells[index * 2 + 1]
+            if index < len(group):
+                label, value = group[index]
+                _set_cell_text(label_cell, label, bold=True, size=8.6)
+                _set_cell_fill(label_cell, "EAF0F6")
+                _set_cell_text(value_cell, value, size=9)
+            else:
+                _set_cell_text(label_cell, "", size=8.6)
+                _set_cell_text(value_cell, "", size=9)
+    document.add_paragraph().paragraph_format.space_after = Pt(0)
+
+
+def _add_picture(document: Document, chart: dict[str, str] | None, caption: str, width: float = 6.2) -> None:
+    if not chart:
+        return
+    try:
+        paragraph = document.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = paragraph.add_run()
+        run.add_picture(chart["path"], width=Inches(width))
+        caption_p = document.add_paragraph(caption)
+        caption_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        caption_p.style = document.styles["Caption"] if "Caption" in document.styles else document.styles["Normal"]
+    except Exception as exc:
+        document.add_paragraph(f"图表未能插入：{exc}")
 
 
 def _flatten_checks(project: Project) -> list[dict[str, Any]]:
     if not project.calculation_results:
         return []
     latest = project.calculation_results[-1]
-    checks: list[dict[str, Any]] = []
-    checks.extend(latest.checks or [])
-    for stage in latest.stage_results:
-        checks.extend(stage.checks or [])
-    seen: set[tuple[str, str, str, str]] = set()
+    output: list[dict[str, Any]] = []
+    for item in latest.checks or []:
+        output.append(item if isinstance(item, dict) else item.model_dump(mode="json", by_alias=True))
+    for stage in latest.stage_results or []:
+        for item in stage.checks or []:
+            output.append(item if isinstance(item, dict) else item.model_dump(mode="json", by_alias=True))
     unique: list[dict[str, Any]] = []
-    for item in checks:
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in output:
         key = (
-            str(item.get("ruleId")),
-            str(item.get("objectId")),
-            str(item.get("status")),
-            str(item.get("calculatedValue")),
+            str(item.get("ruleId") or item.get("rule_id") or ""),
+            str(item.get("objectId") or item.get("object_id") or ""),
+            str(item.get("status") or ""),
+            _text(item.get("calculatedValue") if "calculatedValue" in item else item.get("calculated_value")),
         )
         if key not in seen:
             seen.add(key)
@@ -91,581 +326,475 @@ def _flatten_checks(project: Project) -> list[dict[str, Any]]:
     return unique
 
 
-def _conclusion(checks: list[dict[str, Any]]) -> str:
-    statuses = {c.get("status") for c in checks}
-    if "fail" in statuses:
-        return "自动筛查结论：存在 fail 项，当前方案不得直接用于施工图，应调整方案并由专业人员复核。"
-    if not checks:
-        return "自动筛查结论：未取得可用计算检查结果，须由专业人员复核。"
-    pass_count = sum(1 for c in checks if c.get("status") == "pass")
-    warning_count = sum(1 for c in checks if c.get("status") == "warning")
-    manual_count = sum(1 for c in checks if c.get("status") == "manual_review")
+def _governing_conclusion(project: Project, checks: list[dict[str, Any]]) -> str:
+    latest = project.calculation_results[-1] if project.calculation_results else None
+    if latest is None:
+        return "当前尚未形成完整计算结果，暂不能给出工程通过性结论。"
+    fail_count = int((latest.check_summary or {}).get("fail", 0) or 0)
+    warning_count = int((latest.check_summary or {}).get("warning", 0) or 0)
+    if fail_count:
+        return f"当前方案存在 {fail_count} 个不通过项，需调整结构体系、截面或施工条件后重新计算。"
     if warning_count:
-        return "自动筛查结论：未发现 fail 项，但存在 warning/manual_review 项，可作为方案比选输入，须完成专业复核后方可用于正式设计。"
-    if manual_count and pass_count:
-        return "自动筛查结论：已实现的规则库子集未发现 fail 项，自动设计在当前子集范围内可通过；manual_review 项仍须由注册岩土/结构工程师复核。"
-    if manual_count:
-        return "自动筛查结论：结果以 manual_review 为主，软件未取得足够条件形成通过性结论，须由专业人员复核。"
-    return "自动筛查结论：软件子集检查均为 pass；该结论仍不替代注册岩土/结构工程师的最终复核。"
+        return f"当前计算未发现不通过项，但存在 {warning_count} 个预警项，应完成针对性复核后再进入正式出图。"
+    if not checks:
+        return "当前没有可追溯的规范检查记录，计算结果只能作为方案参考。"
+    return "当前已实现的规范检查未发现不通过项，可进入配筋和审查成果编制；正式发行仍需专业校审。"
+
+
+def _styles(document: Document) -> None:
+    styles = document.styles
+    normal = styles["Normal"]
+    normal.font.name = "Arial"
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+    normal.font.size = Pt(10)
+    normal.paragraph_format.space_after = Pt(5)
+    normal.paragraph_format.line_spacing = 1.15
+    for name, size, color in (
+        ("Title", 24, "17324D"),
+        ("Heading 1", 16, "17324D"),
+        ("Heading 2", 13, "2E5578"),
+        ("Heading 3", 11, "355B83"),
+    ):
+        style = styles[name]
+        style.font.name = "Arial"
+        style._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+        style.font.size = Pt(size)
+        style.font.color.rgb = RGBColor.from_string(color)
+    if "Caption" in styles:
+        styles["Caption"].font.name = "Arial"
+        styles["Caption"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+        styles["Caption"].font.size = Pt(8.5)
+        styles["Caption"].font.color.rgb = RGBColor(90, 105, 120)
+
+
+def _header_footer(document: Document, project: Project) -> None:
+    for section in document.sections:
+        section.left_margin = Inches(0.65)
+        section.right_margin = Inches(0.65)
+        section.top_margin = Inches(0.65)
+        section.bottom_margin = Inches(0.65)
+        header = section.header.paragraphs[0]
+        header.text = f"{project.name} - 基坑围护结构计算书"
+        header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        for run in header.runs:
+            run.font.size = Pt(8)
+            run.font.color.rgb = RGBColor(100, 116, 139)
+        footer = section.footer.paragraphs[0]
+        footer.text = f"PitGuard V{SOFTWARE_VERSION} | 方案设计与技术复核辅助"
+        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in footer.runs:
+            run.font.size = Pt(8)
+            run.font.color.rgb = RGBColor(100, 116, 139)
 
 
 def export_docx_report(project: Project, output_dir: str | Path) -> Path:
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{project.id}_calculation_report.docx"
-    doc = Document()
-    styles = doc.styles
-    styles["Normal"].font.name = "Arial"
-    styles["Normal"].font.size = Pt(10)
-    for section in doc.sections:
-        section.left_margin = Inches(0.55)
-        section.right_margin = Inches(0.55)
-        section.top_margin = Inches(0.6)
-        section.bottom_margin = Inches(0.6)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    path = output / f"{project.id}_calculation_report.docx"
+    document = Document()
+    _styles(document)
+    _header_footer(document, project)
 
     latest = project.calculation_results[-1] if project.calculation_results else None
     checks = _flatten_checks(project)
-    summary = Counter(str(c.get("status")) for c in checks)
+    check_counts = Counter(str(item.get("status") or "unknown") for item in checks)
+    standards = build_core_standard_guidance()
+    scheme_comparison = build_scheme_comparison(project)
+    stability = build_stability_distribution(project)
+    verification = build_verification_distribution(project)
+    design_basis = build_design_basis(project)
+    formal_scenarios = dict((project.advanced_engineering or {}).get("formalAdverseScenarioSuite") or {})
+    p3_closure = dict((project.advanced_engineering or {}).get("p3DetailingClosure") or {})
     try:
-        report_charts = generate_report_charts(project, out_dir)
+        charts = generate_report_charts(project, output)
     except Exception:
-        report_charts = []
-    support_plan_chart = next((c for c in report_charts if c.get("title") == "支撑布置评分平面图"), None)
-    candidate_score_chart = next((c for c in report_charts if c.get("title") == "支撑优化候选方案评分图"), None)
-    candidate_plan_chart = next((c for c in report_charts if c.get("title") == "支撑优化候选方案平面比选图"), None)
+        charts = []
+    chart_by_title = {item.get("title"): item for item in charts}
 
-    doc.add_heading("PitGuard BIM Designer 基坑围护结构计算书", level=0)
-    doc.add_paragraph(f"软件版本：{SOFTWARE_VERSION}")
-    doc.add_paragraph(f"项目名称：{project.name}")
-    doc.add_paragraph(f"项目地点：{project.location or '-'}")
-    doc.add_paragraph(f"计算日期：{datetime.now().isoformat(timespec='seconds')}")
-    doc.add_paragraph("专业复核要求：需由注册岩土/结构工程师复核。")
-    doc.add_paragraph(_conclusion(checks))
+    # Cover page
+    title = document.add_paragraph()
+    title.style = document.styles["Title"]
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.add_run("基坑围护结构设计计算书")
+    subtitle = document.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    subtitle.add_run("方案设计 · 施工阶段计算 · 稳定性分析 · 配筋深化").italic = True
+    document.add_paragraph()
+    _add_key_value_table(document, [
+        ("项目名称", project.name),
+        ("项目地点", project.location or "未录入"),
+        ("软件版本", SOFTWARE_VERSION),
+        ("生成时间", datetime.now().strftime("%Y-%m-%d %H:%M")),
+        ("基坑深度", f"{_text(getattr(project.excavation, 'depth', None))} m" if project.excavation else "未录入"),
+        ("围护体系", "地下连续墙及内支撑" if project.retaining_system else "未生成"),
+    ])
+    document.add_paragraph()
+    conclusion_p = document.add_paragraph()
+    conclusion_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = conclusion_p.add_run(_governing_conclusion(project, checks))
+    run.bold = True
+    run.font.size = Pt(13)
+    document.add_paragraph(DISCLAIMER)
+    document.add_page_break()
 
-    doc.add_heading("0 正式化检查与出图质量闸门", level=1)
-    if latest and latest.formal_report_gate:
-        gate = latest.formal_report_gate
-        doc.add_paragraph(f"正式出图闸门：{gate.status}；是否允许正式出图：{'是' if gate.allowed_for_official_issue else '否'}。")
-        doc.add_paragraph(gate.headline)
-        _add_table(doc, ["类别", "数量"], [
-            ["计算 fail", (latest.check_summary or {}).get("fail", 0)],
-            ["计算 warning", (latest.check_summary or {}).get("warning", 0)],
-            ["人工复核", (latest.check_summary or {}).get("manualReview", (latest.check_summary or {}).get("manual_review", 0))],
-            ["支撑布置状态", latest.support_layout_quality.status if latest.support_layout_quality else "missing"],
-            ["支撑布置评分", latest.support_layout_quality.score if latest.support_layout_quality else "-"],
-            ["IFC 兼容性状态", latest.ifc_compatibility.status if latest.ifc_compatibility else "missing"],
-            ["IFC 兼容性评分", latest.ifc_compatibility.score if latest.ifc_compatibility else "-"],
-            ["阻断项", len(gate.blocking_items)],
-            ["警告项", len(gate.warning_items)],
-            ["缺项", len(gate.missing_items)],
-        ])
-        gate_rows = [["阻断", i.category, i.severity, i.message, i.recommendation] for i in gate.blocking_items[:10]]
-        gate_rows += [["警告", i.category, i.severity, i.message, i.recommendation] for i in gate.warning_items[:12]]
-        gate_rows += [["缺项", i.category, i.severity, i.message, i.recommendation] for i in gate.missing_items[:8]]
-        _add_table(doc, ["类型", "类别", "等级", "说明", "建议"], gate_rows or [["-", "-", "pass", "未发现正式化检查阻断项。", "-"]], font_size=7)
-        doc.add_heading("0.0 审图式首页清单", level=2)
-        checklist_rows = []
-        for section in gate.checklist_sections:
-            counts = section.get("counts", {}) if isinstance(section, dict) else {}
-            checklist_rows.append([
-                section.get("title", "-") if isinstance(section, dict) else "-",
-                section.get("status", "-") if isinstance(section, dict) else "-",
-                counts.get("fail", 0), counts.get("warning", 0), counts.get("manual_review", 0), counts.get("pass", 0),
-            ])
-        _add_table(doc, ["清单项", "状态", "Fail", "Warning", "人工复核", "Pass"], checklist_rows or [["-", "pass", 0, 0, 0, 0]], font_size=8)
-        doc.add_paragraph("说明：该首页清单用于导出前自查。存在阻断项时不得作为正式施工图提交；存在 warning/manual_review 时应逐项复核并补充说明。")
+    # 1. Executive summary
+    document.add_heading("1 项目管理摘要", level=1)
+    document.add_paragraph(_governing_conclusion(project, checks))
+    gv = latest.governing_values if latest else None
+    controlling_stability = stability.get("summary", {}).get("controllingLabel")
+    _add_key_value_table(document, [
+        ("围护墙数量", len(project.retaining_system.diaphragm_walls) if project.retaining_system else 0),
+        ("支撑 / 立柱", f"{len(project.retaining_system.supports) if project.retaining_system else 0} / {len(project.retaining_system.columns) if project.retaining_system else 0}"),
+        ("最大墙体位移", f"{_text(getattr(gv, 'max_displacement', None))} mm"),
+        ("最大墙体弯矩", f"{_text(getattr(gv, 'max_wall_moment', None))} kN·m/m"),
+        ("最大支撑轴力", f"{_text(getattr(gv, 'max_support_axial_force', None))} kN"),
+        ("稳定性控制项", controlling_stability or "尚未形成"),
+        ("检查结果", f"{check_counts.get('fail', 0)} 不通过 / {check_counts.get('warning', 0)} 预警 / {check_counts.get('manual_review', 0)} 人工复核"),
+        ("正式出图", "允许" if latest and latest.formal_report_gate and latest.formal_report_gate.allowed_for_official_issue else "暂不允许"),
+    ])
+    non_pass = [item for item in checks if str(item.get("status")) in {"fail", "warning", "manual_review"}]
+    if non_pass:
+        document.add_heading("1.1 需要项目负责人关注的事项", level=2)
+        grouped_issues = _group_review_checks(non_pass, limit=8)
+        _add_table(document, ["等级", "控制问题", "处理建议"], [
+            [row[0], f"{row[1]}（控制值/限值：{row[2]}）", f"{row[3]} 由设计人员复核并形成处置记录。"]
+            for row in grouped_issues
+        ], status_column=0)
     else:
-        doc.add_paragraph("尚未形成正式化检查结果。")
-    doc.add_heading("0.1 工业计算质量包", level=2)
-    if latest and latest.calculation_assurance:
-        assurance = dict(latest.calculation_assurance or {})
-        contract = dict(assurance.get("contract") or {})
-        stage_coverage = dict(assurance.get("stageCoverage") or {})
-        numerical = dict(assurance.get("numericalQuality") or {})
-        independent = dict(assurance.get("independentCheck") or {})
-        traceability = dict(assurance.get("traceability") or {})
-        runtime = dict(contract.get("solverRuntime") or {})
-        doc.add_paragraph(
-            f"工业计算质量状态：{assurance.get('status', '-')}；工程使用资格："
-            f"{'是' if assurance.get('eligibleForEngineeringUse') else '否'}；正式发行资格："
-            f"{'是' if assurance.get('eligibleForOfficialIssue') else '否'}。"
-        )
-        _add_table(doc, ["项目", "记录值"], [
-            ["最终计算合同", latest.calculation_contract_id or contract.get("contractId")],
-            ["求解前输入快照 SHA-256", latest.input_snapshot_hash],
-            ["采用设计快照 SHA-256", latest.adopted_design_snapshot_hash],
-            ["计算结果 SHA-256", latest.result_hash],
-            ["阶段—墙段覆盖", f"{stage_coverage.get('actual', 0)}/{stage_coverage.get('expected', 0)}；完整={stage_coverage.get('complete', False)}"],
-            ["最大矩阵条件数", numerical.get("maxConditionNumber")],
-            ["最大平衡相对残差", numerical.get("maxRelativeResidual")],
-            ["回退求解次数", numerical.get("fallbackCount", 0)],
-            ["独立位移最大相对差", independent.get("maxWallDisplacementRelativeDifference")],
-            ["支撑轴力对账复核项", int(independent.get("supportReconciliationWarningCount") or 0) + int(independent.get("supportReconciliationManualReviewCount") or 0)],
-            ["规范追溯完整率", traceability.get("coverage")],
-            ["求解运行环境", f"Python {runtime.get('python', '-')}; NumPy {runtime.get('numpy', '-')}; {runtime.get('system', '-')} {runtime.get('machine', '-')}"],
-        ], font_size=7)
-        issue_rows = [
-            [row.get("code"), row.get("status"), row.get("title"), row.get("message"), row.get("requiredAction")]
-            for row in list(assurance.get("issues") or []) if row.get("status") != "pass"
-        ]
-        _add_table(doc, ["编号", "状态", "质量门禁", "说明", "处理要求"], issue_rows or [["-", "pass", "质量门禁通过", "未发现需关闭的问题。", "-"]], font_size=7)
-        doc.add_paragraph(str(assurance.get("boundary") or "计算质量包不能替代第三方对标和注册工程师签审。"))
-    else:
-        doc.add_paragraph("缺少 V3.24 工业计算质量包，当前计算书不得作为受控施工发行依据。")
-    if latest and latest.support_layout_quality:
-        q = latest.support_layout_quality
-        doc.add_heading("0.2 支撑布置合理性评分", level=2)
-        doc.add_paragraph(q.summary)
-        if latest.support_layout_repair:
-            doc.add_paragraph(latest.support_layout_repair.summary)
-            _add_table(doc, ["自动修复动作", "说明"], [[a.get("action"), a.get("description") or a.get("counts") or "-"] for a in latest.support_layout_repair.actions[:8]], font_size=7)
-            if latest.support_layout_repair.candidates:
-                _add_table(doc, ["排名", "候选方案", "评分", "目标分仓/m", "立柱服务跨/m", "支撑数", "立柱数", "硬约束", "导出状态"], [[c.rank, c.id, c.score, c.target_spacing, c.column_max_span, c.support_count, c.column_count, "满足" if c.hard_constraints.get("passed") else "未满足", "可导出" if c.export_readiness.get("ifcReady") else "需修复"] for c in latest.support_layout_repair.candidates[:5]], font_size=7)
-            full_compare = list(getattr(latest.support_layout_repair, "candidate_full_calculations", []) or [])
-            if not full_compare and latest.report_diagram_data:
-                full_compare = list(latest.report_diagram_data.get("candidateFullCalculationComparison") or [])
-            if full_compare:
-                doc.add_heading("0.2.1 方案 A/B/C 完整计算比选", level=2)
-                doc.add_paragraph("前 3 个候选方案已分别重建支撑体系并运行完整计算链路。下表不再使用轴力代理项排序，而是汇总支撑轴力、墙体位移、围檩内力、稳定性、IFC 风险和正式化闸门状态，用于方案阶段决策。")
-                _add_table(doc, ["方案", "候选", "支撑数", "立柱数", "最大轴力/kN", "最大位移/mm", "围檩弯矩", "围檩剪力", "最小稳定系数", "IFC风险", "正式闸门"], [[
-                    item.get("schemeLabel", "-"),
-                    _short(item.get("candidateId", "-"), 22),
-                    item.get("supportCount", "-"),
-                    item.get("columnCount", "-"),
-                    item.get("maxSupportAxialForce", "-"),
-                    item.get("maxDisplacement", "-"),
-                    item.get("maxWaleMoment", "-"),
-                    item.get("maxWaleShear", "-"),
-                    item.get("minStabilitySafetyFactor", "-"),
-                    item.get("ifcRisk", item.get("ifcStatus", "-")),
-                    f"{item.get('formalGateStatus', '-')} / {'允许' if item.get('formalGateAllowed') else '不允许'}",
-                ] for item in full_compare[:3]], font_size=7)
-                _add_table(doc, ["方案", "强度", "刚度", "稳定", "综合状态", "说明"], [[
-                    item.get("schemeLabel", "-"),
-                    item.get("strengthStatus", "-"),
-                    item.get("stiffnessStatus", "-"),
-                    item.get("stabilityStatus", "-"),
-                    item.get("governingCheckStatus", "-"),
-                    _short(item.get("note") or item.get("error") or "-", 90),
-                ] for item in full_compare[:3]], font_size=7)
-            if candidate_score_chart:
-                doc.add_paragraph("支撑优化候选方案评分图：用于比较候选方案的综合评分。")
-                try:
-                    doc.add_picture(candidate_score_chart["path"], width=Inches(5.8))
-                except Exception as exc:
-                    doc.add_paragraph(f"无法插入候选方案评分图：{exc}")
-            if candidate_plan_chart:
-                doc.add_paragraph("支撑优化候选方案平面比选图：虚线/加粗线表示线位调整较明显的支撑。")
-                try:
-                    doc.add_picture(candidate_plan_chart["path"], width=Inches(5.8))
-                except Exception as exc:
-                    doc.add_paragraph(f"无法插入候选方案平面比选图：{exc}")
-        if support_plan_chart:
-            doc.add_paragraph("支撑布置评分平面图：显示支撑间距、交叉检查、障碍避让和立柱服务范围。")
-            try:
-                doc.add_picture(support_plan_chart["path"], width=Inches(5.8))
-            except Exception as exc:
-                doc.add_paragraph(f"无法插入支撑布置评分平面图：{exc}")
-        _add_table(doc, ["指标", "数值"], [[k, v] for k, v in q.metrics.items()], font_size=8)
-        _add_table(doc, ["类别", "等级", "对象", "说明", "建议"], [[i.category, i.severity, i.object_id or '-', i.message, i.recommendation] for i in q.issues[:20]] or [["-", "pass", "-", "未发现主要支撑布置问题。", "-"]], font_size=7)
-    if latest and latest.ifc_compatibility:
-        q = latest.ifc_compatibility
-        doc.add_heading("0.2 IFC 兼容性自检", level=2)
-        doc.add_paragraph(q.summary)
-        _add_table(doc, ["指标", "数值"], [
-            ["raw unicode", q.raw_unicode_found],
-            ["zero dimensions", q.zero_dimension_count],
-            ["invalid placement", q.invalid_placement_count],
-            ["missing material association", q.missing_material_association_count],
-            ["missing spatial containment", q.missing_spatial_containment_count],
-        ], font_size=8)
-        _add_table(doc, ["实体", "数量"], [[k, v] for k, v in q.entity_counts.items()], font_size=8)
-        if q.viewer_profiles:
-            _add_table(doc, ["Viewer", "状态", "风险", "评分", "风险项", "建议"], [[p.viewer, p.status, p.risk_level, p.score, "；".join(p.risk_items) or "-", p.recommendation] for p in q.viewer_profiles], font_size=7)
-    if latest and latest.design_iteration_summary:
-        doc.add_heading("0 V2.0 空间杆系耦合、稳定专项与施工图表达迭代摘要", level=1)
-        _add_table(doc, ["方向", "是否实现", "说明"], [
-            ["全局联立刚度", latest.design_iteration_summary.get("p6GlobalCoupledMatrix"), "墙体节点水平位移、围檩节点水平位移、支撑轴向弹簧和阶段激活/失活统一进入全局矩阵。"],
-            ["计算书图表化", latest.design_iteration_summary.get("p7ReportCharts"), "自动生成墙体压力/位移/弯矩/剪力、围檩包络、支撑轴力和校核统计图。"],
-            ["CAD 几何内核", latest.design_iteration_summary.get("p8CadGeometryKernel"), "多段线 offset、倒角/圆角、修复、自交检查、DXF 图层语义、捕捉和坐标批量输入接口。"],
-            ["地下水与稳定专项", latest.design_iteration_summary.get("p9GroundwaterStabilitySpecials"), "承压水突涌、降水水位差、分层渗透系数、软弱下卧层、整体稳定搜索接口。"],
-            ["强度/刚度/稳定性复核", latest.design_iteration_summary.get("p10DesignReviewSummary"), "按强度、刚度、稳定性归类汇总 pass/warning/fail 和控制指标。"],
-            ["空间杆系内核", latest.design_iteration_summary.get("p11SpatialFrameKernel"), "墙体/围檩转角自由度、支撑空间方向刚度、立柱竖向自由度、节点刚域和楼板换撑刚度。"],
-            ["可审查稳定专项", latest.design_iteration_summary.get("p12ReviewableStabilityPackage"), "控制剖面、圆弧滑动候选、渗流路径、降水过程、井点和加固方案。"],
-            ["施工图表达", latest.design_iteration_summary.get("p13ConstructionDrawingOutput"), "支撑平面、围檩节点、钢筋笼、立柱桩详图 SVG 输出接口。"],
-            ["详细 IFC", latest.design_iteration_summary.get("p14DetailedIfcOutput"), "详细钢筋、承压板、预埋件、施工阶段和标准属性集扩展。"],
-            ["支撑布置评分", latest.design_iteration_summary.get("p15SupportLayoutQualityGate"), "自动检查支撑间距、跨长、角撑、立柱、障碍物、出土口和换撑路径。"],
-            ["候选 A/B/C 完整计算", latest.design_iteration_summary.get("p21CandidateAbcFullCalculationComparison"), "对前 3 个候选方案分别运行施工阶段、轴力、墙体位移、围檩内力、稳定性、IFC 和正式化闸门。"],
-            ["IFC 兼容性", latest.design_iteration_summary.get("p16IfcCompatibilityPrecheck"), "导出前检查 raw unicode、零尺寸、placement、材料关联和空间归属。"],
-            ["正式化闸门", latest.design_iteration_summary.get("p17FormalReportGate"), "将 fail/warning/manual_review、支撑布置、稳定专项和 IFC 风险放到计算书首页。"],
-            ["边界", "-", latest.design_iteration_summary.get("remainingBoundary")],
-        ])
-        if latest.design_review_summary:
-            r = latest.design_review_summary
-            _add_table(doc, ["复核类别", "状态", "Fail", "Warning", "控制指标"], [
-                ["强度", r.strength_status, r.strength_fail_count, r.strength_warning_count, r.max_strength_utilization],
-                ["刚度", r.stiffness_status, r.stiffness_fail_count, r.stiffness_warning_count, r.max_stiffness_utilization],
-                ["稳定性", r.stability_status, r.stability_fail_count, r.stability_warning_count, r.min_stability_safety_factor],
-            ])
+        document.add_paragraph("当前没有记录到不通过或预警项。")
 
-    doc.add_heading("1 工程概况", level=1)
-    doc.add_paragraph(f"项目 ID：{project.id}")
-    doc.add_paragraph(
-        f"坐标系：{project.coordinate_system.type}，原点=({project.coordinate_system.origin_x}, "
-        f"{project.coordinate_system.origin_y}, {project.coordinate_system.origin_z})。"
-    )
-    doc.add_paragraph(
-        f"安全等级：{project.design_settings.safety_grade}；环境控制：{project.design_settings.environment_grade}；"
-        f"地下水位：{project.design_settings.groundwater_level} m；地面超载：{project.design_settings.surcharge} kPa。"
-    )
+    # 2. Inputs
+    document.add_heading("2 工程条件与输入资料", level=1)
+    excavation = project.excavation
+    geology_audit = project.geological_model.coverage_audit if project.geological_model else {}
+    _add_key_value_table(document, [
+        ("钻孔数量", len(project.boreholes)),
+        ("统一地层数量", len(project.strata)),
+        ("轮廓点数量", len(excavation.outline.points) if excavation else 0),
+        ("坑顶 / 坑底标高", f"{_text(getattr(excavation, 'top_elevation', None))} / {_text(getattr(excavation, 'bottom_elevation', None))} m"),
+        ("地下水位", f"{_text(project.design_settings.groundwater_level)} m"),
+        ("地面超载", f"{_text(project.design_settings.surcharge)} kPa"),
+        ("地质模型覆盖", "通过" if geology_audit.get("designDomainCovered") else _status(geology_audit.get("status"))),
+        ("最大外推距离", f"{_text(geology_audit.get('maximumExtrapolationDistanceM'))} m"),
+    ])
+    if project.geological_model and project.geological_model.warnings:
+        document.add_paragraph("地质模型提示：" + "；".join(project.geological_model.warnings[:5]))
 
-    doc.add_heading("2 设计依据、规范优先级与规则库", level=1)
-    standards_matrix = build_standards_process_matrix(project)
-    standard_rows = [
+    # 3. Standards guidance
+    document.add_heading("3 设计依据与规范对应", level=1)
+    document.add_heading("3.1 已确认设计基准", level=2)
+    summary_basis = design_basis.get("summary") or {}
+    _add_key_value_table(document, [
+        ("工程等级 / 基坑安全等级", f"{design_basis.get('projectGrade')} / {design_basis.get('excavationSafetyLevel')}"),
+        ("场地复杂程度 / 周边环境", f"{design_basis.get('siteComplexity')} / {design_basis.get('surroundingEnvironmentLevel')}"),
+        ("设计阶段", design_basis.get("designStageLabel")),
+        ("规范体系", design_basis.get("standardProfileLabel")),
+        ("荷载组合策略", design_basis.get("loadCombinationPolicyLabel")),
+        ("分项与组合系数", f"γG={_text(summary_basis.get('gammaG'))}, γQ={_text(summary_basis.get('gammaQ'))}, ψ={_text(summary_basis.get('psi'))}"),
+        ("重要性系数 / 安全附加储备", f"{_text(summary_basis.get('importanceFactor'))} / {_text(float(summary_basis.get('stabilityReserveRatio') or 0) * 100)}%"),
+        ("材料与保护层", f"{summary_basis.get('concreteGrade')} / {summary_basis.get('rebarGrade')} / {summary_basis.get('coverMm')} mm"),
+        ("企业工程资源库", f"{summary_basis.get('enterpriseLibraryId') or '-'} / {summary_basis.get('localStandardTemplateId') or '-'}"),
+    ])
+    document.add_heading("3.2 荷载组合", level=2)
+    _add_table(document, ["组合", "表达式", "γG", "γQ", "ψ", "用途"], [
+        [row.get("name"), row.get("expression"), row.get("gammaG"), row.get("gammaQ"), row.get("psi"), row.get("note") or "按当前设计基准形成作用效应"]
+        for row in design_basis.get("loadCombinations") or []
+    ], font_size=8.0)
+    document.add_heading("3.3 核心规范对应", level=2)
+    document.add_paragraph("下表只列出本项目核心流程中直接参与设计判断的规范。完整条文、地方标准和项目专项要求仍应由设计人员确认。")
+    standard_rows: list[list[Any]] = []
+    stage_labels = {"input": "工程输入", "scheme": "围护方案", "calculation": "计算验算", "reinforcement": "配筋深化", "deliverables": "成果交付"}
+    for stage_key, refs in standards.items():
+        # Main report keeps only the two most decision-relevant references per
+        # stage; the complete process matrix is retained in Appendix A.
+        for ref in refs[:2]:
+            standard_rows.append([stage_labels.get(stage_key, stage_key), ref.get("code"), ref.get("name"), ref.get("focus"), ref.get("levelLabel")])
+    _add_table(document, ["设计步骤", "规范编号", "规范名称", "本步骤关注内容", "属性"], standard_rows, font_size=7.8)
+
+    document.add_heading("3.4 基坑工程完整验算矩阵", level=2)
+    verification_rows = list(verification.get("records") or [])
+    _add_table(document, ["类别", "校核项", "设计值/限值", "安全系数", "证据", "状态", "缺口与补齐动作", "规范"], [
         [
-            f"{item.get('code')} {item.get('name')}",
-            item.get("levelLabel"),
-            item.get("implementedScope"),
-            item.get("boundary"),
-        ]
-        for item in standards_matrix.get("catalog", [])
-    ]
-    _add_table(doc, ["标准/规则", "等级", "本软件实现范围", "结论边界"], standard_rows, font_size=7)
-    doc.add_paragraph("规范优先级：" + "；".join(standards_matrix.get("precedence", [])))
-    doc.add_paragraph("说明：规则结果仅覆盖软件已实现的参数化子集。未覆盖条文、项目专用条件、地方标准、审图意见和专家论证要求均进入专业复核。")
+            {"strength": "强度", "stiffness": "刚度", "stability": "稳定性", "hydraulic": "水控制", "constructability": "施工性", "other": "其他"}.get(row.get("category"), row.get("category")),
+            row.get("label"),
+            f"{row.get('designValue') if row.get('designValue') is not None else '—'} / {row.get('limitValue') if row.get('limitValue') is not None else '—'}",
+            row.get("safetyFactor") if row.get("safetyFactor") is not None else "—",
+            _status(row.get("evidenceState")), _status(row.get("status")),
+            row.get("nextAction") or row.get("message") or "—", row.get("standard") or "—",
+        ] for row in verification_rows
+    ], font_size=6.7, status_column=5)
+    missing_input_rows = list(verification.get("missingInputSummary") or [])
+    if missing_input_rows:
+        document.add_heading("3.5 缺资料闭合清单", level=2)
+        _add_table(document, ["资料", "提供阶段", "责任方", "设计阶段可提供", "影响校核", "补齐动作"], [
+            [
+                row.get("label"), row.get("stageLabel"), row.get("provider"),
+                "是" if row.get("designStageAvailable") else "否",
+                row.get("affectedCheckCount"), row.get("action"),
+            ] for row in missing_input_rows
+        ], font_size=7.0)
+    wall_verification_rows = list(verification.get("wallObjects") or [])
+    if wall_verification_rows:
+        document.add_heading("3.6 逐墙验算证据摘要", level=2)
+        _add_table(document, ["墙对象", "类型", "墙厚(m)", "顶/底标高(m)", "已计算", "不通过", "待闭合", "状态"], [
+            [
+                row.get("wallCode"), row.get("wallTypeLabel"), row.get("thicknessM"),
+                f"{row.get('topElevationM')} / {row.get('bottomElevationM')}",
+                (row.get("summary") or {}).get("calculatedCount"),
+                (row.get("summary") or {}).get("failCount"),
+                (row.get("summary") or {}).get("reviewCount"), _status(row.get("status")),
+            ] for row in wall_verification_rows
+        ], font_size=7.2, status_column=7)
 
-    doc.add_heading("2.1 设计流程—关键计算—规范条文对应矩阵", level=2)
-    process_rows: list[list[Any]] = []
-    for step in standards_matrix.get("steps", []):
-        rule_trace = "；".join(
-            f"{rule.get('ruleId')}｜{rule.get('clauseReference') or '条文待项目复核'}"
-            for rule in (step.get("rules") or [])[:6]
-        ) or "当前步骤暂无可自动执行规则，按人工复核边界处理"
-        process_rows.append([
-            f"{step.get('index')}. {step.get('title')}",
+    # 4. Schemes
+    document.add_heading("4 围护结构多方案比选", level=1)
+    rows = list(scheme_comparison.get("rows") or [])
+    if rows:
+        document.add_paragraph("候选方案先通过平面拓扑、围檩支点、障碍避让和节点传力预检。完整比选完成后，再依据位移、轴力、围檩内力和稳定性确定推荐方案。")
+        _add_table(document, ["方案", "体系", "支撑/立柱", "最长跨度(m)", "最大轴力(kN)", "最大位移(mm)", "最小稳定系数", "排名"], [
+            [
+                f"方案 {row.get('schemeLabel')}{'（推荐）' if row.get('recommended') else ''}",
+                row.get("schemeName"),
+                f"{row.get('supportCount')} / {row.get('columnCount')}",
+                row.get("maxSpanLength"),
+                row.get("maxSupportAxialForce") if row.get("fullCalculationReady") else "待完整计算",
+                row.get("maxDisplacement") if row.get("fullCalculationReady") else "待完整计算",
+                row.get("minStabilitySafetyFactor") if row.get("fullCalculationReady") else "待完整计算",
+                row.get("decisionRank") or row.get("rank"),
+            ] for row in rows
+        ], font_size=7.5)
+        _add_picture(document, chart_by_title.get("支撑优化候选方案平面比选图"), "图 4-1 A/B/C 支撑方案平面比选")
+        _add_picture(document, chart_by_title.get("支撑优化候选方案评分图"), "图 4-2 候选方案拓扑预检评分")
+    else:
+        document.add_paragraph("尚未生成可比选的围护方案。")
+
+    # 5. Adopted design
+    document.add_heading("5 当前采用围护结构", level=1)
+    retaining = project.retaining_system
+    if retaining:
+        _add_key_value_table(document, [
+            ("围护墙", len(retaining.diaphragm_walls)),
+            ("冠梁", len(retaining.crown_beams)),
+            ("围檩", len(retaining.wale_beams)),
+            ("水平支撑", len(retaining.supports)),
+            ("临时立柱", len(retaining.columns)),
+            ("支撑节点", len(retaining.support_nodes)),
+        ])
+        wall_rows = [[wall.panel_code, wall.design_face_code or wall.segment_id, wall.thickness, wall.top_elevation, wall.bottom_elevation, wall.concrete_grade, _status(getattr(wall.design_results, "check_status", None))] for wall in retaining.diaphragm_walls[:30]]
+        _add_table(document, ["墙段", "边段", "厚度(m)", "墙顶标高", "墙底标高", "混凝土", "设计状态"], wall_rows, font_size=7.8)
+        _add_picture(document, chart_by_title.get("支撑布置评分平面图"), "图 5-1 当前采用方案支撑平面")
+    else:
+        document.add_paragraph("尚未生成围护结构。")
+
+    # 6. Calculation results
+    document.add_heading("6 施工阶段内力与变形", level=1)
+    if latest:
+        _add_key_value_table(document, [
+            ("最大合成侧压力", f"{_text(gv.max_total_pressure)} kPa"),
+            ("最大墙体位移", f"{_text(gv.max_displacement)} mm"),
+            ("最大墙体弯矩", f"{_text(gv.max_wall_moment)} kN·m/m"),
+            ("最大墙体剪力", f"{_text(gv.max_wall_shear)} kN/m"),
+            ("最大支撑轴力", f"{_text(gv.max_support_axial_force)} kN"),
+            ("控制检查状态", _status(gv.governing_check_status)),
+        ])
+        case = next((item for item in project.calculation_cases if item.id == latest.case_id), project.calculation_cases[-1] if project.calculation_cases else None)
+        stage_label_by_id: dict[str, str] = {}
+        if case:
+            for index, stage_def in enumerate(case.stages):
+                name_lower = str(getattr(stage_def, "name", "") or "").lower()
+                if "final" in name_lower or "service" in name_lower or index == len(case.stages) - 1:
+                    label = "最终开挖与使用工况"
+                else:
+                    elevation = getattr(stage_def, "excavation_elevation", None)
+                    label = f"第 {index + 1} 阶段（开挖至 {_text(elevation)} m）"
+                stage_label_by_id[str(stage_def.id)] = label
+        stage_rows = []
+        for stage in latest.stage_results[:30]:
+            max_pressure = max((point.total_pressure for point in stage.pressure_profile.points), default=0.0)
+            wall = stage.wall_internal_force
+            stage_rows.append([
+                stage_label_by_id.get(str(stage.stage_id), str(stage.stage_id)),
+                stage.segment_id,
+                max_pressure,
+                wall.max_moment if wall else None,
+                wall.max_shear if wall else None,
+                wall.max_displacement if wall else None,
+                len(stage.support_forces),
+            ])
+        _add_table(document, ["施工阶段", "边段", "最大压力(kPa)", "墙弯矩", "墙剪力", "墙位移(mm)", "支撑结果数"], stage_rows, font_size=7.4)
+        for title, caption in (
+            ("墙体土压力图", "图 6-1 控制阶段墙体侧压力分布"),
+            ("墙体位移", "图 6-2 控制阶段墙体位移包络"),
+            ("墙体弯矩", "图 6-3 控制阶段墙体弯矩包络"),
+            ("墙体剪力", "图 6-4 控制阶段墙体剪力包络"),
+            ("支撑轴力柱状图", "图 6-5 支撑设计轴力分布"),
+            ("围檩弯矩包络图", "图 6-6 围檩弯矩包络"),
+        ):
+            _add_picture(document, chart_by_title.get(title), caption)
+    else:
+        document.add_paragraph("尚未运行施工阶段计算。")
+
+    # 7. Stability
+    document.add_heading("7 稳定与水控制完整验算", level=1)
+    factors = list(stability.get("factors") or [])
+    if factors:
+        summary = stability.get("summary") or {}
+        document.add_paragraph(
+            f"共列出 {summary.get('count', 0)} 项稳定与水控制项目，其中已计算 {summary.get('calculatedCount', 0)} 项、待补资料或计算 {summary.get('pendingCount', 0)} 项。控制项为“{summary.get('controllingLabel') or '-'}”，"
+            f"最小限值比为 { _text(summary.get('minimumMarginRatio')) }。限值比小于 1.0 表示不满足，"
+            "1.0～1.10 作为优先复核区间。"
+        )
+        _add_table(document, ["验算项目", "计算系数", "规范限值", "限值比", "证据/状态", "缺口与动作", "规范依据"], [
+            [item.get("label"), item.get("value"), item.get("limit"), item.get("marginRatio"), _status(item.get("evidenceState") or item.get("status")), item.get("nextAction") or item.get("message") or "—", f"{item.get('standard')}；{item.get('clauseFocus')}"]
+            for item in factors
+        ], font_size=7.0, status_column=4)
+        _add_picture(document, chart_by_title.get("稳定性安全系数分布图"), "图 7-1 稳定性安全系数整体分布")
+    else:
+        document.add_paragraph("尚未形成可用的稳定性检查结果。")
+
+    document.add_heading("7.2 正式不利工况专项复算", level=2)
+    scenario_rows = list(formal_scenarios.get("summaries") or [])
+    if scenario_rows:
+        _add_table(document, ["不利工况", "最大墙位移(mm)", "最大支撑轴力(kN)", "最小安全系数", "状态", "证据"], [
+            [row.get("scenarioLabel"), row.get("maxWallDisplacementMm"), row.get("maxSupportForceKn"), row.get("minimumSafetyFactor"), _status(row.get("status")), "独立施工阶段正式复算"]
+            for row in scenario_rows
+        ], font_size=7.5, status_column=4)
+        errors = list(formal_scenarios.get("errors") or [])
+        if errors:
+            document.add_paragraph("未完成场景：" + "；".join(f"{row.get('scenarioLabel') or row.get('scenarioCode')}：{_short(row.get('error'), 80)}" for row in errors[:6]))
+    else:
+        document.add_paragraph("尚未执行正式不利工况专项复算；当前稳定性结论仅对应已计算的基准工况。")
+
+    # 8. Reinforcement
+    document.add_heading("8 配筋设计与构造摘要", level=1)
+    rebar_scheme = retaining.rebar_design_scheme if retaining else {}
+    if rebar_scheme:
+        _add_key_value_table(document, [
+            ("配筋模式", rebar_scheme.get("mode") or "balanced"),
+            ("总体状态", _status(rebar_scheme.get("status"))),
+            ("墙体配筋分区", len(rebar_scheme.get("wallZones") or [])),
+            ("支撑配筋组", len(rebar_scheme.get("supportSchemes") or [])),
+            ("节点附加筋组", len(rebar_scheme.get("beamNodeSchemes") or [])),
+            ("配筋检查数量", len(rebar_scheme.get("checks") or [])),
+        ])
+        wall_rebar_rows: list[list[Any]] = []
+        for wall in retaining.diaphragm_walls[:40]:
+            for group in wall.reinforcement[:8]:
+                wall_rebar_rows.append([wall.panel_code, group.name, group.grade, group.diameter, group.spacing or group.count, group.required_area_per_meter, group.area_per_meter, group.check_status])
+        _add_table(document, ["构件", "钢筋组", "等级", "直径(mm)", "间距/根数", "需求面积", "提供面积", "状态"], wall_rebar_rows, font_size=7.6, status_column=7)
+        wale_rows = []
+        for beam in retaining.wale_beams:
+            result = beam.design_result
+            if result:
+                wale_rows.append([beam.code, beam.support_level, result.max_moment_design, result.max_shear_design, result.required_reinforcement_area, result.provided_reinforcement_area, f"Φ{result.main_bar_diameter}@{result.main_bar_spacing}", result.check_status])
+        _add_table(document, ["围檩", "层号", "设计弯矩", "设计剪力", "As需求", "As提供", "主筋", "状态"], wale_rows, font_size=7.6, status_column=7)
+        limitations = list(rebar_scheme.get("limitations") or [])
+        if limitations:
+            document.add_paragraph("配筋深化边界：" + "；".join(_short(item, 120) for item in limitations[:6]))
+        deepening_gate = dict((rebar_scheme.get("diagnostics") or {}).get("deepeningGate") or {})
+        if deepening_gate:
+            document.add_heading("8.2 配筋深化入口诊断", level=2)
+            _add_key_value_table(document, [
+                ("入口状态", deepening_gate.get("status")),
+                ("入口总阻断", deepening_gate.get("blockerCount")),
+                ("发行阻断", deepening_gate.get("releaseBlockerCount")),
+                ("复核项", deepening_gate.get("warningCount")),
+                ("可进入 P3", "是" if deepening_gate.get("canRunP3") else "否"),
+                ("可发行施工图", "是" if deepening_gate.get("canIssueConstructionDrawings") else "否"),
+            ])
+            gate_rows = list(deepening_gate.get("blockers") or []) + list(deepening_gate.get("warnings") or [])
+            if gate_rows:
+                _add_table(document, ["原因", "数量", "影响对象", "说明", "补齐动作", "目标阶段"], [
+                    [
+                        row.get("title"), row.get("count"), "、".join(row.get("objects") or []) or "—",
+                        row.get("message"), row.get("requiredAction"), row.get("targetStage"),
+                    ] for row in gate_rows[:24]
+                ], font_size=7.0)
+        document.add_heading("8.3 企业节点、预埋件与钢筋空间深化" if deepening_gate else "8.2 企业节点、预埋件与钢筋空间深化", level=2)
+        if p3_closure:
+            p3_summary = dict(p3_closure.get("summary") or {})
+            _add_key_value_table(document, [
+                ("深化状态", _status(p3_closure.get("status"))),
+                ("逐根钢筋数量", p3_summary.get("individualBarCount")),
+                ("机械连接数量", p3_summary.get("couplerCount")),
+                ("预埋件数量", p3_summary.get("embeddedItemCount")),
+                ("高风险节点局部模型", p3_summary.get("nodeSubmodelCount")),
+                ("硬碰撞 / 协调问题", f"{p3_summary.get('hardCollisionCount', 0)} / {p3_summary.get('coordinationIssueCount', 0)}"),
+                ("企业节点模板未覆盖", p3_summary.get("unmatchedEnterpriseNodeCount")),
+            ])
+            checks_p3 = list(p3_closure.get("controllingChecks") or [])
+            if checks_p3:
+                _add_table(document, ["构件", "类别", "计算值", "限值", "状态", "处理建议"], [
+                    [row.get("hostCode") or row.get("hostId"), row.get("category"), row.get("calculatedValue"), row.get("limitValue"), _status(row.get("status")), row.get("recommendedAction") or row.get("message")]
+                    for row in checks_p3[:20]
+                ], font_size=7.2, status_column=4)
+        else:
+            document.add_paragraph("尚未执行企业节点、预埋件与钢筋空间深化闭环。")
+    else:
+        document.add_paragraph("尚未生成配筋方案。")
+
+    # 9. Review list
+    document.add_heading("9 校核结论与复核清单", level=1)
+    document.add_paragraph(_governing_conclusion(project, checks))
+    document.add_paragraph("重复检查已按规则、状态和结论合并，表中数值为该组控制值；完整逐构件记录保留在审计归档中。")
+    _add_table(
+        document,
+        ["状态", "检查项目", "控制值 / 限值", "问题及影响范围", "规范依据"],
+        _group_review_checks(checks, limit=8),
+        font_size=7.6,
+        status_column=0,
+    )
+
+    # 10. Deliverables
+    document.add_heading("10 成果使用与责任边界", level=1)
+    document.add_paragraph(
+        "项目管理者应优先审阅本计算书第1、4、6、7、8和9章。施工图、BIM模型、钢筋表和机器可读归档数据"
+        "属于同一设计快照的不同表达形式。任何围护几何、支撑体系、地层参数、地下水位或施工阶段变更后，"
+        "原计算结果和配筋结论均应重新校核。"
+    )
+    _add_table(document, ["成果", "主要使用者", "用途", "注意事项"], [
+        ["本计算书", "项目负责人、设计、校核", "方案决策、控制结果和风险复核", "以明文结论和图表为主"],
+        ["施工图", "设计、施工、监理", "构件定位、尺寸、配筋和节点表达", "须完成校审和发行签署"],
+        ["IFC/BIM", "设计协调、施工技术", "空间协调和模型交底", "不得单独替代施工图"],
+        ["机器归档数据", "系统管理员、二次开发", "追溯、迁移和复算", "不作为项目管理者主阅读文件"],
+    ], font_size=8)
+
+    # Required technical appendices kept compact and separated from main management narrative.
+    document.add_page_break()
+    document.add_heading("附录 A 设计流程—关键计算—规范条文对应矩阵", level=1)
+    matrix = build_standards_process_matrix(project)
+    matrix_rows = []
+    for step in matrix.get("steps") or []:
+        matrix_rows.append([
+            step.get("index"),
+            step.get("title"),
             "；".join(step.get("keyCalculations") or []),
-            "；".join(ref.get("code", "") for ref in step.get("standardRefs") or []),
-            "；".join(step.get("clauseFocus") or []),
-            rule_trace,
-            step.get("status"),
+            "；".join(ref.get("code") for ref in step.get("standardRefs") or []),
             "；".join(step.get("outputs") or []),
         ])
-    _add_table(doc, ["流程", "关键计算", "主控规范", "条文关注点", "已实现规则/条文", "状态", "输出"], process_rows, font_size=6)
+    _add_table(document, ["序号", "流程", "关键计算", "主要规范", "输出"], matrix_rows, font_size=7.0)
 
-    doc.add_heading("2.2 关键计算原理、公式与复核点", level=2)
-    online_docs = build_online_documentation()
-    principle_rows: list[list[Any]] = []
-    for item in online_docs.get("calculationPrinciples", []):
-        principle_rows.append([
-            item.get("name"),
-            item.get("inputs"),
-            item.get("method"),
-            "；".join(item.get("equations") or []),
-            item.get("outputs"),
-            item.get("verification"),
-            "；".join(item.get("standards") or []),
-        ])
-    _add_table(doc, ["计算模块", "输入", "模型/方法", "核心公式", "输出", "复核点", "规范"], principle_rows, font_size=6)
+    document.add_heading("附录 B 关键计算原理、公式与复核点", level=1)
+    _add_table(document, ["计算项目", "核心表达", "重点复核"], [
+        ["土压力与水压力", "分层有效应力积分，土水压力按工况组合", "土参数代表性、地下水位和地面超载"],
+        ["墙体内力与变形", "墙体梁-土弹簧-支撑弹簧施工阶段求解", "支撑激活顺序、土弹簧、位移控制值"],
+        ["围檩与支撑", "围檩连续梁反力与支撑轴力协调", "节点传力、有效长度、预加轴力和温度效应"],
+        ["稳定性", "嵌固、隆起、渗流、突涌和整体稳定分别验算", "控制剖面、不利土层和安全系数限值"],
+        ["混凝土配筋", "按内力包络计算需求钢筋并检查最小配筋与构造", "裂缝、锚固、搭接、节点和施工可实施性"],
+    ], font_size=7.6)
 
-    doc.add_heading("3 地质资料", level=1)
-    doc.add_paragraph(f"输入钻孔数量：{len(project.boreholes)}；地层参数数量：{len(project.strata)}。")
-    _add_table(doc, ["地层编号", "名称", "重度(kN/m3)", "饱和重度", "c(kPa)", "phi(deg)", "E(MPa)", "m(kN/m3)"], [
-        [
-            s.code,
-            s.name,
-            s.parameters.unit_weight,
-            s.parameters.saturated_unit_weight,
-            s.parameters.cohesion,
-            s.parameters.friction_angle,
-            s.parameters.elastic_modulus,
-            s.parameters.horizontal_subgrade_modulus,
-        ]
-        for s in project.strata
+    document.add_heading("附录 C 计算追溯信息", level=1)
+    manifest = version_manifest()
+    _add_key_value_table(document, [
+        ("软件版本", manifest.get("softwareVersion")),
+        ("算法版本", manifest.get("algorithmVersion")),
+        ("规则库版本", manifest.get("ruleSetVersion")),
+        ("导出协议版本", manifest.get("exportSchemaVersion")),
+        ("输入快照哈希", getattr(latest, "input_snapshot_hash", None) if latest else None),
+        ("设计快照哈希", getattr(latest, "adopted_design_snapshot_hash", None) if latest else None),
+        ("结果哈希", getattr(latest, "result_hash", None) if latest else None),
+        ("计算合同", getattr(latest, "calculation_contract_id", None) if latest else None),
     ])
-    if project.geological_model:
-        doc.add_paragraph(f"地质模型界面数量：{len(project.geological_model.surfaces)}；VTU 网格：{'已导入' if project.geological_model.vtu_mesh else '未导入'}。")
-        for warning in project.geological_model.warnings[:8]:
-            doc.add_paragraph(f"地质 warning：{warning}")
 
-    doc.add_heading("4 基坑轮廓和开挖深度", level=1)
-    if project.excavation:
-        doc.add_paragraph(
-            f"坑顶标高：{project.excavation.top_elevation} m；坑底标高：{project.excavation.bottom_elevation} m；"
-            f"开挖深度：{project.excavation.depth} m。"
-        )
-        doc.add_paragraph(f"面积：{project.excavation.area} m2；周长：{project.excavation.perimeter} m；边段数：{len(project.excavation.segments)}。")
-        _add_table(doc, ["边段", "长度(m)", "起点", "终点", "外法向"], [
-            [s.name, s.length, f"({s.start.x},{s.start.y})", f"({s.end.x},{s.end.y})", f"({s.outward_normal.x},{s.outward_normal.y})"]
-            for s in project.excavation.segments
-        ])
-    else:
-        doc.add_paragraph("未定义基坑。")
-
-    doc.add_heading("5 围护结构设计结果", level=1)
-    retaining = project.retaining_system
-    if retaining and retaining.diaphragm_walls:
-        _add_table(doc, ["墙编号", "边段", "厚度(m)", "墙顶", "墙底", "混凝土", "钢筋", "状态"], [
-            [w.panel_code, w.segment_id, w.thickness, w.top_elevation, w.bottom_elevation, w.concrete_grade, w.rebar_grade, _status_label(w.design_results.check_status) if w.design_results else "review"]
-            for w in retaining.diaphragm_walls
-        ])
-        doc.add_paragraph("地下连续墙初选结果已按 JGJ120 构造筛查；最终墙深应通过嵌固、整体稳定、坑底隆起、抗渗流和变形控制综合确定。")
-    else:
-        doc.add_paragraph("未生成地连墙。")
-
-    doc.add_heading("6 支撑体系设计结果", level=1)
-    supports = retaining.supports if retaining else []
-    _add_table(doc, ["编号", "层号", "标高(m)", "截面", "材料", "设计轴力(kN)", "配筋组"], [
-        [s.code, s.level_index, s.elevation, s.section.name, s.material.grade, s.design_axial_force, len(s.reinforcement)] for s in supports
-    ])
-    doc.add_paragraph("表中支撑轴力为包络设计值；标准值、影响范围和分项/重要性系数见第9节。节点、长细比、偏心、温度和施工误差需复核。")
-
-    doc.add_heading("6.1 强度驱动设计与自动恢复记录", level=2)
-    iteration = dict((latest.design_iteration_summary or {}) if latest else {})
-    diagnostics = dict(iteration.get("calculationDiagnostics") or {})
-    strength_loop = dict(diagnostics.get("strengthDesignLoop") or {})
-    topology = dict(iteration.get("topologyPreflight") or diagnostics.get("topologyPreflight") or {})
-    wale_repair = dict(topology.get("waleSupportBayRepair") or {})
-    before_audit = dict(wale_repair.get("auditBefore") or {})
-    after_audit = dict(wale_repair.get("auditAfter") or {})
-    _add_table(doc, ["项目", "修复前", "修复后/结论"], [
-        ["围檩最大有效支点间距(m)", before_audit.get("maxBayM", strength_loop.get("waleBayBeforeM", "-")), after_audit.get("maxBayM", strength_loop.get("waleBayAfterM", "-"))],
-        ["自动增补支撑", 0, topology.get("addedSupportCount", strength_loop.get("addedSupportCount", 0))],
-        ["强度状态", "计算前待校核", strength_loop.get("strengthStatus", (latest.governing_values.strength_check_status if latest else "-"))],
-        ["刚度状态", "计算前待校核", strength_loop.get("stiffnessStatus", (latest.governing_values.stiffness_check_status if latest else "-"))],
-        ["最大自动迭代次数", "-", strength_loop.get("iterationLimit", iteration.get("maxDesignIterations", 3))],
-    ], font_size=7)
-    doc.add_paragraph(
-        "强度闭环顺序：围檩支点间距与回墙传力路径硬门禁 → 施工工况同步 → 墙—围檩—支撑计算 → "
-        "墙、围檩和支撑截面/配筋迭代 → 剩余 fail 阻断施工图发行。"
-    )
-    doc.add_paragraph(
-        "拆换撑阶段的压力分带保留楼板或换撑构件标高；闭合围檩端跨按可靠转角节点形成环向传力。"
-        "节点刚度、楼板连接和施工顺序应结合实际设计图与施工组织复核。"
-    )
-
-    doc.add_heading("7 计算模型和公式子集", level=1)
-    formula_rows = [
-        ["主动/被动土压力", "Ka=tan^2(45-phi/2), Kp=tan^2(45+phi/2); pa=(sigma-u)Ka-2c sqrt(Ka)+u; pp=(sigma-u)Kp+2c sqrt(Kp)+u", "JGJ120 水土分算/朗肯子集"],
-        ["水压力", "u=gamma_w*(z_w-z)", "静止地下水压力子集"],
-        ["墙体内力", "EI*y'''' + k_s*y + sum(k_i*y_i)=q(z)", "一维弹性地基梁有限差分"],
-        ["正截面受弯", "M <= alpha1*fc*b*x*(h0-x/2), alpha1*fc*b*x=fy*As", "GB50010 单筋矩形截面子集"],
-        ["受剪筛查", "V <= 0.7*ft*b*h0（箍筋贡献另需详设）", "GB50010 斜截面简化筛查"],
-        ["围檩闭合多跨包络", "R_i=q*l_i；M+=qL^2/8；M-=q(L1^2+L2^2)/12；N_i=R_i/cos(theta)", "全局矩阵负责变形协调；构件设计按直接支点和闭合转角节点形成多跨包络"],
-        ["强度驱动迭代", "L_bay<=L_target；E_d<=R_d；delta<=delta_lim；iteration<=N_max", "先修复传力路径，再扩截面/配筋；达到上限仍不满足时保留 fail"],
-        ["支撑施工效应", "N_eff=N_wale+0.5N_preload+N_temperature+N_gap；M_e=N*e0", "预加轴力、温度、间隙和偏心筛查"],
-        ["抗隆起", "K=(c*Nc+gamma_eff*D*Nq)/(gamma*H+q); phi=0 -> Nc=5.14,Nq=1", "JGJ120 抗隆起概念筛查"],
-        ["抗渗流", "K=gamma_eff*D/(gamma_w*Delta h)", "地下水稳定简化筛查"],
-    ]
-    _add_table(doc, ["项目", "软件公式", "实现边界"], formula_rows)
-
-    doc.add_heading("7.1 计算书图表", level=2)
-    charts = [c for c in report_charts if c.get("title") not in {"支撑布置评分平面图", "支撑优化候选方案评分图", "支撑优化候选方案平面比选图"}]
-    for chart in charts:
-        doc.add_paragraph(chart.get("title", "图表"))
-        try:
-            doc.add_picture(chart["path"], width=Inches(5.8))
-        except Exception as exc:
-            doc.add_paragraph(f"无法插入图表 {chart.get('path')}: {exc}")
-
-    doc.add_heading("8 土压力、水压力与内力结果", level=1)
-    if latest:
-        gv = latest.governing_values
-        doc.add_paragraph(f"最大合成侧向压力：{gv.max_total_pressure} kPa。")
-        doc.add_paragraph(f"最大墙弯矩：{gv.max_wall_moment} kN*m/m；最大墙剪力：{gv.max_wall_shear} kN/m；最大位移：{gv.max_displacement} mm。")
-        doc.add_paragraph(
-            f"嵌固安全系数最小值：{_text(gv.embedment_safety_factor_min)}；"
-            f"抗隆起安全系数最小值：{_text(gv.heave_safety_factor_min)}；"
-            f"分层渗流风险指数最大值：{_text(gv.seepage_risk_index_max if gv.seepage_risk_index_max is not None else gv.seepage_safety_factor_min)}（数值越小风险越低）。"
-        )
-        _add_table(doc, ["阶段", "边段", "支撑数", "最大压力(kPa)", "墙最大弯矩", "墙位移(mm)", "校核项数"], [
-            [
-                _stage_label(sr.stage_id),
-                sr.segment_id,
-                len(sr.support_forces),
-                max((p.total_pressure for p in sr.pressure_profile.points), default=0.0),
-                sr.wall_internal_force.max_moment if sr.wall_internal_force else sr.wall_internal_force_placeholder.get("maxMoment"),
-                sr.wall_internal_force.max_displacement if sr.wall_internal_force else sr.wall_internal_force_placeholder.get("maxDisplacement"),
-                len(sr.checks),
-            ]
-            for sr in latest.stage_results[:30]
-        ])
-    else:
-        doc.add_paragraph("尚未运行计算。")
-
-    doc.add_heading("9 支撑轴力估算", level=1)
-    if latest:
-        doc.add_paragraph(f"最大支撑轴力设计值估算：{latest.governing_values.max_support_axial_force} kN；标准值、设计值、gamma0 和 factor 见下表。")
-        rows2: list[list[Any]] = []
-        for sr in latest.stage_results:
-            for f in sr.support_forces:
-                rows2.append([_stage_label(sr.stage_id), sr.segment_id, f.level_index, f.elevation, f.tributary_top, f.tributary_bottom, f.axial_force, f.axial_force_design, f.importance_factor, f.partial_factor])
-        _add_table(doc, ["阶段", "边段", "层号", "标高", "影响上界", "影响下界", "标准轴力(kN)", "设计轴力(kN)", "gamma0", "factor"], rows2[:28])
-        if len(rows2) > 28:
-            doc.add_paragraph(f"其余 {len(rows2) - 28} 条支撑轴力记录已写入 JSON 导出文件，计算书仅列出前 28 条代表性记录。")
-        rows2b: list[list[Any]] = []
-        for sr in latest.stage_results:
-            for f in sr.support_forces:
-                rows2b.append([_stage_label(sr.stage_id), f.face_code, f.wale_beam_code, f.wale_chainage, f.continuous_beam_reaction, f.elastic_support_stiffness, f.preload_effect, f.thermal_effect, f.gap_effect, f.effective_axial_force])
-        _add_table(doc, ["阶段", "墙面", "围檩", "里程", "节点反力", "弹簧刚度", "预加轴力", "温度效应", "间隙效应", "有效标准轴力"], rows2b[:28])
-    else:
-        doc.add_paragraph("尚未运行计算。")
-
-    doc.add_heading("10 围檩连续梁内力、截面设计和配筋", level=1)
-    if retaining and retaining.wale_beams:
-        doc.add_paragraph("围檩按连续梁计算本体弯矩、剪力和挠度；支撑节点作为弹性支座。下表为围檩包络和 GB50010 子集配筋结果。")
-        _add_table(doc, ["围檩", "层号", "墙面", "Mmax", "Vmax", "挠度", "Md", "Vd", "As_req", "As_prov", "配筋", "状态"], [
-            [
-                beam.code,
-                beam.support_level,
-                beam.design_result.face_code if beam.design_result else "-",
-                beam.design_result.max_moment if beam.design_result else "-",
-                beam.design_result.max_shear if beam.design_result else "-",
-                beam.design_result.max_deflection if beam.design_result else "-",
-                beam.design_result.max_moment_design if beam.design_result else "-",
-                beam.design_result.max_shear_design if beam.design_result else "-",
-                beam.design_result.required_reinforcement_area if beam.design_result else "-",
-                beam.design_result.provided_reinforcement_area if beam.design_result else "-",
-                f"D{beam.design_result.main_bar_diameter}@{beam.design_result.main_bar_spacing}" if beam.design_result else "-",
-                _status_label(beam.design_result.check_status) if beam.design_result else "review",
-            ]
-            for beam in retaining.wale_beams if beam.design_result
-        ][:80])
-        _add_table(doc, ["围檩", "附加筋协调说明"], [
-            [beam.code, beam.design_result.node_additional_reinforcement_note if beam.design_result else "-"]
-            for beam in retaining.wale_beams if beam.design_result
-        ][:40])
-    else:
-        doc.add_paragraph("尚未形成围檩连续梁设计结果。")
-
-    doc.add_heading("11 配筋建议", level=1)
-    if retaining:
-        rows3: list[list[Any]] = []
-        for wall in retaining.diaphragm_walls:
-            for r in wall.reinforcement:
-                rows3.append([wall.panel_code, r.name, r.grade, r.diameter, r.spacing or r.count, r.required_area_per_meter, r.area_per_meter, _status_label(r.check_status)])
-        _add_table(doc, ["构件", "配筋组", "等级", "直径", "间距/根数", "As_req", "As_prov", "状态"], rows3[:80])
-    doc.add_paragraph("配筋建议仅为方案阶段钢筋组参数化输出，未自动完成裂缝宽度、锚固、搭接、钢筋笼吊装、接头、节点和施工图构造详图。")
-
-    doc.add_heading("12 规范筛查结果", level=1)
-    doc.add_paragraph(
-        f"检查统计：pass={summary.get('pass', 0)}；fail={summary.get('fail', 0)}；warning={summary.get('warning', 0)}；manual_review={summary.get('manual_review', 0)}。"
-    )
-    doc.add_paragraph(_conclusion(checks))
-    _add_table(doc, ["规则ID", "对象", "状态", "计算/限值", "单位", "说明"], [
-        [
-            _short(c.get("ruleId"), 34),
-            _short(c.get("objectId"), 16),
-            _status_label(c.get("status")),
-            f"{_text(c.get('calculatedValue'))} / {_text(c.get('limitValue'))}",
-            c.get("unit"),
-            _short(c.get("message"), 70),
-        ]
-        for c in checks[:48]
-    ])
-    if len(checks) > 48:
-        doc.add_paragraph(f"其余 {len(checks) - 48} 条校核结果已写入 JSON 导出文件，计算书仅列出前 48 条代表性记录。")
-
-    doc.add_heading("13 墙-围檩-支撑全局联立刚度模型", level=1)
-    if latest:
-        rows_global = []
-        for sr in latest.stage_results[:36]:
-            g = sr.global_coupled_result
-            if g:
-                rows_global.append([_stage_label(sr.stage_id), sr.segment_id, g.face_code, g.matrix_size, g.dof_summary.get("wallHorizontal"), g.dof_summary.get("waleHorizontal"), g.max_wall_displacement, g.max_support_axial_force, g.fallback])
-        _add_table(doc, ["阶段", "边段", "墙面", "矩阵阶数", "墙DOF", "围檩DOF", "最大墙位移(m)", "最大支撑轴力(kN)", "退化"], rows_global[:36])
-        reaction_rows = []
-        for sr in latest.stage_results[:20]:
-            g = sr.global_coupled_result
-            if not g:
-                continue
-            for r in g.support_reactions[:8]:
-                reaction_rows.append([_stage_label(sr.stage_id), r.support_code, r.endpoint, r.face_code, r.chainage, r.node_reaction, r.axial_force, r.axial_deformation])
-        _add_table(doc, ["阶段", "支撑", "端点", "墙面", "里程", "节点反力", "轴力", "轴向变形"], reaction_rows[:48])
-        numerical_rows = []
-        for sr in latest.stage_results[:36]:
-            g = sr.global_coupled_result
-            if not g:
-                continue
-            q = dict(g.equilibrium_diagnostics or {})
-            numerical_rows.append([
-                _stage_label(sr.stage_id), sr.segment_id, g.condition_number,
-                q.get("relativeResidual"), q.get("originalRelativeResidual"),
-                q.get("matrixSymmetryError"), q.get("regularization"),
-                _status_label(q.get("status")), _short(q.get("message"), 64),
-            ])
-        _add_table(doc, ["阶段", "边段", "条件数", "有效残差", "原始残差", "对称误差", "正则化", "状态", "说明"], numerical_rows[:36])
-    doc.add_paragraph("说明：全局矩阵同步输出 K·u=F 残差、矩阵对称误差、条件数和正则化状态。该部分用于证明数值求解质量，与工程规范验算分开记录。空间杆系代理内核包含墙体/围檩转角自由度、支撑空间方向刚度、立柱竖向自由度、节点刚域和楼板换撑刚度；正式工程仍应结合完整三维杆系/FEM和审查意见复核。")
-
-    doc.add_heading("14 墙-围檩-支撑耦合摘要与包络图表数据", level=1)
-    if latest:
-        coupled_rows = []
-        for sr in latest.stage_results[:36]:
-            data = sr.coupled_system_result or {}
-            if data:
-                coupled_rows.append([_stage_label(sr.stage_id), sr.segment_id, data.get("segmentSupportCount"), data.get("waleResultCount"), data.get("wallMaxMoment"), data.get("wallMaxDisplacement"), data.get("maxWaleMoment"), _short(data.get("note"), 60)])
-        _add_table(doc, ["阶段", "边段", "支撑数", "围檩结果数", "墙弯矩", "墙位移", "围檩弯矩", "说明"], coupled_rows[:36])
-        envelopes = (latest.report_diagram_data or {}).get("waleEnvelopes", [])
-        _add_table(doc, ["围檩", "墙面", "阶段数", "M+", "M-", "|V|max", "|δ|max", "采样点"], [
-            [env.get("waleBeamCode"), env.get("faceCode"), len(env.get("governingStageIds", [])), env.get("maxPositiveMoment"), env.get("maxNegativeMoment"), env.get("maxAbsShear"), env.get("maxAbsDeflection"), len(env.get("points", []))]
-            for env in envelopes[:30]
-        ])
-    doc.add_paragraph("说明：本节以表格形式写入可绘图数据。后续正式报告可由这些数据生成弯矩图、剪力图、挠度图和轴力云图。")
-
-    doc.add_heading("15 可审查稳定专项与施工图表达", level=1)
-    if latest and latest.stability_detailed_result:
-        stab = latest.stability_detailed_result
-        doc.add_paragraph(f"控制剖面：{stab.controlling_section_name or stab.controlling_section_id or '-'}；控制模式：{stab.controlling_mode or '-'}；最小安全指标：{_text(stab.min_safety_factor)}。")
-        _add_table(doc, ["项目", "数值"], [
-            ["坑底隆起系数", stab.heave_factor],
-            ["承压水突涌系数", stab.confined_uplift_factor],
-            ["抗渗流系数", stab.seepage_factor],
-            ["整体稳定系数", stab.overall_stability_factor],
-            ["软弱下卧层指标", stab.weak_layer_index],
-        ])
-        _add_table(doc, ["候选圆弧", "中心X", "中心标高", "半径", "安全系数", "控制"], [
-            [x.get("id"), x.get("centerX"), x.get("centerElevation"), x.get("radius"), x.get("safetyFactor"), x.get("governing")]
-            for x in stab.circular_slip_surfaces[:8]
-        ])
-        _add_table(doc, ["渗流路径", "入口水位", "出口标高", "路径长", "水头差", "坡降"], [
-            [x.get("id"), x.get("entryElevation"), x.get("exitElevation"), x.get("pathLength"), x.get("headLoss"), x.get("hydraulicGradient")]
-            for x in stab.seepage_paths[:6]
-        ])
-        _add_table(doc, ["降水步", "目标水位", "降深", "持水时间(h)", "监测动作"], [
-            [x.get("step"), x.get("targetWaterLevel"), x.get("drawdown"), x.get("recommendedHoldHours"), x.get("monitoringAction")]
-            for x in stab.drawdown_process[:8]
-        ])
-        _add_table(doc, ["井号", "类型", "控制参数", "说明"], [
-            [x.get("wellCode"), x.get("type"), x.get("designFlowIndex") or x.get("targetHeadElevation"), x.get("controlMode") or x.get("screenBottomElevation")]
-            for x in (stab.dewatering_wells[:8] + stab.depressurization_wells[:6])
-        ])
-        _add_table(doc, ["加固/优化方案", "说明", "预期效果"], [
-            [x.get("option"), x.get("description"), x.get("expectedEffect")] for x in stab.improvement_options
-        ])
-    if latest and latest.drawing_sheets:
-        _add_table(doc, ["图号", "图名", "比例", "类型", "文件"], [
-            [sht.sheet_id, sht.title, sht.scale, sht.sheet_type, sht.file_path] for sht in latest.drawing_sheets
-        ])
-        doc.add_paragraph("施工图表达当前为 SVG 图纸接口，包含支撑平面、围檩节点、钢筋笼和立柱桩详图；正式施工图仍需图框、比例、标注、构造尺寸和审签流程。")
-
-    doc.add_heading("16 风险提示和人工复核要求", level=1)
-    warning_list: list[str] = []
-    if project.geological_model:
-        warning_list += project.geological_model.warnings
-    if retaining:
-        warning_list += retaining.warnings
-    if latest:
-        warning_list += latest.warnings
-        for sr in latest.stage_results:
-            if sr.wall_internal_force:
-                warning_list += sr.wall_internal_force.warnings
-    for warning in list(dict.fromkeys(warning_list))[:40] or ["无额外 warning，但仍需专业复核。"]:
-        doc.add_paragraph(warning)
-    doc.add_paragraph(DISCLAIMER)
-
-    doc.add_heading("16 附录：输入参数表", level=1)
-    doc.add_paragraph(f"单位系统：length={project.unit_system.length}, force={project.unit_system.force}, stress={project.unit_system.stress}, angle={project.unit_system.angle}")
-    doc.add_paragraph(f"规则库：{project.design_settings.rule_set}。")
-    doc.add_paragraph("报告结束。")
-
-    doc.save(path)
+    document.save(path)
     return path

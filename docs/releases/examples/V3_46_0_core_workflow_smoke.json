@@ -1,0 +1,26 @@
+{
+  "status": "success",
+  "elapsedSeconds": 4.423,
+  "projectId": "project-91066eab4a64",
+  "candidateCount": 3,
+  "selectedCandidateId": "slopt-direct-grid-t6p0-c12p0-as_generated-0p0",
+  "supportCount": 36,
+  "columnCount": 4,
+  "calculationResultCount": 1,
+  "rebarCheckCount": 568,
+  "failCount": 0,
+  "warningCount": 5,
+  "payloadBytes": 1857852,
+  "workspaceBytes": 1468957,
+  "externalBytes": 707427,
+  "totalLogicalBytes": 2565279,
+  "artifactCount": 4,
+  "storageStatus": "normal",
+  "taskLogs": [
+    "[2026-07-16T09:32:48.509677+00:00] 刷新项目成果和审查状态",
+    "[2026-07-16T09:32:48.624258+00:00] 施工阶段计算完成内存检查：有效内存 400.7 -> 388.9 MB。",
+    "[2026-07-16T09:32:48.642720+00:00] 按当前内力包络完成墙、围檩和支撑配筋",
+    "[2026-07-16T09:32:48.970994+00:00] 汇总核心结果与交付资格",
+    "[2026-07-16T09:32:48.976058+00:00] 任务完成。"
+  ]
+}

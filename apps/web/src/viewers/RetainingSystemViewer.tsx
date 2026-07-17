@@ -1,4 +1,4 @@
-import type { Point2D, Project, QualityGateIssue } from '../types/domain';
+import type { Point2D, Project, QualityGateIssue, SupportLayoutOptimizationCandidate } from '../types/domain';
 import Engineering3DViewer from './Engineering3DViewer';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 
@@ -30,63 +30,125 @@ function supportStroke(severity?: string, role?: string) {
   return '#2563eb';
 }
 
-function projectBounds(project: Project) {
-  const pts: Point2D[] = [];
-  project.excavation?.outline.points.forEach((p) => pts.push(p));
-  project.excavation?.obstacles?.forEach((o) => o.outline?.points.forEach((p) => pts.push(p)));
-  project.retainingSystem?.supports.forEach((s) => { pts.push(s.start, s.end); });
-  project.retainingSystem?.columns.forEach((c) => pts.push(c.location));
-  if (!pts.length) return { minX: -5, minY: -5, maxX: 65, maxY: 45 };
-  const xs = pts.map((p) => p.x); const ys = pts.map((p) => p.y);
-  const pad = 5;
-  return { minX: Math.min(...xs) - pad, minY: Math.min(...ys) - pad, maxX: Math.max(...xs) + pad, maxY: Math.max(...ys) + pad };
+type PlanSupport = { id?: string; code?: string; start: Point2D; end: Point2D; role?: string; supportRole?: string; spanLength?: number };
+type PlanColumn = { id?: string; code?: string; location: Point2D; supportCodes?: string[] };
+type SupportPlanSource = {
+  outline: Point2D[];
+  supports: PlanSupport[];
+  columns: PlanColumn[];
+  score?: number;
+  metrics: Record<string, any>;
+  qualityIssues?: QualityGateIssue[];
+  crossingPairs?: Record<string, any>[];
+  label: string;
+  formal: boolean;
+};
+
+function toRecord(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' ? value as Record<string, any> : {};
 }
 
-function SupportQualityPlan({ project, highlightLocator }: { project: Project; highlightLocator?: Record<string, unknown> }) {
+function projectBounds(source: SupportPlanSource, project: Project) {
+  const pts: Point2D[] = [];
+  source.outline.forEach((p) => pts.push(p));
+  project.excavation?.obstacles?.forEach((o) => o.outline?.points.forEach((p) => pts.push(p)));
+  source.supports.forEach((s) => { pts.push(s.start, s.end); });
+  source.columns.forEach((c) => pts.push(c.location));
+  if (!pts.length) return { minX: -5, minY: -5, maxX: 65, maxY: 45 };
+  const xs = pts.map((p) => p.x); const ys = pts.map((p) => p.y);
+  const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 1);
+  const spanY = Math.max(Math.max(...ys) - Math.min(...ys), 1);
+  const padX = Math.max(spanX * .04, 2);
+  const padY = Math.max(spanY * .12, 2);
+  return { minX: Math.min(...xs) - padX, minY: Math.min(...ys) - padY, maxX: Math.max(...xs) + padX, maxY: Math.max(...ys) + padY };
+}
+
+function planSource(project: Project, previewCandidate?: SupportLayoutOptimizationCandidate): SupportPlanSource | null {
   const ret = project.retainingSystem;
+  if (!ret || !project.excavation) return null;
+  const repair = ret.supportLayoutRepair;
+  const fallbackCandidate = previewCandidate
+    ?? repair?.candidates?.find((row) => String(row.id ?? '') === String(repair.selectedCandidateId ?? ''))
+    ?? repair?.candidates?.find((row) => Boolean(row.hardConstraints?.passed))
+    ?? repair?.candidates?.[0];
+  const candidateGeometry = toRecord(fallbackCandidate?.planGeometry);
+  const candidateSupports = Array.isArray(candidateGeometry.supports) ? candidateGeometry.supports as PlanSupport[] : [];
+  const useCandidate = Boolean(fallbackCandidate && candidateSupports.length && (previewCandidate || !ret.supports.length));
+  if (useCandidate && fallbackCandidate) {
+    const candidateOutline = Array.isArray(candidateGeometry.outline) ? candidateGeometry.outline as Point2D[] : project.excavation.outline.points;
+    const candidateColumns = Array.isArray(candidateGeometry.columns) ? candidateGeometry.columns as PlanColumn[] : [];
+    const metrics = toRecord(fallbackCandidate.metrics);
+    return {
+      outline: candidateOutline,
+      supports: candidateSupports,
+      columns: candidateColumns,
+      score: Number.isFinite(Number(fallbackCandidate.score)) ? Number(fallbackCandidate.score) : undefined,
+      metrics,
+      label: `方案 ${String.fromCharCode(64 + Math.max(1, Number(fallbackCandidate.rank || 1)))} · ${String(fallbackCandidate.variableSummary?.schemeLabel ?? fallbackCandidate.variableSummary?.topologyFamily ?? '候选支撑体系')}`,
+      formal: Boolean(fallbackCandidate.hardConstraints?.passed) && fallbackCandidate.variableSummary?.formalSchemeEligible !== false,
+    };
+  }
   const latest = project.calculationResults?.[project.calculationResults.length - 1];
   const quality = latest?.supportLayoutQuality;
-  if (!ret || !project.excavation) return null;
-  const b = projectBounds(project);
+  return {
+    outline: project.excavation.outline.points,
+    supports: ret.supports as PlanSupport[],
+    columns: ret.columns as PlanColumn[],
+    score: quality?.score,
+    metrics: toRecord(quality?.metrics),
+    qualityIssues: quality?.issues,
+    crossingPairs: quality?.crossingPairs as Record<string, any>[] | undefined,
+    label: repair?.selectedCandidateId ? '当前采用方案' : '当前围护支撑体系',
+    formal: Boolean(ret.supports.length),
+  };
+}
+
+function SupportQualityPlan({ project, highlightLocator, previewCandidate }: { project: Project; highlightLocator?: Record<string, unknown>; previewCandidate?: SupportLayoutOptimizationCandidate }) {
+  const source = planSource(project, previewCandidate);
+  if (!source || !project.excavation) return null;
+  const b = projectBounds(source, project);
   const w = Math.max(10, b.maxX - b.minX);
   const h = Math.max(10, b.maxY - b.minY);
   const viewBox = `${b.minX} ${b.minY} ${w} ${h}`;
-  const issueMap = issueSeverityByObject(quality?.issues);
+  const issueMap = issueSeverityByObject(source.qualityIssues);
   const targetId = String(highlightLocator?.objectId ?? highlightLocator?.objectCode ?? '');
-  const conflictObstacle = (quality?.issues ?? []).some((i) => i.category === 'obstacle_clearance' && ['fail', 'warning'].includes(i.severity));
+  const conflictObstacle = (source.qualityIssues ?? []).some((i) => i.category === 'obstacle_clearance' && ['fail', 'warning'].includes(i.severity));
+  const metrics = source.metrics;
   return (
     <div className="supportQualityPlan">
       <div className="planHeader">
         <h4>支撑布置评分平面高亮</h4>
-        <span className="small">红=阻断/交叉/严重超限，橙=警告，蓝=通过或未标记；黄色半透明区=障碍/出土口需避让。</span>
+        <span className="small">红=阻断/交叉/严重超限，橙=角撑或警告，蓝=普通对撑；黄色半透明区=障碍/出土口。</span>
       </div>
-      <svg viewBox={viewBox} className="supportPlanSvg" preserveAspectRatio="xMidYMid meet">
+      <div className="supportQualitySource"><b>{source.label}</b><span className={source.formal ? 'formal' : 'diagnostic'}>{source.formal ? '正式体系' : '诊断候选'}</span><span>支撑 {source.supports.length} · 立柱 {source.columns.length}</span></div>
+      <svg viewBox={viewBox} className="supportPlanSvg" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${source.label}支撑布置评分平面`}>
         <defs>
           <pattern id="plan-grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.08" /></pattern>
         </defs>
         <rect x={b.minX} y={b.minY} width={w} height={h} fill="url(#plan-grid)" />
-        <polygon points={project.excavation.outline.points.map((p) => `${p.x},${p.y}`).join(' ')} fill="rgba(37,99,235,0.05)" stroke="#0f172a" strokeWidth="0.25" />
+        <polygon points={source.outline.map((p) => `${p.x},${p.y}`).join(' ')} fill="rgba(37,99,235,0.05)" stroke="#0f172a" strokeWidth="0.25" />
         {project.excavation.obstacles?.map((obs) => obs.outline?.points?.length ? (
           <polygon key={obs.id} points={obs.outline.points.map((p) => `${p.x},${p.y}`).join(' ')} fill={conflictObstacle ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.16)'} stroke={conflictObstacle ? '#dc2626' : '#f59e0b'} strokeWidth="0.22" />
         ) : null)}
-        {ret.supports.map((s) => {
-          const sev = issueMap.get(s.id);
+        {source.supports.map((s, index) => {
+          const sev = issueMap.get(String(s.id ?? ''));
           const selected = targetId && (targetId === s.id || targetId === s.code);
-          return <line key={s.id} className={selected ? 'locatorPulseStroke' : ''} x1={s.start.x} y1={s.start.y} x2={s.end.x} y2={s.end.y} stroke={selected ? '#eab308' : supportStroke(sev, s.supportRole)} strokeWidth={selected ? 1.25 : sev === 'fail' ? 0.7 : 0.42} strokeLinecap="round"><title>{s.code} {sev ?? 'ok'} span={s.spanLength}</title></line>;
+          const role = String(s.role ?? s.supportRole ?? 'main_strut');
+          return <line key={String(s.id ?? index)} className={selected ? 'locatorPulseStroke' : ''} x1={s.start.x} y1={s.start.y} x2={s.end.x} y2={s.end.y} stroke={selected ? '#eab308' : supportStroke(sev, role)} strokeWidth={selected ? 1.25 : sev === 'fail' ? 0.7 : 0.42} strokeLinecap="round"><title>{String(s.code ?? s.id ?? index + 1)} {sev ?? 'ok'} span={String(s.spanLength ?? '')}</title></line>;
         })}
-        {quality?.crossingPairs?.map((pair, idx) => {
+        {(source.crossingPairs ?? []).map((pair, idx) => {
           const pt = pair.point as { x?: number; y?: number } | undefined;
           if (pt?.x === undefined || pt?.y === undefined) return null;
           return <g key={`cross-${idx}`}><circle cx={pt.x} cy={pt.y} r="0.9" fill="#dc2626" /><text x={pt.x + 1} y={pt.y - 1} fontSize="2" fill="#dc2626">交叉</text></g>;
         })}
-        {ret.columns.map((c) => { const selected = targetId && (targetId === c.id || targetId === c.code); return <g key={c.id} className={selected ? 'locatorPulseFill' : ''}><circle cx={c.location.x} cy={c.location.y} r={selected ? '1.35' : '0.8'} fill={selected ? '#eab308' : '#78350f'} /><title>{c.code}: {c.supportCodes?.join(', ')}</title></g>; })}
+        {source.columns.map((c, index) => { const selected = targetId && (targetId === c.id || targetId === c.code); return <g key={String(c.id ?? index)} className={selected ? 'locatorPulseFill' : ''}><circle cx={c.location.x} cy={c.location.y} r={selected ? '1.35' : '0.8'} fill={selected ? '#eab308' : '#78350f'} /><title>{String(c.code ?? c.id ?? index + 1)}: {c.supportCodes?.join(', ')}</title></g>; })}
       </svg>
       <div className="metricGrid compact">
-        <div><strong>{quality?.score ?? '-'}</strong><span>评分</span></div>
-        <div><strong>{String(quality?.metrics?.supportCrossingCount ?? 0)}</strong><span>非法穿越</span></div>
-        <div><strong>{String(quality?.metrics?.internalJunctionCount ?? 0)}</strong><span>内部汇交</span></div>
-        <div><strong>{String(quality?.metrics?.maxBaySpacing ?? '-')}</strong><span>最大分仓</span></div>
-        <div><strong>{String(quality?.metrics?.maxSpanLength ?? '-')}</strong><span>最大跨长</span></div>
+        <div><strong>{source.score ?? '-'}</strong><span>评分</span></div>
+        <div><strong>{String(metrics.supportCrossingCount ?? previewCandidate?.crossingCount ?? 0)}</strong><span>非法穿越</span></div>
+        <div><strong>{String(metrics.internalJunctionCount ?? previewCandidate?.junctionCount ?? 0)}</strong><span>内部汇交</span></div>
+        <div><strong>{String(metrics.maxBaySpacing ?? previewCandidate?.maxBaySpacing ?? '-')}</strong><span>最大分仓</span></div>
+        <div><strong>{String(metrics.maxSpanLength ?? previewCandidate?.maxSpanLength ?? '-')}</strong><span>最大跨长</span></div>
       </div>
     </div>
   );
@@ -152,7 +214,7 @@ function supportMaterialLabel(sectionType?: string, materialGrade?: string) {
 }
 
 
-export default function RetainingSystemViewer({ project, highlightLocator }: { project: Project; highlightLocator?: Record<string, unknown> }) {
+export default function RetainingSystemViewer({ project, highlightLocator, previewCandidate }: { project: Project; highlightLocator?: Record<string, unknown>; previewCandidate?: SupportLayoutOptimizationCandidate }) {
   const retaining = project.retainingSystem;
   const supportCountByRole = retaining?.layoutSummary?.supportCountByRole as Record<string, number> | undefined;
   const wallFallback = wallDesignFallback(project);
@@ -160,7 +222,7 @@ export default function RetainingSystemViewer({ project, highlightLocator }: { p
   return (
     <div>
       <Engineering3DViewer project={project} focus="retaining" highlightLocator={highlightLocator} />
-      <SupportQualityPlan project={project} highlightLocator={highlightLocator} />
+      <SupportQualityPlan project={project} highlightLocator={highlightLocator} previewCandidate={previewCandidate} />
       <div className="card">
         <h3>围护结构参数与校核状态</h3>
         {retaining?.layoutSummary && (

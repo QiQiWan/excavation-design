@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DirectionalLight, Float32BufferAttribute, GridHelper, LineBasicMaterial, LineSegments, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Raycaster, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector2, Vector3, WebGLRenderer } from 'three';
 import { api } from '../api/client';
 import type { Project, RebarIfcVisualization, RebarVisualizationBar, RebarVisualizationCage } from '../types/domain';
+import FullscreenShell from '../components/FullscreenShell';
 
 type HostFilter = 'all' | 'diaphragm_wall' | 'wale_or_crown_beam' | 'internal_support' | 'support_wale_node';
 type BarFilter = 'all' | 'longitudinal' | 'distribution' | 'stirrup' | 'tie' | 'additional';
 type ColorMode = 'barType' | 'status' | 'host';
+
+const BAR_TYPE_LABELS: Record<string, string> = { longitudinal: '纵筋', distribution: '分布筋', stirrup: '箍筋', tie: '拉结/架立筋', additional: '附加筋' };
 type ClipAxis = 'x' | 'y' | 'z';
 
 function pointToVector(p: { x: number; y: number; z: number }): Vector3 {
@@ -266,6 +269,7 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
   const [clipOffset, setClipOffset] = useState(0);
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
   const [isolatedHost, setIsolatedHost] = useState<string | undefined>();
+  const [supportDetailMode, setSupportDetailMode] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -279,6 +283,14 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
   }, [project.id, project.retainingSystem?.diaphragmWalls.length, project.retainingSystem?.supports.length, project.calculationResults.length]);
 
   const bars = useMemo(() => (data?.bars ?? []).filter((bar) => (hostFilter === 'all' || bar.hostType === hostFilter) && (barFilter === 'all' || bar.barType === barFilter) && (!isolatedHost || bar.hostId === isolatedHost || bar.hostCode === isolatedHost)), [data, hostFilter, barFilter, isolatedHost]);
+  const supportTypesPresent = data?.summary.supportBarTypesPresent ?? [];
+  const supportTypesMissing = data?.summary.supportBarTypesMissing ?? [];
+  const representativeSupport = useMemo(() => (data?.supportContracts ?? []).find((item) => item.status === 'complete' && (item.sampledBarTypes?.length ?? 0) >= 4) ?? (data?.supportContracts ?? [])[0], [data]);
+  const enterSupportDetail = () => {
+    if (!representativeSupport) return;
+    setSupportDetailMode(true); setHostFilter('internal_support'); setBarFilter('all'); setIsolatedHost(representativeSupport.hostId || representativeSupport.hostCode); setShowHosts(true); setShowLabels(true); setBarScale(1.45);
+  };
+  const exitSupportDetail = () => { setSupportDetailMode(false); setHostFilter('all'); setBarFilter('all'); setIsolatedHost(undefined); setBarScale(1); };
   const maxDia = useMemo(() => Math.max(8, ...bars.map((bar) => Number(bar.diameterMm || 0))), [bars]);
   const viewerBounds = useMemo(() => boundsFromBars(bars, project), [bars, project]);
   const clipRange = Math.max(5, viewerBounds.size * 0.7);
@@ -421,7 +433,7 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
   }, [data, bars, showHosts, showCageGrid, showLabels, hostOpacity, barScale, colorMode, clip, clipAxis, clipOffset, project, maxDia, highlightId, hostFilter, isolatedHost]);
 
   return (
-    <section className="summaryPanel rebarIfcPanel">
+    <FullscreenShell label="钢筋三维模型"><section className="summaryPanel rebarIfcPanel">
       <div className="viewerHeader">
         <div>
           <h3>钢筋级 IFC 可视化</h3>
@@ -457,16 +469,18 @@ export default function RebarIfcViewer({ project, highlightLocator }: { project:
           <label>剖切位置 <input type="range" min={-clipRange} max={clipRange} step={Math.max(0.1, clipRange / 100)} value={clipOffset} onChange={(event) => setClipOffset(Number(event.target.value))} /><span>{clipOffset.toFixed(1)} m</span></label>
           {isolatedHost && <button className="secondary" onClick={() => setIsolatedHost(undefined)}>退出构件隔离</button>}
           <button className="secondary" onClick={() => api.getRebarIfcVisualization(project.id, 1600).then(setData).catch((err) => setError(err instanceof Error ? err.message : String(err)))}>刷新钢筋数据</button>
+          {!supportDetailMode ? <button className="secondary" onClick={enterSupportDetail} disabled={!representativeSupport}>支撑构造近景</button> : <button className="secondary" onClick={exitSupportDetail}>返回全局模型</button>}
         </div>
+        <div className={`supportRebarContractStatus ${supportTypesMissing.length ? 'warning' : 'success'}`}><strong>水平支撑钢筋显示合同</strong><span>已显示：{supportTypesPresent.map((item) => BAR_TYPE_LABELS[item] ?? item).join('、') || '无'}</span><span>应包含：{(data.summary.supportBarTypesExpected ?? []).map((item) => BAR_TYPE_LABELS[item] ?? item).join('、') || '未定义'}</span>{supportTypesMissing.length ? <em>缺少：{supportTypesMissing.map((item) => BAR_TYPE_LABELS[item] ?? item).join('、')}。请重新应用配筋方案；系统不会再静默显示纵筋-only 模型。</em> : <em>钢筋族完整。全局尺度下箍筋和拉结筋较短，请使用“支撑构造近景”检查。</em>}</div>
         {highlightId && <div className="locatorHint">当前定位对象：{highlightId}；匹配宿主构件或钢筋组时会以金色加粗显示。</div>}
         <div className="rebarLegend"><span className="rbMain">纵筋</span><span className="rbDist">分布筋</span><span className="rbStirrup">箍筋/节点加密</span><span>拉结/架立</span><span className="rbAdd">搭接加强</span><span className="rbJoint">槽段接头</span><span className="rbLift">吊点</span><span className="rbFail">Fail</span></div>
         <div className="rebarViewport" ref={mountRef} />
         <div className="stepGrid rebarBottomGrid">
           <div className="propertyPanel"><strong>钢筋属性</strong>{selected ? <><table className="table compactTable"><tbody>{humanInfo(selected).map(([key, value]) => <tr key={key}><td>{key}</td><td>{String(value ?? '-')}</td></tr>)}</tbody></table><div className="selectedRebarActions"><span className="small">关联图纸：{drawingRefsFor(selected).join('、') || '—'}</span><button className="secondary" onClick={() => setIsolatedHost(String(selected.hostId ?? selected.hostCode ?? ''))} disabled={!selected.hostId && !selected.hostCode}>隔离该宿主</button></div></> : <span className="small">点击任意钢筋查看 IFC 类、宿主构件、钢筋组、间距、校核状态和关联图纸。</span>}</div>
-          <div className="summaryPanel miniPanel"><h4>钢筋组摘要</h4><table className="table compactTable"><thead><tr><th>类型</th><th>数量</th></tr></thead><tbody>{Object.entries(data.summary.byBarType).map(([key, value]) => <tr key={key}><td>{key}</td><td>{value}</td></tr>)}</tbody></table></div>
+          <div className="summaryPanel miniPanel"><h4>钢筋组摘要</h4><table className="table compactTable"><thead><tr><th>类型</th><th>数量</th></tr></thead><tbody>{Object.entries(data.summary.byBarType).map(([key, value]) => <tr key={key}><td>{BAR_TYPE_LABELS[key] ?? key}</td><td>{value}</td></tr>)}</tbody></table><p className="small">支撑合同完整 {data.summary.supportContractCompleteCount ?? 0}，不完整 {data.summary.supportContractIncompleteCount ?? 0}。</p></div>
           <div className="summaryPanel miniPanel"><h4>当前限制</h4><p className="small">{data.summary.officialDetailingLimit}</p><ul className="small">{data.notes.map((note) => <li key={note}>{note}</li>)}</ul></div>
         </div>
       </>}
-    </section>
+    </section></FullscreenShell>
   );
 }

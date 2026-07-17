@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, AxesHelper, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, GridHelper, Line, LineBasicMaterial, LineSegments, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, Raycaster, Scene, SphereGeometry, Vector2, Vector3, WebGLRenderer } from 'three';
+import FullscreenShell from '../components/FullscreenShell';
 import type { GeologicalSurface, Point2D, Project, VtuCellBlock } from '../types/domain';
 import { effectiveGeologicalSurfaces } from '../utils/geology';
 
@@ -518,7 +519,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
 
   const layerEntries = Object.entries(layers) as [LayerKey, boolean][];
   return (
-    <div className="viewer threeViewerShell">
+    <FullscreenShell label="工程三维模型"><div className="viewer threeViewerShell">
       <div className="viewerHeader">
         <div>
           <h3>工程三维视图</h3>
@@ -555,6 +556,6 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
         <strong>属性</strong>
         {selected ? (isBoreholeInfo(selected) ? <BoreholeDetailPanel project={project} info={selected} /> : <table className="table compactTable"><tbody>{humanInfo(selected).map(([key, value]) => <tr key={key}><td>{key}</td><td>{String(value ?? '-')}</td></tr>)}</tbody></table>) : <span className="small">未选择对象</span>}
       </div>
-    </div>
+    </div></FullscreenShell>
   );
 }

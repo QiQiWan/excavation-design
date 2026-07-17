@@ -7,7 +7,9 @@ from shapely.geometry import LineString, Point, box
 from shapely.strtree import STRtree
 
 from app.schemas.domain import Project
+from app.services.deepening_readiness import group_deepening_checks
 from app.services.detailing_geometry import apply_embedded_item_patches
+from app.version import SOFTWARE_VERSION
 
 STEEL_DENSITY_KG_M3 = 7850.0
 GRAVITY = 9.80665
@@ -150,10 +152,13 @@ def _node_hardware(project: Project) -> dict[str, Any]:
             "clearanceM": 0.05, "drawingRef": "D-10",
         })
         checks.append({
-            "checkId": f"NODE-HW-{node.code}", "nodeCode": node.code,
+            "checkId": f"NODE-HW-{node.code}", "category": "node_hardware",
+            "hostId": node.id, "hostCode": node.code, "nodeCode": node.code,
             "plateStatus": plate_status, "weldStatus": welds[-1]["status"], "anchorStatus": anchors[-1]["status"],
             "status": "fail" if "fail" in {plate_status, welds[-1]["status"], anchors[-1]["status"]} else "warning" if "warning" in {plate_status, welds[-1]["status"], anchors[-1]["status"]} else "pass",
+            "failureReasonCode": "NODE_HARDWARE_CAPACITY" if "fail" in {plate_status, welds[-1]["status"], anchors[-1]["status"]} else "NODE_HARDWARE_REVIEW" if "warning" in {plate_status, welds[-1]["status"], anchors[-1]["status"]} else None,
             "message": "节点承压板、加劲板、焊缝与锚筋已形成可出图参数。",
+            "recommendedAction": "调整节点承压板、加劲板、焊缝或锚筋并重新复核。" if ({plate_status, welds[-1]["status"], anchors[-1]["status"]} & {"fail", "warning"}) else "按节点深化图复核构造与检验要求。",
         })
     return {"bearingPlates": plates, "stiffeners": stiffeners, "welds": welds, "anchorBars": anchors, "embeddedItems": embedded, "checks": checks}
 
@@ -176,6 +181,7 @@ def _cage_hoisting(cage_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ratios = [round((i + 1) / (point_count + 1), 3) for i in range(point_count)]
         results.append({
             "analysisId": f"HOIST-{item.get('segmentId')}", "segmentId": item.get("segmentId"),
+            "category": "cage_hoisting",
             "hostCode": item.get("hostCode"), "lengthM": length_m, "weightT": weight_t,
             "dynamicFactor": 1.35, "liftingPointCount": point_count, "liftingPointRatios": ratios,
             "riggingAngleDeg": rigging_angle, "lineTensionKn": round(line_tension_kn, 3),
@@ -183,6 +189,7 @@ def _cage_hoisting(cage_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "liftingBarUtilization": round(line_util, 3), "estimatedElasticDeformationMm": round(deformation_mm, 1),
             "transportEnvelope": {"maxLengthM": 12.0, "maxWidthM": 3.0, "maxWeightT": 35.0},
             "status": status,
+            "failureReasonCode": "CAGE_HOISTING_CAPACITY" if status == "fail" else "CAGE_HOISTING_REVIEW" if status == "warning" else None,
             "recommendedAction": "专项吊装验算并设置加强桁架" if status == "fail" else "复核吊机工况、吊点焊缝和临时加强" if status == "warning" else "按吊装图和吊装方案实施",
             "drawingRef": "R-10",
         })
@@ -280,13 +287,15 @@ def _embedded_collision_checks(embedded_items: list[dict[str, Any]], bars: list[
             penetration = max(0.0, clearance - actual_clearance)
             checks.append({
                 "checkId": f"EMB-COL-{item.get('itemId')}-{bar.get('barId')}",
+                "category": "embedded_collision",
                 "embeddedItemId": item.get("itemId"), "embeddedType": item.get("itemType"),
                 "barId": bar.get("barId"), "barMark": bar.get("barMark"), "hostCode": bar.get("hostCode"),
                 "barGroupId": bar.get("groupId"), "barType": bar.get("barType"),
                 "barDiameterMm": round(diameter_m * 1000.0, 1),
                 "requiredClearanceM": round(clearance, 4), "actualClearanceM": round(actual_clearance, 4),
                 "estimatedPenetrationM": round(penetration, 4), "intersectsEmbeddedSolid": bool(line.intersects(core)),
-                "status": status, "intendedConnection": intended, "passesThroughDesignedOpening": opening_pass, "openingId": opening_id,
+                "status": status, "failureReasonCode": "EMBEDDED_ITEM_COLLISION" if status == "fail" else "EMBEDDED_ITEM_CLEARANCE_REVIEW" if status == "warning" else None,
+                "intendedConnection": intended, "passesThroughDesignedOpening": opening_pass, "openingId": opening_id,
                 "message": "钢筋按已配置预埋件开孔穿越，孔边加劲和净截面需按D-10复核" if opening_pass else "节点锚固钢筋与预埋件为设计连接" if intended else "节点区常规钢筋进入预埋件净空，需按局部绕筋/截断锚固大样协调" if coordinated_host else "非关联钢筋穿越预埋件实体或施工净空",
                 "recommendedAction": "按开孔和孔边加劲大样施工" if opening_pass else "按节点大样绑扎" if intended else "在D-10中明确局部绕筋、截断锚固或预埋件开孔" if coordinated_host else "移动钢筋、调整预埋件或增加专项节点大样",
                 "drawingRef": "Q-04",
@@ -376,14 +385,36 @@ def build_deep_detailing_package(
         + sum(x.get("status") == "warning" for x in embedded_checks)
     )
     status = "fail" if hard_fail else "warning" if warning_count else "pass"
+    diagnostic_checks = [*hardware["checks"], *hoisting, *embedded_checks]
+    blocking_groups = group_deepening_checks(
+        diagnostic_checks, statuses={"fail"}, source="spatial_detailing",
+    )
+    warning_groups = group_deepening_checks(
+        diagnostic_checks, statuses={"warning", "manual_review"}, source="spatial_detailing",
+    )
+    resolution_guide = [
+        {
+            "priority": index + 1,
+            "reasonCode": row.get("reasonCode"),
+            "title": row.get("title"),
+            "affectedCount": row.get("count"),
+            "objects": row.get("objects"),
+            "action": row.get("requiredAction"),
+            "targetStage": row.get("targetStage"),
+        }
+        for index, row in enumerate([*blocking_groups, *warning_groups][:12])
+    ]
     return {
-        "version": "3.10.0",
+        "version": SOFTWARE_VERSION,
         "status": status,
         "nodeHardware": hardware,
         "cageHoisting": hoisting,
         "couplerSchedule": couplers,
         "embeddedItemCollisionChecks": embedded_checks,
         "constructionSequence": sequence,
+        "blockingGroups": blocking_groups,
+        "warningGroups": warning_groups,
+        "resolutionGuide": resolution_guide,
         "geometryWriteback": {
             "embeddedItems": embedded_writeback["summary"],
             "barPatchCount": int((project.advanced_engineering or {}).get("detailGeometryPatchCount") or len((project.advanced_engineering or {}).get("detailGeometryPatches") or {})),
@@ -399,6 +430,8 @@ def build_deep_detailing_package(
             "embeddedCollisionCheckCount": len(embedded_checks),
             "hardFailureCount": hard_fail,
             "warningCount": warning_count,
+            "blockingGroupCount": len(blocking_groups),
+            "warningGroupCount": len(warning_groups),
             "status": status,
             "geometryPatchCount": len((project.advanced_engineering or {}).get("detailGeometryPatches") or {}),
             "modifiedEmbeddedItemCount": embedded_writeback["summary"].get("modifiedEmbeddedItemCount", 0),
