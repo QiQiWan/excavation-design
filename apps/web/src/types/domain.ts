@@ -16,6 +16,10 @@ export interface CoordinateSystem {
 
 export interface DesignSettings {
   designBasisConfirmed?: boolean;
+  designIntentConfirmed?: boolean;
+  designIntentGoal?: 'quick_scheme' | 'standard_design' | 'formal_issue';
+  designObjective?: 'balanced' | 'safety_first' | 'economy_first';
+  designIntentSource?: 'guided_recommendation' | 'professional_override';
   projectGrade?: '一级' | '二级' | '三级';
   excavationSafetyLevel?: '一级' | '二级' | '三级';
   siteComplexity?: '简单' | '中等' | '复杂';

@@ -47,6 +47,14 @@ class DesignSettings(DomainModel):
     # workflow step so load combinations, safety reserves and RC checks share
     # one auditable source instead of relying on scattered defaults.
     design_basis_confirmed: bool = False
+    # V3.59: the engineer first confirms a small design brief.  The complete
+    # parameter set remains available for audit and professional override, but
+    # it is no longer presented as a prerequisite for generating a concept
+    # retaining scheme.
+    design_intent_confirmed: bool = False
+    design_intent_goal: Literal["quick_scheme", "standard_design", "formal_issue"] = "quick_scheme"
+    design_objective: Literal["balanced", "safety_first", "economy_first"] = "balanced"
+    design_intent_source: Literal["guided_recommendation", "professional_override"] = "guided_recommendation"
     project_grade: Literal["一级", "二级", "三级"] = "二级"
     safety_grade: str = "二级"
     excavation_safety_level: Literal["一级", "二级", "三级"] = "二级"

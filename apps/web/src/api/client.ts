@@ -245,6 +245,18 @@ export const api = {
   getProject: (id: string) => request<Project>(`/api/projects/${id}?profile=workspace`, { timeoutMs: 20000, timeoutMessage: '项目工作区 20 秒内未加载完成。后端已阻止全量大对象进入 API；请检查项目存储健康状态。' }),
   getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 15000, retryCount: 0 }),
   getCoreDesignStatus: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design/core-status`, { timeoutMs: 15000, retryCount: 0 }),
+  applyGuidedDesignIntake: (
+    id: string,
+    payload: {
+      goal: 'quick_scheme' | 'standard_design' | 'formal_issue';
+      environmentLevel: '一般' | '较高' | '高';
+      objective: 'balanced' | 'safety_first' | 'economy_first';
+      designStage: 'temporary' | 'permanent_combined';
+    },
+  ) => request<Project>(`/api/projects/${id}/design/intake/apply`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    activity: { label: '正在应用设计任务书与推荐值', expectedMs: 1800 },
+  }),
   listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 30000, retryCount: 0 }),
   projectArtifactDownloadUrl: (id: string, artifactId: string) => `${API_BASE}/api/projects/${id}/artifacts/${artifactId}/download`,
   getCalculationStageChunks: (id: string, resultId: string) => request<Record<string, unknown>>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks`),

@@ -1148,6 +1148,7 @@ class TaskManager:
         structural model blocks the operation.
         """
         from app.services.deepening_readiness import calculation_readiness
+        from app.services.beam_design_recovery import recover_missing_beam_designs
         from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme, build_rebar_design_scheme
 
         repo = self._repo()
@@ -1171,6 +1172,15 @@ class TaskManager:
         append_event("rebar-task", "task-start", taskId=task.id, projectId=project.id, mode=mode, apply=apply_scheme, recalculate=recalculate)
         self._stage(task, 12, "读取当前计算包络与构件截面")
         self._enforce_memory_budget(task, "配筋深化")
+        self._stage(task, 22, "补齐冠梁、围檩和环梁的施工阶段设计记录")
+        beam_recovery = recover_missing_beam_designs(project)
+        if int(beam_recovery.get("recoveredCount") or 0):
+            self._append_log(task, str(beam_recovery.get("message") or "梁设计记录已补齐。"))
+        if int(beam_recovery.get("unresolvedCount") or 0):
+            self._append_log(
+                task,
+                f"仍有 {int(beam_recovery.get('unresolvedCount') or 0)} 根梁缺少可追溯施工阶段证据；已保留为明确阻断。",
+            )
         self._stage(task, 34, "生成围护墙、围檩、支撑和节点配筋草案")
         scheme = apply_rebar_design_scheme(project, mode=mode) if apply_scheme else build_rebar_design_scheme(project, mode=mode)
         self._check_cancel(task)
@@ -1226,6 +1236,7 @@ class TaskManager:
             "checkCount": len(scheme.get("checks") or []),
             "failCount": int((scheme.get("summary") or {}).get("failCount") or 0),
             "warningCount": int((scheme.get("summary") or {}).get("warningCount") or 0),
+            "beamDesignRecovery": beam_recovery,
             "canIssueConstructionDrawings": bool(diagnostics.get("canIssueConstructionDrawings")),
             "canEnterDetailing": bool(deepening_gate.get("canEnterDetailing")),
             "canRunP3": bool(deepening_gate.get("canRunP3")),

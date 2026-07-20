@@ -43,6 +43,8 @@ from app.schemas.domain import (
     WallInternalForcePoint,
     WallInternalForceResult,
     WaleBeamDesignResult,
+    WaleBeamInternalForcePoint,
+    WaleBeamInternalForceResult,
     ReinforcementGroup,
     SupportLayoutRepairSummary,
 )
@@ -630,16 +632,110 @@ def _add_wale_reinforcement_groups(beam, design: WaleBeamDesignResult) -> list[R
     return groups
 
 
-def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> list[dict[str, Any]]:
+def _beam_axis_length(beam: Any) -> float:
+    points = list(getattr(getattr(beam, "axis", None), "points", None) or [])
+    return sum(
+        math.hypot(float(right.x) - float(left.x), float(right.y) - float(left.y))
+        for left, right in zip(points, points[1:])
+    )
+
+
+def _complete_wale_stage_evidence(
+    project: Project,
+    wale_results: list[WaleBeamInternalForceResult],
+    *,
+    beam_codes: set[str] | None = None,
+) -> tuple[list[WaleBeamInternalForceResult], set[str]]:
+    """Complete geometry-only wales from a traceable same-level envelope.
+
+    The global solver emits a wale result only for a face receiving a direct
+    support-node reaction. A continuous perimeter wale can therefore remain a
+    geometry object even though peer wales at the same support level were
+    calculated. Re-running the unchanged model cannot close that contract gap.
+
+    We reuse only the most adverse result from the same support level. The
+    resulting member is marked for professional review, so P3 detailing can
+    continue without silently promoting substituted evidence to formal issue.
+    """
+    ret = project.retaining_system
+    if ret is None:
+        return list(wale_results), set()
+    results = list(wale_results)
+    direct_codes = {str(row.wale_beam_code) for row in results}
+    by_level: dict[int, list[WaleBeamInternalForceResult]] = {}
+    for row in results:
+        by_level.setdefault(int(row.level_index), []).append(row)
+    fallback_codes: set[str] = set()
+    for beam in [*ret.wale_beams, *(ret.ring_beams or [])]:
+        if beam_codes is not None and beam.code not in beam_codes:
+            continue
+        if beam.code in direct_codes:
+            continue
+        level = int(beam.support_level or 0)
+        candidates = list(by_level.get(level) or [])
+        if not candidates:
+            continue
+        governing = max(
+            candidates,
+            key=lambda row: abs(float(row.max_moment)) + 0.1 * abs(float(row.max_shear)) + 1000.0 * abs(float(row.max_deflection)),
+        )
+        max_m = max(abs(float(row.max_moment)) for row in candidates)
+        max_v = max(abs(float(row.max_shear)) for row in candidates)
+        max_d = max(abs(float(row.max_deflection)) for row in candidates)
+        pressure = max(abs(float(row.pressure_line_load)) for row in candidates)
+        length = max(_beam_axis_length(beam), 1.0)
+        face_code = str(beam.code).split("-")[-1]
+        results.append(WaleBeamInternalForceResult(
+            wale_beam_code=beam.code,
+            face_code=face_code,
+            level_index=level,
+            elevation=float(beam.elevation),
+            stage_id=governing.stage_id,
+            pressure_line_load=round(pressure, 3),
+            beam_length=round(length, 3),
+            support_node_count=sum(1 for node in ret.support_nodes if node.wale_beam_code == beam.code),
+            points=[
+                WaleBeamInternalForcePoint(chainage=0.0, shear=max_v, moment=0.0, deflection=0.0),
+                WaleBeamInternalForcePoint(chainage=round(length / 2.0, 3), shear=0.0, moment=max_m, deflection=max_d),
+                WaleBeamInternalForcePoint(chainage=round(length, 3), shear=-max_v, moment=0.0, deflection=0.0),
+            ],
+            max_moment=round(max_m, 3),
+            max_shear=round(max_v, 3),
+            max_deflection=round(max_d, 6),
+            method="同一支撑层已计算围檩的最不利施工阶段包络保守代用",
+            warnings=[
+                f"{beam.code} 未收到直接支撑节点反力；采用第 {level} 道支撑同层最不利围檩包络。",
+                "该记录用于继续配筋与节点空间深化，正式出图前需确认本梁与相邻围檩的连续传力和节点激活关系。",
+            ],
+        ))
+        fallback_codes.add(beam.code)
+    return results, fallback_codes
+
+
+def _design_wale_beams(
+    project: Project,
+    wale_results: list,
+    gamma0: float,
+    *,
+    beam_codes: set[str] | None = None,
+    allow_section_resize: bool = True,
+) -> list[dict[str, Any]]:
     if not project.retaining_system:
         return []
     checks: list[dict[str, Any]] = []
     strength_target = max(1.0, float(safety_targets(project).get("strength", 1.0)))
+    wale_results, fallback_codes = _complete_wale_stage_evidence(
+        project,
+        list(wale_results),
+        beam_codes=beam_codes,
+    )
     grouped: dict[str, list] = {}
     for result in wale_results:
         grouped.setdefault(result.wale_beam_code, []).append(result)
     beams = list(project.retaining_system.wale_beams) + list(getattr(project.retaining_system, "ring_beams", []) or [])
     for beam in beams:
+        if beam_codes is not None and beam.code not in beam_codes:
+            continue
         results = grouped.get(beam.code, [])
         if not results:
             continue
@@ -663,8 +759,8 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         # Auto-size the wale section instead of reporting avoidable fails.  The
         # search uses practical large RC wale dimensions and updates the BIM
         # section when a passing subset design is found.
-        candidate_widths = [initial_width, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0]
-        candidate_heights = [initial_height, 0.9, 1.2, 1.5, 1.8, 2.0, 2.2, 2.4]
+        candidate_widths = [initial_width, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0] if allow_section_resize else [initial_width]
+        candidate_heights = [initial_height, 0.9, 1.2, 1.5, 1.8, 2.0, 2.2, 2.4] if allow_section_resize else [initial_height]
         found = False
         optimization_history: list[dict[str, Any]] = []
         for cand_h in candidate_heights:
@@ -702,6 +798,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         # the unamplified design action shown in the verification table.
         shear_capacity = shear.get("concreteShearCapacity", 0.0) * width
         status = "pass" if flex["status"] == "pass" and shear["status"] == "pass" else "fail"
+        substituted = beam.code in fallback_codes
         stirrup_spacing = 100 if shear.get("utilization", 0.0) > 0.75 else 150
         face_code = results[0].face_code
         level_index = results[0].level_index
@@ -710,6 +807,12 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         deflection_status = "pass" if deflection_ratio <= 1.0 else "warning" if deflection_ratio <= 1.5 else "fail"
         local_bearing_spread_width = round(max(width, 2.0 * (getattr(results[0], "support_node_count", 1) ** 0.5) * 0.45), 3)
         local_bearing_spread_height = round(max(height, 1.5 * height), 3)
+        evidence_status = (
+            "fail" if status == "fail" or deflection_status == "fail"
+            else "manual_review" if substituted
+            else "warning" if deflection_status == "warning"
+            else "pass"
+        )
         design = WaleBeamDesignResult(
             wale_beam_code=beam.code,
             face_code=face_code,
@@ -730,7 +833,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
             node_additional_reinforcement_note="围檩主筋在支撑节点两侧连续通过；承压板后方设置附加竖筋、U 形筋和加密箍筋，附加筋面积不小于主筋计算控制面积的 20%。",
             deflection_limit=round(deflection_limit, 6),
             deflection_ratio=round(deflection_ratio, 3),
-            deflection_check_status=deflection_status,
+            deflection_check_status="manual_review" if substituted and deflection_status != "fail" else deflection_status,
             optimized_width=round(width, 3),
             optimized_height=round(height, 3),
             optimization_history=optimization_history[-20:],
@@ -738,10 +841,15 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
             local_bearing_spread_height=local_bearing_spread_height,
             wall_connection_note="围檩与地连墙按连续传力构造处理：节点后方承压扩散区、预埋件/植筋/穿墙筋和墙面局部压应力需由施工图详设复核。",
             envelope=envelope,
-            check_status="fail" if status == "fail" or deflection_status == "fail" else "warning" if deflection_status == "warning" else "pass",
+            check_status=evidence_status,
+            method=(
+                "同一道支撑直接计算围檩的最不利施工阶段包络保守代用；GB/T 50010 梁受弯、受剪与挠度子集设计"
+                if substituted else "GB/T 50010 围檩连续梁受弯、受剪与挠度子集设计"
+            ),
             notes=[
                 "围檩内力来自 V1.9 全局联立刚度矩阵与多工况围檩包络的弯矩、剪力和挠度结果。",
                 "正截面配筋、斜截面抗剪和节点区附加筋已形成子集设计；正式工程需复核构造锚固、裂缝、施工缝和局部承压扩散。",
+                *(["本梁无直接支撑节点反力，采用同层控制围檩最不利包络；P3 可继续，正式出图前必须确认连续传力路径。"] if substituted else []),
             ],
         )
         beam.internal_force_results = results
@@ -754,7 +862,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "GB50010-WALE-FLEXURE-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": status,
+                "status": evidence_status,
                 "calculatedValue": design.max_moment_design,
                 "limitValue": design.moment_capacity,
                 "unit": "kN*m",
@@ -766,7 +874,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "GB50010-WALE-SHEAR-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": "pass" if shear["status"] == "pass" else "fail",
+                "status": "fail" if shear["status"] != "pass" else "manual_review" if substituted else "pass",
                 "calculatedValue": round(v_design, 3),
                 "limitValue": round(shear_capacity, 3),
                 "unit": "kN",
@@ -778,7 +886,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "WALE-DEFLECTION-ENVELOPE-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": deflection_status,
+                "status": "fail" if deflection_status == "fail" else "manual_review" if substituted else deflection_status,
                 "calculatedValue": round(max_d, 6),
                 "limitValue": round(deflection_limit, 6),
                 "unit": "m",
@@ -790,7 +898,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "ruleId": "GB50010-WALE-NODE-REBAR-COORDINATION-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
-                "status": status,
+                "status": evidence_status,
                 "calculatedValue": design.max_moment_design,
                 "limitValue": design.moment_capacity,
                 "unit": "kN*m",
@@ -799,10 +907,30 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "formula": "node additional reinforcement >= 20% of controlling main reinforcement area, screening rule",
             },
         ])
+        if substituted:
+            checks.append({
+                "ruleId": "PITGUARD-WALE-SAME-LEVEL-ENVELOPE-SUBSTITUTION",
+                "objectId": beam.id,
+                "objectType": "BeamElement",
+                "status": "manual_review",
+                "calculatedValue": level_index,
+                "limitValue": level_index,
+                "unit": "support level",
+                "message": f"{beam.code} 无直接节点反力记录，已采用第 {level_index} 道支撑同层最不利围檩包络完成保守设计；可继续配筋深化。",
+                "clauseReference": "围檩连续传力路径与施工阶段激活关系需在正式出图前复核",
+                "formula": "M_d,V_d,delta = max(same-level directly calculated wale envelopes)",
+            })
     return checks
 
 
-def _design_crown_beams(project: Project, stage_results: list[StageCalculationResult], gamma0: float) -> list[dict[str, Any]]:
+def _design_crown_beams(
+    project: Project,
+    stage_results: list[StageCalculationResult],
+    gamma0: float,
+    *,
+    beam_codes: set[str] | None = None,
+    allow_section_resize: bool = True,
+) -> list[dict[str, Any]]:
     """Create a traceable construction-stage crown-beam design result.
 
     Crown beams previously had geometry only, so reinforcement deepening could
@@ -825,6 +953,8 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
 
     checks: list[dict[str, Any]] = []
     for beam in ret.crown_beams or []:
+        if beam_codes is not None and beam.code not in beam_codes:
+            continue
         segment_name = str(beam.code).removeprefix("CB-")
         segment = segment_by_name.get(segment_name)
         segment_results = results_by_segment.get(str(segment.id), []) if segment else []
@@ -877,8 +1007,8 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
         max_deflection = 0.0
         optimization_history: list[dict[str, Any]] = []
         found = False
-        candidate_widths = sorted({initial_width, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0})
-        candidate_heights = sorted({initial_height, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8})
+        candidate_widths = sorted({initial_width, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0}) if allow_section_resize else [initial_width]
+        candidate_heights = sorted({initial_height, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8}) if allow_section_resize else [initial_height]
         for cand_h in candidate_heights:
             for cand_w in candidate_widths:
                 if cand_w + 1.0e-9 < initial_width or cand_h + 1.0e-9 < initial_height:

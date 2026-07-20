@@ -114,6 +114,7 @@ app/services/access_control.py
 app/services/advanced_suite.py
 app/services/adverse_scenario_execution.py
 app/services/adverse_scenarios.py
+app/services/beam_design_recovery.py
 app/services/benchmark_cases.py
 app/services/borehole_import.py
 app/services/cad_template.py
@@ -135,6 +136,7 @@ app/services/delivery_package.py
 app/services/delivery_release.py
 app/services/design_basis.py
 app/services/design_expert.py
+app/services/design_intake.py
 app/services/design_pipeline.py
 app/services/design_qualification.py
 app/services/design_scheme_ledger.py
@@ -146,6 +148,7 @@ app/services/enterprise_library.py
 app/services/excavation_service.py
 app/services/industrial_readiness.py
 app/services/integrated_retaining_optimizer.py
+app/services/intelligent_design_closure.py
 app/services/issue_center.py
 app/services/local_node_submodel.py
 app/services/monitoring_calibration.py
@@ -166,7 +169,6 @@ app/services/review_workflow.py
 app/services/runtime_diagnostics.py
 app/services/runtime_observability.py
 app/services/runtime_resource_policy.py
-app/services/safety_design_closure.py
 app/services/section_catalog.py
 app/services/serviceability_service.py
 app/services/standards_matrix.py
@@ -256,8 +258,10 @@ tests/test_v3_50_0_candidate_view_calculation_gate.py
 tests/test_v3_51_0_adaptive_topology_recovery.py
 tests/test_v3_52_0_verification_deepening_closure.py
 tests/test_v3_53_0_construction_stage_evidence.py
-tests/test_v3_54_0_intelligent_design_closure.py
+tests/test_v3_55_0_intelligent_design_closure.py
+tests/test_v3_59_0_intent_driven_design.py
 tests/test_v3_5_0_concave_recovery_drawing_intelligence.py
+tests/test_v3_60_0_rebar_entry_self_healing.py
 tests/test_v3_6_0_support_topology_scheme_ux.py
 tests/test_v3_7_0_professional_drawing_pipeline.py
 tests/test_v3_8_0_deep_detailing_startup.py

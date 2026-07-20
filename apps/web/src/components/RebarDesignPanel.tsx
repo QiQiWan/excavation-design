@@ -129,7 +129,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
 
       <div className="rebarPrimaryBar">
         <label>配筋策略<select value={mode} onChange={(event) => setMode(event.target.value as RebarMode)}><option value="conservative">保守</option><option value="balanced">均衡</option><option value="economic">经济</option></select></label>
-        <button onClick={applyScheme} disabled={applying || loading || !canApply}>{applying ? '后台生成配筋…' : diagnostics?.sectionChangeCount ? `应用 ${diagnostics.sectionChangeCount} 项截面优化` : '生成并应用配筋草案'}</button>
+        <button onClick={applyScheme} disabled={applying || loading || !canApply}>{applying ? '正在补齐梁设计并写入配筋…' : diagnostics?.sectionChangeCount ? `应用 ${diagnostics.sectionChangeCount} 项截面优化并复算` : '补齐梁设计并应用配筋'}</button>
         <a className={`buttonLink ${issueMode === 'review' ? 'secondary' : ''}`} href={api.cadPackageUrl(project.id, 'full', mode, issueMode)}>{primaryDownloadText}</a>
       </div>
       {!canApply ? <div className="rebarGateMessage fail">当前不能生成配筋草案：{gateBlockers[0]?.message ?? diagnostics?.calculation.messages?.[0] ?? '缺少围护体系或有效施工阶段计算结果。'} {gateBlockers[0]?.requiredAction ?? ''}</div> : null}

@@ -59,8 +59,10 @@ def apply_design_scheme(
     payload: ApplyRebarSchemePayload = Body(default=ApplyRebarSchemePayload()),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
+    from app.services.beam_design_recovery import recover_missing_beam_designs
     from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme
     project = repo.require_with_latest_calculation(project_id)
+    beam_recovery = recover_missing_beam_designs(project)
     scheme = apply_rebar_design_scheme(project, mode=payload.mode)
     recalculated = False
     queued_task = None
@@ -93,6 +95,7 @@ def apply_design_scheme(
         "scheme": scheme,
         "retainingSystem": project.retaining_system,
         "recalculated": recalculated,
+        "beamDesignRecovery": beam_recovery,
         "recalculationQueued": queued_task is not None,
         "calculationTask": queued_task.as_dict(include_logs=False) if queued_task else None,
     }

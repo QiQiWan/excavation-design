@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.domain import RetainingSystem, SupportLayoutRepairSummary
+from app.schemas.domain import Project, RetainingSystem, SupportLayoutRepairSummary
 from app.geology.model_builder import ensure_geological_model_covers_excavation
 from app.services.design_service import auto_diaphragm_wall, auto_supports, support_layout_config_from_settings
 from app.services.support_layout import plan_shape_diagnostics
@@ -75,6 +75,14 @@ class ProgressiveDesignPatch(BaseModel):
     expected_version: int | None = Field(default=None, alias="expectedVersion")
 
 
+class GuidedDesignIntakePayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    goal: str = "quick_scheme"
+    environment_level: str = Field(default="一般", alias="environmentLevel")
+    objective: str = "balanced"
+    design_stage: str = Field(default="temporary", alias="designStage")
+
+
 def _require_embedded_support_optimization() -> None:
     if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
         raise HTTPException(
@@ -110,6 +118,37 @@ def get_core_design_status(
     from app.services.core_workspace import build_core_workspace_status
     project = repo.require_workspace_with_latest_calculation(project_id)
     return build_core_workspace_status(project, repo.store.get_payload_info(project_id))
+
+
+@router.post("/intake/apply", response_model=Project)
+def apply_guided_design_intake_route(
+    project_id: str,
+    payload: GuidedDesignIntakePayload,
+    repo: ProjectRepository = Depends(get_repository),
+) -> Project:
+    """Confirm four engineer-facing choices and apply traceable defaults.
+
+    This endpoint intentionally does not synthesize geology, groundwater or
+    specialist evidence.  It only translates the small project brief into the
+    existing audited design settings.
+    """
+    from app.services.design_intake import apply_guided_design_intake
+
+    project = repo.require(project_id)
+    apply_guided_design_intake(
+        project,
+        goal=payload.goal,
+        environment_level=payload.environment_level,
+        objective=payload.objective,
+        design_stage=payload.design_stage,
+    )
+    saved = repo.save(
+        project,
+        action="design.guided_intake.apply",
+        summary="Confirmed minimum design brief and applied traceable recommended settings",
+    )
+    invalidate_design_workspace_bootstrap(project_id, db_path=str(repo.store.db_path))
+    return saved
 
 
 @router.get("/workspace-bootstrap")

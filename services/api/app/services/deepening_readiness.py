@@ -134,6 +134,37 @@ def calculation_readiness(project: Project) -> dict[str, Any]:
         "reason": "legacy calculation has no immutable contract; stage evidence is accepted for migration and must be refreshed before formal issue",
         "legacy": True,
     }
+    # V3.60 changes only the derived crown/wale evidence completion and the
+    # reinforcement-entry workflow. Keep a V3.59 immutable stage solution
+    # usable when its input snapshot, case, topology and solver runtime are
+    # unchanged. The recovered same-level wale evidence remains manual-review,
+    # so this compatibility bridge cannot silently unlock formal issue.
+    if latest and has_contract and not contract.get("current"):
+        stored = dict((latest.calculation_assurance or {}).get("contract") or (latest.design_iteration_summary or {}).get("calculationContract") or {})
+        state_current = (
+            str(state.get("status") or "") == "current"
+            and str(state.get("resultId") or "") == str(latest.id)
+            and not explicit_stale
+        )
+        v359_postprocessor_compatible = bool(
+            state_current
+            and any(case.id == latest.case_id for case in project.calculation_cases)
+            and str(contract.get("storedAdoptedDesignSnapshotHash") or "")
+            == str(contract.get("currentInputSnapshotHash") or "")
+            and str(contract.get("storedSupportTopologyHash") or "")
+            == str(contract.get("currentSupportTopologyHash") or "")
+            and str(stored.get("algorithmVersion") or "") == "3.59.0-intent-driven-progressive-design"
+            and str(stored.get("ruleSetVersion") or "") == "2026.07-v3.59-intent-driven-design"
+            and dict(stored.get("solverRuntime") or {}) == dict(contract.get("solverRuntime") or {})
+        )
+        if v359_postprocessor_compatible:
+            contract = {
+                **contract,
+                "current": True,
+                "verificationMode": "v3.60_rebar_postprocessor_compatible_migration",
+                "reason": "V3.59 施工阶段解与当前输入、工况、拓扑和求解器一致；V3.60 仅补齐梁派生设计证据。",
+                "rebarPostprocessorMigration": True,
+            }
     workspace_profile = str(((advanced.get("workspaceStorage") or {}).get("profile") or "")) == "workspace"
     if latest and has_contract and workspace_profile and not contract.get("current"):
         stored = dict((latest.calculation_assurance or {}).get("contract") or (latest.design_iteration_summary or {}).get("calculationContract") or {})
@@ -239,6 +270,7 @@ def _gate_issue(
     count: int = 1,
     source: str = "workflow_gate",
     objects: list[str] | None = None,
+    auto_action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": issue_id,
@@ -254,6 +286,7 @@ def _gate_issue(
         "requiredAction": action,
         "targetStage": target,
         "canResolveAtDesignStage": True,
+        "resolution": auto_action or {"mode": "manual", "label": action},
         "evidence": {},
     }
 
@@ -282,16 +315,24 @@ def build_deepening_readiness(
             "CALCULATION_NOT_CURRENT", "计算结果缺失或已过期",
             "；".join(calculation["messages"]), "运行当前方案完整计算并关闭计算质量硬失败。", "计算验算",
             count=max(1, int(calculation.get("failCount") or 0)), source="calculation_contract",
+            auto_action={"mode": "automatic", "label": "重新计算当前方案", "operation": "calculation_full", "payload": {"topN": 0}},
         ))
     if topology_status == "fail":
         blockers.append(_gate_issue("SUPPORT_TOPOLOGY_FAILED", "支撑传力体系未闭合", "支撑拓扑仍有硬失败。", "优化支撑拓扑并重新计算。", "围护方案", source="support_topology"))
     if not applied:
-        blockers.append(_gate_issue("REBAR_SCHEME_NOT_APPLIED", "配筋方案尚未应用", "当前查看结果仍是配筋草案，构件尚未写入正式配筋。", "点击“生成并应用配筋草案”。", "配筋深化"))
+        blockers.append(_gate_issue(
+            "REBAR_SCHEME_NOT_APPLIED", "配筋方案尚未写入构件",
+            "当前计算结果有效，但墙、梁和支撑仍只有可预览的配筋草案；P3 不能把草案当作逐根钢筋的数据源。",
+            "点击“一键关闭配筋入口”；系统将先补齐梁设计记录，再把均衡配筋写入构件，必要时自动复算。",
+            "配筋深化",
+            auto_action={"mode": "automatic", "label": "一键关闭配筋入口", "operation": "rebar_design", "payload": {"mode": "balanced", "apply": True, "recalculate": True}},
+        ))
     if section_change_count:
         blockers.append(_gate_issue(
             "SECTION_CHANGE_RECALCULATION_REQUIRED", "截面调整后需要重算",
             f"配筋设计建议调整 {section_change_count} 个支撑截面，旧内力包络已失效。",
             "应用截面优化并完成自动重算，再重新生成配筋。", "计算验算", count=section_change_count,
+            auto_action={"mode": "automatic", "label": "应用截面并自动复算", "operation": "rebar_design", "payload": {"mode": "balanced", "apply": True, "recalculate": True}},
         ))
 
     missing_beams = [
@@ -304,10 +345,11 @@ def build_deepening_readiness(
     blocking_missing_beams = [] if bool((calculation.get("contract") or {}).get("legacy")) else missing_beams
     if blocking_missing_beams:
         blockers.append(_gate_issue(
-            "BEAM_DESIGN_RESULT_MISSING", "冠梁/围檩缺少正式设计结果",
-            "部分梁只有几何对象，尚未写入施工阶段内力、承载力与配筋记录。",
-            "重新运行当前施工方案计算；系统将由墙顶剪力或围檩反力包络生成梁设计并回写配筋。",
+            "BEAM_DESIGN_RESULT_MISSING", "冠梁/围檩没有形成可追溯设计记录",
+            "这些梁只有几何对象。原因通常是该墙面没有直接支撑节点反力；重复运行同一工况不会自动产生记录。",
+            "点击“一键关闭配筋入口”；系统优先读取现有施工阶段结果，冠梁使用墙顶剪力，围檩使用同层最不利包络补齐设计，并保留正式出图前的传力路径复核标识。",
             "计算验算", count=len(blocking_missing_beams), source="beam_design_contract", objects=blocking_missing_beams,
+            auto_action={"mode": "automatic", "label": f"自动补齐 {len(blocking_missing_beams)} 根梁并继续配筋", "operation": "rebar_design", "payload": {"mode": "balanced", "apply": True, "recalculate": True}},
         ))
 
     raw_check_blockers = group_deepening_checks(checks, statuses={"fail"})
@@ -430,7 +472,7 @@ def build_deepening_readiness(
     else:
         headline = f"配筋深化入口仍有 {sum(int(row.get('count') or 1) for row in blockers)} 个结构/数据阻断，请按下列顺序补齐。"
     return {
-        "version": "3.55-deepening-readiness-v2",
+        "version": "3.60-rebar-entry-readiness-v1",
         "status": "blocked" if blockers else "review" if warnings else "ready",
         "calculation": calculation,
         "schemeApplied": applied,

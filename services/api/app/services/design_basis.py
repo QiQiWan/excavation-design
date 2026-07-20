@@ -114,8 +114,6 @@ def build_design_basis(project: Project) -> dict[str, Any]:
     blockers: list[str] = []
     if not settings.design_basis_confirmed:
         blockers.append("设计基准尚未由项目设计人员确认")
-    if settings.bearing_capacity_kpa is None:
-        blockers.append("地基承载力特征值尚未录入；涉及立柱基础时必须补充")
     if enterprise_validation.get("status") == "fail":
         blockers.append("企业工程资源库不可用")
     enterprise_codes = list(enterprise_standard.get("standards") or []) if isinstance(enterprise_standard, dict) else []
@@ -174,6 +172,17 @@ def build_design_basis(project: Project) -> dict[str, Any]:
         "parameters": parameters,
         "standards": standards,
         "blockers": blockers,
+        "deferredRequirements": [
+            {
+                "key": "bearing_capacity",
+                "title": "立柱基础地基承载力",
+                "status": "ready" if settings.bearing_capacity_kpa is not None else "before_related_check",
+                "message": (
+                    "已录入，可供立柱基础验算使用。" if settings.bearing_capacity_kpa is not None
+                    else "仅在采用立柱并进入基础验算时补充，不阻断围护方案生成。"
+                ),
+            }
+        ],
         "summary": {
             "gammaG": gamma_g,
             "gammaQ": gamma_q,

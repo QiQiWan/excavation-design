@@ -30,7 +30,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.55.0 intelligent verification-strengthening-recalculation closure with crown-beam force/rebar writeback and complete horizontal-support reinforcement contracts.",
+    description="PitGuard V3.60.0 progressive design with self-healing beam evidence and an executable reinforcement-entry closure.",
 )
 
 app.add_middleware(

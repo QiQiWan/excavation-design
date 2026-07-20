@@ -26,16 +26,42 @@ type DesignBasis = {
   };
 };
 
+type DesignIntake = {
+  confirmed?: boolean;
+  goal?: 'quick_scheme' | 'standard_design' | 'formal_issue';
+  objective?: 'balanced' | 'safety_first' | 'economy_first';
+  principle?: string;
+  facts?: Record<string, any>[];
+  inputTiers?: {
+    requiredNow?: Record<string, any>[];
+    systemRecommended?: Record<string, any>[];
+    beforeCalculation?: Record<string, any>[];
+    beforeFormalIssue?: Record<string, any>[];
+  };
+};
+
 const num = (value: unknown, fallback: number) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
 type ImpactKey = 'classification' | 'site' | 'loads' | 'analysis' | 'materials' | 'enterprise';
 
-export default function DesignBasisPanel({ project, basis, onSaved }: { project: Project; basis?: DesignBasis; onSaved: (project: Project) => void | Promise<void> }) {
+export default function DesignBasisPanel({ project, basis, intake, onSaved, onContinue }: {
+  project: Project;
+  basis?: DesignBasis;
+  intake?: DesignIntake;
+  onSaved: (project: Project) => void | Promise<void>;
+  onContinue?: () => void;
+}) {
   const source = project.designSettings;
   const [draft, setDraft] = useState<DesignSettings>({ ...source });
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string>();
   const [showDetails, setShowDetails] = useState(false);
+  const [professionalOpen, setProfessionalOpen] = useState(false);
+  const [goal, setGoal] = useState<'quick_scheme' | 'standard_design' | 'formal_issue'>(source.designIntentGoal ?? 'quick_scheme');
+  const [environmentLevel, setEnvironmentLevel] = useState<'一般' | '较高' | '高'>(source.surroundingEnvironmentLevel ?? '一般');
+  const [objective, setObjective] = useState<'balanced' | 'safety_first' | 'economy_first'>(source.designObjective ?? 'balanced');
+  const [designStage, setDesignStage] = useState<'temporary' | 'permanent_combined'>(source.designStage ?? 'temporary');
   const [activeImpact, setActiveImpact] = useState<ImpactKey>('classification');
   const groups = useMemo(() => {
     const out = new Map<string, Record<string, any>[]>();
@@ -112,6 +138,8 @@ export default function DesignBasisPanel({ project, basis, onSaved }: { project:
         actionGroupCatalog: draft.actionGroupCatalog?.length ? draft.actionGroupCatalog : (basis?.actionGroups ?? []),
         safetyFactorOverrides: Object.keys(draft.safetyFactorOverrides ?? {}).length ? draft.safetyFactorOverrides : (basis?.safetyTargets ?? {}),
         designBasisConfirmed: true,
+        designIntentConfirmed: true,
+        designIntentSource: 'professional_override',
       };
       const updated = await api.updateProject(project.id, { designSettings: settings } as Partial<Project>);
       setDraft({ ...updated.designSettings });
@@ -120,12 +148,76 @@ export default function DesignBasisPanel({ project, basis, onSaved }: { project:
     finally { setSaving(false); }
   }
 
+  async function applyGuidedIntake() {
+    setApplying(true); setError(undefined);
+    try {
+      const updated = await api.applyGuidedDesignIntake(project.id, { goal, environmentLevel, objective, designStage });
+      setDraft({ ...updated.designSettings });
+      await onSaved(updated);
+      onContinue?.();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setApplying(false); }
+  }
+
   return <section className="designBasisPanel">
     <header className="designBasisHeader">
-      <div><strong>设计基准与规范条件</strong><span>先确认工程分级、场地条件、荷载组合和材料设计取值；后续方案、计算与配筋统一引用该基准。</span></div>
+      <div><strong>最小设计任务书</strong><span>工程师只确认四项设计意图；规范组合、首轮材料、分析模型和施工阶段由系统推荐，真正影响结论时再补专业资料。</span></div>
       <span className={`designBasisState ${basis?.confirmed ? 'pass' : 'warning'}`}>{basis?.confirmed ? '已确认' : '待确认'}</span>
     </header>
     {error ? <div className="error">{error}</div> : null}
+    <div className="guidedDesignBrief">
+      <div className="guidedBriefIntro">
+        <div><span>当前原则</span><strong>{intake?.principle ?? '先形成方案，再按控制结果补资料。'}</strong></div>
+        <em>4 项确认 · 其余由系统带来源地推荐</em>
+      </div>
+      <section className="intentChoiceSet">
+        <header><i>1</i><div><strong>这次希望做到哪一步？</strong><span>决定当前需要补资料的深度，不会删除后续能力。</span></div></header>
+        <div className="intentChoiceCards">
+          {[
+            { value: 'quick_scheme', title: '先看快速方案', note: '轮廓和深度齐全即可生成 A/B/C；暂不要求正式计算资料。' },
+            { value: 'standard_design', title: '做到计算校核', note: '方案后补地勘，自动生成施工阶段并进入校核优化。' },
+            { value: 'formal_issue', title: '做到正式出图', note: '在前两步基础上，再逐项关闭专项资料、配筋和校审门禁。' },
+          ].map((item) => <button type="button" key={item.value} className={goal === item.value ? 'selected' : ''} onClick={() => setGoal(item.value as typeof goal)}><strong>{item.title}</strong><span>{item.note}</span></button>)}
+        </div>
+      </section>
+      <section className="intentChoiceSet">
+        <header><i>2</i><div><strong>周边保护要求？</strong><span>只需按工程认知选择，系统据此推定安全等级、荷载策略和储备。</span></div></header>
+        <div className="intentChoiceCards compact">
+          {[
+            { value: '一般', title: '一般', note: '周边无特别敏感保护对象。' },
+            { value: '较高', title: '较敏感', note: '邻近一般建构筑物或市政设施。' },
+            { value: '高', title: '高度敏感', note: '邻近轨道、重要管线或变形敏感结构。' },
+          ].map((item) => <button type="button" key={item.value} className={environmentLevel === item.value ? 'selected' : ''} onClick={() => setEnvironmentLevel(item.value as typeof environmentLevel)}><strong>{item.title}</strong><span>{item.note}</span></button>)}
+        </div>
+      </section>
+      <section className="intentChoiceSet">
+        <header><i>3</i><div><strong>本轮设计取向？</strong><span>仅改变方案搜索和自动补强的倾向，所有方案仍执行同一套验算。</span></div></header>
+        <div className="intentChoiceCards compact">
+          {[
+            { value: 'balanced', title: '安全与经济均衡', note: '默认推荐，先控制风险再优化用量。' },
+            { value: 'safety_first', title: '安全储备优先', note: '提高储备并优先增强刚度。' },
+            { value: 'economy_first', title: '经济性优先', note: '允许墙段分区和截面分级优化。' },
+          ].map((item) => <button type="button" key={item.value} className={objective === item.value ? 'selected' : ''} onClick={() => setObjective(item.value as typeof objective)}><strong>{item.title}</strong><span>{item.note}</span></button>)}
+        </div>
+      </section>
+      <section className="intentChoiceSet">
+        <header><i>4</i><div><strong>围护结构使用阶段？</strong><span>这项会影响长期效应和构造要求，因此保留为人工确认。</span></div></header>
+        <div className="intentChoiceCards compact two">
+          <button type="button" className={designStage === 'temporary' ? 'selected' : ''} onClick={() => setDesignStage('temporary')}><strong>临时支护</strong><span>地下室完成后退出结构工作。</span></button>
+          <button type="button" className={designStage === 'permanent_combined' ? 'selected' : ''} onClick={() => setDesignStage('permanent_combined')}><strong>兼作永久结构</strong><span>增加耐久、裂缝和长期效应要求。</span></button>
+        </div>
+      </section>
+      <section className="guidedRecommendationSummary">
+        <header><strong>系统先替你配置</strong><span>每项均保留来源与修改入口，不把默认值伪装成项目实测值。</span></header>
+        <div>{(intake?.inputTiers?.systemRecommended ?? []).map((item) => <article key={String(item.key)}><span>{String(item.title)}</span><strong>{String(item.value)}</strong><em>{String(item.source)}</em></article>)}</div>
+      </section>
+      <div className="guidedBriefActions">
+        <button type="button" onClick={() => void applyGuidedIntake()} disabled={applying}>{applying ? '正在应用并检查…' : basis?.confirmed ? '更新任务书并继续' : '采用推荐值并继续'}</button>
+        <button type="button" className="secondary" onClick={() => setProfessionalOpen((value) => !value)}>{professionalOpen ? '收起专业设置' : '需要时展开专业设置'}</button>
+      </div>
+      <p className="guidedBoundary">采用推荐值只代表允许进入当前设计目标；地勘、水位、承载力与专项施工资料不会被系统虚构，并会在影响对应结论前单独提示。</p>
+    </div>
+    {professionalOpen ? <>
     <div className="designBasisWorkspace">
     <div className="designBasisForm">
       <label {...impactFieldProps('classification')}>工程等级<select value={draft.projectGrade ?? '二级'} onChange={(e) => set('projectGrade', e.target.value as DesignSettings['projectGrade'])}><option>一级</option><option>二级</option><option>三级</option></select></label>
@@ -169,5 +261,6 @@ export default function DesignBasisPanel({ project, basis, onSaved }: { project:
       <section><h4>设计取值</h4>{groups.map(([group, items]) => <div className="basisParameterGroup" key={group}><strong>{group}</strong><table><tbody>{items.map((item, index) => <tr key={`${group}-${index}`}><td>{String(item.name)}</td><td>{item.value == null ? '待录入' : `${String(item.value)}${item.unit ? ` ${item.unit}` : ''}`}</td><td>{String(item.source ?? '-')}</td></tr>)}</tbody></table></div>)}</section>
       <section><h4>规范职责</h4><div className="basisStandards">{(basis?.standards ?? []).map((item) => <span key={String(item.code)}><b>{String(item.code)}</b>{String(item.role)}</span>)}</div></section>
     </div> : null}
+    </> : null}
   </section>;
 }

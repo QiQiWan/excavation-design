@@ -1004,7 +1004,7 @@ def build_rebar_design_scheme(
         "projectId": project.id,
         "mode": selected_mode,
         "status": status,
-        "method": "V3.55 专家配筋设计：同步施工阶段与拓扑，按墙体深度和墙面平面双向分区，完成钢筋混凝土支撑截面、节点承压与构造设计",
+        "method": "施工阶段同步配筋设计：补齐梁设计证据，按墙体深度和墙面平面双向分区，完成墙、梁、支撑、节点承压与构造设计",
         "diagnostics": diagnostics,
         "wallZones": wall_zones,
         "wallPlanZones": wall_plan_zones,

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import CoreProjectWorkspace from './CoreProjectWorkspace';
 import { api } from '../api/client';
@@ -14,7 +14,7 @@ const project: Project = {
 };
 
 describe('CoreProjectWorkspace', () => {
-  it('shows six core design decisions with design basis first', async () => {
+  it('shows three guided phases by default and keeps six technical decisions in professional flow', async () => {
     vi.spyOn(api, 'getCoreDesignStatus').mockResolvedValue({
       nextStage: 'basis', designBasis: { confirmed: false, parameters: [], loadCombinations: [], standards: [], blockers: ['设计基准尚未确认'] }, summary: { failCount: 0, warningCount: 0 }, storage: { workspaceBytes: 1024, externalBytes: 0 },
       stages: [
@@ -27,7 +27,12 @@ describe('CoreProjectWorkspace', () => {
       ],
     } as any);
     render(<CoreProjectWorkspace project={project} onBack={() => undefined} onProjectChange={() => undefined} />);
-    await waitFor(() => expect(screen.getAllByText('设计基准').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByText('快速方案')).toBeInTheDocument());
+    expect(screen.getByText('计算与优化')).toBeInTheDocument();
+    expect(screen.getByText('配筋与交付')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '专业流程' }));
+    await waitFor(() => expect(screen.getByRole('navigation', { name: '专业设计流程' })).toBeInTheDocument());
+    expect(screen.getAllByText('设计基准').length).toBeGreaterThan(0);
     expect(screen.getByText('工程输入')).toBeInTheDocument();
     expect(screen.getByText('围护方案')).toBeInTheDocument();
     expect(screen.getByText('计算验算')).toBeInTheDocument();
@@ -71,5 +76,7 @@ it('keeps the current stage after a completed task without showing a completion 
   expect(screen.getByRole('heading', { name: '围护方案' })).toBeInTheDocument();
   expect(screen.queryByText('当前步骤已更新')).not.toBeInTheDocument();
   expect(screen.queryByText(/系统不会自动切换页面/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '专业流程' }));
+  await waitFor(() => expect(screen.getByRole('navigation', { name: '专业设计流程' })).toBeInTheDocument());
   expect(screen.getByRole('button', { name: '4计算验算待方案' })).toBeInTheDocument();
 });

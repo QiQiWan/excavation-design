@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: pitguard-api
-Version: 3.54.0
-Summary: FastAPI backend for PitGuard BIM Designer with editable construction stages and authoritative staged-result evidence
+Version: 3.60.0
+Summary: FastAPI backend for PitGuard intent-driven progressive retaining design closure
 Requires-Python: >=3.11
 Requires-Dist: fastapi<0.129,>=0.128
 Requires-Dist: uvicorn[standard]<0.49,>=0.48
@@ -18,4 +18,3 @@ Requires-Dist: reportlab<4.5,>=4.4
 Provides-Extra: dev
 Requires-Dist: pytest<10,>=9; extra == "dev"
 Requires-Dist: httpx<0.29,>=0.28; extra == "dev"
-Requires-Dist: pypdf<7,>=6.1; extra == "dev"
