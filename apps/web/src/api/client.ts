@@ -1,5 +1,5 @@
 import { requestActivityEvents } from '../app/GlobalRequestProgress';
-import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, CalculationCase, ConstructionStageWorkspace, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult } from '../types/domain';
+import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, CalculationCase, ConstructionStageWorkspace, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult, BusinessWorkflowOverview, DesignControlStage, DesignScenario, ConstructionPlanStage, FieldExecutionSnapshot, DeviationEvent, DesignCoreOverview, ParameterGovernance, ExternalCollaborationRecord, DesignReviewRequestRecord } from '../types/domain';
 
 const CONFIGURED_API_BASE = import.meta.env.VITE_API_BASE_URL;
 const API_BASE = CONFIGURED_API_BASE !== undefined
@@ -104,7 +104,7 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
   const { timeoutMs: _timeoutMs, timeoutMessage, retryCount: _retryCount, activity: _activity, signal: _signal, ...fetchInit } = init;
   const headers = new Headers(fetchInit.headers);
   headers.set('X-PitGuard-Client-Request-Id', activityId);
-  const transientStatuses = new Set([429, 502, 503, 504]);
+  const transientStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
 
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
     const controller = new AbortController();
@@ -122,7 +122,9 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
       if (transientStatuses.has(response.status) && attempt < retryCount) {
         window.clearTimeout(timeout);
         externalSignal?.removeEventListener('abort', abortFromExternal);
-        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+        const retryAfter = Number(response.headers.get('Retry-After') ?? 0);
+        const backoff = retryAfter > 0 ? retryAfter * 1000 : Math.min(2400, 300 * (2 ** attempt) + Math.random() * 180);
+        await new Promise((resolve) => window.setTimeout(resolve, backoff));
         continue;
       }
       dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在接收并整理数据' });
@@ -132,7 +134,8 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
       if (externalSignal?.aborted && !timedOut) throw new Error('请求已取消。');
       if (timedOut) throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，后端可能正在恢复或不可用。`);
       if (attempt < retryCount) {
-        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+        const backoff = Math.min(2400, 300 * (2 ** attempt) + Math.random() * 180);
+        await new Promise((resolve) => window.setTimeout(resolve, backoff));
         continue;
       }
       throw new Error(error instanceof Error ? error.message : '网络请求失败');
@@ -169,7 +172,9 @@ function request<T>(path: string, init?: RequestOptions): Promise<T> {
     const cached = responseCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
   }
-  const deduplicate = options.activity?.deduplicate ?? (method === 'GET' || ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method));
+  // GET can safely share an in-flight response. Mutations may carry different
+  // files or project revisions even when URL and serialized body appear equal.
+  const deduplicate = options.activity?.deduplicate ?? method === 'GET';
   const existing = deduplicate ? inFlight.get(key) : undefined;
   if (existing) return existing as Promise<T>;
 
@@ -184,6 +189,7 @@ function request<T>(path: string, init?: RequestOptions): Promise<T> {
   dispatchActivity(requestActivityEvents.start, { id: activityId, method, path, startedAt, ...activity });
   const promise = executeRequest<T>(path, options, activityId, activity)
     .then((value) => {
+      if (method !== 'GET') responseCache.clear();
       if (ttl > 0) responseCache.set(key, { expiresAt: Date.now() + ttl, value });
       dispatchActivity(requestActivityEvents.end, { id: activityId, method, path, startedAt, ...activity, ok: true });
       return value;
@@ -231,7 +237,7 @@ export const api = {
   logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST', timeoutMs: 5000 }),
   health: () => request<{ status: string; service: string }>('/health', { timeoutMs: 4000 }),
   systemMetrics: () => request<Record<string, unknown>>('/api/system/metrics'),
-  systemReadiness: () => request<Record<string, unknown>>('/api/system/readiness'),
+  systemReadiness: () => request<Record<string, unknown>>('/api/system/readiness', { timeoutMs: 6000, retryCount: 1, activity: { quiet: true, cacheTtlMs: 0, deduplicate: true } }),
   resourcePolicy: () => request<Record<string, unknown>>('/api/system/resource-policy', { timeoutMs: 5000 }),
   diagnostics: () => request<{ version: string; softwareVersion?: string; algorithmVersion?: string; ruleSetVersion?: string; exportSchemaVersion?: string; pythonVersion: string; databaseConfigured?: boolean; missingModules: string[]; modules: { importName: string; packageName: string; available: boolean; version?: string }[] }>('/api/system/diagnostics'),
   units: () => request<Record<string, any>>('/api/system/units'),
@@ -245,18 +251,6 @@ export const api = {
   getProject: (id: string) => request<Project>(`/api/projects/${id}?profile=workspace`, { timeoutMs: 20000, timeoutMessage: '项目工作区 20 秒内未加载完成。后端已阻止全量大对象进入 API；请检查项目存储健康状态。' }),
   getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 15000, retryCount: 0 }),
   getCoreDesignStatus: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design/core-status`, { timeoutMs: 15000, retryCount: 0 }),
-  applyGuidedDesignIntake: (
-    id: string,
-    payload: {
-      goal: 'quick_scheme' | 'standard_design' | 'formal_issue';
-      environmentLevel: '一般' | '较高' | '高';
-      objective: 'balanced' | 'safety_first' | 'economy_first';
-      designStage: 'temporary' | 'permanent_combined';
-    },
-  ) => request<Project>(`/api/projects/${id}/design/intake/apply`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    activity: { label: '正在应用设计任务书与推荐值', expectedMs: 1800 },
-  }),
   listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 30000, retryCount: 0 }),
   projectArtifactDownloadUrl: (id: string, artifactId: string) => `${API_BASE}/api/projects/${id}/artifacts/${artifactId}/download`,
   getCalculationStageChunks: (id: string, resultId: string) => request<Record<string, unknown>>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks`),
@@ -270,12 +264,48 @@ export const api = {
   getGeometryConsistency: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/geometry-consistency`),
   getProjectDashboard: (id: string, mode = 'balanced') => request<Record<string, unknown>>(`/api/projects/${id}/dashboard?mode=${mode}`),
   getDesignSchemeLedger: (id: string, mode = 'balanced') => request<Record<string, unknown>>(`/api/projects/${id}/design-scheme-ledger?mode=${mode}`),
+  getDesignCoreBundle: (id: string) => request<{ schema: string; overview: DesignCoreOverview; parameters: ParameterGovernance; rules: Record<string, any>; schemes: Record<string, any>; reinforcement: Record<string, any>; delivery: Record<string, any>; collaboration: { records: ExternalCollaborationRecord[]; reviewRequests: DesignReviewRequestRecord[]; boundary: string } }>(`/api/projects/${id}/design-core/bundle`, { timeoutMs: 20000, retryCount: 0, activity: { label: '正在加载设计主流程与质量证据', cacheTtlMs: 0 } }),
+  getDesignCoreOverview: (id: string) => request<DesignCoreOverview>(`/api/projects/${id}/design-core`, { timeoutMs: 15000, retryCount: 0, activity: { label: '正在加载设计质量与追溯证据', cacheTtlMs: 0 } }),
+  getParameterGovernance: (id: string) => request<ParameterGovernance>(`/api/projects/${id}/design-core/parameters`, { timeoutMs: 15000, activity: { label: '正在加载参数来源与确认状态', cacheTtlMs: 0 } }),
+  confirmDesignParameters: (id: string, updates: Record<string, unknown>[]) => request<Record<string, unknown>>(`/api/projects/${id}/design-core/parameters/confirm`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }) }),
+  getDesignRuleEvidence: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design-core/rules`),
+  getSchemeSearchAssurance: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design-core/schemes`),
+  getMemberEnvelopes: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design-core/member-envelopes`),
+  getReinforcementClosure: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design-core/reinforcement-closure`),
+  getDeliveryQuality: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design-core/delivery-quality`),
+  createDesignSnapshot: (id: string, purpose = 'internal_review') => request<Record<string, any>>(`/api/projects/${id}/design-core/design-snapshots`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose }) }),
+  getDesignCollaboration: (id: string) => request<{ records: ExternalCollaborationRecord[]; reviewRequests: DesignReviewRequestRecord[]; boundary: string }>(`/api/projects/${id}/design-core/collaboration`),
+  addDesignCollaboration: (id: string, record: ExternalCollaborationRecord) => request<Record<string, unknown>>(`/api/projects/${id}/design-core/collaboration`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) }),
+  getBusinessWorkflow: (id: string) => request<BusinessWorkflowOverview>(`/api/projects/${id}/workflow`, { timeoutMs: 15000, retryCount: 0, activity: { label: '正在加载设计、施工与现场责任门禁', cacheTtlMs: 0 } }),
+  migrateLegacyDesignStages: (id: string, force = false) => request<Record<string, unknown>>(`/api/projects/${id}/workflow/migrate-legacy-stages?force=${force ? 'true' : 'false'}`, { method: 'POST' }),
+  getDesignControlStages: (id: string) => request<{ semanticType: string; stages: DesignControlStage[]; validation: Record<string, unknown>; responsibility: string; excludedFields: string[] }>(`/api/projects/${id}/workflow/design-control-stages`),
+  saveDesignControlStages: (id: string, stages: DesignControlStage[]) => request<Record<string, unknown>>(`/api/projects/${id}/workflow/design-control-stages`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stages) }),
+  generateDesignScenarios: (id: string) => request<{ suite: Record<string, unknown>; scenarios: DesignScenario[] }>(`/api/projects/${id}/workflow/design-scenarios/generate`, { method: 'POST' }),
+  getDesignScenarios: (id: string) => request<{ scenarios: DesignScenario[]; envelope: Record<string, unknown> }>(`/api/projects/${id}/workflow/design-scenarios`),
+  updateDesignScenarioApproval: (id: string, scenarioIds: string[], approvalStatus: 'draft' | 'approved' | 'rejected' = 'approved', enabled?: boolean) => request<{ approval: Record<string, unknown>; scenarios: DesignScenario[] }>(`/api/projects/${id}/workflow/design-scenarios/approval`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioIds, approvalStatus, enabled }) }),
+  executeApprovedDesignScenarios: (id: string, scenarioIds?: string[], maxScenarios = 12) => request<PitTask>(`/api/projects/${id}/workflow/design-scenarios/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioIds: scenarioIds ?? [], maxScenarios }) }),
+  buildDesignScenarioEnvelope: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/workflow/design-scenarios/envelope`, { method: 'POST' }),
+  getConstructionPlanStages: (id: string) => request<{ stages: (ConstructionPlanStage & { compliance?: Record<string, unknown> })[]; responsibility: string }>(`/api/projects/${id}/workflow/construction-plan-stages`),
+  saveConstructionPlanStage: (id: string, stage: ConstructionPlanStage) => request<Record<string, unknown>>(`/api/projects/${id}/workflow/construction-plan-stages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stage) }),
+  addFieldExecutionSnapshot: (id: string, snapshot: FieldExecutionSnapshot) => request<Record<string, unknown>>(`/api/projects/${id}/workflow/field-snapshots`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snapshot) }),
+  getDeviationEvents: (id: string) => request<{ events: DeviationEvent[]; openCount: number }>(`/api/projects/${id}/workflow/deviations`),
   getIntegratedRetainingCandidates: (id: string, mode = 'balanced', maxCandidates = 8) => request<Record<string, any>>(`/api/projects/${id}/expert-design/integrated-candidates?mode=${mode}&maxCandidates=${maxCandidates}`),
   applyIntegratedRetainingCandidate: (id: string, candidateId: string, mode = 'balanced', recalculate = true) => request<Record<string, any>>(`/api/projects/${id}/expert-design/apply-integrated-candidate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId, mode, recalculate }) }),
   importBoreholes: (projectId: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
     return request<ImportResult>(`/api/projects/${projectId}/boreholes/import-csv`, { method: 'POST', body: form });
+  },
+  importBoreholesTask: (projectId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<PitTask>(`/api/projects/${projectId}/boreholes/import-task`, {
+      method: 'POST',
+      body: form,
+      timeoutMs: 120000,
+      timeoutMessage: '地勘文件上传 120 秒内未完成。文件不会重复提交，请检查网络和 API 日志。',
+      activity: { label: '正在上传地勘文件', expectedMs: 2500, cacheTtlMs: 0 },
+    });
   },
   buildGeology: (projectId: string) => request<GeologicalModel>(`/api/projects/${projectId}/geology/build-model`, { method: 'POST' }),
   importVtu: (projectId: string, file: File) => {
@@ -334,7 +364,20 @@ export const api = {
   importMonitoringCsv: (projectId: string, file: File) => { const form = new FormData(); form.append('file', file); return request<Record<string, any>>(`/api/projects/${projectId}/advanced/monitoring/import-csv`, { method: 'POST', body: form }); },
   monitoringTemplateUrl: (projectId: string) => `${API_BASE}/api/projects/${projectId}/advanced/monitoring/template.csv`,
   calibrateMonitoring: (projectId: string, apply = false) => request<Record<string, any>>(`/api/projects/${projectId}/advanced/monitoring/calibrate?apply=${apply}`, { method: 'POST' }),
-  transitionReview: (projectId: string, payload: { role: string; actor: string; action: string; comment?: string }) => request<Record<string, any>>(`/api/projects/${projectId}/advanced/review/transition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+  getEngineeringEvidenceStatus: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/advanced/engineering-evidence`),
+  attachEngineeringEvidence: (projectId: string, payload: { domain: 'borehole' | 'groundwater' | 'construction_stage'; objectIds: string[]; file: File; revision?: string; observedAt?: string }) => {
+    const form = new FormData();
+    form.append('domain', payload.domain);
+    form.append('object_ids', payload.objectIds.join(','));
+    if (payload.revision) form.append('revision', payload.revision);
+    if (payload.observedAt) form.append('observed_at', payload.observedAt);
+    form.append('file', payload.file);
+    return request<Record<string, any>>(`/api/projects/${projectId}/advanced/engineering-evidence/attach`, { method: 'POST', body: form });
+  },
+  verifyEngineeringEvidence: (projectId: string, payload: { domain: 'borehole' | 'groundwater' | 'construction_stage'; objectIds: string[]; actor: string; professionalCredential: Record<string, unknown>; digitalSignatureHash: string }) => request<Record<string, any>>(`/api/projects/${projectId}/advanced/engineering-evidence/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+  getConcaveTransferDetailing: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/concave-transfer-detailing`),
+  approveConcaveTransferDetailing: (projectId: string, payload: Record<string, unknown>) => request<Record<string, any>>(`/api/projects/${projectId}/design/concave-transfer-detailing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+  transitionReview: (projectId: string, payload: { role: string; actor: string; action: string; comment?: string; professionalCredential?: Record<string, unknown>; digitalSignatureHash?: string }) => request<Record<string, any>>(`/api/projects/${projectId}/advanced/review/transition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   addDrawingRevision: (projectId: string, payload: { description: string; sheetNumbers?: string[]; author: string; issueStatus?: string }) => request<DrawingRevision>(`/api/projects/${projectId}/advanced/revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   formalDrawingPackageUrl: (projectId: string, issueMode: 'review' | 'construction' = 'review', rebarMode: 'conservative' | 'balanced' | 'economic' = 'balanced') => `${API_BASE}/api/projects/${projectId}/export/formal-drawing-package?issue_mode=${issueMode}&rebar_mode=${rebarMode}`,
   coordinatedDeliveryPackageUrl: (projectId: string, issueMode: 'review' | 'construction' = 'review', rebarMode: 'conservative' | 'balanced' | 'economic' = 'balanced') => `${API_BASE}/api/projects/${projectId}/export/coordinated-delivery-package?issue_mode=${issueMode}&rebar_mode=${rebarMode}&include_ifc_profiles=true`,
@@ -354,7 +397,7 @@ export const api = {
   listProjectTasks: (projectId: string) => request<PitTask[]>(`/api/projects/${projectId}/tasks`),
   getIssueCenter: (projectId: string) => request<IssueCenterResult>(`/api/projects/${projectId}/issues`),
   getIfcCheck: (projectId: string) => request<unknown>(`/api/projects/${projectId}/export/ifc-check`, { method: 'POST' }),
-  getRebarIfcVisualization: (projectId: string, maxBars = 2400) => request<RebarIfcVisualization>(`/api/projects/${projectId}/export/ifc-rebar-visualization?max_bars=${maxBars}`),
+  getRebarIfcVisualization: (projectId: string, maxBars = 2400, focusHostId?: string) => request<RebarIfcVisualization>(`/api/projects/${projectId}/export/ifc-rebar-visualization?max_bars=${maxBars}${focusHostId ? `&focus_host_id=${encodeURIComponent(focusHostId)}` : ''}`),
   getRebarDetailing: (projectId: string, mode = 'balanced') => request<RebarDetailingResult>(`/api/projects/${projectId}/rebar/detailing?mode=${mode}`),
   getDeepDetailing: (projectId: string, mode = 'balanced') => request<Record<string, any>>(`/api/projects/${projectId}/rebar/deep-detailing?mode=${mode}`),
   getRebarDesignScheme: (projectId: string, mode = 'balanced') => request<RebarDesignScheme>(`/api/projects/${projectId}/rebar/design-scheme?mode=${mode}`),

@@ -1,0 +1,179 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'>
+<rect x='0' y='0' width='1400' height='900' fill='white'/>
+<rect x='35' y='35' width='1330' height='830' fill='none' stroke='black' stroke-width='2'/>
+<style>text{font-family:Arial,'Microsoft YaHei',sans-serif;font-size:20px} .small{font-size:14px} .thin{stroke:#333;stroke-width:1;fill:none} .thick{stroke:#111;stroke-width:4;fill:none} .rebar{stroke:#111;stroke-width:3} .dim{stroke:#777;stroke-width:1;fill:none;stroke-dasharray:6 4}</style>
+<text x='80' y='85'>支撑平面布置图</text>
+<polygon points='120.0,650.0 1020.0,650.0 1020.0,427.8 645.0,427.8 645.0,150.0 120.0,150.0' fill='none' stroke='#111' stroke-width='4'/>
+<line x1='135.0' y1='566.7' x2='213.0' y2='566.7' stroke='#0b4' stroke-width='2.0'/>
+<text x='179.0' y='561.7' class='small'>RS-L1-1</text>
+<line x1='135.0' y1='483.3' x2='213.0' y2='483.3' stroke='#0b4' stroke-width='2.0'/>
+<text x='179.0' y='478.3' class='small'>RS-L1-2</text>
+<line x1='135.0' y1='400.0' x2='213.0' y2='400.0' stroke='#0b4' stroke-width='2.0'/>
+<text x='179.0' y='395.0' class='small'>RS-L1-3</text>
+<line x1='135.0' y1='316.7' x2='213.0' y2='316.7' stroke='#0b4' stroke-width='2.0'/>
+<text x='179.0' y='311.7' class='small'>RS-L1-4</text>
+<line x1='135.0' y1='233.3' x2='213.0' y2='233.3' stroke='#0b4' stroke-width='2.0'/>
+<text x='179.0' y='228.3' class='small'>RS-L1-5</text>
+<line x1='225.0' y1='161.1' x2='225.0' y2='218.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='230.0' y='185.0' class='small'>RS-L1-6</text>
+<line x1='232.5' y1='638.9' x2='232.5' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='237.5' y='605.0' class='small'>RS-L1-7</text>
+<line x1='330.0' y1='161.1' x2='330.0' y2='218.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='335.0' y='185.0' class='small'>RS-L1-8</text>
+<line x1='345.0' y1='638.9' x2='345.0' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='350.0' y='605.0' class='small'>RS-L1-9</text>
+<line x1='435.0' y1='161.1' x2='435.0' y2='218.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='440.0' y='185.0' class='small'>RS-L1-10</text>
+<line x1='457.5' y1='638.9' x2='457.5' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='462.5' y='605.0' class='small'>RS-L1-11</text>
+<line x1='540.0' y1='161.1' x2='540.0' y2='218.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='545.0' y='185.0' class='small'>RS-L1-12</text>
+<line x1='570.0' y1='638.9' x2='570.0' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='575.0' y='605.0' class='small'>RS-L1-13</text>
+<line x1='630.0' y1='358.3' x2='552.0' y2='358.3' stroke='#0b4' stroke-width='2.0'/>
+<text x='596.0' y='353.3' class='small'>RS-L1-14</text>
+<line x1='630.0' y1='288.9' x2='552.0' y2='288.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='596.0' y='283.9' class='small'>RS-L1-15</text>
+<line x1='630.0' y1='219.4' x2='552.0' y2='219.4' stroke='#0b4' stroke-width='2.0'/>
+<text x='596.0' y='214.4' class='small'>RS-L1-16</text>
+<line x1='682.5' y1='638.9' x2='682.5' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='687.5' y='605.0' class='small'>RS-L1-17</text>
+<line x1='738.8' y1='438.9' x2='738.8' y2='496.7' stroke='#0b4' stroke-width='2.0'/>
+<text x='743.8' y='462.8' class='small'>RS-L1-18</text>
+<line x1='795.0' y1='638.9' x2='795.0' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='800.0' y='605.0' class='small'>RS-L1-19</text>
+<line x1='832.5' y1='438.9' x2='832.5' y2='496.7' stroke='#0b4' stroke-width='2.0'/>
+<text x='837.5' y='462.8' class='small'>RS-L1-20</text>
+<line x1='907.5' y1='638.9' x2='907.5' y2='581.1' stroke='#0b4' stroke-width='2.0'/>
+<text x='912.5' y='605.0' class='small'>RS-L1-21</text>
+<line x1='926.2' y1='438.9' x2='926.2' y2='496.7' stroke='#0b4' stroke-width='2.0'/>
+<text x='931.2' y='462.8' class='small'>RS-L1-22</text>
+<line x1='1005.0' y1='575.9' x2='927.0' y2='575.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='971.0' y='570.9' class='small'>RS-L1-23</text>
+<line x1='1005.0' y1='501.9' x2='927.0' y2='501.9' stroke='#0b4' stroke-width='2.0'/>
+<text x='971.0' y='496.9' class='small'>RS-L1-24</text>
+<line x1='135.0' y1='566.7' x2='213.0' y2='566.7' stroke='#0b4' stroke-width='2.7'/>
+<text x='179.0' y='561.7' class='small'>RS-L2-1</text>
+<line x1='135.0' y1='483.3' x2='213.0' y2='483.3' stroke='#0b4' stroke-width='2.7'/>
+<text x='179.0' y='478.3' class='small'>RS-L2-2</text>
+<line x1='135.0' y1='400.0' x2='213.0' y2='400.0' stroke='#0b4' stroke-width='2.7'/>
+<text x='179.0' y='395.0' class='small'>RS-L2-3</text>
+<line x1='135.0' y1='316.7' x2='213.0' y2='316.7' stroke='#0b4' stroke-width='2.7'/>
+<text x='179.0' y='311.7' class='small'>RS-L2-4</text>
+<line x1='135.0' y1='233.3' x2='213.0' y2='233.3' stroke='#0b4' stroke-width='2.7'/>
+<text x='179.0' y='228.3' class='small'>RS-L2-5</text>
+<line x1='225.0' y1='161.1' x2='225.0' y2='218.9' stroke='#0b4' stroke-width='2.7'/>
+<text x='230.0' y='185.0' class='small'>RS-L2-6</text>
+<line x1='232.5' y1='638.9' x2='232.5' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='237.5' y='605.0' class='small'>RS-L2-7</text>
+<line x1='330.0' y1='161.1' x2='330.0' y2='218.9' stroke='#0b4' stroke-width='2.7'/>
+<text x='335.0' y='185.0' class='small'>RS-L2-8</text>
+<line x1='345.0' y1='638.9' x2='345.0' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='350.0' y='605.0' class='small'>RS-L2-9</text>
+<line x1='435.0' y1='161.1' x2='435.0' y2='218.9' stroke='#0b4' stroke-width='2.7'/>
+<text x='440.0' y='185.0' class='small'>RS-L2-10</text>
+<line x1='457.5' y1='638.9' x2='457.5' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='462.5' y='605.0' class='small'>RS-L2-11</text>
+<line x1='540.0' y1='161.1' x2='540.0' y2='218.9' stroke='#0b4' stroke-width='2.7'/>
+<text x='545.0' y='185.0' class='small'>RS-L2-12</text>
+<line x1='570.0' y1='638.9' x2='570.0' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='575.0' y='605.0' class='small'>RS-L2-13</text>
+<line x1='630.0' y1='358.3' x2='552.0' y2='358.3' stroke='#0b4' stroke-width='2.5'/>
+<text x='596.0' y='353.3' class='small'>RS-L2-14</text>
+<line x1='630.0' y1='288.9' x2='552.0' y2='288.9' stroke='#0b4' stroke-width='2.5'/>
+<text x='596.0' y='283.9' class='small'>RS-L2-15</text>
+<line x1='630.0' y1='219.4' x2='552.0' y2='219.4' stroke='#0b4' stroke-width='2.5'/>
+<text x='596.0' y='214.4' class='small'>RS-L2-16</text>
+<line x1='682.5' y1='638.9' x2='682.5' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='687.5' y='605.0' class='small'>RS-L2-17</text>
+<line x1='738.8' y1='438.9' x2='738.8' y2='496.7' stroke='#0b4' stroke-width='2.5'/>
+<text x='743.8' y='462.8' class='small'>RS-L2-18</text>
+<line x1='795.0' y1='638.9' x2='795.0' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='800.0' y='605.0' class='small'>RS-L2-19</text>
+<line x1='832.5' y1='438.9' x2='832.5' y2='496.7' stroke='#0b4' stroke-width='2.5'/>
+<text x='837.5' y='462.8' class='small'>RS-L2-20</text>
+<line x1='907.5' y1='638.9' x2='907.5' y2='581.1' stroke='#0b4' stroke-width='2.6'/>
+<text x='912.5' y='605.0' class='small'>RS-L2-21</text>
+<line x1='926.2' y1='438.9' x2='926.2' y2='496.7' stroke='#0b4' stroke-width='2.5'/>
+<text x='931.2' y='462.8' class='small'>RS-L2-22</text>
+<line x1='1005.0' y1='575.9' x2='927.0' y2='575.9' stroke='#0b4' stroke-width='3.0'/>
+<text x='971.0' y='570.9' class='small'>RS-L2-23</text>
+<line x1='1005.0' y1='501.9' x2='927.0' y2='501.9' stroke='#0b4' stroke-width='3.0'/>
+<text x='971.0' y='496.9' class='small'>RS-L2-24</text>
+<line x1='135.0' y1='566.7' x2='213.0' y2='566.7' stroke='#0b4' stroke-width='2.2'/>
+<text x='179.0' y='561.7' class='small'>RS-L3-1</text>
+<line x1='135.0' y1='483.3' x2='213.0' y2='483.3' stroke='#0b4' stroke-width='2.2'/>
+<text x='179.0' y='478.3' class='small'>RS-L3-2</text>
+<line x1='135.0' y1='400.0' x2='213.0' y2='400.0' stroke='#0b4' stroke-width='2.2'/>
+<text x='179.0' y='395.0' class='small'>RS-L3-3</text>
+<line x1='135.0' y1='316.7' x2='213.0' y2='316.7' stroke='#0b4' stroke-width='2.2'/>
+<text x='179.0' y='311.7' class='small'>RS-L3-4</text>
+<line x1='135.0' y1='233.3' x2='213.0' y2='233.3' stroke='#0b4' stroke-width='2.2'/>
+<text x='179.0' y='228.3' class='small'>RS-L3-5</text>
+<line x1='225.0' y1='161.1' x2='225.0' y2='218.9' stroke='#0b4' stroke-width='2.2'/>
+<text x='230.0' y='185.0' class='small'>RS-L3-6</text>
+<line x1='232.5' y1='638.9' x2='232.5' y2='581.1' stroke='#0b4' stroke-width='2.2'/>
+<text x='237.5' y='605.0' class='small'>RS-L3-7</text>
+<line x1='330.0' y1='161.1' x2='330.0' y2='218.9' stroke='#0b4' stroke-width='2.2'/>
+<text x='335.0' y='185.0' class='small'>RS-L3-8</text>
+<line x1='345.0' y1='638.9' x2='345.0' y2='581.1' stroke='#0b4' stroke-width='2.1'/>
+<text x='350.0' y='605.0' class='small'>RS-L3-9</text>
+<line x1='435.0' y1='161.1' x2='435.0' y2='218.9' stroke='#0b4' stroke-width='2.2'/>
+<text x='440.0' y='185.0' class='small'>RS-L3-10</text>
+<line x1='457.5' y1='638.9' x2='457.5' y2='581.1' stroke='#0b4' stroke-width='2.2'/>
+<text x='462.5' y='605.0' class='small'>RS-L3-11</text>
+<line x1='540.0' y1='161.1' x2='540.0' y2='218.9' stroke='#0b4' stroke-width='2.2'/>
+<text x='545.0' y='185.0' class='small'>RS-L3-12</text>
+<line x1='570.0' y1='638.9' x2='570.0' y2='581.1' stroke='#0b4' stroke-width='2.2'/>
+<text x='575.0' y='605.0' class='small'>RS-L3-13</text>
+<line x1='630.0' y1='358.3' x2='552.0' y2='358.3' stroke='#0b4' stroke-width='2.1'/>
+<text x='596.0' y='353.3' class='small'>RS-L3-14</text>
+<line x1='630.0' y1='288.9' x2='552.0' y2='288.9' stroke='#0b4' stroke-width='2.1'/>
+<text x='596.0' y='283.9' class='small'>RS-L3-15</text>
+<line x1='630.0' y1='219.4' x2='552.0' y2='219.4' stroke='#0b4' stroke-width='2.1'/>
+<text x='596.0' y='214.4' class='small'>RS-L3-16</text>
+<line x1='682.5' y1='638.9' x2='682.5' y2='581.1' stroke='#0b4' stroke-width='2.2'/>
+<text x='687.5' y='605.0' class='small'>RS-L3-17</text>
+<line x1='738.8' y1='438.9' x2='738.8' y2='496.7' stroke='#0b4' stroke-width='2.1'/>
+<text x='743.8' y='462.8' class='small'>RS-L3-18</text>
+<line x1='795.0' y1='638.9' x2='795.0' y2='581.1' stroke='#0b4' stroke-width='2.2'/>
+<text x='800.0' y='605.0' class='small'>RS-L3-19</text>
+<line x1='832.5' y1='438.9' x2='832.5' y2='496.7' stroke='#0b4' stroke-width='2.1'/>
+<text x='837.5' y='462.8' class='small'>RS-L3-20</text>
+<line x1='907.5' y1='638.9' x2='907.5' y2='581.1' stroke='#0b4' stroke-width='2.1'/>
+<text x='912.5' y='605.0' class='small'>RS-L3-21</text>
+<line x1='926.2' y1='438.9' x2='926.2' y2='496.7' stroke='#0b4' stroke-width='2.1'/>
+<text x='931.2' y='462.8' class='small'>RS-L3-22</text>
+<line x1='1005.0' y1='575.9' x2='927.0' y2='575.9' stroke='#0b4' stroke-width='2.4'/>
+<text x='971.0' y='570.9' class='small'>RS-L3-23</text>
+<line x1='1005.0' y1='501.9' x2='927.0' y2='501.9' stroke='#0b4' stroke-width='2.4'/>
+<text x='971.0' y='496.9' class='small'>RS-L3-24</text>
+<circle cx='524.7' cy='432.4' r='6' fill='#111'/><text x='532.7' y='424.4' class='small'>STC-001</text>
+<circle cx='213.0' cy='581.1' r='6' fill='#111'/><text x='221.0' y='573.1' class='small'>TFC-001</text>
+<circle cx='213.0' cy='460.4' r='6' fill='#111'/><text x='221.0' y='452.4' class='small'>TFC-002</text>
+<circle cx='213.0' cy='339.6' r='6' fill='#111'/><text x='221.0' y='331.6' class='small'>TFC-003</text>
+<circle cx='213.0' cy='218.9' r='6' fill='#111'/><text x='221.0' y='210.9' class='small'>TFC-004</text>
+<circle cx='297.8' cy='469.4' r='6' fill='#111'/><text x='305.8' y='461.4' class='small'>TFC-005</text>
+<circle cx='297.8' cy='288.3' r='6' fill='#111'/><text x='305.8' y='280.3' class='small'>TFC-006</text>
+<circle cx='382.5' cy='357.8' r='6' fill='#111'/><text x='390.5' y='349.8' class='small'>TFC-007</text>
+<circle cx='382.5' cy='218.9' r='6' fill='#111'/><text x='390.5' y='210.9' class='small'>TFC-008</text>
+<circle cx='391.5' cy='581.1' r='6' fill='#111'/><text x='399.5' y='573.1' class='small'>TFC-009</text>
+<circle cx='467.2' cy='427.2' r='6' fill='#111'/><text x='475.2' y='419.2' class='small'>TFC-010</text>
+<circle cx='467.2' cy='288.3' r='6' fill='#111'/><text x='475.2' y='280.3' class='small'>TFC-011</text>
+<circle cx='552.0' cy='496.7' r='6' fill='#111'/><text x='560.0' y='488.7' class='small'>TFC-012</text>
+<circle cx='552.0' cy='404.1' r='6' fill='#111'/><text x='560.0' y='396.1' class='small'>TFC-013</text>
+<circle cx='552.0' cy='311.5' r='6' fill='#111'/><text x='560.0' y='303.5' class='small'>TFC-014</text>
+<circle cx='552.0' cy='218.9' r='6' fill='#111'/><text x='560.0' y='210.9' class='small'>TFC-015</text>
+<circle cx='570.0' cy='581.1' r='6' fill='#111'/><text x='578.0' y='573.1' class='small'>TFC-016</text>
+<circle cx='677.0' cy='496.7' r='6' fill='#111'/><text x='685.0' y='488.7' class='small'>TFC-017</text>
+<circle cx='748.5' cy='581.1' r='6' fill='#111'/><text x='756.5' y='573.1' class='small'>TFC-018</text>
+<circle cx='802.0' cy='496.7' r='6' fill='#111'/><text x='810.0' y='488.7' class='small'>TFC-019</text>
+<circle cx='927.0' cy='581.1' r='6' fill='#111'/><text x='935.0' y='573.1' class='small'>TFC-020</text>
+<circle cx='927.0' cy='496.7' r='6' fill='#111'/><text x='935.0' y='488.7' class='small'>TFC-021</text>
+<rect x='880' y='750' width='470' height='105' fill='none' stroke='black' stroke-width='1'/>
+<line x1='880' y1='785' x2='1350' y2='785' stroke='black'/>
+<line x1='1040' y1='750' x2='1040' y2='855' stroke='black'/>
+<text x='895' y='775' class='small'>图名</text><text x='1055' y='775' class='small'>支撑平面布置图</text>
+<text x='895' y='812' class='small'>比例</text><text x='1055' y='812' class='small'>1:200</text>
+<text x='895' y='842' class='small'>阶段</text><text x='1055' y='842' class='small'>方案/施工图深化接口</text>
+</svg>

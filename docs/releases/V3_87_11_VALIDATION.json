@@ -1,0 +1,20 @@
+{
+  "version": "3.87.11",
+  "scope": "universal WebGL fullscreen and workflow runtime stability",
+  "calculationContractChanged": false,
+  "webglViewerCount": 4,
+  "webglViewers": [
+    "Engineering3DViewer",
+    "ProjectSceneViewer",
+    "WallCloud3DViewer",
+    "RebarIfcViewer"
+  ],
+  "checks": {
+    "typescriptTranspile": "passed",
+    "pythonCompile": "passed",
+    "shellSyntax": "passed",
+    "fullscreenCoverageStaticCheck": "passed",
+    "selectedPytest": "2 version-manifest regression tests passed; broader runtime suites were not counted because they exceeded the bounded validation window",
+    "fullViteBuild": "not run because node_modules are not bundled in the source package"
+  }
+}

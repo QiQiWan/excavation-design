@@ -128,3 +128,58 @@ def test_local_start_scripts_use_external_worker() -> None:
     assert "run-worker-supervisor.py" in windows
     assert "PITGUARD_TASK_EXECUTION_MODE=external" in linux
     assert "run-worker-supervisor.py" in linux
+
+
+def _running_task(task_id: str, *, heartbeat_at: str | None = None) -> dict:
+    now = heartbeat_at or datetime.now(timezone.utc).isoformat()
+    return {
+        "id": task_id,
+        "projectId": "project-worker-recovery",
+        "operation": "rebar_design",
+        "status": "running",
+        "progress": 45,
+        "currentStep": "配筋闭合",
+        "createdAt": now,
+        "updatedAt": now,
+        "heartbeatAt": now,
+        "logs": [],
+        "payload": {},
+    }
+
+
+def test_normal_fresh_worker_cycle_does_not_interrupt_running_task(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "normal-cycle.sqlite3"
+    heartbeat = tmp_path / "worker-heartbeat.json"
+    task_id = "task-normal-cycle"
+    SQLiteTaskStore(db_path).upsert(_running_task(task_id))
+    heartbeat.write_text(json.dumps({
+        "status": "completed", "taskId": "task-previous", "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "pid": 999999, "rssMb": 10,
+    }), encoding="utf-8")
+    monkeypatch.setenv("PITGUARD_DB_PATH", str(db_path))
+    monkeypatch.setenv("PITGUARD_TASK_EXECUTION_MODE", "worker")
+    monkeypatch.setenv("PITGUARD_WORKER_HEARTBEAT_PATH", str(heartbeat))
+    manager = TaskManager()
+    assert manager.recover_external_worker() == 0
+    assert SQLiteTaskStore(db_path).get(task_id)["status"] == "running"
+
+
+def test_dead_prior_worker_interrupts_only_its_matching_task(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "dead-worker.sqlite3"
+    heartbeat = tmp_path / "worker-heartbeat.json"
+    owned = "task-owned-by-dead-worker"
+    unrelated = "task-fresh-unrelated"
+    store = SQLiteTaskStore(db_path)
+    store.upsert(_running_task(owned))
+    store.upsert(_running_task(unrelated))
+    heartbeat.write_text(json.dumps({
+        "status": "running", "taskId": owned, "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "pid": 999999, "rssMb": 10,
+    }), encoding="utf-8")
+    monkeypatch.setenv("PITGUARD_DB_PATH", str(db_path))
+    monkeypatch.setenv("PITGUARD_TASK_EXECUTION_MODE", "worker")
+    monkeypatch.setenv("PITGUARD_WORKER_HEARTBEAT_PATH", str(heartbeat))
+    manager = TaskManager()
+    assert manager.recover_external_worker() == 1
+    assert store.get(owned)["status"] == "interrupted"
+    assert store.get(unrelated)["status"] == "running"

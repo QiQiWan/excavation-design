@@ -1,0 +1,19 @@
+{
+  "version": "3.87.10",
+  "scope": "canonical wall path and rebar cage plan geometry",
+  "validation": {
+    "python_compile": "passed",
+    "targeted_backend_tests": {
+      "passed": 54,
+      "failed": 0
+    },
+    "typescript_transpile": "passed",
+    "shell_syntax": "passed",
+    "zip_integrity": "passed after packaging verification",
+    "complete_file_count": 692
+  },
+  "limitations": [
+    "The packaging container does not provide ezdxf, so the complete CAD/DXF test suite was not collected.",
+    "Modified CAD/IFC modules passed Python compilation and shared-geometry regression tests."
+  ]
+}

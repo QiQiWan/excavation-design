@@ -1,0 +1,56 @@
+{
+  "version": "3.87.7",
+  "release": "transfer-path-auto-recovery",
+  "validatedAt": "2026-07-24",
+  "checks": [
+    {
+      "name": "Python modified modules compile",
+      "status": "pass"
+    },
+    {
+      "name": "Focused backend regression suite",
+      "status": "pass",
+      "count": 75
+    },
+    {
+      "name": "Stale-transfer full optimization smoke",
+      "status": "pass",
+      "evaluatedCandidates": 2,
+      "zeroCandidateEarlyReturn": false
+    },
+    {
+      "name": "CoreProjectWorkspace TSX syntax transpile",
+      "status": "pass"
+    },
+    {
+      "name": "ConstructionStageEditor TSX syntax transpile",
+      "status": "pass"
+    },
+    {
+      "name": "macOS/Linux shell syntax",
+      "status": "pass"
+    },
+    {
+      "name": "Complete npm build",
+      "status": "not_run",
+      "reason": "frontend node_modules are not present in the packaging container"
+    },
+    {
+      "name": "Complete backend test suite",
+      "status": "not_run",
+      "reason": "packaging container does not provide ezdxf; focused affected suites were executed"
+    }
+  ],
+  "diagnosticEvidence": {
+    "projectId": "project-fad08cd623a4",
+    "staleSupportReferenceCounts": [
+      52,
+      104,
+      156
+    ],
+    "actualConstructionStageCount": 7,
+    "wallSegmentCount": 20,
+    "stageSegmentResultCount": 140,
+    "previousEvaluatedCandidateCount": 0
+  }
+}

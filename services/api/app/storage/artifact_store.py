@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -153,6 +154,58 @@ class ProjectArtifactStore:
             "metadata": dict(metadata or {}),
         }
 
+    def write_bytes(
+        self,
+        project_id: str,
+        kind: str,
+        content: bytes,
+        *,
+        filename: str | None = None,
+        content_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist an immutable source document used as engineering evidence.
+
+        The checksum is calculated from the exact uploaded bytes.  The original
+        filename is metadata only and never controls the storage path.
+        """
+        raw = bytes(content)
+        digest = hashlib.sha256(raw).hexdigest()
+        kind_token = _safe(kind)
+        target_dir = (self.root / _safe(project_id) / kind_token).resolve()
+        if self.root not in target_dir.parents:
+            raise ValueError("Invalid artifact destination")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        original = str(filename or "evidence.bin").strip() or "evidence.bin"
+        suffix = Path(original).suffix.lower()
+        if not suffix or len(suffix) > 12 or not re.fullmatch(r"\.[a-z0-9]+", suffix):
+            suffix = ".bin"
+        relative = Path(_safe(project_id)) / kind_token / f"{digest}{suffix}"
+        destination = (self.root / relative).resolve()
+        if not destination.exists():
+            temporary = target_dir / f".tmp-{uuid4().hex}{suffix}"
+            temporary.write_bytes(raw)
+            temporary.replace(destination)
+        stat = destination.stat()
+        detected = content_type or mimetypes.guess_type(original)[0] or "application/octet-stream"
+        item_metadata = dict(metadata or {})
+        item_metadata.setdefault("originalFilename", original)
+        return {
+            "artifactId": f"artifact-{digest[:20]}",
+            "schemaVersion": ARTIFACT_SCHEMA_VERSION,
+            "projectId": project_id,
+            "kind": kind,
+            "sha256": digest,
+            "relativePath": relative.as_posix(),
+            "contentType": detected,
+            "contentEncoding": None,
+            "logicalBytes": len(raw),
+            "storedBytes": int(stat.st_size),
+            "itemCount": None,
+            "createdAt": _now(),
+            "metadata": item_metadata,
+        }
+
     def resolve(self, ref: dict[str, Any]) -> Path:
         relative = Path(str(ref.get("relativePath") or ""))
         path = (self.root / relative).resolve()
@@ -195,14 +248,17 @@ class ProjectArtifactStore:
         if not directory.exists():
             return []
         output: list[dict[str, Any]] = []
-        for path in sorted(directory.glob("*/*.json.gz")):
+        for path in sorted(directory.glob("*/*")):
+            if not path.is_file() or path.name.startswith(".tmp-"):
+                continue
             try:
                 relative = path.relative_to(self.root)
-                digest = path.name.split(".json.gz", 1)[0]
+                digest = path.name.split(".", 1)[0]
                 kind = path.parent.name
                 stat = path.stat()
             except (OSError, ValueError):
                 continue
+            json_gzip = path.name.endswith(".json.gz")
             output.append({
                 "artifactId": f"artifact-{digest[:20]}",
                 "schemaVersion": ARTIFACT_SCHEMA_VERSION,
@@ -210,8 +266,8 @@ class ProjectArtifactStore:
                 "kind": kind,
                 "sha256": digest,
                 "relativePath": relative.as_posix(),
-                "contentType": "application/json",
-                "contentEncoding": "gzip",
+                "contentType": "application/json" if json_gzip else (mimetypes.guess_type(path.name)[0] or "application/octet-stream"),
+                "contentEncoding": "gzip" if json_gzip else None,
                 "logicalBytes": 0,
                 "storedBytes": int(stat.st_size),
                 "itemCount": None,
@@ -255,6 +311,40 @@ def _set_artifact_refs(project: dict[str, Any], refs: list[dict[str, Any]]) -> N
         "updatedAt": _now(),
     }
     project["advancedEngineering"] = advanced
+
+
+def append_project_artifact_ref(project: Any, ref: dict[str, Any], *, storage_key: str | None = None) -> dict[str, Any]:
+    """Attach an immutable artifact reference to a Project or project dict."""
+    if hasattr(project, "advanced_engineering"):
+        advanced = dict(getattr(project, "advanced_engineering") or {})
+        assign = lambda value: setattr(project, "advanced_engineering", value)
+    elif isinstance(project, dict):
+        advanced = dict(project.get("advancedEngineering") or {})
+        assign = lambda value: project.__setitem__("advancedEngineering", value)
+    else:
+        raise TypeError("project must be a Project model or dictionary")
+    storage = dict(advanced.get("artifactStorage") or {})
+    refs = [dict(item) for item in list(storage.get("artifacts") or []) if isinstance(item, dict)]
+    item = dict(ref)
+    if storage_key:
+        item["storageKey"] = storage_key
+    identity = str(item.get("storageKey") or item.get("artifactId") or "")
+    refs = [row for row in refs if str(row.get("storageKey") or row.get("artifactId") or "") != identity]
+    refs.append(item)
+    logical = sum(int(row.get("logicalBytes") or 0) for row in refs)
+    stored = sum(int(row.get("storedBytes") or 0) for row in refs)
+    advanced["artifactStorage"] = {
+        "schemaVersion": ARTIFACT_SCHEMA_VERSION,
+        "mode": "external_content_addressed",
+        "artifactCount": len(refs),
+        "logicalBytes": logical,
+        "storedBytes": stored,
+        "compressionRatio": round(stored / max(logical, 1), 6),
+        "artifacts": refs,
+        "updatedAt": _now(),
+    }
+    assign(advanced)
+    return item
 
 
 def _compact_calculation_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -685,4 +775,55 @@ def rehydrate_project_payload(project: dict[str, Any], store: ProjectArtifactSto
         for _, ref in monitoring_refs:
             records.extend(list(store.read_json(ref) or []))
         project["monitoringRecords"] = records
+    return project
+
+
+def rehydrate_geological_evidence(
+    project: dict[str, Any],
+    store: ProjectArtifactStore,
+    *,
+    include_vtu: bool = False,
+) -> dict[str, Any]:
+    """Load the full geology arrays required by engineering calculations only.
+
+    Interactive workspaces keep bounded surface previews. Formal calculations
+    need the immutable full surfaces and volumes, while the VTU visualization
+    mesh can remain external unless explicitly requested.
+    """
+    geological = project.get("geologicalModel")
+    if not isinstance(geological, dict):
+        return project
+    refs = {
+        str(item.get("storageKey") or ""): item
+        for item in artifact_refs(project)
+        if item.get("storageKey")
+    }
+    keys = ["geology:surfaces", "geology:volumes"]
+    if include_vtu:
+        keys.append("geology:vtu")
+    field_by_key = {
+        "geology:surfaces": "surfaces",
+        "geology:volumes": "volumes",
+        "geology:vtu": "vtuMesh",
+    }
+    load_state: dict[str, Any] = {}
+    for key in keys:
+        field = field_by_key[key]
+        current = geological.get(field)
+        if current:
+            load_state[field] = "inline"
+            continue
+        ref = refs.get(key)
+        if ref is None:
+            load_state[field] = "not_available"
+            continue
+        geological[field] = store.read_json(ref)
+        load_state[field] = "loaded"
+    advanced = dict(project.get("advancedEngineering") or {})
+    advanced["calculationGeologyEvidence"] = {
+        "state": "loaded" if load_state.get("surfaces") in {"inline", "loaded"} else "incomplete",
+        "fields": load_state,
+        "source": "canonical snapshot plus content-addressed geology artifacts",
+    }
+    project["advancedEngineering"] = advanced
     return project

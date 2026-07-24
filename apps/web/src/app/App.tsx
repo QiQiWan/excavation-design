@@ -10,6 +10,8 @@ import {
   buildLoginHref,
   LOGIN_PATH,
   loginReasonMessage,
+  projectIdFromPath,
+  projectPath,
   readBrowserRoute,
   returnPathFromLoginSearch,
   routeHref,
@@ -35,6 +37,15 @@ type AuthPolicy = {
   sessionTtlSeconds: number;
 };
 
+type RuntimeReadiness = {
+  status?: 'ready' | 'degraded' | 'not_ready' | string;
+  ready?: boolean;
+  degraded?: boolean;
+  degradedReasons?: string[];
+  blockingReasons?: string[];
+  tasks?: Record<string, unknown>;
+};
+
 function useBrowserRoute() {
   const [route, setRoute] = useState<BrowserRoute>(() => readBrowserRoute());
 
@@ -56,13 +67,17 @@ function useBrowserRoute() {
 export default function App() {
   const [health, setHealth] = useState('checking');
   const [diagnostics, setDiagnostics] = useState<Diagnostics | undefined>();
+  const [readiness, setReadiness] = useState<RuntimeReadiness | undefined>();
   const [selected, setSelected] = useState<Project | undefined>();
+  const [restoringProject, setRestoringProject] = useState(false);
+  const [projectRestoreError, setProjectRestoreError] = useState<string>();
   const [authChecking, setAuthChecking] = useState(true);
   const [authPolicy, setAuthPolicy] = useState<AuthPolicy | undefined>();
   const [authError, setAuthError] = useState<string>();
   const [identity, setIdentity] = useState<AuthIdentity | undefined>();
   const [authRetryNonce, setAuthRetryNonce] = useState(0);
   const { route, navigate } = useBrowserRoute();
+  const routedProjectId = useMemo(() => projectIdFromPath(route.pathname), [route.pathname]);
 
   const requestedReturnPath = useMemo(() => {
     if (route.pathname === LOGIN_PATH) return returnPathFromLoginSearch(route.search);
@@ -71,14 +86,16 @@ export default function App() {
 
   const checkApi = useCallback(() => {
     setHealth('checking');
-    Promise.all([api.health(), api.diagnostics()])
-      .then(([data, details]) => {
+    Promise.all([api.health(), api.diagnostics(), api.systemReadiness()])
+      .then(([data, details, runtime]) => {
         setHealth(`${data.status} / ${data.service}`);
         setDiagnostics(details);
+        setReadiness(runtime as RuntimeReadiness);
       })
       .catch((err) => {
         setHealth(`offline: ${err.message}`);
         setDiagnostics(undefined);
+        setReadiness({ status: 'not_ready', ready: false, blockingReasons: ['API 或数据库就绪检查失败'] });
       });
   }, []);
 
@@ -142,6 +159,82 @@ export default function App() {
 
   useEffect(() => { if (identity) checkApi(); }, [checkApi, identity]);
 
+
+  useEffect(() => {
+    if (!identity) return;
+    let cancelled = false;
+    let timer = 0;
+    let failures = 0;
+    const schedule = (delay: number) => { window.clearTimeout(timer); timer = window.setTimeout(run, delay); };
+    const run = async () => {
+      if (cancelled) return;
+      if (document.hidden) { schedule(30000); return; }
+      try {
+        const value = await api.systemReadiness();
+        if (cancelled) return;
+        failures = 0;
+        setReadiness(value as RuntimeReadiness);
+        schedule(String((value as RuntimeReadiness).status ?? '') === 'ready' ? 30000 : 12000);
+      } catch {
+        if (cancelled) return;
+        failures += 1;
+        if (failures >= 2) setReadiness((previous) => ({ ...(previous ?? {}), status: 'not_ready', ready: false, blockingReasons: ['运行时健康监测连续失败，后台任务状态可能暂时不可读'] }));
+        schedule(Math.min(60000, 5000 * (2 ** Math.min(failures, 3))));
+      }
+    };
+    const resume = () => { if (!document.hidden) void run(); };
+    const online = () => void run();
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', online);
+    void run();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('online', online);
+    };
+  }, [identity]);
+
+  useEffect(() => {
+    if (!identity || !routedProjectId) return;
+    if (selected?.id === routedProjectId) return;
+    let cancelled = false;
+    setRestoringProject(true);
+    setProjectRestoreError(undefined);
+    api.getProject(routedProjectId)
+      .then((project) => {
+        if (!cancelled && project?.id) setSelected(project);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSelected(undefined);
+        setProjectRestoreError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => { if (!cancelled) setRestoringProject(false); });
+    return () => { cancelled = true; };
+  }, [identity, routedProjectId, selected?.id]);
+
+  const openProject = useCallback((project: Project) => {
+    if (!project?.id) return;
+    setSelected(project);
+    setProjectRestoreError(undefined);
+    navigate(projectPath(project.id));
+  }, [navigate]);
+
+  const leaveProject = useCallback(() => {
+    setSelected(undefined);
+    setProjectRestoreError(undefined);
+    navigate('/');
+  }, [navigate]);
+
+  const updateSelectedProject = useCallback((project: Project) => {
+    // A transient empty workspace response must never eject the user from the
+    // active project. Keep the current selection unless a valid project object
+    // with the same identity is returned.
+    if (!project?.id) return;
+    setSelected((current) => current && current.id !== project.id ? current : project);
+  }, []);
+
   async function logout() {
     try { await api.logout(); } finally {
       setSelected(undefined);
@@ -175,10 +268,16 @@ export default function App() {
   }
 
   const offline = !health.startsWith('ok');
+  const runtimeStatus = String(readiness?.status ?? (offline ? 'not_ready' : 'ready'));
+  const runtimeReasons = [...(readiness?.blockingReasons ?? []), ...(readiness?.degradedReasons ?? [])];
   const missingModules = diagnostics?.missingModules ?? [];
   const isDocs = route.pathname === '/docs';
 
   if (isDocs) return <><GlobalRequestProgress /><Suspense fallback={<FullPageLoadingFallback label="正在加载文档中心" />}><DocsPage /></Suspense></>;
+
+  if (routedProjectId && restoringProject && !selected) {
+    return <><GlobalRequestProgress /><FullPageLoadingFallback label="正在恢复工程工作台" detail="保存设计基准后仍保持当前工程和当前步骤。" /></>;
+  }
 
   return (
     <div className="appShell">
@@ -187,6 +286,7 @@ export default function App() {
         <div className="pitGuardBrand"><div><h1>PitGuard</h1><p>基坑围护结构设计</p></div><span className="systemVersionBadge">当前系统版本 V{diagnostics?.softwareVersion ?? diagnostics?.version ?? '检测中'}</span></div>
         <div className="apiStatusGroup">
           <span className={health.startsWith('ok') ? 'badge ok' : 'badge warn'}>{health.startsWith('ok') ? '服务正常' : '服务异常'}</span>
+          <span className={`badge runtimeHealthBadge ${runtimeStatus}`}>{runtimeStatus === 'ready' ? '流程稳定' : runtimeStatus === 'degraded' ? '流程降级' : '流程阻断'}</span>
           <details className="coreSystemMenu"><summary>{identity.username ?? identity.actor}</summary><div>
             <span>角色：{identity.role}</span>
             {diagnostics ? <span>版本：{diagnostics.version}</span> : null}
@@ -202,7 +302,13 @@ export default function App() {
         <button onClick={checkApi}>重新检测</button>
       </section>}
 
-      {selected ? <Suspense fallback={<FullPageLoadingFallback label="正在加载工程工作台" detail="正在读取核心工程数据。" />}><ProjectWorkspace project={selected} onBack={() => setSelected(undefined)} onProjectChange={setSelected} /></Suspense> : <ProjectsPage onOpen={setSelected} />}
+      {!offline && runtimeStatus !== 'ready' && <section className={`runtimeHealthBanner ${runtimeStatus === 'not_ready' ? 'blocking' : ''}`} role="status">
+        <div><strong>{runtimeStatus === 'not_ready' ? '工程流程暂时不可安全执行' : '工程流程处于降级状态'}</strong><span>{runtimeReasons.slice(0, 4).join('；') || '后台资源或计算 worker 状态异常。'}</span></div>
+        <button type="button" className="secondary compactButton" onClick={checkApi}>立即复检</button>
+      </section>}
+
+      {projectRestoreError ? <section className="apiDiagnosticBanner card compactDiagnostic"><strong>工程工作台恢复失败：{projectRestoreError}</strong><button onClick={() => { setProjectRestoreError(undefined); navigate('/'); }}>返回项目列表</button></section> : null}
+      {selected ? <Suspense fallback={<FullPageLoadingFallback label="正在加载工程工作台" detail="正在读取核心工程数据。" />}><ProjectWorkspace project={selected} onBack={leaveProject} onProjectChange={updateSelectedProject} /></Suspense> : routedProjectId && !projectRestoreError ? <FullPageLoadingFallback label="正在恢复工程工作台" detail="正在按工程地址重新读取项目，不会跳回项目列表。" /> : <ProjectsPage onOpen={openProject} />}
     </div>
   );
 }

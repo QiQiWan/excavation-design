@@ -3,9 +3,9 @@ from __future__ import annotations
 import csv
 import io
 from importlib import import_module
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +33,9 @@ def optimize_cage_crane_logistics(*args, **kwargs): return _lazy_call("app.servi
 def analyze_support_topology(*args, **kwargs): return _lazy_call("app.services.support_topology_graph", "analyze_support_topology", *args, **kwargs)
 def apply_topology_enhancements(*args, **kwargs): return _lazy_call("app.services.support_topology_graph", "apply_topology_enhancements", *args, **kwargs)
 def preview_topology_enhancements(*args, **kwargs): return _lazy_call("app.services.support_topology_graph", "preview_topology_enhancements", *args, **kwargs)
+def attach_engineering_evidence(*args, **kwargs): return _lazy_call("app.services.engineering_evidence_verification", "attach_engineering_evidence", *args, **kwargs)
+def verify_engineering_evidence(*args, **kwargs): return _lazy_call("app.services.engineering_evidence_verification", "verify_engineering_evidence", *args, **kwargs)
+def project_engineering_evidence_summary(*args, **kwargs): return _lazy_call("app.services.engineering_evidence_verification", "project_engineering_evidence_summary", *args, **kwargs)
 
 
 def create_drawing_revision(*args, **kwargs):
@@ -96,10 +99,22 @@ class MonitoringPayload(BaseModel):
 
 
 class ReviewPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     role: Literal["designer", "checker", "reviewer", "approver"]
     actor: str = Field(min_length=1, max_length=80)
     action: Literal["submit", "accept", "reject", "reopen", "approve"]
     comment: str | None = Field(default=None, max_length=500)
+    professional_credential: dict[str, Any] | None = Field(default=None, alias="professionalCredential")
+    digital_signature_hash: str | None = Field(default=None, alias="digitalSignatureHash", min_length=64, max_length=64)
+
+
+class EngineeringEvidenceVerificationPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    domain: Literal["borehole", "groundwater", "construction_stage"]
+    object_ids: list[str] = Field(alias="objectIds", min_length=1)
+    actor: str = Field(min_length=1, max_length=120)
+    professional_credential: dict[str, Any] = Field(alias="professionalCredential")
+    digital_signature_hash: str = Field(alias="digitalSignatureHash", min_length=64, max_length=64)
 
 
 class RevisionPayload(BaseModel):
@@ -283,6 +298,63 @@ def calibrate(project_id: str, apply: bool = Query(False), repo: ProjectReposito
     return run.model_dump(mode="json", by_alias=True)
 
 
+@router.get("/engineering-evidence")
+def engineering_evidence_status(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
+    return project_engineering_evidence_summary(repo.require(project_id))
+
+
+@router.post("/engineering-evidence/attach")
+async def engineering_evidence_attach(
+    project_id: str,
+    domain: Literal["borehole", "groundwater", "construction_stage"] = Form(...),
+    object_ids: str = Form(...),
+    revision: str | None = Form(default=None),
+    observed_at: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = repo.require(project_id)
+    ids = [item.strip() for item in object_ids.split(",") if item.strip()]
+    raw = await file.read()
+    try:
+        result = attach_engineering_evidence(
+            project,
+            domain=domain,
+            object_ids=ids,
+            filename=file.filename or "engineering-evidence.bin",
+            content=raw,
+            content_type=file.content_type,
+            revision=revision,
+            observed_at=observed_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    repo.save(project, action="engineering_evidence.attach", summary=f"Attached {domain} source evidence")
+    return result
+
+
+@router.post("/engineering-evidence/verify")
+def engineering_evidence_verify(
+    project_id: str,
+    payload: EngineeringEvidenceVerificationPayload = Body(...),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    project = repo.require(project_id)
+    try:
+        result = verify_engineering_evidence(
+            project,
+            domain=payload.domain,
+            object_ids=payload.object_ids,
+            actor=payload.actor,
+            credential=payload.professional_credential,
+            digital_signature_hash=payload.digital_signature_hash,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    repo.save(project, action="engineering_evidence.verify", summary=f"Verified {payload.domain} engineering evidence")
+    return result
+
+
 @router.get("/review")
 def get_review(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
     return review_status(repo.require(project_id))
@@ -292,7 +364,11 @@ def get_review(project_id: str, repo: ProjectRepository = Depends(get_repository
 def review_transition(project_id: str, payload: ReviewPayload = Body(...), repo: ProjectRepository = Depends(get_repository)) -> dict:
     project = repo.require(project_id)
     try:
-        result = transition_review(project, payload.role, payload.actor, payload.action, payload.comment)
+        result = transition_review(
+            project, payload.role, payload.actor, payload.action, payload.comment,
+            credential=payload.professional_credential,
+            digital_signature_hash=payload.digital_signature_hash,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     repo.save(project)

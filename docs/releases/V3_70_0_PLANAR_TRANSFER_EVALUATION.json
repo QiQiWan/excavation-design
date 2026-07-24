@@ -1,0 +1,898 @@
+{
+  "version": {
+    "softwareVersion": "3.70.0",
+    "algorithmVersion": "3.70.0-planar-frame-multitopology-detailing",
+    "ruleSetVersion": "2026.07-v3.70.0-planar-transfer-design-gate",
+    "exportSchemaVersion": "3.70"
+  },
+  "evaluationScope": {
+    "shapeSet": [
+      "L",
+      "U",
+      "T",
+      "Z",
+      "H"
+    ],
+    "transferTemplates": [
+      "compact_elbow_ring",
+      "junction_hub_frame",
+      "ring_chord_frame"
+    ],
+    "excavationTopElevationM": 0.0,
+    "excavationBottomElevationM": -16.0,
+    "supportLevelCount": 3,
+    "note": "Synthetic geometry regression without boreholes; formal project delivery remains gated by missing geology and professional approval."
+  },
+  "phaseAcceptance": {
+    "V3.67.0": "four-level readiness, explicit transfer identities, geometry regularisation and safe gates",
+    "V3.68.0": "2D planar frame/truss solver, stage envelope, transfer beam design and frame columns",
+    "V3.69.0": "topology-diverse A/B/C generation and complete-calculation-ready candidate metadata",
+    "V3.70.0": "automatic detailing evidence, topology-current professional approval gate and UI disclosure"
+  },
+  "legacyBaseline": {
+    "supportCount": 36,
+    "columnCount": 14,
+    "transferBeamCount": 0,
+    "transferBeamRoles": {},
+    "qualityStatus": "fail",
+    "qualityScore": 0.0,
+    "failCount": 9,
+    "warningCount": 2,
+    "failCategories": [
+      "wale_support_bay"
+    ],
+    "readiness": {
+      "geometryClosed": false,
+      "loadPathClosed": false,
+      "structuralModelClosed": false,
+      "constructionStageClosed": false,
+      "proxyCalculationReady": false,
+      "formalCalculationReady": false
+    },
+    "templateId": "none",
+    "topologyClass": "none",
+    "faceCoverageComplete": false,
+    "ringClosed": false,
+    "nominalFrame": {
+      "status": "not_applicable",
+      "levelCount": 0,
+      "solvedLevelCount": 0,
+      "maximumDisplacementM": 0.0,
+      "maximumRelativeResidual": 0.0,
+      "maximumConditionNumber": 0.0
+    }
+  },
+  "lShapeTopologies": {
+    "compact_elbow_ring": {
+      "supportCount": 72,
+      "columnCount": 19,
+      "transferBeamCount": 18,
+      "transferBeamRoles": {
+        "transfer_ring_beam": 18
+      },
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "readiness": {
+        "geometryClosed": true,
+        "loadPathClosed": true,
+        "structuralModelClosed": true,
+        "constructionStageClosed": false,
+        "proxyCalculationReady": true,
+        "formalCalculationReady": false
+      },
+      "templateId": "compact_elbow_ring",
+      "topologyClass": "closed_ring",
+      "faceCoverageComplete": true,
+      "ringClosed": true,
+      "nominalFrame": {
+        "status": "pass",
+        "levelCount": 3,
+        "solvedLevelCount": 3,
+        "maximumDisplacementM": 0.0001385,
+        "maximumRelativeResidual": 3.060173e-16,
+        "maximumConditionNumber": 998.434
+      }
+    },
+    "junction_hub_frame": {
+      "supportCount": 72,
+      "columnCount": 22,
+      "transferBeamCount": 30,
+      "transferBeamRoles": {
+        "transfer_frame_beam": 12,
+        "transfer_ring_beam": 18
+      },
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "readiness": {
+        "geometryClosed": true,
+        "loadPathClosed": true,
+        "structuralModelClosed": true,
+        "constructionStageClosed": false,
+        "proxyCalculationReady": true,
+        "formalCalculationReady": false
+      },
+      "templateId": "junction_hub_frame",
+      "topologyClass": "junction_hub_frame",
+      "faceCoverageComplete": true,
+      "ringClosed": true,
+      "nominalFrame": {
+        "status": "pass",
+        "levelCount": 3,
+        "solvedLevelCount": 3,
+        "maximumDisplacementM": 0.0001825,
+        "maximumRelativeResidual": 2.291013e-15,
+        "maximumConditionNumber": 189251.248
+      }
+    },
+    "ring_chord_frame": {
+      "supportCount": 72,
+      "columnCount": 22,
+      "transferBeamCount": 24,
+      "transferBeamRoles": {
+        "transfer_brace": 6,
+        "transfer_ring_beam": 18
+      },
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "readiness": {
+        "geometryClosed": true,
+        "loadPathClosed": true,
+        "structuralModelClosed": true,
+        "constructionStageClosed": false,
+        "proxyCalculationReady": true,
+        "formalCalculationReady": false
+      },
+      "templateId": "ring_chord_frame",
+      "topologyClass": "ring_chord_frame",
+      "faceCoverageComplete": true,
+      "ringClosed": true,
+      "nominalFrame": {
+        "status": "pass",
+        "levelCount": 3,
+        "solvedLevelCount": 3,
+        "maximumDisplacementM": 0.000151,
+        "maximumRelativeResidual": 3.932211e-15,
+        "maximumConditionNumber": 1229.855
+      }
+    }
+  },
+  "shapeCoverage": {
+    "L": {
+      "compact_elbow_ring": {
+        "supportCount": 72,
+        "columnCount": 19,
+        "transferBeamCount": 18,
+        "transferBeamRoles": {
+          "transfer_ring_beam": 18
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "compact_elbow_ring",
+        "topologyClass": "closed_ring",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001385,
+          "maximumRelativeResidual": 3.060173e-16,
+          "maximumConditionNumber": 998.434
+        }
+      },
+      "junction_hub_frame": {
+        "supportCount": 72,
+        "columnCount": 22,
+        "transferBeamCount": 30,
+        "transferBeamRoles": {
+          "transfer_frame_beam": 12,
+          "transfer_ring_beam": 18
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "junction_hub_frame",
+        "topologyClass": "junction_hub_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001825,
+          "maximumRelativeResidual": 2.291013e-15,
+          "maximumConditionNumber": 189251.248
+        }
+      },
+      "ring_chord_frame": {
+        "supportCount": 72,
+        "columnCount": 22,
+        "transferBeamCount": 24,
+        "transferBeamRoles": {
+          "transfer_brace": 6,
+          "transfer_ring_beam": 18
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "ring_chord_frame",
+        "topologyClass": "ring_chord_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.000151,
+          "maximumRelativeResidual": 3.932211e-15,
+          "maximumConditionNumber": 1229.855
+        }
+      }
+    },
+    "U": {
+      "compact_elbow_ring": {
+        "supportCount": 111,
+        "columnCount": 29,
+        "transferBeamCount": 24,
+        "transferBeamRoles": {
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "compact_elbow_ring",
+        "topologyClass": "closed_ring",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001182,
+          "maximumRelativeResidual": 2.66075e-16,
+          "maximumConditionNumber": 13319.116
+        }
+      },
+      "junction_hub_frame": {
+        "supportCount": 111,
+        "columnCount": 34,
+        "transferBeamCount": 36,
+        "transferBeamRoles": {
+          "transfer_frame_beam": 12,
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "junction_hub_frame",
+        "topologyClass": "junction_hub_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "warning",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0004533,
+          "maximumRelativeResidual": 9.223375e-06,
+          "maximumConditionNumber": 20011129206.551
+        }
+      },
+      "ring_chord_frame": {
+        "supportCount": 111,
+        "columnCount": 32,
+        "transferBeamCount": 30,
+        "transferBeamRoles": {
+          "transfer_brace": 6,
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "ring_chord_frame",
+        "topologyClass": "ring_chord_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001436,
+          "maximumRelativeResidual": 1.558877e-13,
+          "maximumConditionNumber": 149422.494
+        }
+      }
+    },
+    "T": {
+      "compact_elbow_ring": {
+        "supportCount": 96,
+        "columnCount": 24,
+        "transferBeamCount": 24,
+        "transferBeamRoles": {
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "compact_elbow_ring",
+        "topologyClass": "closed_ring",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001415,
+          "maximumRelativeResidual": 3.386158e-16,
+          "maximumConditionNumber": 788.638
+        }
+      },
+      "junction_hub_frame": {
+        "supportCount": 96,
+        "columnCount": 29,
+        "transferBeamCount": 36,
+        "transferBeamRoles": {
+          "transfer_frame_beam": 12,
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "junction_hub_frame",
+        "topologyClass": "junction_hub_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001631,
+          "maximumRelativeResidual": 6.18329e-15,
+          "maximumConditionNumber": 6353.355
+        }
+      },
+      "ring_chord_frame": {
+        "supportCount": 96,
+        "columnCount": 36,
+        "transferBeamCount": 33,
+        "transferBeamRoles": {
+          "transfer_brace": 9,
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "ring_chord_frame",
+        "topologyClass": "ring_chord_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001454,
+          "maximumRelativeResidual": 9.398277e-15,
+          "maximumConditionNumber": 10687.407
+        }
+      }
+    },
+    "Z": {
+      "compact_elbow_ring": {
+        "supportCount": 96,
+        "columnCount": 25,
+        "transferBeamCount": 24,
+        "transferBeamRoles": {
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "compact_elbow_ring",
+        "topologyClass": "closed_ring",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001572,
+          "maximumRelativeResidual": 4.897094e-16,
+          "maximumConditionNumber": 1105.653
+        }
+      },
+      "junction_hub_frame": {
+        "supportCount": 96,
+        "columnCount": 31,
+        "transferBeamCount": 36,
+        "transferBeamRoles": {
+          "transfer_frame_beam": 12,
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "junction_hub_frame",
+        "topologyClass": "junction_hub_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001531,
+          "maximumRelativeResidual": 4.512033e-15,
+          "maximumConditionNumber": 7099.782
+        }
+      },
+      "ring_chord_frame": {
+        "supportCount": 96,
+        "columnCount": 27,
+        "transferBeamCount": 30,
+        "transferBeamRoles": {
+          "transfer_brace": 6,
+          "transfer_ring_beam": 24
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "ring_chord_frame",
+        "topologyClass": "ring_chord_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001523,
+          "maximumRelativeResidual": 1.310534e-13,
+          "maximumConditionNumber": 75582.08
+        }
+      }
+    },
+    "H": {
+      "compact_elbow_ring": {
+        "supportCount": 132,
+        "columnCount": 37,
+        "transferBeamCount": 36,
+        "transferBeamRoles": {
+          "transfer_ring_beam": 36
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "compact_elbow_ring",
+        "topologyClass": "closed_ring",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001054,
+          "maximumRelativeResidual": 3.304577e-16,
+          "maximumConditionNumber": 13605.916
+        }
+      },
+      "junction_hub_frame": {
+        "supportCount": 132,
+        "columnCount": 45,
+        "transferBeamCount": 48,
+        "transferBeamRoles": {
+          "transfer_frame_beam": 12,
+          "transfer_ring_beam": 36
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "junction_hub_frame",
+        "topologyClass": "junction_hub_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001101,
+          "maximumRelativeResidual": 4.101143e-16,
+          "maximumConditionNumber": 16162.676
+        }
+      },
+      "ring_chord_frame": {
+        "supportCount": 132,
+        "columnCount": 49,
+        "transferBeamCount": 45,
+        "transferBeamRoles": {
+          "transfer_brace": 9,
+          "transfer_ring_beam": 36
+        },
+        "qualityStatus": "warning",
+        "qualityScore": 84.0,
+        "failCount": 0,
+        "warningCount": 2,
+        "failCategories": [],
+        "readiness": {
+          "geometryClosed": true,
+          "loadPathClosed": true,
+          "structuralModelClosed": true,
+          "constructionStageClosed": false,
+          "proxyCalculationReady": true,
+          "formalCalculationReady": false
+        },
+        "templateId": "ring_chord_frame",
+        "topologyClass": "ring_chord_frame",
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "nominalFrame": {
+          "status": "pass",
+          "levelCount": 3,
+          "solvedLevelCount": 3,
+          "maximumDisplacementM": 0.0001026,
+          "maximumRelativeResidual": 2.88661e-16,
+          "maximumConditionNumber": 13436.146
+        }
+      }
+    }
+  },
+  "optimizer": {
+    "elapsedSeconds": 1.154,
+    "candidateCount": 3,
+    "topologyDiversityCount": 3,
+    "allHardConstraintsPassed": true,
+    "candidates": [
+      {
+        "rank": 1,
+        "id": "slopt-zoned-direct-compact-elbow-ring-t4p5-c15p0-as_generated-0p0",
+        "score": 50.85,
+        "status": "warning",
+        "templateId": "compact_elbow_ring",
+        "topologyClass": "closed_ring",
+        "schemeFamily": "zoned_direct:closed_ring",
+        "supportCount": 72,
+        "columnCount": 19,
+        "transferBeamCount": 18,
+        "hardConstraintPassed": true,
+        "failCount": 0,
+        "warningCount": 2
+      },
+      {
+        "rank": 2,
+        "id": "slopt-zoned-direct-junction-hub-frame-t5p0-c15p0-as_generated-0p0",
+        "score": 48.87,
+        "status": "warning",
+        "templateId": "junction_hub_frame",
+        "topologyClass": "junction_hub_frame",
+        "schemeFamily": "zoned_direct:junction_hub_frame",
+        "supportCount": 72,
+        "columnCount": 22,
+        "transferBeamCount": 30,
+        "hardConstraintPassed": true,
+        "failCount": 0,
+        "warningCount": 2
+      },
+      {
+        "rank": 3,
+        "id": "slopt-zoned-direct-ring-chord-frame-t4p5-c18p0-as_generated-0p0",
+        "score": 48.21,
+        "status": "warning",
+        "templateId": "ring_chord_frame",
+        "topologyClass": "ring_chord_frame",
+        "schemeFamily": "zoned_direct:ring_chord_frame",
+        "supportCount": 72,
+        "columnCount": 22,
+        "transferBeamCount": 24,
+        "hardConstraintPassed": true,
+        "failCount": 0,
+        "warningCount": 2
+      }
+    ]
+  },
+  "completeCandidateComparison": {
+    "elapsedSeconds": 15.451,
+    "candidateCount": 3,
+    "allStageFramesPassed": true,
+    "rows": [
+      {
+        "schemeLabel": "A",
+        "candidateId": "slopt-zoned-direct-compact-elbow-ring-t4p5-c15p0-as_generated-0p0",
+        "transferSystemTemplate": "compact_elbow_ring",
+        "transferTopologyClass": "closed_ring",
+        "transferBeamCount": 18,
+        "supportCount": 72,
+        "columnCount": 19,
+        "decisionRank": 1,
+        "decisionScore": 47.05,
+        "paretoFront": true,
+        "paretoRank": 1,
+        "maxSupportAxialForce": 8977.686,
+        "maxDisplacement": 5.428,
+        "maxWaleMoment": 8922.817,
+        "maxTransferFrameDisplacement": 0.0012002,
+        "maxTransferFrameResidual": 3.459925e-16,
+        "transferFrameStatus": "pass",
+        "formalCalculationReady": true,
+        "autoDetailingStatus": "pass",
+        "failCount": 2,
+        "warningCount": 7,
+        "formalGateAllowed": false,
+        "comparisonExecutionMode": null
+      },
+      {
+        "schemeLabel": "B",
+        "candidateId": "slopt-zoned-direct-junction-hub-frame-t5p0-c15p0-as_generated-0p0",
+        "transferSystemTemplate": "junction_hub_frame",
+        "transferTopologyClass": "junction_hub_frame",
+        "transferBeamCount": 30,
+        "supportCount": 72,
+        "columnCount": 22,
+        "decisionRank": 2,
+        "decisionScore": 21.1,
+        "paretoFront": true,
+        "paretoRank": 1,
+        "maxSupportAxialForce": 8977.686,
+        "maxDisplacement": 5.428,
+        "maxWaleMoment": 8922.817,
+        "maxTransferFrameDisplacement": 0.0014644,
+        "maxTransferFrameResidual": 4.984731e-15,
+        "transferFrameStatus": "pass",
+        "formalCalculationReady": true,
+        "autoDetailingStatus": "pass",
+        "failCount": 2,
+        "warningCount": 6,
+        "formalGateAllowed": false,
+        "comparisonExecutionMode": null
+      },
+      {
+        "schemeLabel": "C",
+        "candidateId": "slopt-zoned-direct-ring-chord-frame-t4p5-c18p0-as_generated-0p0",
+        "transferSystemTemplate": "ring_chord_frame",
+        "transferTopologyClass": "ring_chord_frame",
+        "transferBeamCount": 24,
+        "supportCount": 72,
+        "columnCount": 22,
+        "decisionRank": 3,
+        "decisionScore": 1.4,
+        "paretoFront": false,
+        "paretoRank": 2,
+        "maxSupportAxialForce": 8985.773,
+        "maxDisplacement": 5.428,
+        "maxWaleMoment": 8922.817,
+        "maxTransferFrameDisplacement": 0.0012967,
+        "maxTransferFrameResidual": 4.292333e-15,
+        "transferFrameStatus": "pass",
+        "formalCalculationReady": true,
+        "autoDetailingStatus": "pass",
+        "failCount": 2,
+        "warningCount": 6,
+        "formalGateAllowed": false,
+        "comparisonExecutionMode": null
+      }
+    ]
+  },
+  "fullCalculations": {
+    "compact_elbow_ring": {
+      "schemeLabel": "A",
+      "candidateId": "slopt-zoned-direct-compact-elbow-ring-t4p5-c15p0-as_generated-0p0",
+      "transferTopologyClass": "closed_ring",
+      "transferBeamCount": 18,
+      "supportCount": 72,
+      "columnCount": 19,
+      "maxSupportAxialForce": 8977.686,
+      "maxDisplacement": 5.428,
+      "maxWaleMoment": 8922.817,
+      "maxTransferFrameDisplacement": 0.0012002,
+      "maxTransferFrameResidual": 3.459925e-16,
+      "maxTransferFrameConditionNumber": 998.434,
+      "transferFrameStatus": "pass",
+      "transferFrameStageCount": 6,
+      "formalCalculationReady": true,
+      "autoDetailingStatus": "pass",
+      "failCount": 2,
+      "warningCount": 7,
+      "formalGateAllowed": false,
+      "decisionRank": 1,
+      "decisionScore": 47.05,
+      "paretoFront": true,
+      "paretoRank": 1
+    },
+    "junction_hub_frame": {
+      "schemeLabel": "B",
+      "candidateId": "slopt-zoned-direct-junction-hub-frame-t5p0-c15p0-as_generated-0p0",
+      "transferTopologyClass": "junction_hub_frame",
+      "transferBeamCount": 30,
+      "supportCount": 72,
+      "columnCount": 22,
+      "maxSupportAxialForce": 8977.686,
+      "maxDisplacement": 5.428,
+      "maxWaleMoment": 8922.817,
+      "maxTransferFrameDisplacement": 0.0014644,
+      "maxTransferFrameResidual": 4.984731e-15,
+      "maxTransferFrameConditionNumber": 189251.248,
+      "transferFrameStatus": "pass",
+      "transferFrameStageCount": 6,
+      "formalCalculationReady": true,
+      "autoDetailingStatus": "pass",
+      "failCount": 2,
+      "warningCount": 6,
+      "formalGateAllowed": false,
+      "decisionRank": 2,
+      "decisionScore": 21.1,
+      "paretoFront": true,
+      "paretoRank": 1
+    },
+    "ring_chord_frame": {
+      "schemeLabel": "C",
+      "candidateId": "slopt-zoned-direct-ring-chord-frame-t4p5-c18p0-as_generated-0p0",
+      "transferTopologyClass": "ring_chord_frame",
+      "transferBeamCount": 24,
+      "supportCount": 72,
+      "columnCount": 22,
+      "maxSupportAxialForce": 8985.773,
+      "maxDisplacement": 5.428,
+      "maxWaleMoment": 8922.817,
+      "maxTransferFrameDisplacement": 0.0012967,
+      "maxTransferFrameResidual": 4.292333e-15,
+      "maxTransferFrameConditionNumber": 1229.855,
+      "transferFrameStatus": "pass",
+      "transferFrameStageCount": 6,
+      "formalCalculationReady": true,
+      "autoDetailingStatus": "pass",
+      "failCount": 2,
+      "warningCount": 6,
+      "formalGateAllowed": false,
+      "decisionRank": 3,
+      "decisionScore": 1.4,
+      "paretoFront": false,
+      "paretoRank": 2
+    }
+  },
+  "elapsedSeconds": 21.709
+}

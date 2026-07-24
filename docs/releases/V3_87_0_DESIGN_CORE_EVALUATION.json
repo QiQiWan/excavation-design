@@ -1,0 +1,217 @@
+{
+  "schema": "pitguard-v3.87-design-core-evaluation-v1",
+  "release": {
+    "softwareVersion": "3.87.0",
+    "algorithmVersion": "3.87.0-design-core-governance-joint-optimization-detailing-delivery",
+    "ruleSetVersion": "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence",
+    "exportSchemaVersion": "3.87",
+    "structuralKernelVersion": "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel",
+    "resultPipelineVersion": "3.87.0-nine-stage-design-core-and-unified-snapshot"
+  },
+  "runtime": {
+    "python": "3.13.5",
+    "platform": "Linux-6.12.13-x86_64-with-glibc2.41",
+    "candidateWorkerActualSeconds": 24.329,
+    "candidateCachedLoadSeconds": 0.012,
+    "candidateWorkerRuntime": [
+      {
+        "searchSeconds": 0.806,
+        "fullCalculationSeconds": 7.039,
+        "totalSeconds": 7.937
+      },
+      {
+        "searchSeconds": 0.819,
+        "fullCalculationSeconds": 7.108,
+        "totalSeconds": 8.023
+      },
+      {
+        "searchSeconds": 0.933,
+        "fullCalculationSeconds": 7.337,
+        "totalSeconds": 8.369
+      }
+    ],
+    "calculationSeconds": 7.051,
+    "reportSeconds": 3.504
+  },
+  "project": {
+    "shape": "L orthogonal concave",
+    "depthM": 16.0,
+    "stageCount": 7,
+    "wallCount": 6,
+    "supportCount": 72,
+    "waleCount": 18,
+    "transferBeamCount": 30,
+    "columnCount": 22
+  },
+  "calculation": {
+    "engineeringStatus": "fail",
+    "deliveryStatus": "fail",
+    "numericalHealthStatus": "warning",
+    "maximumScaledConditionNumber": 1850.889596876959,
+    "maximumRelativeResidual": 5.24637791483e-14,
+    "formalIssueAllowed": false,
+    "formalGateStatus": "fail",
+    "engineeringCompletenessPercent": 74.4,
+    "engineeringReadinessPercent": 50.0,
+    "formalIssueReadinessPercent": 49.0
+  },
+  "parameterGovernance": {
+    "status": "blocked",
+    "recordCount": 13,
+    "confirmedCount": 2,
+    "formalAllowedCount": 2,
+    "formalBlockerCount": 9,
+    "sourceCounts": {
+      "project_approved": 4,
+      "standard_value": 1,
+      "software_suggestion": 2,
+      "enterprise_standard": 3,
+      "derived": 1,
+      "owner_provided": 2
+    }
+  },
+  "ruleEvidence": {
+    "ruleCount": 16,
+    "executedRuleCount": 6,
+    "coverageRatio": 0.375,
+    "unmappedCheckCount": 617,
+    "boundary": "规则目录覆盖率只反映软件规则执行证据，不代表标准全文自动审查完成。"
+  },
+  "schemeSearch": {
+    "status": "ready",
+    "candidateCount": 3,
+    "familyCount": 3,
+    "familyDiversityRatio": 1.0,
+    "fullyCalculatedCount": 3,
+    "selectedCandidateFullyCalculated": true,
+    "blockers": []
+  },
+  "memberEnvelope": {
+    "status": "ready",
+    "recordCount": 150,
+    "objectCount": 96,
+    "responseCounts": {
+      "support_axial_force": 72,
+      "wale_deflection": 18,
+      "wale_moment": 18,
+      "wale_shear": 18,
+      "wall_displacement": 6,
+      "wall_moment": 6,
+      "wall_moment_point": 6,
+      "wall_shear": 6
+    }
+  },
+  "reinforcementClosure": {
+    "status": "ready",
+    "componentCount": 276,
+    "failCount": 0,
+    "warningCount": 0,
+    "sectionFeedbackRequiredCount": 0
+  },
+  "deliveryQuality": {
+    "status": "blocked",
+    "drawingGeneratedCount": 17,
+    "requiredDrawingTypeCount": 15,
+    "presentDrawingTypeCount": 17,
+    "missingDrawingTypes": [],
+    "requiredReportSectionCount": 16,
+    "presentReportSectionCount": 16,
+    "missingReportSections": [],
+    "blockers": [
+      "存在 4 项计算硬失败。",
+      "正式发行门禁尚未通过。"
+    ],
+    "reportPath": "runtime/v387-evaluation/report/project-40394486fc00_calculation_report.docx"
+  },
+  "designCoreWorkflow": {
+    "status": "blocked",
+    "overallReadiness": 78.3,
+    "stageCount": 9,
+    "stageReadiness": {
+      "D1_BASIS": 60,
+      "D2_INPUT": 45,
+      "D3_SCHEME_SEARCH": 100,
+      "D4_RETAINING_DESIGN": 100,
+      "D5_CALCULATION": 70,
+      "D6_REINFORCEMENT": 100,
+      "D7_DRAWINGS": 100,
+      "D8_REPORT": 100,
+      "D9_REVIEW_ISSUE": 0
+    },
+    "externalCollaborationBoundary": "外部施工或现场信息仅以资料和设计复核请求接入，不作为首次设计发行的必填项。",
+    "legacyPrimaryWorkflowUsage": false
+  },
+  "snapshot": {
+    "id": "snapshot-0da2e2d867f3",
+    "status": "blocked",
+    "purpose": "internal_review",
+    "blockerCount": 3,
+    "consistencyHash": "48df05f92fb5d7ac531e73bb2f6ff5c43fc45ebeeb9045cd48329dfcbae3ad5b"
+  },
+  "externalCollaboration": {
+    "recordId": "collab-10a0901b3759",
+    "designReviewRequestCreated": true,
+    "constructionPlanRequired": false,
+    "fieldSnapshotRequired": false,
+    "deviationEventRequired": false
+  },
+  "onlineDocumentation": {
+    "version": "3.87.0",
+    "chapterIds": [
+      "workflow",
+      "principles",
+      "standards",
+      "accuracy",
+      "compliance",
+      "responsibility",
+      "design-core",
+      "deliverables",
+      "scheme-search",
+      "rebar-closure",
+      "delivery-qc"
+    ],
+    "containsDesignCore": true,
+    "containsSchemeSearch": true,
+    "containsRebarClosure": true,
+    "containsDeliveryQc": true
+  },
+  "productionQualification": {
+    "schema": "pitguard-production-release-qualification-v387",
+    "status": "blocked",
+    "releaseLabel": "engineering_preview",
+    "checks": {
+      "backendRegression": "not_run",
+      "frontendTests": "not_run",
+      "frontendProductionBuild": "not_run",
+      "migrationTest": "not_run",
+      "endurance100Runs": "not_run",
+      "concurrency10Projects": "not_run",
+      "externalBenchmark": "not_run",
+      "realProjectPilot": "not_run"
+    },
+    "failed": [],
+    "incomplete": [
+      "backendRegression",
+      "frontendTests",
+      "frontendProductionBuild",
+      "migrationTest",
+      "endurance100Runs",
+      "concurrency10Projects",
+      "externalBenchmark",
+      "realProjectPilot"
+    ],
+    "runtimeVersions": {
+      "software": "3.87.0",
+      "algorithm": "3.87.0-design-core-governance-joint-optimization-detailing-delivery",
+      "ruleSet": "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence",
+      "structuralKernel": "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel",
+      "resultPipeline": "3.87.0-nine-stage-design-core-and-unified-snapshot"
+    }
+  },
+  "limitations": [
+    "The evaluation uses a synthetic L-shaped pit without verified boreholes, strata, groundwater evidence or professional approval.",
+    "Generated drawing sheets are traceable engineering source sheets; final construction issue remains controlled by calculation, reinforcement, drawing and review gates.",
+    "Frontend dependency installation, Vitest and Vite production build are not asserted by this evaluation.",
+    "Full historical backend test suite and real-project/external-software batch validation remain incomplete."
+  ]
+}

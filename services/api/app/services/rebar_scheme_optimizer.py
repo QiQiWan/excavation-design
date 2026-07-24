@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections import defaultdict
 from typing import Any, Literal
@@ -11,7 +13,9 @@ from app.rules.gb50010.rc_section_rules import (
     design_rectangular_flexure,
 )
 from app.rules.gb50010.reinforcement_rules import recommend_bar_spacing
-from app.schemas.domain import Project, ReinforcementGroup
+from app.rules.materials import concrete_values, steel_values
+from app.schemas.domain import Point2D, Polyline2D, Project, ReinforcementGroup
+from app.geometry.wall_path import normalize_construction_panels, polyline_length, resolve_wall_plan_path
 from app.services.rebar_constructability import build_rebar_constructability
 from app.services.runtime_diagnostics import append_event
 
@@ -26,6 +30,75 @@ _MODE_FACTORS: dict[str, dict[str, float]] = {
 
 def _mode(value: str | None) -> RebarMode:
     return value if value in _MODE_FACTORS else "balanced"  # type: ignore[return-value]
+
+
+def rebar_host_signature(project: Project) -> str:
+    """Return a deterministic signature for all reinforcement host geometry.
+
+    Reinforcement schemes are invalid whenever the wall or support topology is
+    regenerated, even when the latest calculation result remains marked current.
+    Persisting this signature prevents the API and viewer from reusing a scheme
+    that references superseded member ids.
+    """
+    retaining = project.retaining_system
+    if not retaining:
+        return ""
+
+    walls: list[dict[str, Any]] = []
+    for wall in retaining.diaphragm_walls or []:
+        axis = getattr(wall, "axis", None)
+        points = list(getattr(axis, "points", None) or [])
+        start = points[0] if points else getattr(axis, "start", None)
+        end = points[-1] if points else getattr(axis, "end", None)
+        walls.append({
+            "id": str(wall.id),
+            "code": str(getattr(wall, "panel_code", None) or getattr(wall, "code", None) or wall.id),
+            "start": [round(float(getattr(start, "x", 0.0)), 5), round(float(getattr(start, "y", 0.0)), 5)],
+            "end": [round(float(getattr(end, "x", 0.0)), 5), round(float(getattr(end, "y", 0.0)), 5)],
+            "top": round(float(getattr(wall, "top_elevation", 0.0)), 4),
+            "bottom": round(float(getattr(wall, "bottom_elevation", 0.0)), 4),
+            "thickness": round(float(getattr(wall, "thickness", 0.0)), 4),
+        })
+
+    supports: list[dict[str, Any]] = []
+    for support in retaining.supports or []:
+        section = getattr(support, "section", None)
+        supports.append({
+            "id": str(support.id),
+            "code": str(support.code),
+            "level": int(getattr(support, "level_index", 0) or 0),
+            "elevation": round(float(getattr(support, "elevation", 0.0)), 4),
+            "start": [round(float(support.start.x), 5), round(float(support.start.y), 5)],
+            "end": [round(float(support.end.x), 5), round(float(support.end.y), 5)],
+            "section": [
+                round(float(getattr(section, "width", 0.0) or 0.0), 4),
+                round(float(getattr(section, "height", 0.0) or 0.0), 4),
+                str(getattr(section, "name", "") or ""),
+            ],
+        })
+
+    payload = {
+        "walls": sorted(walls, key=lambda row: (row["code"], row["id"])),
+        "supports": sorted(supports, key=lambda row: (row["level"], row["code"], row["id"])),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def rebar_scheme_is_current(project: Project, scheme: dict[str, Any] | None, mode: str) -> bool:
+    """Verify that a stored scheme belongs to the current calculation and hosts."""
+    if not isinstance(scheme, dict) or not scheme or bool(scheme.get("interim")):
+        return False
+    if str(scheme.get("mode") or "") != str(_mode(mode)):
+        return False
+    calculation_state = dict((project.advanced_engineering or {}).get("calculationState") or {})
+    if str(calculation_state.get("status") or "") != "current":
+        return False
+    source = dict(scheme.get("sourceCalculation") or {})
+    if source and str(source.get("resultId") or "") != str(calculation_state.get("resultId") or ""):
+        return False
+    stored_signature = str(scheme.get("hostSignature") or "")
+    return bool(stored_signature) and stored_signature == rebar_host_signature(project)
 
 
 def _round_spacing(spacing: float, *, minimum: int = 100, maximum: int = 250) -> int:
@@ -584,7 +657,13 @@ def _optimize_support_section(
     mode: RebarMode,
 ) -> dict[str, Any]:
     target = _SUPPORT_TARGET_UTILIZATION[mode]
-    bar_patterns = [(12, 28), (16, 28), (16, 32), (20, 32), (20, 36), (24, 36), (24, 40)]
+    minimum_total_ratio = 0.0060
+    minimum_single_side_ratio = 0.0020
+    bar_patterns = [
+        (12, 28), (16, 28), (20, 28), (24, 28), (28, 28), (32, 28),
+        (16, 32), (20, 32), (24, 32), (28, 32), (32, 32),
+        (20, 36), (24, 36), (28, 36), (24, 40), (28, 40),
+    ]
     feasible: list[dict[str, Any]] = []
     fallback: list[dict[str, Any]] = []
     for candidate_width, candidate_height in _support_section_candidates(width, height, role):
@@ -602,6 +681,14 @@ def _optimize_support_section(
             clear_width = max(candidate_width * 1000.0 - 2 * 50.0 - 2 * dia, 0.0)
             clear_spacing = (clear_width - bars_per_face * dia) / max(bars_per_face - 1, 1)
             steel_ratio = count * bar_area(dia) / max(candidate_width * candidate_height * 1_000_000.0, 1.0)
+            # Corner bars contribute to both adjacent faces. This conservative
+            # face count keeps a wide support from passing the total ratio while
+            # leaving one side under-reinforced.
+            single_side_bar_count = max(math.ceil(count / 4) + 1, 3)
+            single_side_ratio = single_side_bar_count * bar_area(dia) / max(
+                candidate_width * candidate_height * 1_000_000.0,
+                1.0,
+            )
             row = {
                 "widthM": candidate_width,
                 "heightM": candidate_height,
@@ -611,9 +698,18 @@ def _optimize_support_section(
                 "utilization": float(check["utilization"]),
                 "clearSpacingMm": round(clear_spacing, 1),
                 "steelRatio": round(steel_ratio, 5),
+                "singleSideBarCount": single_side_bar_count,
+                "singleSideSteelRatio": round(single_side_ratio, 5),
+                "minimumTotalSteelRatio": minimum_total_ratio,
+                "minimumSingleSideSteelRatio": minimum_single_side_ratio,
                 "targetUtilization": target,
             }
-            if check["status"] == "pass" and clear_spacing >= max(35.0, float(dia)) and steel_ratio <= 0.025:
+            if (
+                check["status"] == "pass"
+                and clear_spacing >= max(35.0, float(dia))
+                and minimum_total_ratio <= steel_ratio <= 0.025
+                and single_side_ratio >= minimum_single_side_ratio
+            ):
                 fallback.append(row)
                 if float(check["utilization"]) <= target:
                     feasible.append(row)
@@ -643,11 +739,139 @@ def _optimize_support_section(
         "utilization": float(check["utilization"]),
         "clearSpacingMm": 0.0,
         "steelRatio": round(count * bar_area(dia) / max(candidate_width * candidate_height * 1_000_000.0, 1.0), 5),
+        "singleSideBarCount": max(math.ceil(count / 4) + 1, 3),
+        "singleSideSteelRatio": round(
+            max(math.ceil(count / 4) + 1, 3) * bar_area(dia)
+            / max(candidate_width * candidate_height * 1_000_000.0, 1.0),
+            5,
+        ),
+        "minimumTotalSteelRatio": minimum_total_ratio,
+        "minimumSingleSideSteelRatio": minimum_single_side_ratio,
         "targetUtilization": target,
         "status": "fail",
         "sectionChanged": True,
         "autoFixAction": "ADD_OR_REARRANGE_SUPPORTS",
         "failureReasonCode": "SUPPORT_TOPOLOGY_OR_SECTION_LIMIT",
+    }
+
+
+def _design_support_stirrups(
+    *,
+    axial_force_kn: float,
+    eccentricity_moment_knm: float,
+    span_m: float,
+    width_m: float,
+    height_m: float,
+    concrete_grade: str,
+    rebar_grade: str,
+    longitudinal_diameter_mm: float,
+    axial_utilization: float,
+    mode: RebarMode,
+    has_formal_stage_force: bool,
+) -> dict[str, Any]:
+    """Size a traceable closed-link cage and its physical zones."""
+    span = max(float(span_m or 0.0), 0.5)
+    width = max(float(width_m or 0.0), 0.35)
+    height = max(float(height_m or 0.0), 0.35)
+    b_mm = width * 1000.0
+    h_mm = height * 1000.0
+    h0_mm = max(h_mm - 50.0 - float(longitudinal_diameter_mm) / 2.0, 0.60 * h_mm)
+    concrete = concrete_values(concrete_grade)
+    steel = steel_values(rebar_grade)
+
+    self_weight_standard_kn_m = 25.0 * width * height
+    temporary_line_load_standard_kn_m = 2.0
+    design_line_load_kn_m = 1.35 * self_weight_standard_kn_m + 1.40 * temporary_line_load_standard_kn_m
+    self_weight_end_shear_kn = design_line_load_kn_m * span / 2.0
+    eccentricity_equivalent_shear_kn = 2.0 * abs(float(eccentricity_moment_knm or 0.0)) / span
+    design_shear_kn = self_weight_end_shear_kn + eccentricity_equivalent_shear_kn
+    concrete_capacity_kn = 0.7 * concrete.ft * b_mm * h0_mm / 1000.0
+    minimum_ratio = 0.24 * concrete.ft / max(steel.fyv, 1e-9)
+    maximum_constructural_spacing_mm = min(200.0, 0.75 * h0_mm, 15.0 * float(longitudinal_diameter_mm))
+    target_utilization = _SUPPORT_TARGET_UTILIZATION[mode]
+    maximum_dimension_mm = max(b_mm, h_mm)
+    geometric_leg_count = (
+        4
+        if maximum_dimension_mm <= 1200.0 + 1.0e-6
+        else max(6, 2 * math.ceil(max(maximum_dimension_mm - 100.0, 1.0) / 450.0))
+    )
+    geometric_leg_count = int(geometric_leg_count)
+    effective_leg_count = max(2, geometric_leg_count // 2)
+    diameter_candidates = (14, 16) if max(width, height) >= 1.4 else (12, 14, 16)
+    spacing_candidates = (180, 160, 150, 140, 125, 120, 100) if max(width, height) >= 1.4 else (200, 180, 160, 150, 140, 125, 120, 100)
+
+    candidates: list[dict[str, Any]] = []
+    for diameter_mm in diameter_candidates:
+        effective_leg_area_mm2 = float(effective_leg_count) * bar_area(diameter_mm)
+        for spacing_mm in spacing_candidates:
+            stirrup_capacity_kn = steel.fyv * effective_leg_area_mm2 * h0_mm / spacing_mm / 1000.0
+            total_capacity_kn = concrete_capacity_kn + stirrup_capacity_kn
+            utilization = design_shear_kn / max(total_capacity_kn, 1e-9)
+            provided_ratio = effective_leg_area_mm2 / max(spacing_mm * b_mm, 1e-9)
+            constructural_ok = spacing_mm <= maximum_constructural_spacing_mm + 1e-9
+            minimum_ratio_ok = provided_ratio + 1e-12 >= minimum_ratio
+            candidates.append({
+                "diameterMm": diameter_mm,
+                "spacingMm": spacing_mm,
+                "effectiveLegCount": effective_leg_count,
+                "geometricLegCount": geometric_leg_count,
+                "effectiveLegAreaMm2": round(effective_leg_area_mm2, 2),
+                "stirrupCapacityKn": round(stirrup_capacity_kn, 3),
+                "totalCapacityKn": round(total_capacity_kn, 3),
+                "utilization": round(utilization, 4),
+                "providedRatio": round(provided_ratio, 6),
+                "minimumRatio": round(minimum_ratio, 6),
+                "constructuralOk": constructural_ok,
+                "minimumRatioOk": minimum_ratio_ok,
+                "targetOk": utilization <= target_utilization,
+                "strengthOk": utilization <= 1.0,
+                "steelPerLength": effective_leg_area_mm2 / spacing_mm,
+            })
+    target_pool = [row for row in candidates if row["constructuralOk"] and row["minimumRatioOk"] and row["targetOk"]]
+    strength_pool = [row for row in candidates if row["constructuralOk"] and row["minimumRatioOk"] and row["strengthOk"]]
+    pool = target_pool or strength_pool
+    if pool:
+        selected = min(pool, key=lambda row: (float(row["steelPerLength"]), int(row["diameterMm"]), -int(row["spacingMm"])))
+        calculation_status = "pass" if selected["targetOk"] else "warning"
+    else:
+        selected = max(candidates, key=lambda row: float(row["totalCapacityKn"]))
+        calculation_status = "fail"
+
+    middle_spacing_mm = int(selected["spacingMm"])
+    middle_diameter_mm = int(selected["diameterMm"])
+    end_spacing_limit = 100 if mode == "conservative" or axial_utilization >= 0.80 else 120
+    end_spacing_mm = min(middle_spacing_mm, end_spacing_limit)
+    end_diameter_mm = max(middle_diameter_mm, 14 if axial_utilization >= 0.90 or axial_force_kn >= 15000 else 12)
+    end_zone_length_m = min(max(1.5 * height, 1.5, 0.06 * span), max(0.45 * span, 0.4))
+    middle_zone_length_m = max(span - 2.0 * end_zone_length_m, 0.0)
+    if middle_zone_length_m < 0.40:
+        end_zone_length_m = span / 2.0
+        middle_zone_length_m = 0.0
+    evidence_status = "calculated_stage_envelope" if has_formal_stage_force else "geometry_and_self_weight_only"
+    status = calculation_status if has_formal_stage_force else ("fail" if calculation_status == "fail" else "manual_review")
+    return {
+        "status": status,
+        "calculationStatus": calculation_status,
+        "evidenceStatus": evidence_status,
+        "designShearKn": round(design_shear_kn, 3),
+        "selfWeightEndShearKn": round(self_weight_end_shear_kn, 3),
+        "eccentricityEquivalentShearKn": round(eccentricity_equivalent_shear_kn, 3),
+        "designLineLoadKnPerM": round(design_line_load_kn_m, 3),
+        "concreteCapacityKn": round(concrete_capacity_kn, 3),
+        "stirrupCapacityKn": selected["stirrupCapacityKn"],
+        "totalCapacityKn": selected["totalCapacityKn"],
+        "utilization": selected["utilization"],
+        "targetUtilization": target_utilization,
+        "minimumStirrupRatio": selected["minimumRatio"],
+        "providedStirrupRatio": selected["providedRatio"],
+        "maximumConstructuralSpacingMm": round(maximum_constructural_spacing_mm, 1),
+        "effectiveLegCount": effective_leg_count,
+        "geometricLegCount": geometric_leg_count,
+        "endZone": {"lengthM": round(end_zone_length_m, 3), "diameterMm": end_diameter_mm, "spacingMm": end_spacing_mm, "token": f"D{end_diameter_mm}@{end_spacing_mm}"},
+        "middleZone": {"lengthM": round(middle_zone_length_m, 3), "diameterMm": middle_diameter_mm, "spacingMm": middle_spacing_mm, "token": f"D{middle_diameter_mm}@{middle_spacing_mm}"},
+        "governingCriteria": ["斜截面受剪承载力", "最小箍筋率", "箍筋最大构造间距", "端部轴压约束"],
+        "formula": "Vd <= 0.7*ft*b*h0 + fyv*Asv*h0/s；Asv/(b*s) >= 0.24*ft/fyv",
+        "engineeringNote": "已按支撑自重、施工临时线荷载、施工偏心等效剪力及轴压约束形成端部/跨中箍筋分区。" if has_formal_stage_force else "尚无正式施工阶段支撑轴力，当前仅按几何、自重和构造下限生成，计算后应自动更新。",
     }
 
 
@@ -680,15 +904,32 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
         )
         count = int(optimized["count"]); dia = int(optimized["diameterMm"])
         selected_width = float(optimized["widthM"]); selected_height = float(optimized["heightM"])
-        end_length = round(max(1.5 * selected_height, 1.5), 2)
         span = float(support.span_length or math.hypot(support.end.x - support.start.x, support.end.y - support.start.y))
-        end_spacing = 100 if force >= 6500 or mode == "conservative" else 120
-        mid_spacing = 150 if force >= 6500 else 180 if mode != "economic" else 200
+        transverse_design = _design_support_stirrups(
+            axial_force_kn=force,
+            eccentricity_moment_knm=float(support.eccentricity_moment or 0.0),
+            span_m=span,
+            width_m=selected_width,
+            height_m=selected_height,
+            concrete_grade=support.material.grade,
+            rebar_grade=rebar_grade,
+            longitudinal_diameter_mm=dia,
+            axial_utilization=float(optimized["utilization"]),
+            mode=mode,
+            has_formal_stage_force=(support.design_axial_force is not None or support.effective_axial_force_standard is not None),
+        )
+        end_zone = dict(transverse_design["endZone"])
+        middle_zone = dict(transverse_design["middleZone"])
+        end_length = float(end_zone["lengthM"])
         distribution_dia = 16 if min(selected_width, selected_height) >= 0.9 else 14
         distribution_spacing = 180 if force >= 6500 else 200
         tie_spacing = 350 if force >= 6500 else 400
         lap_dia = max(16, dia - 6)
         status = str(optimized["status"])
+        if transverse_design["status"] == "fail":
+            status = "fail"
+        elif transverse_design["status"] in {"warning", "manual_review"} and status == "pass":
+            status = "warning"
         row = {
             "hostType": "internal_support", "hostId": support.id, "hostCode": support.code,
             "levelIndex": support.level_index, "elevation": support.elevation, "supportRole": support.support_role,
@@ -701,8 +942,9 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
             "forceReconciliationStatus": support.force_reconciliation_status,
             "forceReconciliationNote": support.force_reconciliation_note,
             "longitudinal": {"count": count, "diameterMm": dia, "grade": rebar_grade, "token": f"{count}D{dia}"},
-            "endZones": {"lengthM": end_length, "stirrupDiameterMm": 14 if force >= 15000 else 12, "stirrupSpacingMm": end_spacing, "token": f"D{14 if force >= 15000 else 12}@{end_spacing}"},
-            "middleZone": {"lengthM": round(max(span - 2 * end_length, 0.0), 2), "stirrupDiameterMm": 12, "stirrupSpacingMm": mid_spacing, "token": f"D12@{mid_spacing}"},
+            "endZones": {"lengthM": end_length, "stirrupDiameterMm": end_zone["diameterMm"], "stirrupSpacingMm": end_zone["spacingMm"], "token": end_zone["token"], "zoneType": "end_zones", "geometricLegCount": transverse_design["geometricLegCount"]},
+            "middleZone": {"lengthM": middle_zone["lengthM"], "stirrupDiameterMm": middle_zone["diameterMm"], "stirrupSpacingMm": middle_zone["spacingMm"], "token": middle_zone["token"], "zoneType": "middle_zone", "geometricLegCount": transverse_design["geometricLegCount"]},
+            "transverseDesign": transverse_design,
             "distributionBars": {"diameterMm": distribution_dia, "spacingMm": distribution_spacing, "token": f"D{distribution_dia}@{distribution_spacing}", "label": "侧面构造分布筋"},
             "tieBars": {"diameterMm": 12, "spacingMm": tie_spacing, "token": f"D12@{tie_spacing}", "label": "拉结与架立筋"},
             "lapAdditionalBars": {"count": 4, "diameterMm": lap_dia, "token": f"4D{lap_dia}", "label": "搭接与锚固区附加筋"},
@@ -711,7 +953,8 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
                 "presentBarTypes": ["纵向主筋", "箍筋", "侧面构造分布筋", "拉结与架立筋", "搭接附加筋"],
                 "missingBarTypes": [],
                 "status": "complete",
-                "message": "五类水平支撑钢筋均已形成参数化设计记录，箍筋分端部加密区和跨中区。",
+                "stirrupZoneStatus": "complete" if middle_zone["lengthM"] > 0 else "end_zone_controls_full_span",
+                "message": "五类水平支撑钢筋均已形成参数化设计记录；箍筋已按斜截面受剪、最小箍筋率、最大构造间距和端部轴压约束分区。",
             },
             "lapArrangement": {"type": "mechanical_or_staggered", "maximumSameSectionRatio": 0.5, "recommendedLocation": "middle_third_away_from_node_rigid_zones"},
             "axialCapacityKn": round(float(optimized["capacityKn"]), 2),
@@ -719,6 +962,9 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
             "targetUtilization": optimized["targetUtilization"],
             "clearSpacingMm": optimized["clearSpacingMm"],
             "longitudinalSteelRatio": optimized["steelRatio"],
+            "singleSideLongitudinalSteelRatio": optimized["singleSideSteelRatio"],
+            "minimumLongitudinalSteelRatio": optimized["minimumTotalSteelRatio"],
+            "minimumSingleSideLongitudinalSteelRatio": optimized["minimumSingleSideSteelRatio"],
             "status": status,
             "failureReasonCode": optimized["failureReasonCode"],
             "autoFixAction": optimized["autoFixAction"],
@@ -737,7 +983,41 @@ def _support_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, A
             "recommendedAction": row["recommendedAction"],
             "message": f"{support.code}: {row['section']['name']}, {count}D{dia}, 轴压利用率 {row['utilization']:.3f}",
         })
+        checks.append({
+            "checkId": f"RB-SUPPORT-RATIO-{support.id}", "category": "support_longitudinal_ratio",
+            "hostId": support.id, "hostCode": support.code,
+            "status": "pass" if float(optimized["steelRatio"]) >= float(optimized["minimumTotalSteelRatio"]) else "fail",
+            "calculatedValue": optimized["steelRatio"], "limitValue": optimized["minimumTotalSteelRatio"], "unit": "ratio",
+            "message": f"{support.code}: 总纵筋率 {float(optimized['steelRatio']) * 100.0:.3f}%，最低 {float(optimized['minimumTotalSteelRatio']) * 100.0:.3f}%。",
+        })
+        checks.append({
+            "checkId": f"RB-SUPPORT-SIDE-RATIO-{support.id}", "category": "support_single_side_longitudinal_ratio",
+            "hostId": support.id, "hostCode": support.code,
+            "status": "pass" if float(optimized["singleSideSteelRatio"]) >= float(optimized["minimumSingleSideSteelRatio"]) else "fail",
+            "calculatedValue": optimized["singleSideSteelRatio"], "limitValue": optimized["minimumSingleSideSteelRatio"], "unit": "ratio",
+            "message": f"{support.code}: 单侧纵筋率 {float(optimized['singleSideSteelRatio']) * 100.0:.3f}%，最低 {float(optimized['minimumSingleSideSteelRatio']) * 100.0:.3f}%。",
+        })
+        checks.append({
+            "checkId": f"RB-SUPPORT-STIRRUP-{support.id}", "category": "support_stirrup_reinforcement",
+            "hostId": support.id, "hostCode": support.code, "status": transverse_design["status"],
+            "calculatedValue": transverse_design["designShearKn"], "limitValue": transverse_design["totalCapacityKn"], "unit": "kN",
+            "utilization": transverse_design["utilization"], "formula": transverse_design["formula"],
+            "evidenceStatus": transverse_design["evidenceStatus"],
+            "message": f"{support.code}: 端部 {end_zone['token']}，跨中 {middle_zone['token']}；{transverse_design['engineeringNote']}",
+        })
     return rows, checks
+
+
+
+def build_current_support_rebar_rows(project: Project, mode: str = "balanced") -> list[dict[str, Any]]:
+    """Build support-only scheme rows for the current support topology.
+
+    Visualization and migration paths use this lightweight helper when an
+    applied full scheme still references a superseded support generation.
+    It intentionally skips wall zoning, node checks and constructability grids.
+    """
+    rows, _checks = _support_scheme(project, _mode(mode))
+    return rows
 
 
 def _beam_and_node_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -752,6 +1032,7 @@ def _beam_and_node_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[
         main_spacing = int(design.main_bar_spacing or 150) if design else 150
         stirrup_dia = int(design.stirrup_diameter or 12) if design else 12
         stirrup_spacing = int(design.stirrup_spacing or 150) if design else 150
+        stirrup_legs = int(design.stirrup_leg_count or 2) if design else 2
         if mode == "conservative":
             main_spacing = _round_spacing(main_spacing * 0.9, minimum=100, maximum=200)
             stirrup_spacing = _round_spacing(stirrup_spacing * 0.85, minimum=100, maximum=200)
@@ -767,7 +1048,7 @@ def _beam_and_node_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[
                 "levelIndex": beam.support_level,
                 "elevation": beam.elevation,
                 "mainBars": {"diameterMm": main_dia, "spacingMm": main_spacing, "token": f"D{main_dia}@{main_spacing}"},
-                "stirrups": {"diameterMm": stirrup_dia, "spacingMm": stirrup_spacing, "nodeSpacingMm": min(stirrup_spacing, 100), "token": f"D{stirrup_dia}@{stirrup_spacing}"},
+                "stirrups": {"diameterMm": stirrup_dia, "spacingMm": stirrup_spacing, "legCount": stirrup_legs, "nodeSpacingMm": min(stirrup_spacing, 100), "token": f"{stirrup_legs}肢D{stirrup_dia}@{stirrup_spacing}"},
                 "distributionBars": {"diameterMm": 14, "spacingMm": 200, "token": "D14@200", "label": "梁侧面构造筋"},
                 "tieBars": {"diameterMm": 12, "spacingMm": 400, "token": "D12@400", "label": "截面拉结筋"},
                 "nodeAdditional": design.node_additional_reinforcement_note if design else "尚缺正式施工阶段设计内力；重新计算后生成转角 U 形筋、封闭箍筋和局部承压附加筋。",
@@ -779,7 +1060,7 @@ def _beam_and_node_scheme(project: Project, mode: RebarMode) -> tuple[list[dict[
                 "drawingRefs": ["R-05", "D-01", "D-02"],
             }
         )
-        checks.append({"checkId": f"RB-BEAM-{beam.id}", "category": "beam_reinforcement", "hostId": beam.id, "hostCode": beam.code, "status": status, "message": f"{beam.code}: D{main_dia}@{main_spacing}, stirrup D{stirrup_dia}@{stirrup_spacing}"})
+        checks.append({"checkId": f"RB-BEAM-{beam.id}", "category": "beam_reinforcement", "hostId": beam.id, "hostCode": beam.code, "status": status, "message": f"{beam.code}: 主筋 D{main_dia}@{main_spacing}，箍筋 {stirrup_legs}肢 D{stirrup_dia}@{stirrup_spacing}"})
     for node in ret.support_nodes:
         bearing = node.bearing_plate
         force = next((abs(float(item.design_axial_force or 0.0)) for item in ret.supports if item.id == node.support_id), 0.0)
@@ -953,6 +1234,7 @@ def build_rebar_design_scheme(
     scheme_applied_override: bool | None = None,
 ) -> dict[str, Any]:
     selected_mode = _mode(mode)
+    calculation_state = dict((project.advanced_engineering or {}).get("calculationState") or {})
     wall_zones, wall_checks = _wall_zone_scheme(project, selected_mode)
     wall_plan_zones, wall_plan_checks = _wall_plan_zones(project, wall_zones)
     supports, support_checks = _support_scheme(project, selected_mode)
@@ -1003,8 +1285,15 @@ def build_rebar_design_scheme(
     return {
         "projectId": project.id,
         "mode": selected_mode,
+        "hostSignature": rebar_host_signature(project),
+        "sourceCalculation": {
+            "resultId": calculation_state.get("resultId"),
+            "caseId": calculation_state.get("caseId"),
+            "inputSnapshotHash": calculation_state.get("inputSnapshotHash"),
+            "supportTopologyHash": calculation_state.get("supportTopologyHash"),
+        },
         "status": status,
-        "method": "施工阶段同步配筋设计：补齐梁设计证据，按墙体深度和墙面平面双向分区，完成墙、梁、支撑、节点承压与构造设计",
+        "method": "V3.55 专家配筋设计：同步施工阶段与拓扑，按墙体深度和墙面平面双向分区，完成钢筋混凝土支撑截面、节点承压与构造设计",
         "diagnostics": diagnostics,
         "wallZones": wall_zones,
         "wallPlanZones": wall_plan_zones,
@@ -1131,14 +1420,48 @@ def _governing_wall_groups(project: Project, scheme: dict[str, Any]) -> dict[str
 def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[str, Any]:
     if not project.retaining_system:
         raise ValueError("Project has no retaining system")
+    wall_geometry_repairs = 0
+    panel_geometry_repairs = 0
+    maximum_panel_deviation_m = 0.0
+    for wall_index, wall in enumerate(project.retaining_system.diaphragm_walls):
+        resolution = resolve_wall_plan_path(project, wall, wall_index)
+        if len(resolution.points) < 2:
+            continue
+        if resolution.repaired:
+            wall.axis = Polyline2D(points=[Point2D(x=point.x, y=point.y) for point in resolution.points], closed=False)
+            wall.design_length = polyline_length(resolution.points)
+            wall_geometry_repairs += 1
+        panels, panel_audit = normalize_construction_panels(
+            wall,
+            resolution.points,
+            target_length_m=float(getattr(project.design_settings, "wall_panel_target_length_m", 6.0) or 6.0),
+            minimum_length_m=float(getattr(project.design_settings, "wall_panel_min_length_m", 3.0) or 3.0),
+            maximum_length_m=float(getattr(project.design_settings, "wall_panel_max_length_m", 7.0) or 7.0),
+        )
+        wall.construction_panels = panels
+        panel_geometry_repairs += int(panel_audit.get("repairedPanelCount") or 0)
+        maximum_panel_deviation_m = max(maximum_panel_deviation_m, float(panel_audit.get("maximumStoredDeviationM") or 0.0))
     scheme = build_rebar_design_scheme(project, mode=mode, scheme_applied_override=True)
+    scheme["wallPlanGeometrySynchronization"] = {
+        "status": "auto_repaired" if wall_geometry_repairs or panel_geometry_repairs else "matched",
+        "repairedWallAxisCount": wall_geometry_repairs,
+        "repairedConstructionPanelCount": panel_geometry_repairs,
+        "maximumStoredPanelDeviationM": round(maximum_panel_deviation_m, 4),
+        "geometrySource": "current_excavation_segment_and_chainage",
+    }
     wall_groups = _governing_wall_groups(project, scheme)
     for wall in project.retaining_system.diaphragm_walls:
         if wall.id in wall_groups:
             wall.reinforcement = wall_groups[wall.id]
-    support_map = {str(item.get("hostId")): item for item in scheme.get("supportSchemes", [])}
+    support_map: dict[str, dict[str, Any]] = {}
+    for row in scheme.get("supportSchemes", []):
+        item_row = dict(row)
+        if item_row.get("hostId"):
+            support_map[str(item_row.get("hostId"))] = item_row
+        if item_row.get("hostCode"):
+            support_map[str(item_row.get("hostCode"))] = item_row
     for support in project.retaining_system.supports:
-        item = support_map.get(support.id)
+        item = support_map.get(support.id) or support_map.get(support.code)
         if not item or support.section_type != "rc_rectangular":
             continue
         longitudinal = item.get("longitudinal") or {}
@@ -1147,6 +1470,14 @@ def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
         distribution = item.get("distributionBars") or {}
         ties = item.get("tieBars") or {}
         lap_additional = item.get("lapAdditionalBars") or {}
+        transverse_design = item.get("transverseDesign") or {}
+        span_m = float(item.get("spanM") or support.span_length or math.hypot(support.end.x - support.start.x, support.end.y - support.start.y))
+        end_length_m = min(float(end_zone.get("lengthM") or 0.0), span_m / 2.0)
+        middle_length_m = max(float(middle.get("lengthM") or 0.0), 0.0)
+        middle_start_m = end_length_m
+        middle_end_m = min(middle_start_m + middle_length_m, max(span_m - end_length_m, middle_start_m))
+        if middle_length_m < 0.05:
+            middle_end_m = middle_start_m
         proposed_section = item.get("section") or {}
         if item.get("sectionChanged"):
             support.section.width = float(proposed_section.get("widthM") or support.section.width or 0.8)
@@ -1158,12 +1489,12 @@ def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
             support.section_optimization_status = "pass" if item.get("status") != "fail" else "topology_upgrade_required"
             support.section_optimization_note = str(item.get("recommendedAction") or "")
         support.reinforcement = [
-            ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=str(longitudinal.get("grade") or "HRB400"), check_status="pass" if item.get("status") == "pass" else "warning", location_description="按轴压承载力配置，并与箍筋、侧面构造筋及节点净距协同校核"),
-            ReinforcementGroup(name="支撑侧面构造分布筋", bar_type="distribution", diameter=float(distribution.get("diameterMm") or 14), spacing=float(distribution.get("spacingMm") or 200), grade="HRB400", check_status="manual_review", location_description="支撑四个侧面连续配置；用于裂缝分散、箍筋定位和钢筋骨架稳定"),
-            ReinforcementGroup(name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade="HRB400", check_status="manual_review", location_description=f"支撑两端各 {end_zone.get('lengthM')}m 范围加密配置"),
-            ReinforcementGroup(name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade="HRB400", check_status="manual_review", location_description="支撑跨中普通区抗剪与约束箍筋"),
-            ReinforcementGroup(name="支撑拉结/架立筋", bar_type="tie", diameter=float(ties.get("diameterMm") or 12), spacing=float(ties.get("spacingMm") or 400), grade="HRB400", check_status="manual_review", location_description="约束侧面纵筋并保持钢筋骨架尺寸，端部节点区按大样加密"),
-            ReinforcementGroup(name="搭接与锚固区附加筋", bar_type="additional", diameter=float(lap_additional.get("diameterMm") or max(16, float(longitudinal.get("diameterMm") or 25) - 6)), count=int(lap_additional.get("count") or 4), grade="HRB400", check_status="manual_review", location_description="错开布置于跨中搭接区并避开端部刚域；具体锚固长度由施工图复核"),
+            ReinforcementGroup(id=f"rebar-{support.id}-longitudinal", name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=str(longitudinal.get("grade") or "HRB400"), check_status="pass" if item.get("status") == "pass" else "warning", location_description="按轴压承载力配置，并与箍筋、侧面构造筋及节点净距协同校核", zone_type="full_length", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=span_m, design_source="applied_rebar_design_scheme"),
+            ReinforcementGroup(id=f"rebar-{support.id}-distribution", name="支撑侧面构造分布筋", bar_type="distribution", diameter=float(distribution.get("diameterMm") or 14), spacing=float(distribution.get("spacingMm") or 200), grade="HRB400", check_status="manual_review", location_description="支撑四个侧面连续配置；用于裂缝分散、箍筋定位和钢筋骨架稳定", zone_type="full_length", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=span_m, design_source="applied_rebar_design_scheme"),
+            ReinforcementGroup(id=f"rebar-{support.id}-stirrup-end", name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade="HRB400", check_status=str(transverse_design.get("status") or "manual_review"), location_description=f"A、B 两端各 {end_length_m:.2f}m 范围加密配置；对应斜截面受剪和节点轴压约束", zone_type="end_zones", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=end_length_m, stirrup_legs=int(end_zone.get("geometricLegCount") or transverse_design.get("geometricLegCount") or 4), design_source="support_transverse_design"),
+            ReinforcementGroup(id=f"rebar-{support.id}-stirrup-middle", name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade="HRB400", check_status=str(transverse_design.get("status") or "manual_review"), location_description="跨中普通区抗剪、最小箍筋率与骨架约束箍筋" if middle_end_m > middle_start_m else "短支撑由两端加密区控制，不另设跨中普通区", zone_type="middle_zone", zone_start_m=middle_start_m, zone_end_m=middle_end_m, zone_length_m=max(middle_end_m - middle_start_m, 0.0), stirrup_legs=int(middle.get("geometricLegCount") or transverse_design.get("geometricLegCount") or 4), design_source="support_transverse_design"),
+            ReinforcementGroup(id=f"rebar-{support.id}-tie", name="支撑拉结/架立筋", bar_type="tie", diameter=float(ties.get("diameterMm") or 12), spacing=float(ties.get("spacingMm") or 400), grade="HRB400", check_status="manual_review", location_description="约束侧面纵筋并保持钢筋骨架尺寸，端部节点区按大样加密", zone_type="full_length", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=span_m, design_source="applied_rebar_design_scheme"),
+            ReinforcementGroup(id=f"rebar-{support.id}-additional", name="搭接与锚固区附加筋", bar_type="additional", diameter=float(lap_additional.get("diameterMm") or max(16, float(longitudinal.get("diameterMm") or 25) - 6)), count=int(lap_additional.get("count") or 4), grade="HRB400", check_status="manual_review", location_description="错开布置于跨中搭接区并避开端部刚域；具体锚固长度由施工图复核", zone_type="lap_zone", zone_start_m=span_m * 0.40, zone_end_m=span_m * 0.60, zone_length_m=span_m * 0.20, design_source="applied_rebar_design_scheme"),
         ]
 
     beam_map = {str(item.get("hostId")): item for item in scheme.get("beamNodeSchemes", []) if item.get("hostType") == "wale_or_crown_beam"}
@@ -1182,7 +1513,7 @@ def apply_rebar_design_scheme(project: Project, mode: str = "balanced") -> dict[
         role_label = "冠梁" if beam.beam_role == "crown_beam" else "围檩"
         beam.reinforcement = [
             ReinforcementGroup(name=f"{role_label}上/下缘主筋", bar_type="longitudinal", diameter=float(main.get("diameterMm") or 25), spacing=float(main.get("spacingMm") or 150), grade="HRB400", area_per_meter=design.provided_reinforcement_area if design else None, required_area_per_meter=design.required_reinforcement_area if design else None, check_status=status, location_description=f"{beam.code} 沿梁长连续配置，转角与施工缝处按节点大样锚固"),
-            ReinforcementGroup(name=f"{role_label}箍筋", bar_type="stirrup", diameter=float(stirrups.get("diameterMm") or 12), spacing=float(stirrups.get("spacingMm") or 150), grade="HRB400", check_status="manual_review", location_description=f"普通区按计算间距，转角、墙接头和支撑节点两侧采用 {stirrups.get('nodeSpacingMm') or 100}mm 加密"),
+            ReinforcementGroup(name=f"{role_label}箍筋", bar_type="stirrup", diameter=float(stirrups.get("diameterMm") or 12), spacing=float(stirrups.get("spacingMm") or 150), grade="HRB400", stirrup_legs=int(stirrups.get("legCount") or (design.stirrup_leg_count if design else 2) or 2), check_status=status, location_description=f"普通区按斜截面计算配置多肢闭合箍筋，转角、墙接头和支撑节点两侧采用 {stirrups.get('nodeSpacingMm') or 100}mm 加密"),
             ReinforcementGroup(name=f"{role_label}侧面构造筋", bar_type="distribution", diameter=float(distribution.get("diameterMm") or 14), spacing=float(distribution.get("spacingMm") or 200), grade="HRB400", check_status="manual_review", location_description="侧面连续构造配置，用于裂缝分散、箍筋定位和钢筋骨架稳定"),
             ReinforcementGroup(name=f"{role_label}拉结筋", bar_type="tie", diameter=float(ties.get("diameterMm") or 12), spacing=float(ties.get("spacingMm") or 400), grade="HRB400", check_status="manual_review", location_description="拉结上、下缘及侧面钢筋；转角和预埋件区加密"),
             ReinforcementGroup(name=f"{role_label}节点附加筋", bar_type="additional", diameter=20, spacing=150, grade="HRB400", check_status="manual_review", location_description=str(item.get("nodeAdditional") or "转角、墙接头、支撑节点和预埋件区配置 U 形筋、封闭箍筋和局部抗裂筋")),

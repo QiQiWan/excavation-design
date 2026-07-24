@@ -90,4 +90,35 @@ def generate_construction_detail_sheets(project: Project, output_dir: str | Path
     body += "<text x='130' y='820' class='small'>注：桩径、桩长、单桩承载力和利用率由 FoundationDesign 输出；正式施工图应补桩身配筋、桩端持力层和施工偏差要求。</text>\n"
     _write_svg(pile_path, "临时立柱桩详图", "1:50", body)
     sheets.append(DrawingSheetResult(sheet_id="D-04", title="临时立柱桩详图", scale="1:50", file_path=str(pile_path), sheet_type="pile_detail", model_objects=[c.id for c in retaining.columns[:20]]))
+
+    # 5-17. V3.86 design-institute delivery sheet system. These sheets are
+    # generated from the same project snapshot and keep explicit model-object
+    # references. SVG is an auditable source for CAD/PDF packaging; downstream
+    # drawing rules still decide whether a construction issue is allowed.
+    generic_specs = [
+        ("D-05", "设计总说明", "general_note", "1:100", ["设计依据", "材料与耐久性", "施工控制条件", "监测控制要求", "人工复核边界"]),
+        ("D-06", "基坑平面定位图", "location_plan", "1:500", ["坐标基准", "基坑轮廓", "周边环境", "控制点与尺寸链"]),
+        ("D-07", "围护墙平面与分幅图", "wall_plan", "1:200", ["墙段编号", "槽段分幅", "墙厚", "墙趾分区", "接头类型"]),
+        ("D-08", "典型围护剖面图", "section", "1:100", ["地层", "水位", "支撑层", "坑底", "墙趾", "控制标高"]),
+        ("D-09", "各道支撑平面图", "support_plan", "1:200", ["支撑编号", "围檩", "立柱", "转接梁", "施工净空"]),
+        ("D-10", "围檩与支撑构件截面", "member_section", "1:50", ["截面尺寸", "材料", "设计内力", "主筋", "箍筋", "保护层"]),
+        ("D-11", "立柱及立柱桩详图", "column_detail", "1:50", ["立柱截面", "连接节点", "基础尺寸", "桩长", "承载力"]),
+        ("D-12", "换撑与拆撑设计原则", "replacement_principle", "1:100", ["设计控制工况", "传力交接", "拆撑前置条件", "永久结构要求"]),
+        ("D-13", "围檩与环梁钢筋图", "wale_rebar", "1:50", ["轴弯剪扭组合", "抗扭纵筋", "闭合箍筋", "节点附加筋", "锚固"]),
+        ("D-14", "混凝土支撑钢筋图", "support_rebar", "1:50", ["纵筋", "端部加密箍筋", "中段箍筋", "侧面分布筋", "搭接与锚固"]),
+        ("D-15", "构件明细表", "member_schedule", "NTS", ["构件编号", "截面", "材料", "长度", "控制工况", "利用率"]),
+        ("D-16", "钢筋明细表", "rebar_schedule", "NTS", ["宿主构件", "钢筋编号", "级别", "直径", "间距/根数", "长度", "数量"]),
+        ("D-17", "监测与设计控制要求", "monitoring_control", "NTS", ["监测项目", "设计控制值", "变化速率", "通知设计条件", "复核要求"]),
+    ]
+    object_ids = [w.id for w in retaining.diaphragm_walls] + [b.id for b in retaining.wale_beams] + [s.id for s in retaining.supports] + [c.id for c in retaining.columns]
+    for sheet_id, title, sheet_type, scale, notes in generic_specs:
+        path = out / f"{sheet_id}_{sheet_type}.svg"
+        body = f"<text x='80' y='85'>{title}</text>\n"
+        body += "<rect x='100' y='125' width='1120' height='540' fill='none' stroke='#222' stroke-width='2'/>\n"
+        for index, note in enumerate(notes):
+            y = 180 + index * 72
+            body += f"<circle cx='145' cy='{y-7}' r='5' fill='#244f78'/><text x='170' y='{y}'>{index+1}. {note}</text>\n"
+        body += "<text x='100' y='710' class='small'>本图由当前 DesignSnapshotId 对应模型生成；正式发行前执行图面规则、构件编号、标高、尺寸和成果一致性校核。</text>\n"
+        _write_svg(path, title, scale, body)
+        sheets.append(DrawingSheetResult(sheet_id=sheet_id, title=title, scale=scale, file_path=str(path), sheet_type=sheet_type, model_objects=object_ids[:200], notes=notes))
     return sheets

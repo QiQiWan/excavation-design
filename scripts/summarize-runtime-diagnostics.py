@@ -28,6 +28,16 @@ def _mb(value: Any) -> float:
         return 0.0
 
 
+def _effective_mb(row: dict[str, Any]) -> float:
+    direct = row.get("effectiveMemoryMb")
+    try:
+        if direct is not None and float(direct) > 0:
+            return round(float(direct), 2)
+    except (TypeError, ValueError):
+        pass
+    return _mb(row.get("processEffectiveBytes") or row.get("processRssBytes") or row.get("processPrivateBytes"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Summarize PitGuard runtime memory diagnostics")
     parser.add_argument("--runtime", default="runtime", help="runtime directory")
@@ -42,11 +52,15 @@ def main() -> int:
     if by_task:
         print("\nWorker peak memory")
         for task_id, rows in by_task.items():
-            peak = max(rows, key=lambda item: float(item.get("effectiveMemoryMb") or 0))
+            peak = max(rows, key=_effective_mb)
+            effective = _effective_mb(peak)
+            private = peak.get("privateMb") or _mb(peak.get("processPrivateBytes"))
+            rss = peak.get("rssMb") or _mb(peak.get("processRssBytes"))
+            available = peak.get("systemAvailableMb") or _mb(peak.get("availableBytes"))
+            metric_note = "" if effective > 0 else "（进程内存指标不可用）"
             print(
-                f"- {task_id}: effective={peak.get('effectiveMemoryMb', 0)} MB, "
-                f"private={peak.get('privateMb', 0)} MB, rss={peak.get('rssMb', 0)} MB, "
-                f"stage={peak.get('currentStep', '-')}, available={peak.get('systemAvailableMb', 0)} MB"
+                f"- {task_id}: effective={effective} MB, private={private} MB, rss={rss} MB, "
+                f"stage={peak.get('currentStep', '-')}, available={available} MB{metric_note}"
             )
 
     candidates = _read(root / "candidate-search.jsonl")
@@ -87,6 +101,10 @@ def main() -> int:
             reasons[str(row.get("reason") or "unknown")] += 1
         if reasons:
             print(f"- rejection reasons={dict(reasons)}")
+            duplicate_count = sum(count for reason, count in reasons.items() if reason.startswith("identical_geometry"))
+            total = len(accepted) + len(rejected)
+            if total and duplicate_count / total >= 0.25:
+                print(f"- warning: identical geometry rejection rate={duplicate_count / total:.1%}; reduce snapped-equivalent trial combinations")
 
     rebar_contract = _read(root / "rebar-contract.jsonl")
     if rebar_contract:
@@ -114,7 +132,10 @@ def main() -> int:
     if failures:
         print("\nNon-success task finishes")
         for row in failures[-10:]:
-            print(f"- {row.get('taskId')}: {row.get('operation')} status={row.get('status')} stage={row.get('stage', '-')}")
+            detail = str(row.get("errorMessage") or row.get("message") or "未记录错误详情")
+            if len(detail) > 220:
+                detail = detail[:217] + "..."
+            print(f"- {row.get('taskId')}: {row.get('operation')} status={row.get('status')} stage={row.get('stage', '-')} error={detail}")
     return 0
 
 

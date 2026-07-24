@@ -6,6 +6,7 @@ from statistics import mean
 from typing import Iterable
 
 from shapely.geometry import LineString, MultiPoint, Point as ShapelyPoint, Polygon as ShapelyPolygon
+from shapely.ops import nearest_points
 
 from app.services.plan_shape_intelligence import classify_excavation_plan
 
@@ -60,6 +61,8 @@ class SupportLayoutConfig:
     transition_zone_influence_m: float = 8.0
     support_min_station_separation_m: float = 2.8
     support_level_depths_m: tuple[float, ...] = ()
+    concave_transfer_template: str = "none"
+    concave_transfer_scale: float = 1.0
 
     def normalized(self) -> "SupportLayoutConfig":
         strategy = str(self.topology_strategy or "balanced_grid")
@@ -92,6 +95,12 @@ class SupportLayoutConfig:
             transition_zone_influence_m=max(3.0, min(15.0, float(self.transition_zone_influence_m))),
             support_min_station_separation_m=max(2.2, min(4.5, float(self.support_min_station_separation_m))),
             support_level_depths_m=tuple(sorted({round(float(value), 4) for value in self.support_level_depths_m if float(value) >= 0.0})),
+            concave_transfer_template=(
+                str(self.concave_transfer_template)
+                if str(self.concave_transfer_template) in {"none", "compact_elbow_ring", "balanced_elbow_ring", "extended_elbow_ring", "junction_hub_frame", "ring_chord_frame"}
+                else "none"
+            ),
+            concave_transfer_scale=max(0.65, min(1.5, float(self.concave_transfer_scale))),
         )
 
 
@@ -1754,6 +1763,63 @@ def _zoned_direct_layout(
     return lines, warnings
 
 
+def _concave_transfer_ring_layout(
+    points: list[Point2D],
+    obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
+    config: SupportLayoutConfig,
+) -> tuple[list[SupportLayoutLine], list[str], dict[str, object]]:
+    from app.services.support_transfer_system import concave_ring_points
+
+    ring_points, generation = concave_ring_points(
+        points, config.concave_transfer_template, scale=config.concave_transfer_scale
+    )
+    if len(ring_points) < 4:
+        return [], [
+            "异形闭合内环梁生成失败：" + str(generation.get("reason") or generation.get("status") or "unknown")
+        ], generation
+    outer = ShapelyPolygon([(point.x, point.y) for point in points])
+    ring = ShapelyPolygon([(point.x, point.y) for point in ring_points])
+    if not outer.is_valid or not ring.is_valid or ring.area <= EPS or not outer.buffer(-0.02).contains(ring):
+        return [], ["异形闭合内环梁未完全位于基坑轮廓内，方案已阻断。"], generation
+    lines: list[SupportLayoutLine] = []
+    target_bay = float(config.max_wale_support_bay_m)
+    for edge_index, (first, second) in enumerate(zip(points, points[1:] + points[:1]), start=1):
+        length = _distance(first, second)
+        support_count = max(1, int(math.ceil(length / max(target_bay, 1.0))) - 1)
+        for index in range(1, support_count + 1):
+            chainage = length * index / (support_count + 1)
+            wall_point = _point_at(first, second, chainage)
+            _, inner_shapely = nearest_points(ShapelyPoint(wall_point.x, wall_point.y), ring.boundary)
+            inner_point = Point2D(x=float(inner_shapely.x), y=float(inner_shapely.y))
+            span = _distance(wall_point, inner_point)
+            if span < 2.0:
+                continue
+            if not _line_segment_samples_inside(wall_point, inner_point, points):
+                continue
+            if not _line_avoids_obstacles(wall_point, inner_point, obstacles):
+                continue
+            lines.append(SupportLayoutLine(
+                "ring_strut",
+                Point2D(x=round(wall_point.x, 3), y=round(wall_point.y, 3)),
+                Point2D(x=round(inner_point.x, 3), y=round(inner_point.y, 3)),
+                round(span, 3),
+                round(length / (support_count + 1), 3),
+                "异形闭合内环梁方案：围檩节点通过独立径向压杆传力至内缩同形闭合环梁；禁止杆件在环梁外汇聚。",
+                topology_family="zoned_ring_transfer",
+                design_zone=f"concave-ring-face-{edge_index}",
+                station_chainage_m=round(chainage, 3),
+                local_clear_span_m=round(span, 3),
+                placement_reason="concave_closed_ring_radial_transfer",
+                load_path_class="wall_to_transfer_frame",
+            ))
+    warnings = [
+        f"已生成异形闭合内环梁代理体系及 {len(lines)} 根墙—环径向支撑；用于完整方案比选，正式出图前仍须复核环梁弯剪扭和节点构造。"
+    ]
+    if not lines:
+        warnings.append("异形闭合环撑未生成有效径向支撑，方案进入受控阻断。")
+    return lines, warnings, generation
+
+
 def _should_use_ring(
     points: list[Point2D],
     obstacles: list[tuple[ConstructionObstacle, list[Point2D]]],
@@ -2204,7 +2270,10 @@ def generate_support_layout_lines(excavation, config: SupportLayoutConfig | None
     use_zoned = config.topology_strategy == "zoned_direct" or (
         config.topology_strategy == "balanced_grid" and shape_capability.startswith("zoned_")
     )
-    if use_zoned:
+    if use_zoned and config.concave_transfer_template != "none":
+        lines, warnings, ring_generation = _concave_transfer_ring_layout(points, obstacles, config)
+        shape["concaveTransferRingGeneration"] = ring_generation
+    elif use_zoned:
         lines, warnings = _zoned_direct_layout(excavation, points, obstacles, shape, config)
     elif _should_use_ring(points, obstacles, config=config, diagnostics=shape):
         lines, warnings = _ring_layout(points, obstacles, config=config)
@@ -2516,13 +2585,21 @@ def make_support_elements(excavation, elevations: list[float], config: SupportLa
                 centerline_offset_m=line.centerline_offset_m,
                 start_wall_clearance_m=line.start_wall_clearance_m,
                 end_wall_clearance_m=line.end_wall_clearance_m,
-                topology_family=line.topology_family if line.topology_family in {"direct_grid", "hybrid_diagonal", "bidirectional_grid", "ring_radial"} else "direct_grid",
+                topology_family=line.topology_family if line.topology_family in {
+                    "direct_grid", "hybrid_diagonal", "bidirectional_grid", "ring_radial", "zoned_direct",
+                    "zoned_ring_transfer", "transfer_frame", "ring_truss", "partition_wall", "center_island"
+                } else "direct_grid",
                 design_zone=line.design_zone,
                 station_chainage_m=line.station_chainage_m,
                 local_clear_span_m=line.local_clear_span_m or line.span_length,
                 placement_reason=line.placement_reason,
-                load_path_class=line.load_path_class if line.load_path_class in {"wall_to_wall", "wall_to_ring", "supported_frame_node", "manual"} else "wall_to_wall",
-                force_distribution_note="V3.20 支撑轴力由围檩连续梁-弹性支座节点反力计算；场区/过渡区站位和局部净跨写入构件台账。",
+                load_path_class=line.load_path_class if line.load_path_class in {
+                    "wall_to_wall", "wall_to_ring", "supported_frame_node", "wall_to_transfer_frame", "manual"
+                } else "wall_to_wall",
+                transfer_system_id=(f"CTS-{config.concave_transfer_template}" if line.load_path_class in {"wall_to_ring", "wall_to_transfer_frame"} and config else None),
+                transfer_zone_id=("TZ-1" if line.load_path_class in {"wall_to_ring", "wall_to_transfer_frame"} else None),
+                load_path_id=(f"LP-{line.topology_family}-L{level_idx}" if line.load_path_class in {"wall_to_ring", "wall_to_transfer_frame"} else None),
+                force_distribution_note="V3.70 支撑轴力由围檩连续梁、墙—撑全局矩阵与异形平面转接框架共同形成；站位、局部净跨和转接路径写入构件台账。",
                 section_type="rc_rectangular",
                 section=SectionDefinition(
                     width=(1.2 if line.span_length <= 18.0 else 1.4 if line.span_length <= 24.0 else 1.6 if line.span_length <= 32.0 else 1.8),
@@ -3709,20 +3786,59 @@ def make_ring_beams(
     uses_ring = any(item.support_role == "ring_strut" for item in (supports or []))
     if not uses_ring and not _should_use_ring(points, obstacles, config=config, diagnostics=diagnostics):
         return []
-    ring_points = _ring_polygon(points, obstacles)
+    is_concave_transfer = bool(config and config.topology_strategy == "zoned_direct" and config.concave_transfer_template != "none")
+    if is_concave_transfer:
+        from app.services.support_transfer_system import concave_ring_points
+        ring_points, _ = concave_ring_points(points, config.concave_transfer_template, scale=config.concave_transfer_scale)
+    else:
+        ring_points = _ring_polygon(points, obstacles)
     if len(ring_points) < 3:
         return []
     beams: list[BeamElement] = []
+    if is_concave_transfer:
+        from app.services.support_transfer_system import transfer_beam_segments, transfer_topology_class
+        segment_specs = transfer_beam_segments(ring_points, config.concave_transfer_template)
+        topology_class = transfer_topology_class(config.concave_transfer_template)
+    else:
+        segment_specs = [
+            {"segmentIndex": idx, "start": a, "end": b, "role": "ring_beam", "memberClass": "perimeter_ring"}
+            for idx, (a, b) in enumerate(zip(ring_points, ring_points[1:] + ring_points[:1]), start=1)
+        ]
+        topology_class = "ring_radial"
     for level_idx, elevation in enumerate(elevations, start=1):
-        for idx, (a, b) in enumerate(zip(ring_points, ring_points[1:] + ring_points[:1]), start=1):
+        role_counts: dict[str, int] = {}
+        node_ids: dict[tuple[float, float], str] = {}
+        for spec in segment_specs:
+            role = str(spec.get("role") or "ring_beam")
+            role_counts[role] = role_counts.get(role, 0) + 1
+            a = spec["start"]
+            b = spec["end"]
+            for point in (a, b):
+                key = (round(float(point.x), 4), round(float(point.y), 4))
+                node_ids.setdefault(key, f"TFN-L{level_idx}-{len(node_ids)+1:03d}")
+            if is_concave_transfer:
+                prefix = "TR" if role == "transfer_ring_beam" else "TF" if role == "transfer_frame_beam" else "TB"
+                code = f"{prefix}-L{level_idx}-{role_counts[role]:02d}"
+            else:
+                code = f"RB-L{level_idx}-{role_counts[role]:02d}"
             beams.append(BeamElement(
-                code=f"RB-L{level_idx}-{idx:02d}",
+                code=code,
                 axis=Polyline2D(points=[a, b], closed=False),
                 elevation=elevation,
-                section=SectionDefinition(width=1.2, height=1.0, name="1200x1000 RC closed ring beam"),
+                section=SectionDefinition(
+                    width=1.2 if role in {"ring_beam", "transfer_ring_beam"} else 1.0,
+                    height=1.0 if role in {"ring_beam", "transfer_ring_beam"} else 0.9,
+                    name="1200x1000 RC transfer ring beam" if role in {"ring_beam", "transfer_ring_beam"} else "1000x900 RC transfer frame beam",
+                ),
                 material=MaterialDefinition(name="Concrete", grade="C40"),
-                beam_role="ring_beam",
+                beam_role=role,
                 support_level=level_idx,
+                transfer_system_id=(f"CTS-{config.concave_transfer_template}" if is_concave_transfer else None),
+                transfer_zone_id=("TZ-1" if is_concave_transfer else None),
+                start_node_id=node_ids[(round(float(a.x), 4), round(float(a.y), 4))],
+                end_node_id=node_ids[(round(float(b.x), 4), round(float(b.y), 4))],
+                load_path_id=(f"LP-{topology_class}-L{level_idx}" if is_concave_transfer else None),
+                analysis_status="proxy" if is_concave_transfer else "missing",
             ))
     return beams
 

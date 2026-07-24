@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.domain import Project, RetainingSystem, SupportLayoutRepairSummary
+from app.schemas.domain import RetainingSystem, SupportLayoutRepairSummary
 from app.geology.model_builder import ensure_geological_model_covers_excavation
 from app.services.design_service import auto_diaphragm_wall, auto_supports, support_layout_config_from_settings
 from app.services.support_layout import plan_shape_diagnostics
@@ -41,6 +41,21 @@ class SupportDeepDesignPayload(BaseModel):
     max_iterations: int | None = Field(default=None, alias="maxIterations", ge=1, le=6)
 
 
+class ConcaveTransferDetailingPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    frame_analysis_status: str = Field(default="missing", alias="frameAnalysisStatus")
+    node_detailing_status: str = Field(default="missing", alias="nodeDetailingStatus")
+    stage_review_status: str = Field(default="missing", alias="stageReviewStatus")
+    reaction_iteration_status: str = Field(default="missing", alias="reactionIterationStatus")
+    spatial_effect_status: str = Field(default="missing", alias="spatialEffectStatus")
+    torsion_detailing_status: str = Field(default="missing", alias="torsionDetailingStatus")
+    reviewer: str = Field(min_length=1, max_length=120)
+    notes: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list, alias="evidenceRefs")
+    professional_credential: dict[str, Any] = Field(default_factory=dict, alias="professionalCredential")
+    status: str = "approved"
+
+
 class SupportLockItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     target_type: str = Field(default="support_line", alias="targetType")
@@ -73,14 +88,6 @@ class ProgressiveDesignPatch(BaseModel):
     resource_policy: dict[str, Any] = Field(default_factory=dict, alias="resourcePolicy")
     action: str | None = None
     expected_version: int | None = Field(default=None, alias="expectedVersion")
-
-
-class GuidedDesignIntakePayload(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-    goal: str = "quick_scheme"
-    environment_level: str = Field(default="一般", alias="environmentLevel")
-    objective: str = "balanced"
-    design_stage: str = Field(default="temporary", alias="designStage")
 
 
 def _require_embedded_support_optimization() -> None:
@@ -118,37 +125,6 @@ def get_core_design_status(
     from app.services.core_workspace import build_core_workspace_status
     project = repo.require_workspace_with_latest_calculation(project_id)
     return build_core_workspace_status(project, repo.store.get_payload_info(project_id))
-
-
-@router.post("/intake/apply", response_model=Project)
-def apply_guided_design_intake_route(
-    project_id: str,
-    payload: GuidedDesignIntakePayload,
-    repo: ProjectRepository = Depends(get_repository),
-) -> Project:
-    """Confirm four engineer-facing choices and apply traceable defaults.
-
-    This endpoint intentionally does not synthesize geology, groundwater or
-    specialist evidence.  It only translates the small project brief into the
-    existing audited design settings.
-    """
-    from app.services.design_intake import apply_guided_design_intake
-
-    project = repo.require(project_id)
-    apply_guided_design_intake(
-        project,
-        goal=payload.goal,
-        environment_level=payload.environment_level,
-        objective=payload.objective,
-        design_stage=payload.design_stage,
-    )
-    saved = repo.save(
-        project,
-        action="design.guided_intake.apply",
-        summary="Confirmed minimum design brief and applied traceable recommended settings",
-    )
-    invalidate_design_workspace_bootstrap(project_id, db_path=str(repo.store.db_path))
-    return saved
 
 
 @router.get("/workspace-bootstrap")
@@ -284,7 +260,7 @@ def design_supports_by_shape(project_id: str, repo: ProjectRepository = Depends(
         project.retaining_system,
         layout_config=support_layout_config_from_settings(project.design_settings, topology_strategy=selected),
     )
-    invalidate_calculation_state(project, reason=f"shape-aware support system regenerated using {selected}", rebuild_cases=True)
+    invalidate_calculation_state(project, reason=f"shape-aware support system regenerated using {selected}", rebuild_cases=True, invalidate_candidates=True)
     repo.save(project)
     return {
         "diagnostics": diagnostics,
@@ -298,7 +274,7 @@ def design_diaphragm_wall(project_id: str, repo: ProjectRepository = Depends(get
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     project.retaining_system = auto_diaphragm_wall(project.excavation, project.retaining_system, project.design_settings)
-    invalidate_calculation_state(project, reason="diaphragm wall geometry regenerated", rebuild_cases=False)
+    invalidate_calculation_state(project, reason="diaphragm wall geometry regenerated", rebuild_cases=False, invalidate_candidates=True)
     repo.save(project)
     return project.retaining_system
 
@@ -309,7 +285,7 @@ def design_supports(project_id: str, repo: ProjectRepository = Depends(get_repos
     project = _require_excavation(project_id, repo)
     ensure_geological_model_covers_excavation(project)
     project.retaining_system = auto_supports(project.excavation, project.retaining_system, layout_config=support_layout_config_from_settings(project.design_settings))
-    invalidate_calculation_state(project, reason="support system regenerated", rebuild_cases=True)
+    invalidate_calculation_state(project, reason="support system regenerated", rebuild_cases=True, invalidate_candidates=True)
     repo.save(project)
     return project.retaining_system
 
@@ -328,7 +304,7 @@ async def import_support_layout(
         result = import_support_layout_csv(project, await file.read(), replace=replace)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    invalidate_calculation_state(project, reason="engineer/reference support layout imported", rebuild_cases=True)
+    invalidate_calculation_state(project, reason="engineer/reference support layout imported", rebuild_cases=True, invalidate_candidates=True)
     repo.save(project)
     return result
 
@@ -380,6 +356,54 @@ def lock_support_lines(project_id: str, payload: LockSupportLinesPayload, repo: 
     repo.save(project)
     return result
 
+@router.get("/concave-transfer-detailing")
+def get_concave_transfer_detailing(
+    project_id: str,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict[str, Any]:
+    from app.services.concave_transfer_delivery import evaluate_concave_transfer_delivery
+
+    project = repo.require_workspace(project_id)
+    transfer_audit = dict(((project.retaining_system.layout_summary if project.retaining_system else {}) or {}).get("transferSystem") or {})
+    return evaluate_concave_transfer_delivery(project, transfer_audit)
+
+
+@router.put("/concave-transfer-detailing")
+def put_concave_transfer_detailing(
+    project_id: str,
+    payload: ConcaveTransferDetailingPayload,
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict[str, Any]:
+    from app.services.concave_transfer_delivery import save_concave_transfer_detailing_approval
+
+    project = repo.require(project_id)
+    try:
+        result = save_concave_transfer_detailing_approval(
+            project,
+            evidence={
+                "frameAnalysisStatus": payload.frame_analysis_status,
+                "nodeDetailingStatus": payload.node_detailing_status,
+                "stageReviewStatus": payload.stage_review_status,
+                "reactionIterationStatus": payload.reaction_iteration_status,
+                "spatialEffectStatus": payload.spatial_effect_status,
+                "torsionDetailingStatus": payload.torsion_detailing_status,
+            },
+            reviewer=payload.reviewer,
+            notes=payload.notes,
+            evidence_refs=payload.evidence_refs,
+            professional_credential=payload.professional_credential,
+            status=payload.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    repo.save(
+        project,
+        action="design.concave_transfer_detailing",
+        summary=f"Recorded concave transfer detailing approval by {payload.reviewer}",
+    )
+    return result
+
+
 @router.get("/retaining-system", response_model=RetainingSystem | None)
 def get_retaining_system(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> RetainingSystem | None:
     return repo.require(project_id).retaining_system
@@ -407,6 +431,6 @@ def update_retaining_system(project_id: str, payload: dict, repo: ProjectReposit
             wall.bottom_elevation_locked = True
     project.retaining_system = updated
     ensure_geological_model_covers_excavation(project)
-    invalidate_calculation_state(project, reason="retaining system edited", rebuild_cases=True)
+    invalidate_calculation_state(project, reason="retaining system edited", rebuild_cases=True, invalidate_candidates=True)
     repo.save(project)
     return project.retaining_system

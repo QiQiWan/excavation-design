@@ -47,6 +47,8 @@ def test_calculation_contract_freezes_inputs_and_adopted_design(calculated_proje
         stale = verify_current_calculation_contract(calculated_project, result)
         assert stale["current"] is False
         assert stale["currentInputSnapshotHash"] != stale["storedAdoptedDesignSnapshotHash"]
+        assert "adoptedDesignSnapshotHash" in stale["mismatches"]
+        assert "calculation contract differs" in stale["reason"]
     finally:
         calculated_project.design_settings.surcharge = original
     assert verify_current_calculation_contract(calculated_project, result)["current"] is True

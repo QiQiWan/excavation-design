@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ OPTIONAL_COLUMNS = [
     "k0",
     "horizontal_subgrade_modulus",
     "water_level",
+    "water_observed_at",
 ]
 
 ALL_COLUMNS = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
@@ -86,26 +88,69 @@ def _parse_float(row: dict[str, str], key: str, row_no: int, errors: list[str], 
         return None
 
 
+def _import_limits() -> tuple[int, int]:
+    max_rows = max(100, min(int(os.getenv("PITGUARD_BOREHOLE_IMPORT_MAX_ROWS", "100000")), 500000))
+    max_columns = max(16, min(int(os.getenv("PITGUARD_BOREHOLE_IMPORT_MAX_COLUMNS", "128")), 512))
+    return max_rows, max_columns
+
+
 def read_csv_bytes(content: bytes) -> list[dict[str, str]]:
+    max_rows, max_columns = _import_limits()
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
     if reader.fieldnames is None:
         return []
+    if len(reader.fieldnames) > max_columns:
+        raise ValueError(f"CSV 列数超过 {max_columns} 列上限，请删除无关列后重新导入。")
     reader.fieldnames = [_clean_header(field) for field in reader.fieldnames]
-    return [{_clean_header(k): (v.strip() if isinstance(v, str) else v) for k, v in row.items()} for row in reader]
+    result: list[dict[str, str]] = []
+    for row_number, row in enumerate(reader, start=2):
+        if row_number > max_rows + 1:
+            raise ValueError(f"CSV 数据行超过 {max_rows} 行上限，请按工程或钻孔分批导入。")
+        if not any(value not in (None, "") and str(value).strip() for value in row.values()):
+            continue
+        result.append({_clean_header(k): (v.strip() if isinstance(v, str) else v) for k, v in row.items() if k is not None})
+    return result
 
 
 def read_excel_bytes(content: bytes) -> list[dict[str, str]]:
-    workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-    sheet = workbook.active
-    rows = list(sheet.iter_rows(values_only=True))
-    if not rows:
-        return []
-    headers = [_clean_header(h) for h in rows[0]]
-    result: list[dict[str, str]] = []
-    for row in rows[1:]:
-        result.append({headers[i]: "" if value is None else str(value) for i, value in enumerate(row) if i < len(headers)})
-    return result
+    max_rows, max_columns = _import_limits()
+    workbook = load_workbook(
+        io.BytesIO(content),
+        read_only=True,
+        data_only=True,
+        keep_links=False,
+    )
+    try:
+        sheet = workbook.active
+        if int(sheet.max_column or 0) > max_columns:
+            raise ValueError(f"Excel 有效列数超过 {max_columns} 列上限，请清除表格右侧多余格式或列。")
+        if int(sheet.max_row or 0) > max_rows + 1:
+            raise ValueError(f"Excel 有效行数超过 {max_rows} 行上限，请清除表格下方多余格式或分批导入。")
+        rows = sheet.iter_rows(
+            min_row=1,
+            max_row=min(int(sheet.max_row or 1), max_rows + 1),
+            max_col=min(max(int(sheet.max_column or 1), 1), max_columns),
+            values_only=True,
+        )
+        header_row = next(rows, None)
+        if header_row is None:
+            return []
+        headers = [_clean_header(value) for value in header_row]
+        result: list[dict[str, str]] = []
+        for row_number, row in enumerate(rows, start=2):
+            if row_number > max_rows + 1:
+                raise ValueError(f"Excel 数据行超过 {max_rows} 行上限，请按工程或钻孔分批导入。")
+            if not any(value is not None and str(value).strip() for value in row):
+                continue
+            result.append({
+                headers[index]: "" if value is None else str(value).strip()
+                for index, value in enumerate(row)
+                if index < len(headers) and headers[index]
+            })
+        return result
+    finally:
+        workbook.close()
 
 
 def _warn_abnormal_parameters(row: dict[str, str], row_no: int, warnings: list[str]) -> None:
@@ -277,7 +322,13 @@ def parse_borehole_rows(rows: list[dict[str, str]], source_file: str | None = No
         water_raw = str(first.get("water_level", "")).strip()
         if water_raw:
             try:
-                water_levels.append(GroundwaterRecord(water_level=collar - float(water_raw), description="Imported as elevation from depth"))
+                water_levels.append(
+                    GroundwaterRecord(
+                        water_level=collar - float(water_raw),
+                        description="Imported as elevation from depth",
+                        observed_at=str(first.get("water_observed_at") or "").strip() or None,
+                    )
+                )
             except ValueError:
                 warnings.append(f"钻孔 {code} water_level 无法解析，已忽略。")
         boreholes.append(Borehole(code=code, x=x, y=y, collar_elevation=collar, depth=depth, layers=layers, water_levels=water_levels, source_file=source_file))

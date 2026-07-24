@@ -121,9 +121,55 @@ describe('SchemeComparisonPanel', () => {
       },
     } as unknown as Project;
     render(<SchemeComparisonPanel project={controlled} compact />);
-    expect(screen.getByText(/真实几何不同的诊断替代方案/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '诊断方案不可完整计算' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '诊断方案不可采用' })).toBeDisabled();
+    expect(screen.getByText(/实际几何不同的诊断试案/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '诊断试案不可完整计算' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '诊断试案不可采用' })).toBeDisabled();
+  });
+
+
+  it('renders a formal concave transfer candidate with calculation and delivery states separated', () => {
+    const transferProject = {
+      ...project,
+      retainingSystem: {
+        ...project.retainingSystem,
+        supportLayoutRepair: {
+          candidateState: 'formal_ready',
+          formalCandidateCount: 3,
+          comparisonEligibility: { state: 'formal_ready', formalCandidateCount: 3, comparisonAllowed: true },
+          candidates: project.retainingSystem?.supportLayoutRepair?.candidates?.map((candidate, index) => ({
+            ...candidate,
+            hardConstraints: { passed: true, blockingCategories: [] },
+            variableSummary: {
+              ...candidate.variableSummary,
+              topologyFamily: 'ring_radial',
+              schemeLabel: ['紧凑型异形闭合内环梁', '均衡型异形闭合内环梁', '延伸型异形闭合内环梁'][index],
+              transferSystemTemplate: ['compact_elbow_ring', 'junction_hub_frame', 'ring_chord_frame'][index],
+              transferSystemAudit: {
+                required: true,
+                templateLabel: ['紧凑型异形闭合内环梁', '均衡型异形闭合内环梁', '延伸型异形闭合内环梁'][index],
+                calculationReady: true,
+                officialIssueReady: false,
+              },
+              formalSchemeEligible: true,
+            },
+            planGeometry: {
+              outline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }],
+              supports: [{ id: `RS-${index}`, start: { x: 0, y: 5 }, end: { x: 5, y: 5 }, role: 'ring_strut' }],
+              columns: [],
+              transferBeams: [{ id: `TR-${index}`, code: `TR-${index}`, points: [{ x: 5, y: 3 }, { x: 15, y: 3 }] }],
+              transferZones: [{ id: 'TZ-1', outline: [{ x: 5, y: 3 }, { x: 15, y: 3 }, { x: 15, y: 7 }, { x: 5, y: 7 }] }],
+            },
+          })),
+        },
+      },
+    } as unknown as Project;
+    const { container } = render(<SchemeComparisonPanel project={transferProject} compact />);
+    expect(screen.getByText('A / B / C 支撑方案比选')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '完整计算 A/B/C' })).toBeEnabled();
+    expect(screen.getByText(/计算资格 通过/)).toBeInTheDocument();
+    expect(screen.getByText(/正式出图 待节点深化/)).toBeInTheDocument();
+    expect(container.querySelectorAll('polyline.schemeTransferBeam').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.schemeTransferZone').length).toBeGreaterThan(0);
   });
 
   it('reports the inspected candidate so the quality-plan viewer follows the selected card', async () => {

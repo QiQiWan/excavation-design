@@ -1,0 +1,58 @@
+{
+  "schema": "pitguard-v3871-ui-topology-evaluation-v1",
+  "version": {
+    "softwareVersion": "3.87.1",
+    "algorithmVersion": "3.87.0-design-core-governance-joint-optimization-detailing-delivery",
+    "ruleSetVersion": "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence",
+    "exportSchemaVersion": "3.87",
+    "structuralKernelVersion": "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel",
+    "resultPipelineVersion": "3.87.1-nine-stage-design-core-preview-v2-and-panel-isolation"
+  },
+  "durationSeconds": 0.721,
+  "candidateCount": 3,
+  "candidates": [
+    {
+      "rank": 1,
+      "candidateId": "slopt-zoned-direct-compact-elbow-ring-t4p5-c15p0-as_generated-0p0",
+      "template": "compact_elbow_ring",
+      "supportCount": 72,
+      "transferBeamCount": 18,
+      "transferZoneCount": 1,
+      "compactPreviewSchema": "candidate-plan-v2",
+      "compactTransferBeamCount": 18,
+      "compactTransferZoneCount": 1,
+      "closedGeometryRetained": true
+    },
+    {
+      "rank": 2,
+      "candidateId": "slopt-zoned-direct-junction-hub-frame-t5p0-c15p0-as_generated-0p0",
+      "template": "junction_hub_frame",
+      "supportCount": 72,
+      "transferBeamCount": 30,
+      "transferZoneCount": 1,
+      "compactPreviewSchema": "candidate-plan-v2",
+      "compactTransferBeamCount": 30,
+      "compactTransferZoneCount": 1,
+      "closedGeometryRetained": true
+    },
+    {
+      "rank": 3,
+      "candidateId": "slopt-zoned-direct-ring-chord-frame-t4p5-c18p0-as_generated-0p0",
+      "template": "ring_chord_frame",
+      "supportCount": 72,
+      "transferBeamCount": 24,
+      "transferZoneCount": 1,
+      "compactPreviewSchema": "candidate-plan-v2",
+      "compactTransferBeamCount": 24,
+      "compactTransferZoneCount": 1,
+      "closedGeometryRetained": true
+    }
+  ],
+  "frontend": {
+    "supplementalStylesLoaded": true,
+    "statusTextDeclarationCount": 1,
+    "optimizationStatusFunctionPresent": true,
+    "panelBoundaryPresent": true
+  },
+  "passed": true
+}

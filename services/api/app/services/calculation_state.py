@@ -12,6 +12,7 @@ def invalidate_calculation_state(
     rebuild_cases: bool = True,
     preserve_cases: bool = False,
     archive_limit: int = 20,
+    invalidate_candidates: bool = False,
 ) -> dict[str, Any]:
     """Invalidate results after geometry/topology changes without losing audit history.
 
@@ -45,6 +46,12 @@ def invalidate_calculation_state(
     advanced["invalidationReason"] = reason
     project.advanced_engineering = advanced
     project.calculation_results = []
+
+    if invalidate_candidates:
+        from app.services.support_candidate_contract import archive_and_clear_stale_candidates
+
+        candidate_state = archive_and_clear_stale_candidates(project, reason=reason)
+        advanced["calculationState"]["invalidatedCandidateCount"] = int(candidate_state.get("archivedCandidateCount", 0) or 0)
 
     if project.retaining_system and project.retaining_system.support_layout_repair:
         repair = project.retaining_system.support_layout_repair

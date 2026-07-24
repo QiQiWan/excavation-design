@@ -32,7 +32,7 @@ export default function DocsPage() {
   const [data, setData] = useState<OnlineDocumentation>();
   const [error, setError] = useState<string>();
   const [query, setQuery] = useState('');
-  const [active, setActive] = useState<'workflow' | 'principles' | 'standards' | 'deliverables'>('workflow');
+  const [active, setActive] = useState<'workflow' | 'principles' | 'standards' | 'accuracy' | 'compliance' | 'responsibility' | 'recovery' | 'deliverables'>('workflow');
 
   useEffect(() => {
     api.getDocumentation().then(setData).catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -55,15 +55,15 @@ export default function DocsPage() {
       {error ? <div className="warning">在线文档接口读取失败：{error}。以下保留基础操作说明。</div> : null}
 
       <nav className="docsTabs" aria-label="在线文档章节">
-        {(['workflow', 'principles', 'standards', 'deliverables'] as const).map((key) => {
-          const title = data?.chapters.find((item) => item.id === key)?.title ?? ({ workflow: '操作流程', principles: '计算原理', standards: '流程—规范矩阵', deliverables: '成果文件使用' } as const)[key];
+        {(['workflow', 'principles', 'standards', 'accuracy', 'compliance', 'responsibility', 'recovery', 'deliverables'] as const).map((key) => {
+          const title = data?.chapters.find((item) => item.id === key)?.title ?? ({ workflow: '操作流程', principles: '计算原理', standards: '流程—规范矩阵', accuracy: '准确度与验证', compliance: '合规与法定流程', responsibility: '责任边界', recovery: '界面与预览修复', deliverables: '成果文件使用' } as const)[key];
           return <button className={active === key ? 'active' : ''} onClick={() => setActive(key)} key={key}>{title}</button>;
         })}
       </nav>
 
       {active === 'workflow' && <>
         {data?.standardsMatrix.steps?.length ? <section className="engineeringWorkflow">{data.standardsMatrix.steps.map((step, index) => <article className={`summaryPanel workflowDocCard ${step.highlight === 'critical' ? 'critical' : ''}`} key={step.workflowStep}><header><span>STEP {step.index}</span><h3>{step.title}</h3><em>{step.implementationLevel}</em></header><p><strong>关键计算：</strong>{step.keyCalculations.join('；')}</p><div className="standardBadgeRow">{step.standardRefs.map((std) => std.sourceUrl ? <a href={std.sourceUrl} target="_blank" rel="noreferrer" className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></a> : <span className={`standardBadge ${std.level === 'mandatory_all' ? 'mandatory' : 'primary'}`} key={std.id}><b>{std.code}</b><em>{std.levelLabel}</em></span>)}</div><footer><strong>输出：</strong>{step.outputs.join('；')}</footer>{index < data.standardsMatrix.steps.length - 1 ? <span className="workflowArrow" aria-hidden="true">↓</span> : null}</article>)}</section> : <section className="stepGrid docsGrid">{workflowFallback.map(([title, text]) => <div className="summaryPanel" key={title}><h3>{title}</h3><p>{text}</p></div>)}</section>}
-        <section className="summaryPanel docsCallout"><h3>贯穿全流程的审查原则</h3><p>任何一步修改地质参数、基坑几何、支撑拓扑、构件截面或配筋后，后续计算、图纸和发行状态均应标记为需要重算。全文强制性通用规范优先，专业规程与设计标准提供具体方法，地方标准、审图意见和专家论证在项目级规则集中补充。</p></section>
+        <section className="summaryPanel docsCallout"><h3>贯穿全流程的审查原则</h3><p>任何一步修改地质参数、基坑几何、支撑拓扑、构件截面、配筋或设计控制工况后，相关计算与图纸应按依赖关系失效。设计发行只检查设计责任范围；专项施工方案、实际开挖、现场监测和阶段验收分别进入施工准备与现场放行门禁。</p></section>
       </>}
 
       {active === 'principles' && <section className="principleGrid">{(data?.calculationPrinciples ?? []).map((item) => <article className="summaryPanel principleCard" key={item.name}><h3>{item.name}</h3><dl><dt>输入</dt><dd>{item.inputs}</dd><dt>模型</dt><dd>{item.method}</dd>{item.equations?.length ? <><dt>公式</dt><dd className="equationList">{item.equations.map((eq) => <code key={eq}>{eq}</code>)}</dd></> : null}{item.assumptions?.length ? <><dt>假定</dt><dd>{item.assumptions.join('；')}</dd></> : null}<dt>输出</dt><dd>{item.outputs}</dd>{item.verification ? <><dt>复核</dt><dd>{item.verification}</dd></> : null}</dl><div className="standardBadgeRow">{item.standards.map((std) => <span className="standardBadge primary" key={std}>{std}</span>)}</div></article>)}</section>}
@@ -72,6 +72,28 @@ export default function DocsPage() {
         <section className="summaryPanel standardsIntro"><div><h3>规范优先级与适用边界</h3>{(data?.standardsMatrix.precedence ?? []).map((item) => <p key={item}>{item}</p>)}</div><label>检索流程、计算或规范<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如：抗隆起、GB 50010、支撑轴力" /></label></section>
         <StandardsTable steps={filteredSteps} />
         <section className="standardCatalog">{(data?.standardsMatrix.catalog ?? []).map((std) => <article className={`summaryPanel standardCard ${std.level === 'mandatory_all' ? 'mandatory' : ''}`} key={std.id}><div><span>{std.levelLabel}</span><h3>{std.code} {std.name}</h3></div><p><strong>系统覆盖：</strong>{std.implementedScope}</p><p><strong>边界：</strong>{std.boundary}</p>{std.sourceUrl ? <a href={std.sourceUrl} target="_blank" rel="noreferrer">查看官方或国家标准平台来源</a> : null}</article>)}</section>
+      </>}
+
+      {active === 'accuracy' && <>
+        <section className="stepGrid docsGrid">{(data?.analysisLevels ?? []).map((item) => <article className="summaryPanel" key={item.level}><span className="sectionKicker">{item.level}</span><h3>{item.name}</h3><p>{item.use}</p></article>)}</section>
+        <section className="summaryPanel"><h3>V3.73—V3.81 验证与业务重构路线</h3><div className="calculationLinkTimeline">{(data?.releaseRoadmap ?? []).map((item) => <div className="calculationLinkRow pass" key={item.version}><div className="calculationSequence">V{item.version}</div><div className="calculationDefinition"><h4>{item.focus}</h4></div></div>)}</div><p>正式模式会同时检查分析等级、参数来源、代理或回退模型、六自由度空间验证、独立参考和成熟软件基准证书。</p></section>
+      </>}
+
+      {active === 'compliance' && <>
+        <section className="standardCatalog">{(data?.complianceSemantics ?? []).map((item) => <article className={`summaryPanel standardCard ${item.formalUse ? 'mandatory' : ''}`} key={item.type}><div><span>{item.formalUse ? '可用于正式设计' : '仅筛查/待确认'}</span><h3>{item.label}</h3></div><p>{item.description}</p></article>)}</section>
+        <section className="summaryPanel"><h3>危大工程法定证据链</h3><p>{data?.statutoryWorkflow?.classification}</p><ol>{(data?.statutoryWorkflow?.evidence ?? []).map((item) => <li key={item}>{item}</li>)}</ol><p><strong>发行门禁：</strong>{data?.statutoryWorkflow?.issueGate}</p><div className="standardBadgeRow">{(data?.statutoryWorkflow?.references ?? []).map((item) => <a className="standardBadge primary" href={item.url} target="_blank" rel="noreferrer" key={item.url}>{item.title}</a>)}</div></section>
+      </>}
+
+      {active === 'responsibility' && <>
+        <section className="summaryPanel docsCallout"><h3>三业务域隔离原则</h3><p>{data?.responsibilityWorkflow?.principle ?? '设计控制、施工计划和现场实测分别保存，后续业务不能覆盖已批准设计。'}</p></section>
+        <section className="stepGrid docsGrid">{(data?.responsibilityWorkflow?.domains ?? []).map((domain) => <article className="summaryPanel" key={domain.id}><span className="sectionKicker">{domain.owner}</span><h3>{domain.name}</h3><p><strong>核心对象：</strong>{domain.objects.join('；')}</p><p><strong>独立门禁：</strong>{domain.gate}</p></article>)}</section>
+        <section className="summaryPanel"><h3>数据语义与偏差处理</h3><p>同一工程量必须标明设计值、设计限值、设计假定、施工计划值或现场实测值。{data?.responsibilityWorkflow?.deviationLogic}</p><div className="standardBadgeRow">{(data?.responsibilityWorkflow?.valueTypes ?? []).map((item) => <span className="standardBadge primary" key={item}>{item}</span>)}</div></section>
+        <section className="summaryPanel"><h3>对设计人员的影响</h3><p>设计人员负责定义控制标高、必需支撑、水位与荷载限值、预加轴力范围、不利情景和触发条件。实际日期、现场安装状态、实测预加轴力、阶段验收和监测实测值由后续责任方补充，缺失时不降低设计发行就绪度。</p></section>
+      </>}
+
+      {active === 'recovery' && <>
+        <section className="summaryPanel docsCallout"><span className="sectionKicker">V{data?.recoveryGuide?.release ?? data?.version ?? '-'}</span><h3>界面、异形支撑预览与恢复模式修复</h3><p>该修复只调整前端展示、预览缓存契约和故障隔离，不改变V3.87结构计算内核、规范规则集和已完成计算结果。</p></section>
+        <section className="stepGrid docsGrid"><article className="summaryPanel"><h3>已修复</h3><ol>{(data?.recoveryGuide?.fixed ?? []).map((item) => <li key={item}>{item}</li>)}</ol></article><article className="summaryPanel"><h3>部署步骤</h3><ol>{(data?.recoveryGuide?.deployment ?? []).map((item) => <li key={item}>{item}</li>)}</ol></article><article className="summaryPanel"><h3>验收标准</h3><ol>{(data?.recoveryGuide?.acceptance ?? []).map((item) => <li key={item}>{item}</li>)}</ol></article></section>
       </>}
 
       {active === 'deliverables' && <>

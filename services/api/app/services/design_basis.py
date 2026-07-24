@@ -110,10 +110,16 @@ def build_design_basis(project: Project) -> dict[str, Any]:
     enterprise_standard = enterprise.get("standardTemplate") or {}
     enterprise_targets = dict(enterprise_standard.get("safetyTargets") or {}) if isinstance(enterprise_standard, dict) else {}
     if enterprise_targets:
-        targets.update({str(key): float(value) for key, value in enterprise_targets.items() if value is not None})
+        for key, value in enterprise_targets.items():
+            if value is None:
+                continue
+            normalized_key = "base_heave" if str(key) == "heave" else str(key)
+            targets[normalized_key] = max(float(targets.get(normalized_key, 1.0)), float(value))
     blockers: list[str] = []
     if not settings.design_basis_confirmed:
         blockers.append("设计基准尚未由项目设计人员确认")
+    if settings.bearing_capacity_kpa is None:
+        blockers.append("地基承载力特征值尚未录入；涉及立柱基础时必须补充")
     if enterprise_validation.get("status") == "fail":
         blockers.append("企业工程资源库不可用")
     enterprise_codes = list(enterprise_standard.get("standards") or []) if isinstance(enterprise_standard, dict) else []
@@ -172,17 +178,6 @@ def build_design_basis(project: Project) -> dict[str, Any]:
         "parameters": parameters,
         "standards": standards,
         "blockers": blockers,
-        "deferredRequirements": [
-            {
-                "key": "bearing_capacity",
-                "title": "立柱基础地基承载力",
-                "status": "ready" if settings.bearing_capacity_kpa is not None else "before_related_check",
-                "message": (
-                    "已录入，可供立柱基础验算使用。" if settings.bearing_capacity_kpa is not None
-                    else "仅在采用立柱并进入基础验算时补充，不阻断围护方案生成。"
-                ),
-            }
-        ],
         "summary": {
             "gammaG": gamma_g,
             "gammaQ": gamma_q,

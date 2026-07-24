@@ -58,18 +58,16 @@ def test_support_centrelines_are_offset_and_keep_wall_connection(v36_project) ->
     assert any(item["start"] != item["startWallConnection"] for item in checked)
 
 
-def test_optimizer_returns_three_whole_scheme_topologies(v36_project) -> None:
+def test_optimizer_keeps_concave_whole_scheme_candidates_as_diagnostics(v36_project) -> None:
     client, project_id, _retaining = v36_project
     response = client.post(f"/api/projects/{project_id}/design/optimize-supports", json={"preset": "balanced"})
     assert response.status_code == 200, response.text
     candidates = response.json().get("candidates", [])[:3]
-    assert len(candidates) >= 3
-    families = {str(item.get("variableSummary", {}).get("topologyFamily")) for item in candidates}
-    # V3.22 keeps family diversity among structurally appropriate schemes.  An
-    # L-shaped strip must include direct and hybrid force paths; a bidirectional
-    # frame is reserved for near-square wide pits and is no longer injected only
-    # to satisfy visual A/B/C diversity.
-    assert {"hybrid_diagonal", "direct_grid"}.issubset(families)
+    assert candidates
+    assert all(float(item.get("score") or 0.0) == 0.0 for item in candidates)
+    assert all(item.get("hardConstraints", {}).get("passed") is False for item in candidates)
+    assert all(item.get("hardConstraints", {}).get("shapeTransferSystemRequired") is True for item in candidates)
+    assert all(item.get("hardConstraints", {}).get("shapeTransferSystemComplete") is False for item in candidates)
     assert all(int(item.get("crossingCount") or 0) == 0 for item in candidates)
     assert all(item.get("planGeometry", {}).get("supports") for item in candidates)
     assert all(item.get("planGeometry", {}).get("supportElevations") for item in candidates)
@@ -95,7 +93,7 @@ def test_replacement_stiffness_uses_state_instead_of_zero() -> None:
 def test_result_viewer_uses_whole_scheme_cards_and_compact_details() -> None:
     source = (ROOT / "apps/web/src/viewers/ResultViewer.tsx").read_text(encoding="utf-8")
     assert "整体支撑方案 A/B/C 比选" in source
-    assert "CandidateScheme3D" in source
+    assert "CandidateSchemePlanCard" in source
     assert "整体采用方案" in source
     assert "墙—围檩—支撑全局矩阵与换撑刚度明细" in source
     assert "未激活 / —" in source

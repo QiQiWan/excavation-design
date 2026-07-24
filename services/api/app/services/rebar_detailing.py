@@ -5,7 +5,12 @@ import re
 from collections import defaultdict
 from typing import Any
 
+from app.rules.gb50010.detailing_rules import (
+    required_rebar_anchorage_length_mm,
+    required_rebar_lap_length_mm,
+)
 from app.schemas.domain import Project, ReinforcementGroup
+from app.geometry.wall_path import normalize_construction_panels, polyline_length, resolve_wall_plan_path
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 from app.services.rebar_fabrication import build_rebar_fabrication_package
 from app.services.deep_detailing import build_deep_detailing_package
@@ -22,8 +27,7 @@ def _bar_unit_weight_kg_per_m(diameter_mm: float) -> float:
 def _host_length(host: Any, default: float = 6.0) -> float:
     axis = getattr(host, "axis", None)
     if axis and getattr(axis, "points", None) and len(axis.points) >= 2:
-        a, b = axis.points[0], axis.points[-1]
-        return math.hypot(b.x - a.x, b.y - a.y)
+        return polyline_length(axis.points)
     start = getattr(host, "start", None)
     end = getattr(host, "end", None)
     if start and end:
@@ -211,8 +215,17 @@ def build_individual_rebar_geometry(project: Project, max_bars: int | None = Non
         qty = int(entry.get("quantity") or 1)
         shape = str(entry.get("shapeCode") or "00")
         cover = float(entry.get("coverMm") or (70 if host_type == "diaphragm_wall" else 40)) / 1000.0
-        anchorage = max(0.25, float(group.diameter) / 1000.0 * 35.0) if group.bar_type in {"longitudinal", "additional"} else 0.0
-        lap = max(0.0, float(group.diameter) / 1000.0 * 30.0) if group.bar_type == "longitudinal" and qty > 20 else 0.0
+        seismic = project.design_settings.seismic_grade not in {"non_seismic_temporary", "none"}
+        anchorage = (
+            required_rebar_anchorage_length_mm(group.diameter, group.grade, seismic=seismic) / 1000.0
+            if group.bar_type in {"longitudinal", "additional"}
+            else 0.0
+        )
+        lap = (
+            required_rebar_lap_length_mm(group.diameter, group.grade, seismic=seismic) / 1000.0
+            if group.bar_type == "longitudinal" and qty > 20
+            else 0.0
+        )
         hook = max(0.0, float(group.diameter) / 1000.0 * 12.0) if group.bar_type in {"stirrup", "tie"} else 0.0
         if len(bars) >= max_bars:
             omitted += qty
@@ -424,23 +437,14 @@ def _wall_cage_segments(project: Project) -> list[dict[str, Any]]:
     for wall in ret.diaphragm_walls:
         host_height = _host_height(wall)
         host_length = max(float(wall.design_length or _host_length(wall)), 0.5)
-        construction_panels = list(getattr(wall, "construction_panels", []) or [])
-        if not construction_panels:
-            panel_count = max(1, int(math.ceil(host_length / 6.0)))
-            panel_width = host_length / panel_count
-            construction_panels = [
-                {
-                    "panelCode": f"{wall.panel_code}-P{idx + 1:02d}",
-                    "panelIndex": idx + 1,
-                    "startChainageM": idx * panel_width,
-                    "endChainageM": (idx + 1) * panel_width,
-                    "lengthM": panel_width,
-                    "cageCount": 1,
-                    "jointType": "project_specific",
-                    "liftingReviewRequired": True,
-                }
-                for idx in range(panel_count)
-            ]
+        resolution = resolve_wall_plan_path(project, wall)
+        construction_panels, _ = normalize_construction_panels(
+            wall,
+            resolution.points,
+            target_length_m=float(getattr(project.design_settings, "wall_panel_target_length_m", 6.0) or 6.0),
+            minimum_length_m=float(getattr(project.design_settings, "wall_panel_min_length_m", 3.0) or 3.0),
+            maximum_length_m=float(getattr(project.design_settings, "wall_panel_max_length_m", 7.0) or 7.0),
+        )
         panel_count = len(construction_panels)
         vertical_count = max(1, int(math.ceil(host_height / max_vertical_segment_len)))
         vertical_height = host_height / vertical_count

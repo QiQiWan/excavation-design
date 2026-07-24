@@ -1,0 +1,35 @@
+{
+  "softwareVersion": "3.70.0",
+  "backendRelatedRegression": {
+    "files": [
+      "test_v3_28_0_irregular_shape_intelligence.py",
+      "test_v3_51_0_adaptive_topology_recovery.py",
+      "test_v3_61_0_support_stirrup_closure.py",
+      "test_v3_65_0_recovery_release.py",
+      "test_v3_66_0_concave_support_p0_p3.py",
+      "test_v3_70_0_planar_transfer_delivery.py"
+    ],
+    "passed": 54,
+    "failed": 0,
+    "elapsedSeconds": 29.20
+  },
+  "isolatedTopologyWorkerRegression": {
+    "file": "test_v3_27_0_shape_topology_isolated_worker.py",
+    "passed": 9,
+    "failed": 0,
+    "elapsedSeconds": 8.59
+  },
+  "frontend": {
+    "testFilesPassed": 21,
+    "testsPassed": 40,
+    "testsFailed": 0,
+    "typescriptBuild": "pass",
+    "viteProductionBuild": "pass",
+    "warning": "Three.js production chunk is approximately 523.86 kB after minification."
+  },
+  "pythonCompileall": "pass",
+  "fullBackendSuite": {
+    "status": "not_completed_within_execution_window",
+    "note": "Release claims are limited to the explicitly executed related regression, isolated worker regression, frontend tests and build checks."
+  }
+}

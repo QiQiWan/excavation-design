@@ -12,7 +12,6 @@ from app.services.adverse_scenario_execution import scenario_catalog
 from app.services.runtime_diagnostics import append_event
 from app.services.deepening_readiness import build_deepening_readiness, calculation_readiness
 from app.services.construction_stages import build_construction_stage_workspace
-from app.services.design_intake import build_design_intake
 
 
 def _stage(key: str, title: str, ready: bool, active: bool, message: str) -> dict[str, Any]:
@@ -30,10 +29,7 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
     basis_ready = bool(design_basis.get("confirmed"))
     excavation_ready = bool(project.excavation and project.excavation.outline and len(project.excavation.outline.points) >= 3)
     geology_ready = bool(project.strata or project.boreholes)
-    # Concept scheme generation only needs the excavation geometry.  Geological
-    # evidence remains a calculation gate instead of falsely blocking design
-    # exploration.
-    input_ready = excavation_ready
+    input_ready = excavation_ready and geology_ready
 
     system = project.retaining_system
     wall_count = len(system.diaphragm_walls or []) if system else 0
@@ -67,12 +63,6 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
         scheme_applied=rebar_ready,
     )
     deliverable_ready = bool(deepening_readiness.get("canIssueConstructionDrawings"))
-    design_intake = build_design_intake(
-        project,
-        calculation_current=calculation_ready,
-        detailing_ready=bool(deepening_readiness.get("canEnterDetailing")),
-        deliverable_ready=deliverable_ready,
-    )
 
     stages = [
         _stage(
@@ -80,14 +70,11 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
             "等级、规范和荷载组合已确认" if basis_ready else "确认工程等级、场地标准和荷载组合",
         ),
         _stage(
-            "input", "轮廓与深度", input_ready, basis_ready,
-            (
-                f"闭合轮廓 {len(project.excavation.outline.points)} 点，开挖深度 {float(project.excavation.depth):.2f} m"
-                if excavation_ready else "录入闭合轮廓、坑顶和最终坑底标高"
-            ),
+            "input", "工程输入", input_ready, basis_ready,
+            f"钻孔 {len(project.boreholes)}，地层 {len(project.strata)}，轮廓点 {len(project.excavation.outline.points) if project.excavation else 0}",
         ),
         _stage(
-            "scheme", "快速方案", scheme_ready, input_ready,
+            "scheme", "围护方案", scheme_ready, input_ready,
             f"围护墙 {wall_count}，支撑 {support_count}，候选 {candidate_count}",
         ),
         _stage(
@@ -107,16 +94,13 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
     blockers: list[str] = []
     if not basis_ready:
         blockers.append("设计基准尚未确认")
+    if not geology_ready:
+        blockers.append("缺少钻孔或统一地层数据")
     if not excavation_ready:
         blockers.append("缺少闭合基坑轮廓")
-    # Only surface the blocker that affects the *next* decision.  Geology is
-    # deferred until a scheme exists, preventing a specialist-data gap from
-    # overwhelming the early design brief.
-    if scheme_ready and not calculation_ready and not geology_ready:
-        blockers.append("方案已形成；正式计算前请导入钻孔或统一地层数据")
-    if scheme_ready and geology_ready and not calculation_ready:
+    if not calculation_ready:
         blockers.extend(str(item) for item in list(calculation_gate.get("messages") or [])[:3])
-    for row in (list(deepening_readiness.get("blockers") or [])[:5] if calculation_ready else []):
+    for row in list(deepening_readiness.get("blockers") or [])[:5]:
         message = f"{row.get('title')}：{row.get('requiredAction')}"
         if message not in blockers:
             blockers.append(message)
@@ -149,9 +133,9 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
         "stages": stages,
         "nextStage": next_stage["key"],
         "nextAction": {
-            "basis": "确认最小设计任务书",
-            "input": "录入轮廓与最终开挖深度",
-            "scheme": "生成 A/B/C 快速方案",
+            "basis": "确认设计基准与荷载组合",
+            "input": "完善工程输入",
+            "scheme": "生成核心围护方案",
             "calculation": "运行核心设计与计算",
             "reinforcement": "生成配筋方案",
             "deliverables": "生成审查成果包",
@@ -173,8 +157,6 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
         },
         "standards": standard_guidance,
         "designBasis": design_basis,
-        "designIntake": design_intake,
-        "macroStages": design_intake.get("macroStages") or [],
         "stabilityDistribution": stability_distribution,
         "verificationDistribution": verification_distribution,
         "schemeComparison": scheme_comparison,

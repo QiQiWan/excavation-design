@@ -3,6 +3,7 @@ import { AmbientLight, AxesHelper, Box3, BoxGeometry, BufferGeometry, Color, Cyl
 import type { ExcavationSegment, Point2D, Project, VtuMesh } from '../types/domain';
 import { effectiveGeologicalSurfaces } from '../utils/geology';
 import FullscreenShell from '../components/FullscreenShell';
+import { bindWebglContextLifecycle, createStableWebGLRenderer, releaseStableWebGLRenderer, stablePixelRatio, startStableRenderLoop } from './webglRuntime';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'supports' | 'results';
 
@@ -277,6 +278,7 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
   const [opacity, setOpacity] = useState(0.68);
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
   const [renderError, setRenderError] = useState<string | undefined>();
+  const [renderNonce, setRenderNonce] = useState(0);
   const [clipEnabled, setClipEnabled] = useState(false);
   const [clipOffset, setClipOffset] = useState(0);
   const bounds = useMemo(() => projectBounds(project), [project]);
@@ -287,17 +289,21 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
     mount.innerHTML = '';
     let renderer: WebGLRenderer;
     try {
-      renderer = new WebGLRenderer({ antialias: true });
+      renderer = createStableWebGLRenderer({ antialias: true });
     } catch (err) {
       setRenderError(err instanceof Error ? err.message : '当前环境不支持 WebGL，已切换为 SVG 降级视图。');
       return undefined;
     }
     rendererRef.current = renderer;
     renderer.localClippingEnabled = clipEnabled;
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setPixelRatio(stablePixelRatio(1.5));
     renderer.setSize(mount.clientWidth || 900, 460);
     renderer.domElement.className = 'sceneCanvas';
     mount.appendChild(renderer.domElement);
+    const detachContextLifecycle = bindWebglContextLifecycle(renderer, {
+      onLost: setRenderError,
+      onRestored: () => { setRenderError(undefined); setRenderNonce((value) => value + 1); },
+    });
 
     const scene = new Scene();
     scene.background = new Color('#f8fafc');
@@ -381,10 +387,11 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
       updateCamera();
     };
     const onResize = () => {
-      const width = mount.clientWidth || 900;
-      camera.aspect = width / 460;
+      const width = Math.max(mount.clientWidth || 900, 320);
+      const height = Math.max(mount.clientHeight || 460, 360);
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(width, 460);
+      renderer.setSize(width, height);
     };
     renderer.domElement.addEventListener('click', onClick);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -393,27 +400,23 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
     renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('resize', onResize);
 
-    let frame = 0;
-    const animate = () => {
-      frame = requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    };
-    animate();
+    const stopRenderLoop = startStableRenderLoop(renderer, scene, camera, mount, { maxFps: 24 });
     setRenderError(undefined);
 
     return () => {
-      cancelAnimationFrame(frame);
+      stopRenderLoop();
+      detachContextLifecycle();
       renderer.domElement.removeEventListener('click', onClick);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', onResize);
-      renderer.dispose();
+      releaseStableWebGLRenderer(renderer, scene, mount);
       rendererRef.current = null;
       mount.innerHTML = '';
     };
-  }, [bounds, clipEnabled, clipOffset, layers, mode, opacity, project]);
+  }, [bounds, clipEnabled, clipOffset, layers, mode, opacity, project, renderNonce]);
 
   const layerLabels: Record<LayerKey, string> = {
     boreholes: '钻孔柱',
@@ -438,7 +441,7 @@ export default function ProjectSceneViewer({ project, mode = 'all' }: { project:
         <label><input type="checkbox" checked={clipEnabled} onChange={(e) => setClipEnabled(e.target.checked)} /> X向剖切</label>
         {clipEnabled && <label className="opacityControl">剖切位置 <input type="range" min={-bounds.radius.toFixed(0)} max={bounds.radius.toFixed(0)} step="1" value={clipOffset} onChange={(e) => setClipOffset(Number(e.target.value))} /></label>}
       </div>
-      {renderError && <div className="warning">{renderError}</div>}
+      {renderError && <div className="modelRenderRecovery"><span>{renderError}</span><button type="button" className="secondary" onClick={() => setRenderNonce((value) => value + 1)}>重建三维视图</button></div>}
       <div ref={mountRef} className="sceneMount" />
       {renderError && <SvgFallback project={project} />}
       <div className="propertyPanel">

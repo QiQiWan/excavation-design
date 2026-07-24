@@ -27,7 +27,7 @@ class ExcavationPayload(BaseModel):
 
 @router.post("", response_model=ExcavationModel)
 def create_excavation(project_id: str, payload: ExcavationPayload, repo: ProjectRepository = Depends(get_repository)) -> ExcavationModel:
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     excavation = make_excavation_model(payload.name, payload.outline, payload.top_elevation, payload.bottom_elevation, project.design_settings.minimum_segment_length)
     excavation.obstacles = payload.obstacles
     excavation.support_axis_offset = payload.support_axis_offset
@@ -37,7 +37,7 @@ def create_excavation(project_id: str, payload: ExcavationPayload, repo: Project
     excavation = center_excavation_on_geology(excavation, project.geological_model, project.design_settings.auto_center_excavation_on_geology)
     project.excavation = excavation
     ensure_geological_model_covers_excavation(project)
-    invalidate_calculation_state(project, reason="excavation geometry or elevation changed", rebuild_cases=bool(project.retaining_system))
+    invalidate_calculation_state(project, reason="excavation geometry or elevation changed", rebuild_cases=bool(project.retaining_system), invalidate_candidates=True)
     repo.save(project)
     return excavation
 

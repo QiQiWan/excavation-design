@@ -145,7 +145,7 @@ def test_production_uses_separate_api_and_calculation_worker() -> None:
     assert "_run_support_layout_optimization" in manager
     assert "_require_embedded_support_optimization" in design_router
     assert 'task_manager.submit(project.id, "calculation_full"' in expert_router
-    assert 'task_manager.submit(project.id, "calculation_full"' in rebar_router
+    assert '"rebar_design"' in rebar_router
 
 
 def test_v327_version() -> None:

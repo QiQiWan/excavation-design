@@ -354,8 +354,17 @@ def apply_intervention_action(project: Project, action_id: str, value: Any = Non
         if wall is None:
             raise ValueError("未找到需要补强的墙段。")
         before = float(wall.thickness)
-        wall.thickness = min(2.40, _round_up(float(value) if value is not None else before + 0.10, 0.05))
-        return {"actionId": action_id, "objectCode": wall.panel_code, "before": before, "after": wall.thickness, "unit": "m"}
+        minimum_next = _round_up(before + 0.10, 0.05)
+        proposed = float(value) if value is not None else minimum_next
+        after = min(2.40, _round_up(max(minimum_next, proposed), 0.05))
+        if after <= before + 1.0e-9:
+            raise ValueError(f"{wall.panel_code} 墙厚已达到自动优化上限 {before:.2f} m，需改用支撑体系、材料或专项双筋设计。")
+        wall.thickness = after
+        return {
+            "actionId": action_id, "objectId": wall.id, "objectCode": wall.panel_code,
+            "before": before, "after": wall.thickness, "delta": round(wall.thickness - before, 3),
+            "unit": "m", "changed": True, "valuePolicy": "relative_from_current",
+        }
     if action_id.startswith("deepen-wall:"):
         object_id = action_id.split(":", 1)[1]
         wall = walls.get(object_id)
@@ -364,11 +373,20 @@ def apply_intervention_action(project: Project, action_id: str, value: Any = Non
         if wall.bottom_elevation_locked:
             raise ValueError("该墙趾为人工/导入锁定值，请先在墙段设计长度界面解除锁定。")
         before = float(wall.bottom_elevation)
-        proposed = float(value) if value is not None else before - 0.50
-        wall.bottom_elevation = round(min(before, proposed), 3)
+        minimum_next = before - 0.50
+        proposed = float(value) if value is not None else minimum_next
+        after = round(min(minimum_next, proposed), 3)
+        if after >= before - 1.0e-9:
+            raise ValueError(f"{wall.panel_code} 墙趾没有产生有效加深。")
+        wall.bottom_elevation = after
         wall.bottom_elevation_source = "auto_stability"
         wall.toe_profile_status = "local"
-        return {"actionId": action_id, "objectCode": wall.panel_code, "before": before, "after": wall.bottom_elevation, "unit": "m"}
+        return {
+            "actionId": action_id, "objectId": wall.id, "objectCode": wall.panel_code,
+            "before": before, "after": wall.bottom_elevation,
+            "delta": round(wall.bottom_elevation - before, 3), "unit": "m",
+            "changed": True, "valuePolicy": "relative_from_current",
+        }
     if action_id.startswith("strengthen-beam:"):
         object_id = action_id.split(":", 1)[1]
         beam = beams.get(object_id)
@@ -376,12 +394,29 @@ def apply_intervention_action(project: Project, action_id: str, value: Any = Non
             raise ValueError("未找到需要补强的梁构件。")
         before = {"widthM": float(beam.section.width or 0.8), "heightM": float(beam.section.height or 0.8)}
         proposed = value if isinstance(value, dict) else {}
-        beam.section.width = min(3.0, _round_up(float(proposed.get("widthM") or before["widthM"] + 0.10), 0.05))
-        beam.section.height = min(2.6, _round_up(float(proposed.get("heightM") or before["heightM"] + 0.10), 0.05))
-        return {"actionId": action_id, "objectCode": beam.code, "before": before, "after": {"widthM": beam.section.width, "heightM": beam.section.height}}
+        next_width = _round_up(before["widthM"] + 0.10, 0.05)
+        next_height = _round_up(before["heightM"] + 0.10, 0.05)
+        after_width = min(3.0, _round_up(max(next_width, float(proposed.get("widthM") or next_width)), 0.05))
+        after_height = min(2.6, _round_up(max(next_height, float(proposed.get("heightM") or next_height)), 0.05))
+        if after_width <= before["widthM"] + 1.0e-9 and after_height <= before["heightM"] + 1.0e-9:
+            raise ValueError(f"{beam.code} 截面已达到自动优化上限，需调整体系或材料。")
+        beam.section.width = after_width
+        beam.section.height = after_height
+        return {
+            "actionId": action_id, "objectId": beam.id, "objectCode": beam.code,
+            "before": before, "after": {"widthM": beam.section.width, "heightM": beam.section.height},
+            "changed": True, "valuePolicy": "relative_from_current",
+        }
     if action_id == "optimize-supports":
         deep = optimize_support_deep_design(project, max_iterations=3)
-        return {"actionId": action_id, "status": deep.get("status"), "changedSupportIds": deep.get("changedSupportIds") or []}
+        changed_ids = list(deep.get("changedSupportIds") or [])
+        if not changed_ids and str(deep.get("status") or "") in {"pass", "closed"}:
+            raise ValueError("当前支撑截面深化已无可继续的单调升级项。")
+        return {
+            "actionId": action_id, "status": deep.get("status"),
+            "changedSupportIds": changed_ids, "changedSupportCount": len(changed_ids),
+            "changed": bool(changed_ids), "valuePolicy": "relative_from_current",
+        }
     if action_id.startswith("apply-wall-length:"):
         from app.services.wall_vertical_length_optimizer import apply_wall_vertical_length_candidate
         candidate_id = action_id.split(":", 1)[1]
@@ -497,6 +532,8 @@ def run_intelligent_design_closure(
         "reviewCount": int(final_assessment.get("reviewCount") or 0),
         "reviewGroupCount": len(review_group_rows),
         "reserveShortfallCount": int(final_assessment.get("reserveShortfallCount") or 0),
+        "automaticInterventionCount": sum(len(list(item.get("actions") or [])) for item in history),
+        "appliedInterventionCount": 0,
         "history": history,
         "remainingChecks": [
             {

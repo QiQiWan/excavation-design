@@ -1,0 +1,655 @@
+{
+  "schema": "pitguard-v371-numerical-coupling-evaluation-v2",
+  "version": {
+    "softwareVersion": "3.71.0",
+    "algorithmVersion": "3.71.0-conditioned-coupled-spatial-validation",
+    "ruleSetVersion": "2026.07-v3.71.0-numerical-coupling-detailing-signoff-gate",
+    "exportSchemaVersion": "3.71"
+  },
+  "scope": {
+    "geometry": "synthetic L-shaped excavation, 60 m x 45 m envelope, 16 m excavation depth",
+    "templates": [
+      "compact_elbow_ring",
+      "junction_hub_frame",
+      "ring_chord_frame"
+    ],
+    "dataBoundary": "No real investigation or licensed signoff is asserted; formal issue remains blocked.",
+    "spatialBoundary": "Node-level eccentricity/torsion/rigid-zone/semi-rigid submodel, not a full global 6-DOF verification."
+  },
+  "numericalGateExamples": {
+    "scaleSeparationExample": {
+      "solution": [
+        1.0,
+        1.0
+      ],
+      "rawConditionNumber": 1000000000000.0,
+      "scaledConditionNumber": 1.0,
+      "conditionGrade": {
+        "grade": "A",
+        "status": "pass",
+        "label": "稳定",
+        "blocked": false,
+        "message": "尺度化矩阵条件数为 1.000e+00，数值等级 A（稳定）。"
+      },
+      "blocked": false
+    },
+    "rankDeficientExample": {
+      "solution": null,
+      "rankDeficient": true,
+      "blocked": true,
+      "message": "尺度化后矩阵仍病态、秩亏或非正定，已自动阻断，不使用正则化结果作为设计依据。"
+    }
+  },
+  "topologyCalculations": [
+    {
+      "template": "compact_elbow_ring",
+      "topologyClass": "closed_ring",
+      "elapsedSeconds": 6.745,
+      "supportCount": 72,
+      "columnCount": 19,
+      "transferBeamCount": 18,
+      "stageCount": 42,
+      "frameStatus": "pass",
+      "maximumRawConditionNumber": 998.4338950754028,
+      "maximumScaledConditionNumber": 694.9958602536398,
+      "conditionReductionFactor": 1.4366040895711565,
+      "maximumNodeStiffnessRatio": 3.685714,
+      "maximumFrameDisplacementM": 0.0012525,
+      "maximumFrameResidual": 3.703586e-16,
+      "sensitivityStatus": "pass",
+      "sensitivityCaseCount": 90,
+      "maximumSensitivityRelativeChange": 0.03892023,
+      "reactionIterationStatus": "pass",
+      "reactionIterationCount": 3,
+      "reactionForceResidual": 0.0,
+      "reactionDisplacementResidual": 0.0,
+      "spatialStatus": "warning",
+      "spatialNodeCount": 72,
+      "maximumTorsionKnm": 897.7686,
+      "maximumOutOfPlaneMomentKnm": 0.0,
+      "maximumInPlaneEccentricMomentKnm": 179.55372,
+      "maximumSpatialJointRotationRad": 0.022865325242492445,
+      "maximumSpatialScaledConditionNumber": 1.0000000000000004,
+      "maximumSpatialEquilibriumResidual": 2.847927467459559e-16,
+      "spatialWarningCount": 34,
+      "spatialFailCount": 0,
+      "autoDetailingStatus": "fail",
+      "detailingMetrics": {
+        "transferBeamCount": 18,
+        "designedTransferBeamCount": 14,
+        "ringNodeCount": 72,
+        "detailedRingNodeCount": 72,
+        "maximumFrameDisplacementM": 0.0012525,
+        "maximumFrameResidual": 3.703586e-16,
+        "maximumTorsionKnm": 897.769,
+        "maximumEccentricInPlaneMomentKnm": 179.554,
+        "maximumCombinedInPlaneMomentKnm": 1041.68,
+        "maximumInPlaneMomentInteraction": 1.0858,
+        "maximumBearingUtilization": 0.6846,
+        "haunchRequiredNodeCount": 48
+      },
+      "formalCalculationReady": true,
+      "officialIssueReady": false,
+      "realEngineeringDataStatus": "fail",
+      "realEngineeringDataReady": false,
+      "realEngineeringDataMissingInputs": [
+        "borehole_density",
+        "investigation_provenance",
+        "soil_parameter_completeness",
+        "geological_model_coverage",
+        "groundwater_observation",
+        "construction_stage_completeness",
+        "construction_stage_provenance"
+      ],
+      "formalGateAllowed": false,
+      "formalGateBlockingCategories": [
+        "calculation_assurance",
+        "calculation_check",
+        "shape_transfer_detailing"
+      ]
+    },
+    {
+      "template": "junction_hub_frame",
+      "topologyClass": "junction_hub_frame",
+      "elapsedSeconds": 6.578,
+      "supportCount": 72,
+      "columnCount": 22,
+      "transferBeamCount": 30,
+      "stageCount": 42,
+      "frameStatus": "pass",
+      "maximumRawConditionNumber": 189251.24818123924,
+      "maximumScaledConditionNumber": 6335.321305674571,
+      "conditionReductionFactor": 29.87239937013553,
+      "maximumNodeStiffnessRatio": 65.45076,
+      "maximumFrameDisplacementM": 0.0020275,
+      "maximumFrameResidual": 6.576722e-15,
+      "sensitivityStatus": "pass",
+      "sensitivityCaseCount": 90,
+      "maximumSensitivityRelativeChange": 0.05013958,
+      "reactionIterationStatus": "pass",
+      "reactionIterationCount": 3,
+      "reactionForceResidual": 0.0,
+      "reactionDisplacementResidual": 0.0,
+      "spatialStatus": "warning",
+      "spatialNodeCount": 72,
+      "maximumTorsionKnm": 897.7685999999997,
+      "maximumOutOfPlaneMomentKnm": 716.5008759800669,
+      "maximumInPlaneEccentricMomentKnm": 179.55372,
+      "maximumSpatialJointRotationRad": 0.02133797542275817,
+      "maximumSpatialScaledConditionNumber": 1.5007094752770387,
+      "maximumSpatialEquilibriumResidual": 2.8770731448558837e-16,
+      "spatialWarningCount": 32,
+      "spatialFailCount": 0,
+      "autoDetailingStatus": "pass",
+      "detailingMetrics": {
+        "transferBeamCount": 30,
+        "designedTransferBeamCount": 30,
+        "ringNodeCount": 72,
+        "detailedRingNodeCount": 72,
+        "maximumFrameDisplacementM": 0.0020275,
+        "maximumFrameResidual": 6.576722e-15,
+        "maximumTorsionKnm": 897.769,
+        "maximumEccentricInPlaneMomentKnm": 179.554,
+        "maximumCombinedInPlaneMomentKnm": 3040.448,
+        "maximumInPlaneMomentInteraction": 0.9718,
+        "maximumBearingUtilization": 0.6846,
+        "haunchRequiredNodeCount": 48
+      },
+      "formalCalculationReady": true,
+      "officialIssueReady": false,
+      "realEngineeringDataStatus": "fail",
+      "realEngineeringDataReady": false,
+      "realEngineeringDataMissingInputs": [
+        "borehole_density",
+        "investigation_provenance",
+        "soil_parameter_completeness",
+        "geological_model_coverage",
+        "groundwater_observation",
+        "construction_stage_completeness",
+        "construction_stage_provenance"
+      ],
+      "formalGateAllowed": false,
+      "formalGateBlockingCategories": [
+        "calculation_assurance",
+        "calculation_check",
+        "shape_transfer_detailing"
+      ]
+    },
+    {
+      "template": "ring_chord_frame",
+      "topologyClass": "ring_chord_frame",
+      "elapsedSeconds": 5.784,
+      "supportCount": 72,
+      "columnCount": 22,
+      "transferBeamCount": 24,
+      "stageCount": 42,
+      "frameStatus": "pass",
+      "maximumRawConditionNumber": 1229.8547602968697,
+      "maximumScaledConditionNumber": 492.1329221261257,
+      "conditionReductionFactor": 2.4990296422023923,
+      "maximumNodeStiffnessRatio": 494.823,
+      "maximumFrameDisplacementM": 0.0016463,
+      "maximumFrameResidual": 6.321154e-15,
+      "sensitivityStatus": "pass",
+      "sensitivityCaseCount": 90,
+      "maximumSensitivityRelativeChange": 0.1241115,
+      "reactionIterationStatus": "pass",
+      "reactionIterationCount": 3,
+      "reactionForceResidual": 0.0,
+      "reactionDisplacementResidual": 0.0,
+      "spatialStatus": "warning",
+      "spatialNodeCount": 72,
+      "maximumTorsionKnm": 821.4812999999998,
+      "maximumOutOfPlaneMomentKnm": 708.4863521027058,
+      "maximumInPlaneEccentricMomentKnm": 164.29626000000002,
+      "maximumSpatialJointRotationRad": 0.02061922256641263,
+      "maximumSpatialScaledConditionNumber": 1.285629076892093,
+      "maximumSpatialEquilibriumResidual": 3.66905732191733e-16,
+      "spatialWarningCount": 28,
+      "spatialFailCount": 0,
+      "autoDetailingStatus": "fail",
+      "detailingMetrics": {
+        "transferBeamCount": 24,
+        "designedTransferBeamCount": 23,
+        "ringNodeCount": 72,
+        "detailedRingNodeCount": 72,
+        "maximumFrameDisplacementM": 0.0016463,
+        "maximumFrameResidual": 6.321154e-15,
+        "maximumTorsionKnm": 821.481,
+        "maximumEccentricInPlaneMomentKnm": 164.296,
+        "maximumCombinedInPlaneMomentKnm": 2834.285,
+        "maximumInPlaneMomentInteraction": 1.0307,
+        "maximumBearingUtilization": 0.6852,
+        "haunchRequiredNodeCount": 48
+      },
+      "formalCalculationReady": true,
+      "officialIssueReady": false,
+      "realEngineeringDataStatus": "fail",
+      "realEngineeringDataReady": false,
+      "realEngineeringDataMissingInputs": [
+        "borehole_density",
+        "investigation_provenance",
+        "soil_parameter_completeness",
+        "geological_model_coverage",
+        "groundwater_observation",
+        "construction_stage_completeness",
+        "construction_stage_provenance",
+        "stage_topology_traceability"
+      ],
+      "formalGateAllowed": false,
+      "formalGateBlockingCategories": [
+        "calculation_assurance",
+        "calculation_check",
+        "shape_transfer_detailing"
+      ]
+    }
+  ],
+  "openSeesBenchmark": {
+    "schema": "pitguard-opensees-benchmark-v2",
+    "softwareVersion": "3.71.0",
+    "algorithmVersion": "3.71.0-conditioned-coupled-spatial-validation",
+    "referenceSoftware": "OpenSeesPy/OpenSees",
+    "status": "pass",
+    "caseCount": 3,
+    "passCount": 3,
+    "maximumRelativeDisplacementError": 2.6474138251490866e-14,
+    "cases": [
+      {
+        "name": "asymmetric_portal_frame",
+        "status": "pass",
+        "maximumRelativeDisplacementError": 2.6474138251490866e-14,
+        "tolerance": 1e-06,
+        "components": [
+          {
+            "nodeId": 1,
+            "component": "ux",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 1,
+            "component": "uy",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 1,
+            "component": "rz",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 2,
+            "component": "ux",
+            "pitguard": 0.010900947489294186,
+            "reference": 0.010900947489294287,
+            "relativeError": 9.229836370229909e-15
+          },
+          {
+            "nodeId": 2,
+            "component": "uy",
+            "pitguard": 7.998682895812275e-06,
+            "reference": 7.998682895812486e-06,
+            "relativeError": 2.6474138251490866e-14
+          },
+          {
+            "nodeId": 2,
+            "component": "rz",
+            "pitguard": -0.002572234792513238,
+            "reference": -0.0025722347925132617,
+            "relativeError": 9.273044538587984e-15
+          },
+          {
+            "nodeId": 3,
+            "component": "ux",
+            "pitguard": 0.010851028166986802,
+            "reference": 0.010851028166986904,
+            "relativeError": 9.43216472278789e-15
+          },
+          {
+            "nodeId": 3,
+            "component": "uy",
+            "pitguard": -2.299868289581227e-05,
+            "reference": -2.2998682895812485e-05,
+            "relativeError": 9.281066384325351e-15
+          },
+          {
+            "nodeId": 3,
+            "component": "rz",
+            "pitguard": -0.0025540823116741904,
+            "reference": -0.0025540823116742134,
+            "relativeError": 8.999352116269839e-15
+          },
+          {
+            "nodeId": 4,
+            "component": "ux",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 4,
+            "component": "uy",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 4,
+            "component": "rz",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          }
+        ],
+        "pitguardNumericalGate": {
+          "status": "pass",
+          "blocked": false,
+          "conditionGrade": {
+            "grade": "A",
+            "status": "pass",
+            "label": "稳定",
+            "blocked": false,
+            "message": "尺度化矩阵条件数为 4.382e+02，数值等级 A（稳定）。"
+          },
+          "rawConditionNumber": 463.6546002523718,
+          "scaledConditionNumber": 438.2269449993353,
+          "rawConditionMethod": "symmetric_eigenvalue_ratio",
+          "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+          "rawEigenMin": 4329.016980388507,
+          "rawEigenMax": 2007168.637527763,
+          "scaledEigenMin": 0.0045534410823941385,
+          "scaledEigenMax": 1.9954405747720498,
+          "matrixRank": 6,
+          "matrixSize": 6,
+          "rankDeficient": false,
+          "positiveDefinite": true,
+          "regularized": false,
+          "regularization": 0.0,
+          "solveMethod": "scaled_direct",
+          "relativeResidual": 2.3050168316001745e-14,
+          "residualNorm": 2.3506651606978208e-12,
+          "scalingMin": 0.0008650527662236622,
+          "scalingMax": 0.005175491695067656,
+          "message": "尺度化求解通过。"
+        },
+        "referenceSoftware": "OpenSeesPy",
+        "referenceVersion": "3.8.0.0"
+      },
+      {
+        "name": "closed_ring_with_radial_trusses",
+        "status": "pass",
+        "maximumRelativeDisplacementError": 9.45493435845987e-16,
+        "tolerance": 1e-06,
+        "components": [
+          {
+            "nodeId": 1,
+            "component": "ux",
+            "pitguard": 5.064924890141271e-05,
+            "reference": 5.064924890141268e-05,
+            "relativeError": 5.351521473674136e-16
+          },
+          {
+            "nodeId": 1,
+            "component": "uy",
+            "pitguard": 7.4635281433283116e-06,
+            "reference": 7.463528143328312e-06,
+            "relativeError": 1.1348961657114773e-16
+          },
+          {
+            "nodeId": 1,
+            "component": "rz",
+            "pitguard": 7.166907057341226e-06,
+            "reference": 7.1669070573412234e-06,
+            "relativeError": 3.54560038442245e-16
+          },
+          {
+            "nodeId": 2,
+            "component": "ux",
+            "pitguard": 2.621352814332832e-05,
+            "reference": 2.6213528143328304e-05,
+            "relativeError": 6.46256347198255e-16
+          },
+          {
+            "nodeId": 2,
+            "component": "uy",
+            "pitguard": -2.189633484481724e-06,
+            "reference": -2.1896334844817247e-06,
+            "relativeError": 3.8683777593709423e-16
+          },
+          {
+            "nodeId": 2,
+            "component": "rz",
+            "pitguard": 5.197676275992112e-06,
+            "reference": 5.197676275992109e-06,
+            "relativeError": 4.888913250523413e-16
+          },
+          {
+            "nodeId": 3,
+            "component": "ux",
+            "pitguard": -2.764668473421744e-05,
+            "reference": -2.764668473421743e-05,
+            "relativeError": 3.67653317740172e-16
+          },
+          {
+            "nodeId": 3,
+            "component": "uy",
+            "pitguard": -4.33852814332831e-06,
+            "reference": -4.338528143328312e-06,
+            "relativeError": 3.9047018678758507e-16
+          },
+          {
+            "nodeId": 3,
+            "component": "rz",
+            "pitguard": 5.1976762759921126e-06,
+            "reference": 5.197676275992112e-06,
+            "relativeError": 1.6296377501744701e-16
+          },
+          {
+            "nodeId": 4,
+            "component": "ux",
+            "pitguard": -1.371352814332832e-05,
+            "reference": -1.3713528143328319e-05,
+            "relativeError": 1.2353246201873803e-16
+          },
+          {
+            "nodeId": 4,
+            "component": "uy",
+            "pitguard": 5.314633484481725e-06,
+            "reference": 5.314633484481725e-06,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 4,
+            "component": "rz",
+            "pitguard": 7.166907057341228e-06,
+            "reference": 7.166907057341221e-06,
+            "relativeError": 9.45493435845987e-16
+          },
+          {
+            "nodeId": 5,
+            "component": "ux",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 5,
+            "component": "uy",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 5,
+            "component": "rz",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 6,
+            "component": "ux",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 6,
+            "component": "uy",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 6,
+            "component": "rz",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 7,
+            "component": "ux",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 7,
+            "component": "uy",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 7,
+            "component": "rz",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 8,
+            "component": "ux",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 8,
+            "component": "uy",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          },
+          {
+            "nodeId": 8,
+            "component": "rz",
+            "pitguard": 0.0,
+            "reference": 0.0,
+            "relativeError": 0.0
+          }
+        ],
+        "pitguardNumericalGate": {
+          "status": "pass",
+          "blocked": false,
+          "conditionGrade": {
+            "grade": "A",
+            "status": "pass",
+            "label": "稳定",
+            "blocked": false,
+            "message": "尺度化矩阵条件数为 7.723e+00，数值等级 A（稳定）。"
+          },
+          "rawConditionNumber": 9.177195648171802,
+          "scaledConditionNumber": 7.722861327150777,
+          "rawConditionMethod": "symmetric_eigenvalue_ratio",
+          "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+          "rawEigenMin": 2177388.151775187,
+          "rawEigenMax": 19982317.070852086,
+          "scaledEigenMin": 0.23645139629776213,
+          "scaledEigenMax": 1.8260813442187895,
+          "matrixRank": 12,
+          "matrixSize": 12,
+          "rankDeficient": false,
+          "positiveDefinite": true,
+          "regularized": false,
+          "regularization": 0.0,
+          "solveMethod": "scaled_direct",
+          "relativeResidual": 3.6675684568189466e-16,
+          "residualNorm": 9.307245349850798e-14,
+          "scalingMin": 0.00026380954721579513,
+          "scalingMax": 0.00044721368494270386,
+          "message": "尺度化求解通过。"
+        },
+        "referenceSoftware": "OpenSeesPy",
+        "referenceVersion": "3.8.0.0"
+      },
+      {
+        "name": "spatial_reduced_rotational_node",
+        "status": "pass",
+        "maximumRelativeDisplacementError": 2.238124776099849e-16,
+        "tolerance": 1e-06,
+        "components": [
+          {
+            "component": "rx",
+            "pitguard": 0.00024221218228387447,
+            "reference": 0.00024221218228387441,
+            "relativeError": 2.238124776099849e-16
+          },
+          {
+            "component": "ry",
+            "pitguard": -0.00017875632392803326,
+            "reference": -0.00017875632392803326,
+            "relativeError": 0.0
+          },
+          {
+            "component": "rz",
+            "pitguard": 3.5702746365105006e-05,
+            "reference": 3.570274636510501e-05,
+            "relativeError": 1.8979670383725317e-16
+          }
+        ],
+        "pitguardNumericalGate": {
+          "status": "pass",
+          "blocked": false,
+          "conditionGrade": {
+            "grade": "A",
+            "status": "pass",
+            "label": "稳定",
+            "blocked": false,
+            "message": "尺度化矩阵条件数为 1.589e+00，数值等级 A（稳定）。"
+          },
+          "rawConditionNumber": 2.4646577041242312,
+          "scaledConditionNumber": 1.588922563986846,
+          "rawConditionMethod": "symmetric_eigenvalue_ratio",
+          "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+          "rawEigenMin": 2954711.6944436366,
+          "rawEigenMax": 7282352.94117647,
+          "scaledEigenMin": 0.7725221402219437,
+          "scaledEigenMax": 1.2274778597780565,
+          "matrixRank": 3,
+          "matrixSize": 3,
+          "rankDeficient": false,
+          "positiveDefinite": true,
+          "regularized": false,
+          "regularization": 0.0,
+          "solveMethod": "scaled_direct",
+          "relativeResidual": 1.6282567094991301e-16,
+          "residualNorm": 1.6077746776921858e-13,
+          "scalingMin": 0.00037056477875049577,
+          "scalingMax": 0.0005272100682009657,
+          "message": "尺度化求解通过。"
+        },
+        "pitguardEquilibriumResidual": 1.2872499543670934e-16,
+        "referenceSoftware": "OpenSeesPy",
+        "referenceVersion": "3.8.0.0"
+      }
+    ],
+    "scope": "linear 2D elasticBeamColumn/truss plus reduced 3D rotational-node benchmark; nonlinear geotechnical constitutive and global 6-DOF spatial verification remain separate"
+  },
+  "elapsedSeconds": 19.62
+}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientLight, BoxGeometry, BufferGeometry, Color, DirectionalLight, GridHelper, Material, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import type { CalculationResult, Project } from '../types/domain';
 import FullscreenShell from '../components/FullscreenShell';
+import { bindWebglContextLifecycle, createStableWebGLRenderer, releaseStableWebGLRenderer, stablePixelRatio, startStableRenderLoop } from './webglRuntime';
 
 type Metric = 'displacement' | 'moment' | 'shear';
 type DisplayMode = 'signed' | 'absolute';
@@ -73,6 +74,8 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
   const [displayMode, setDisplayMode] = useState<DisplayMode>('signed');
   const [stageId, setStageId] = useState(ENVELOPE_STAGE);
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
+  const [renderError, setRenderError] = useState<string>();
+  const [renderNonce, setRenderNonce] = useState(0);
 
   const samples = useMemo(() => {
     const legacy = (latest.reportDiagramData ?? {}).wallForceSamples as Record<string, unknown>[] | null | undefined;
@@ -137,10 +140,21 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
     const scene = new Scene();
     scene.background = new Color(0xf8fafc);
     const camera = new PerspectiveCamera(45, width / height, 0.1, 6000);
-    const renderer = new WebGLRenderer({ antialias: true });
+    let renderer: WebGLRenderer;
+    try {
+      renderer = createStableWebGLRenderer({ antialias: true });
+      setRenderError(undefined);
+    } catch (reason) {
+      setRenderError(reason instanceof Error ? reason.message : '无法创建受力云图 WebGL 上下文。');
+      return;
+    }
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(stablePixelRatio(1.5));
     mount.appendChild(renderer.domElement);
+    const detachContextLifecycle = bindWebglContextLifecycle(renderer, {
+      onLost: setRenderError,
+      onRestored: () => { setRenderError(undefined); setRenderNonce((value) => value + 1); },
+    });
 
     const box = bounds(project);
     scene.add(new AmbientLight(0xffffff, 0.76));
@@ -247,12 +261,11 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
       renderer.setSize(nextWidth, nextHeight); camera.aspect = nextWidth / nextHeight; camera.updateProjectionMatrix();
     });
     resizeObserver.observe(mount);
-    let animationFrame = 0;
-    const animate = () => { animationFrame = requestAnimationFrame(animate); renderer.render(scene, camera); };
-    animate();
+    const stopRenderLoop = startStableRenderLoop(renderer, scene, camera, mount, { maxFps: 24 });
 
     return () => {
-      cancelAnimationFrame(animationFrame);
+      stopRenderLoop();
+      detachContextLifecycle();
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
@@ -260,10 +273,10 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
       renderer.domElement.removeEventListener('wheel', onWheel);
       disposableGeometries.forEach((geometry) => geometry.dispose());
       disposableMaterials.forEach((material) => material.dispose());
-      renderer.dispose();
+      releaseStableWebGLRenderer(renderer, scene, mount);
       mount.innerHTML = '';
     };
-  }, [data, project, metric, displayMode, stageId, highlightLocator]);
+  }, [data, project, metric, displayMode, stageId, highlightLocator, renderNonce]);
 
   if (!data.rows.length) return null;
   return (
@@ -282,6 +295,7 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
           <button className={displayMode === 'absolute' ? 'active' : ''} onClick={() => setDisplayMode('absolute')}>绝对值</button>
         </div>
       </div>
+      {renderError && <div className="modelRenderRecovery"><span>{renderError}</span><button type="button" className="secondary" onClick={() => setRenderNonce((value) => value + 1)}>重建三维云图</button></div>}
       <div className="wallCloud3dViewport" ref={mountRef} />
       <div className={`heatLegend ${displayMode === 'signed' ? 'diverging' : ''}`}>
         <span>{displayMode === 'signed' ? data.minValue.toFixed(metric === 'displacement' ? 2 : 0) : '低'}</span><em />

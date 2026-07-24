@@ -4,7 +4,14 @@ import math
 from collections import Counter, defaultdict
 from typing import Any
 
-from app.schemas.domain import BeamElement, Point2D, Project, ReinforcementGroup, SupportElement
+from app.schemas.domain import BeamElement, Point2D, Polyline2D, Project, ReinforcementGroup, SupportElement
+from app.geometry.wall_path import (
+    normalize_construction_panels,
+    offset_polyline,
+    point_tangent_at_chainage,
+    polyline_length,
+    resolve_wall_plan_path,
+)
 from app.services.runtime_diagnostics import append_event
 
 
@@ -108,12 +115,10 @@ def _make_bar(
 
 
 def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str, Any]], max_per_wall: int = 120) -> tuple[int, int]:
-    if len(wall.axis.points) < 2 or not zones:
+    path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    length = polyline_length(path)
+    if len(path) < 2 or length <= 1.0e-9 or not zones:
         return 0, 0
-    a = wall.axis.points[0]
-    b = wall.axis.points[-1]
-    ux, uy, length = _unit(a, b)
-    nx, ny = -uy, ux
     cover = min(max(wall.thickness * 0.38, 0.08), max(wall.thickness / 2.2, 0.08))
     sampled_total = 0
     estimated_total = 0
@@ -146,24 +151,21 @@ def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str
                 required_area_per_meter=float(face_row.get("requiredAsMm2PerM") or 0.0),
                 check_status=str(face_row.get("status") or "manual_review"),
             )
-            # Browser visualization remains sampled, but the sample density must scale with
-            # physical wall length.  The former hard cap of five bars per face made a
-            # 100 m wall look almost unreinforced even when the design was D22@150.
             visual_pitch = 4.0
             dynamic_cap = max(8, min(32, int(math.ceil(length / visual_pitch)) + 1))
-            sampled, estimated = _count_from_spacing(
-                length, spacing, fallback=8, cap=min(dynamic_cap, max_per_wall - sampled_total)
-            )
+            sampled, estimated = _count_from_spacing(length, spacing, fallback=8, cap=min(dynamic_cap, max_per_wall - sampled_total))
             estimated_total += estimated
             for idx, station in enumerate(_stations(length, sampled), start=1):
-                x = a.x + ux * station + nx * cover * face_sign
-                y = a.y + uy * station + ny * cover * face_sign
+                center, tangent, _ = point_tangent_at_chainage(path, station)
+                nx, ny = -tangent[1], tangent[0]
+                x = center.x + nx * cover * face_sign
+                y = center.y + ny * cover * face_sign
                 z0 = max(float(wall.bottom_elevation) + 0.12, bottom - (overlap if zone_index < len(ordered) else 0.0))
                 z1 = min(float(wall.top_elevation) - 0.12, top + (overlap if zone_index > 1 else 0.0))
                 bars.append(_make_bar(
                     host_type="diaphragm_wall", host_code=wall.panel_code, host_id=wall.id, group=group,
                     start=_pt(x, y, z0), end=_pt(x, y, z1), index=zone_index * 100 + idx,
-                    representation="wall_zone_vertical_bar_with_overlap", shape_kind="zone_vertical_segment",
+                    representation="wall_zone_vertical_bar_on_canonical_path", shape_kind="zone_vertical_segment",
                     estimated_count=estimated, sampled_from_count=sampled,
                     extra={"zoneId": zone_id, "zoneType": zone_type, "face": face, "drawingRefs": drawing_refs, "envelopeSource": envelope_source, "zoneTopElevation": top, "zoneBottomElevation": bottom},
                 ))
@@ -179,23 +181,20 @@ def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str
             location_description=f"{zone_id} horizontal distribution; EL {top:.3f}~{bottom:.3f}", check_status=str(zone.get("status") or "manual_review"),
         )
         dynamic_vertical_cap = max(4, min(16, int(math.ceil(zone_height / 2.0)) + 1))
-        sample_z, estimate_z = _count_from_spacing(
-            zone_height, h_spacing, fallback=4,
-            cap=min(dynamic_vertical_cap, max(1, (max_per_wall - sampled_total) // 2)),
-        )
+        sample_z, estimate_z = _count_from_spacing(zone_height, h_spacing, fallback=4, cap=min(dynamic_vertical_cap, max(1, (max_per_wall - sampled_total) // 2)))
         estimated_total += estimate_z * 2
         z_values = [bottom + min(0.2, zone_height * 0.15) + max(zone_height - min(0.4, zone_height * 0.3), 0.0) * i / max(sample_z - 1, 1) for i in range(sample_z)]
         for face_index, face_sign in enumerate((-1, 1), start=1):
+            offset_path = offset_polyline(path, cover * face_sign)
             for zidx, z in enumerate(z_values, start=1):
                 if sampled_total >= max_per_wall:
                     break
+                pts = [_pt(point.x, point.y, z) for point in offset_path]
                 bars.append(_make_bar(
                     host_type="diaphragm_wall", host_code=wall.panel_code, host_id=wall.id, group=h_group,
-                    start=_pt(a.x + nx * cover * face_sign, a.y + ny * cover * face_sign, z),
-                    end=_pt(b.x + nx * cover * face_sign, b.y + ny * cover * face_sign, z),
-                    index=zone_index * 1000 + face_index * 100 + zidx,
-                    representation="wall_zone_horizontal_distribution_bar", shape_kind="zone_horizontal_bar",
-                    estimated_count=estimate_z * 2, sampled_from_count=sample_z * 2,
+                    start=pts[0], end=pts[-1], index=zone_index * 1000 + face_index * 100 + zidx,
+                    representation="wall_zone_horizontal_distribution_bar_on_canonical_path", shape_kind="zone_horizontal_polyline",
+                    points=pts, estimated_count=estimate_z * 2, sampled_from_count=sample_z * 2,
                     extra={"zoneId": zone_id, "zoneType": zone_type, "face": "inner" if face_sign < 0 else "outer", "drawingRefs": drawing_refs, "envelopeSource": envelope_source, "zoneTopElevation": top, "zoneBottomElevation": bottom},
                 ))
                 sampled_total += 1
@@ -206,25 +205,23 @@ def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str
                 diameter=float(tie.get("diameterMm") or 12.0), spacing=float(tie.get("spacingMm") or 450.0), grade=wall.rebar_grade,
                 location_description=f"{zone_id} cage tie bar", check_status="manual_review",
             )
-            station = length * 0.5
-            cx, cy, z = a.x + ux * station, a.y + uy * station, (top + bottom) / 2.0
+            center, tangent, _ = point_tangent_at_chainage(path, length * 0.5)
+            nx, ny = -tangent[1], tangent[0]
+            z = (top + bottom) / 2.0
             bars.append(_make_bar(
                 host_type="diaphragm_wall", host_code=wall.panel_code, host_id=wall.id, group=tie_group,
-                start=_pt(cx - nx * cover, cy - ny * cover, z), end=_pt(cx + nx * cover, cy + ny * cover, z), index=zone_index,
-                representation="wall_zone_sampled_tie_bar", estimated_count=max(1, int(length / max(float(tie.get("spacingMm") or 450.0) / 1000.0, 0.1))), sampled_from_count=1,
+                start=_pt(center.x - nx * cover, center.y - ny * cover, z), end=_pt(center.x + nx * cover, center.y + ny * cover, z), index=zone_index,
+                representation="wall_zone_sampled_tie_bar_on_canonical_path", estimated_count=max(1, int(length / max(float(tie.get("spacingMm") or 450.0) / 1000.0, 0.1))), sampled_from_count=1,
                 extra={"zoneId": zone_id, "zoneType": zone_type, "drawingRefs": drawing_refs, "envelopeSource": envelope_source, "zoneTopElevation": top, "zoneBottomElevation": bottom},
             ))
             sampled_total += 1
     return sampled_total, estimated_total
 
-
 def _add_wall_rebars(bars: list[dict[str, Any]], wall, max_per_wall: int = 110) -> tuple[int, int]:
-    if len(wall.axis.points) < 2:
+    path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    length = polyline_length(path)
+    if len(path) < 2 or length <= 1.0e-9:
         return 0, 0
-    a = wall.axis.points[0]
-    b = wall.axis.points[-1]
-    ux, uy, length = _unit(a, b)
-    nx, ny = -uy, ux
     height = max(wall.top_elevation - wall.bottom_elevation, 0.5)
     cover = min(max(wall.thickness * 0.38, 0.08), max(wall.thickness / 2.2, 0.08))
     sampled_total = 0
@@ -237,21 +234,16 @@ def _add_wall_rebars(bars: list[dict[str, Any]], wall, max_per_wall: int = 110) 
             sampled, estimated = _count_from_spacing(length, group.spacing, fallback=8, cap=min(28, max_per_wall - sampled_total))
             estimated_total += estimated
             for idx, station in enumerate(_stations(length, sampled), start=1):
-                x = a.x + ux * station + nx * cover * face_sign
-                y = a.y + uy * station + ny * cover * face_sign
+                center, tangent, _ = point_tangent_at_chainage(path, station)
+                nx, ny = -tangent[1], tangent[0]
+                x = center.x + nx * cover * face_sign
+                y = center.y + ny * cover * face_sign
                 bars.append(_make_bar(
-                    host_type="diaphragm_wall",
-                    host_code=wall.panel_code,
-                    host_id=wall.id,
-                    group=group,
-                    start=_pt(x, y, wall.bottom_elevation + 0.15),
-                    end=_pt(x, y, wall.top_elevation - 0.15),
-                    index=idx,
-                    representation="wall_vertical_bar_with_lap_offset",
+                    host_type="diaphragm_wall", host_code=wall.panel_code, host_id=wall.id, group=group,
+                    start=_pt(x, y, wall.bottom_elevation + 0.15), end=_pt(x, y, wall.top_elevation - 0.15), index=idx,
+                    representation="wall_vertical_bar_on_canonical_path_with_lap_offset",
                     points=[_pt(x, y, wall.bottom_elevation + 0.15), _pt(x, y, wall.bottom_elevation + height * 0.48), _pt(x + nx * cover * 0.65 * face_sign, y + ny * cover * 0.65 * face_sign, wall.bottom_elevation + height * 0.52), _pt(x + nx * cover * 0.65 * face_sign, y + ny * cover * 0.65 * face_sign, wall.top_elevation - 0.15)],
-                    shape_kind="vertical_lap_polyline",
-                    estimated_count=estimated,
-                    sampled_from_count=sampled,
+                    shape_kind="vertical_lap_polyline", estimated_count=estimated, sampled_from_count=sampled,
                 ))
             sampled_total += sampled
         elif group.bar_type == "distribution":
@@ -259,20 +251,14 @@ def _add_wall_rebars(bars: list[dict[str, Any]], wall, max_per_wall: int = 110) 
             estimated_total += estimated_z * 2
             z_values = [wall.bottom_elevation + 0.3 + (height - 0.6) * i / max(sampled_z - 1, 1) for i in range(sampled_z)]
             for face_index, face_sign in enumerate((-1, 1), start=1):
+                offset_path = offset_polyline(path, cover * face_sign)
                 for zidx, z in enumerate(z_values, start=1):
+                    pts = [_pt(point.x, point.y, z) for point in offset_path]
                     bars.append(_make_bar(
-                        host_type="diaphragm_wall",
-                        host_code=wall.panel_code,
-                        host_id=wall.id,
-                        group=group,
-                        start=_pt(a.x + nx * cover * face_sign, a.y + ny * cover * face_sign, z),
-                        end=_pt(b.x + nx * cover * face_sign, b.y + ny * cover * face_sign, z),
-                        index=face_index * 1000 + zidx,
-                        representation="wall_distribution_bar_with_end_hooks",
-                        points=[_pt(a.x + nx * cover * face_sign + ux * 0.18, a.y + ny * cover * face_sign + uy * 0.18, z - 0.18), _pt(a.x + nx * cover * face_sign, a.y + ny * cover * face_sign, z), _pt(b.x + nx * cover * face_sign, b.y + ny * cover * face_sign, z), _pt(b.x + nx * cover * face_sign - ux * 0.18, b.y + ny * cover * face_sign - uy * 0.18, z - 0.18)],
-                        shape_kind="horizontal_hooked_polyline",
-                        estimated_count=estimated_z * 2,
-                        sampled_from_count=sampled_z * 2,
+                        host_type="diaphragm_wall", host_code=wall.panel_code, host_id=wall.id, group=group,
+                        start=pts[0], end=pts[-1], index=face_index * 1000 + zidx,
+                        representation="wall_distribution_bar_on_canonical_path", points=pts,
+                        shape_kind="horizontal_path_polyline", estimated_count=estimated_z * 2, sampled_from_count=sampled_z * 2,
                     ))
                     sampled_total += 1
                     if sampled_total >= max_per_wall:
@@ -284,73 +270,79 @@ def _add_wall_rebars(bars: list[dict[str, Any]], wall, max_per_wall: int = 110) 
             estimated_total += estimated
             z = wall.bottom_elevation + height * 0.45
             for idx, station in enumerate(_stations(length, sampled), start=1):
-                cx = a.x + ux * station
-                cy = a.y + uy * station
+                center, tangent, _ = point_tangent_at_chainage(path, station)
+                nx, ny = -tangent[1], tangent[0]
                 bars.append(_make_bar(
-                    host_type="diaphragm_wall",
-                    host_code=wall.panel_code,
-                    host_id=wall.id,
-                    group=group,
-                    start=_pt(cx - nx * cover, cy - ny * cover, z),
-                    end=_pt(cx + nx * cover, cy + ny * cover, z),
-                    index=idx,
-                    representation="sampled_wall_tie_bars_across_cage",
-                    estimated_count=estimated,
-                    sampled_from_count=sampled,
+                    host_type="diaphragm_wall", host_code=wall.panel_code, host_id=wall.id, group=group,
+                    start=_pt(center.x - nx * cover, center.y - ny * cover, z), end=_pt(center.x + nx * cover, center.y + ny * cover, z), index=idx,
+                    representation="sampled_wall_tie_bars_across_canonical_path", estimated_count=estimated, sampled_from_count=sampled,
                 ))
             sampled_total += sampled
     return sampled_total, estimated_total
 
 
-
-
 _SUPPORT_EXPECTED_BAR_TYPES = ("longitudinal", "distribution", "stirrup", "tie", "additional")
 
 def _support_reinforcement_contract(support: SupportElement, scheme_row: dict[str, Any] | None) -> tuple[list[ReinforcementGroup], dict[str, Any]]:
-    """Resolve the applied support cage contract, including legacy projects.
-
-    Older projects often persisted only the longitudinal group on the support
-    object while the detailed end-zone/middle-zone schedule lived in
-    ``retainingSystem.rebarDesignScheme.supportSchemes``. The 3D viewer must
-    consume both sources and report missing families instead of silently
-    drawing a longitudinal-only cage.
-    """
-    groups = list(support.reinforcement or [])
-    present = {str(item.bar_type) for item in groups}
+    """Resolve five bar families and physical stirrup zones without false completion."""
+    source_groups = list(support.reinforcement or [])
+    source_present = {str(item.bar_type) for item in source_groups}
+    groups = list(source_groups)
     synthesized: list[str] = []
     row = dict(scheme_row or {})
     longitudinal = dict(row.get("longitudinal") or {})
     end_zone = dict(row.get("endZones") or {})
     middle = dict(row.get("middleZone") or {})
+    distribution = dict(row.get("distributionBars") or {})
+    ties = dict(row.get("tieBars") or {})
+    lap_additional = dict(row.get("lapAdditionalBars") or {})
+    transverse_design = dict(row.get("transverseDesign") or {})
     status = "pass" if str(row.get("status") or "") == "pass" else "manual_review"
     grade = str(longitudinal.get("grade") or "HRB400")
-
-    def add(group: ReinforcementGroup) -> None:
-        groups.append(group)
-        present.add(str(group.bar_type))
-        synthesized.append(str(group.bar_type))
-
-    if row and "longitudinal" not in present:
-        add(ReinforcementGroup(name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=grade, check_status=status, location_description="resolved from applied rebarDesignScheme.supportSchemes"))
-    if row and "distribution" not in present:
-        add(ReinforcementGroup(name="支撑侧面分布筋", bar_type="distribution", diameter=12, spacing=250, grade=grade, check_status="manual_review", location_description="resolved from applied support cage detailing contract"))
-    if row and "stirrup" not in present:
-        add(ReinforcementGroup(name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade=grade, check_status="manual_review", location_description=f"end zones length {end_zone.get('lengthM')}m at both ends; resolved from applied scheme"))
-        add(ReinforcementGroup(name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade=grade, check_status="manual_review", location_description="middle-zone confinement; resolved from applied scheme"))
-    if row and "tie" not in present:
-        add(ReinforcementGroup(name="支撑拉结/架立筋", bar_type="tie", diameter=12, spacing=400, grade=grade, check_status="manual_review", location_description="resolved from applied support cage detailing contract"))
-    if row and "additional" not in present:
-        add(ReinforcementGroup(name="搭接加强筋", bar_type="additional", diameter=max(16.0, float(longitudinal.get("diameterMm") or 25) - 6.0), count=4, grade=grade, check_status="manual_review", location_description="staggered lap zone away from rigid end zones; resolved from applied scheme"))
+    _, _, span_m = _unit(support.start, support.end)
+    if row:
+        end_length_m = min(float(end_zone.get("lengthM") or 0.0), span_m / 2.0)
+        middle_length_m = max(float(middle.get("lengthM") or 0.0), 0.0)
+        middle_start_m = end_length_m
+        middle_end_limit_m = max(span_m - end_length_m, middle_start_m)
+        middle_end_m = min(middle_start_m + middle_length_m, middle_end_limit_m)
+        if middle_length_m < 0.05:
+            middle_end_m = middle_start_m
+        design_status = str(transverse_design.get("status") or "manual_review")
+        groups = [
+            ReinforcementGroup(id=f"rebar-{support.id}-longitudinal", name="支撑纵筋", bar_type="longitudinal", diameter=float(longitudinal.get("diameterMm") or 25), count=int(longitudinal.get("count") or 8), grade=grade, check_status=status, location_description="来自已应用配筋方案的轴压纵筋", zone_type="full_length", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=span_m, design_source="applied_rebar_design_scheme"),
+            ReinforcementGroup(id=f"rebar-{support.id}-distribution", name="支撑侧面构造分布筋", bar_type="distribution", diameter=float(distribution.get("diameterMm") or 14), spacing=float(distribution.get("spacingMm") or 200), grade=grade, check_status="manual_review", location_description="来自已应用配筋方案的四侧面构造分布筋", zone_type="full_length", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=span_m, design_source="applied_rebar_design_scheme"),
+            ReinforcementGroup(id=f"rebar-{support.id}-stirrup-end", name="支撑端部加密箍筋", bar_type="stirrup", diameter=float(end_zone.get("stirrupDiameterMm") or 12), spacing=float(end_zone.get("stirrupSpacingMm") or 100), grade=grade, check_status=design_status, location_description=f"A、B 两端各 {end_length_m:.2f}m 加密区", zone_type="end_zones", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=end_length_m, stirrup_legs=int(end_zone.get("geometricLegCount") or transverse_design.get("geometricLegCount") or 4), design_source="support_transverse_design"),
+            ReinforcementGroup(id=f"rebar-{support.id}-stirrup-middle", name="支撑跨中箍筋", bar_type="stirrup", diameter=float(middle.get("stirrupDiameterMm") or 12), spacing=float(middle.get("stirrupSpacingMm") or 180), grade=grade, check_status=design_status, location_description="跨中普通区箍筋" if middle_end_m > middle_start_m else "短支撑由两端加密区控制，不另设跨中普通区", zone_type="middle_zone", zone_start_m=middle_start_m, zone_end_m=middle_end_m, zone_length_m=max(middle_end_m - middle_start_m, 0.0), stirrup_legs=int(middle.get("geometricLegCount") or transverse_design.get("geometricLegCount") or 4), design_source="support_transverse_design"),
+            ReinforcementGroup(id=f"rebar-{support.id}-tie", name="支撑拉结/架立筋", bar_type="tie", diameter=float(ties.get("diameterMm") or 12), spacing=float(ties.get("spacingMm") or 400), grade=grade, check_status="manual_review", location_description="来自已应用配筋方案的骨架拉结与架立筋", zone_type="full_length", zone_start_m=0.0, zone_end_m=span_m, zone_length_m=span_m, design_source="applied_rebar_design_scheme"),
+            ReinforcementGroup(id=f"rebar-{support.id}-additional", name="搭接与锚固区附加筋", bar_type="additional", diameter=float(lap_additional.get("diameterMm") or max(16.0, float(longitudinal.get("diameterMm") or 25) - 6.0)), count=int(lap_additional.get("count") or 4), grade=grade, check_status="manual_review", location_description="跨中错开搭接与锚固区附加筋", zone_type="lap_zone", zone_start_m=span_m * 0.40, zone_end_m=span_m * 0.60, zone_length_m=span_m * 0.20, design_source="applied_rebar_design_scheme"),
+        ]
+        synthesized = sorted({str(group.bar_type) for group in groups if group.bar_type not in source_present})
 
     final_present = sorted({str(item.bar_type) for item in groups})
     missing = [name for name in _SUPPORT_EXPECTED_BAR_TYPES if name not in final_present]
+    end_zone_groups = [item for item in groups if item.bar_type == "stirrup" and (item.zone_type == "end_zones" or "端部" in item.name or "加密" in item.name)]
+    middle_zone_groups = [item for item in groups if item.bar_type == "stirrup" and (item.zone_type == "middle_zone" or "跨中" in item.name)]
+    missing_stirrup_zones: list[str] = []
+    if not end_zone_groups:
+        missing_stirrup_zones.extend(["end_left", "end_right"])
+    if not middle_zone_groups and span_m > 1.0:
+        missing_stirrup_zones.append("middle")
+    stirrup_zone_status = "complete" if not missing_stirrup_zones else "generic_or_incomplete"
     return groups, {
         "hostId": support.id, "hostCode": support.code,
         "expectedBarTypes": list(_SUPPORT_EXPECTED_BAR_TYPES),
-        "sourceBarTypes": sorted({str(item.bar_type) for item in (support.reinforcement or [])}),
+        "sourceBarTypes": sorted(source_present),
         "resolvedBarTypes": final_present, "synthesizedBarTypes": sorted(set(synthesized)),
         "missingBarTypes": missing, "schemeRowFound": bool(row),
-        "status": "complete" if not missing else "incomplete",
+        "stirrupZoneStatus": stirrup_zone_status,
+        "missingStirrupZones": missing_stirrup_zones,
+        "stirrupZones": {
+            "end": [{"groupId": item.id, "diameterMm": item.diameter, "spacingMm": item.spacing, "lengthM": item.zone_length_m} for item in end_zone_groups],
+            "middle": [{"groupId": item.id, "diameterMm": item.diameter, "spacingMm": item.spacing, "startM": item.zone_start_m, "endM": item.zone_end_m} for item in middle_zone_groups],
+        },
+        "transverseDesign": transverse_design or None,
+        "status": "complete" if not missing and not missing_stirrup_zones else "incomplete",
     }
 
 
@@ -370,7 +362,34 @@ def _support_longitudinal_offsets(count: int, width: float, height: float) -> li
     return perimeter
 
 
-def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, groups: list[ReinforcementGroup] | None = None, max_per_support: int = 44) -> tuple[int, int]:
+def _stations_between(start_m: float, end_m: float, count: int) -> list[float]:
+    lo = max(float(start_m), 0.0)
+    hi = max(float(end_m), lo)
+    length = hi - lo
+    if count <= 1 or length <= 1e-9:
+        return [(lo + hi) / 2.0]
+    inset = min(0.12, length * 0.08)
+    return [lo + inset + max(length - 2.0 * inset, 0.0) * i / (count - 1) for i in range(count)]
+
+
+def _support_stirrup_regions(group: ReinforcementGroup, length_m: float, height_m: float) -> list[tuple[str, str, float, float]]:
+    zone_type = str(group.zone_type or "")
+    name = str(group.name or "")
+    if not zone_type:
+        zone_type = "end_zones" if ("端部" in name or "加密" in name) else "middle_zone" if "跨中" in name else "full_length"
+    if zone_type == "end_zones":
+        zone_length = min(max(float(group.zone_length_m or max(1.5 * height_m, 1.5)), 0.25), length_m / 2.0)
+        return [("end_left", "A端加密区", 0.0, zone_length), ("end_right", "B端加密区", max(length_m - zone_length, zone_length), length_m)]
+    if zone_type == "middle_zone":
+        start = min(max(float(group.zone_start_m or 0.0), 0.0), length_m)
+        end = min(max(float(group.zone_end_m if group.zone_end_m is not None else length_m), start), length_m)
+        # Treat rounding remnants as a closed zone.  A 1–2 mm pseudo middle
+        # region otherwise produces overlapping stirrups at the support centre.
+        return [] if end - start < 0.05 else [("middle", "跨中普通区", start, end)]
+    return [("full_length", "全长通用区", 0.0, length_m)]
+
+
+def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, groups: list[ReinforcementGroup] | None = None, max_per_support: int = 58) -> tuple[int, int]:
     width = max((support.section.width if support.section else None) or 0.8, 0.35)
     height = max((support.section.height if support.section else None) or 0.8, 0.35)
     ux, uy, length = _unit(support.start, support.end)
@@ -380,7 +399,7 @@ def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, gro
     # Reserve a visible quota for every reinforcement family.  The former
     # sequential sampler allowed longitudinal bars and the first stirrup group
     # to exhaust the complete preview budget, hiding ties and local bars.
-    type_caps = {"longitudinal": 12, "distribution": 6, "stirrup": 12, "tie": 5, "additional": 5}
+    type_caps = {"longitudinal": 12, "distribution": 6, "stirrup": 22, "tie": 5, "additional": 5}
     used_by_type: dict[str, int] = {}
     priority = {"longitudinal": 0, "distribution": 1, "stirrup": 2, "tie": 3, "additional": 4}
     resolved_groups = sorted(list(groups if groups is not None else (support.reinforcement or [])), key=lambda item: priority.get(item.bar_type, 99))
@@ -423,27 +442,37 @@ def _add_support_rebars(bars: list[dict[str, Any]], support: SupportElement, gro
                 ))
             sampled_total += count
         elif group.bar_type == "stirrup":
-            sampled, estimated = _count_from_spacing(length, group.spacing, fallback=8, cap=min(10, remaining))
-            estimated_total += estimated
-            for idx, station in enumerate(_stations(length, sampled, margin=0.35), start=1):
-                cx = support.start.x + ux * station
-                cy = support.start.y + uy * station
-                z = support.elevation
-                bars.append(_make_bar(
-                    host_type="internal_support",
-                    host_code=support.code,
-                    host_id=support.id,
-                    group=group,
-                    start=_pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42),
-                    end=_pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42),
-                    index=idx,
-                    representation="sampled_support_closed_stirrups",
-                    points=[_pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42), _pt(cx + nx * width * 0.42, cy + ny * width * 0.42, z - height * 0.42), _pt(cx + nx * width * 0.42, cy + ny * width * 0.42, z + height * 0.42), _pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z + height * 0.42), _pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42)],
-                    shape_kind="closed_stirrup_rectangle",
-                    estimated_count=estimated,
-                    sampled_from_count=sampled,
-                ))
-            sampled_total += sampled
+            regions = _support_stirrup_regions(group, length, height)
+            if not regions:
+                continue
+            group_added = 0
+            region_count = len(regions)
+            for region_index, (zone_key, zone_label, zone_start, zone_end) in enumerate(regions, start=1):
+                remaining_for_group = max(0, remaining - group_added)
+                if remaining_for_group <= 0:
+                    break
+                future_regions = max(region_count - region_index, 0)
+                region_cap = max(1, (remaining_for_group - future_regions) // max(region_count - region_index + 1, 1))
+                region_cap = min(region_cap, 6 if zone_key.startswith("end_") else 10)
+                region_length = max(zone_end - zone_start, 0.05)
+                sampled, estimated = _count_from_spacing(region_length, group.spacing, fallback=5 if zone_key.startswith("end_") else 8, cap=region_cap)
+                estimated_total += estimated
+                for local_index, station in enumerate(_stations_between(zone_start, zone_end, sampled), start=1):
+                    cx = support.start.x + ux * station
+                    cy = support.start.y + uy * station
+                    z = support.elevation
+                    bars.append(_make_bar(
+                        host_type="internal_support", host_code=support.code, host_id=support.id, group=group,
+                        start=_pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42),
+                        end=_pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42),
+                        index=region_index * 100 + local_index,
+                        representation=f"sampled_support_closed_stirrups_{zone_key}",
+                        points=[_pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42), _pt(cx + nx * width * 0.42, cy + ny * width * 0.42, z - height * 0.42), _pt(cx + nx * width * 0.42, cy + ny * width * 0.42, z + height * 0.42), _pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z + height * 0.42), _pt(cx - nx * width * 0.42, cy - ny * width * 0.42, z - height * 0.42)],
+                        shape_kind="closed_stirrup_rectangle", estimated_count=estimated, sampled_from_count=sampled,
+                        extra={"stirrupZoneType": zone_key, "stirrupZoneLabel": zone_label, "zoneStartM": round(zone_start, 3), "zoneEndM": round(zone_end, 3), "previewStationM": round(station, 3), "geometricLegCount": int(group.stirrup_legs or 4), "designSource": group.design_source or "legacy_support_reinforcement"},
+                    ))
+                group_added += sampled
+            sampled_total += group_added
         elif group.bar_type == "distribution":
             pair_cap = max(1, remaining // 2)
             sampled, estimated = _count_from_spacing(length, group.spacing, fallback=5, cap=min(3, pair_cap))
@@ -730,7 +759,34 @@ def _stratified_bar_type_sample(items: list[dict[str, Any]], quota: int) -> list
     selected: list[dict[str, Any]] = []
     selected_ids: set[str] = set()
     for name in active:
-        rows = _round_robin_host_sample(grouped[name], quotas.get(name, 0))
+        rows = _stratified_stirrup_zone_sample(grouped[name], quotas.get(name, 0)) if name == "stirrup" else _round_robin_host_sample(grouped[name], quotas.get(name, 0))
+        selected.extend(rows)
+        selected_ids.update(str(row.get("id")) for row in rows)
+    if len(selected) < quota:
+        residual = [row for row in items if str(row.get("id")) not in selected_ids]
+        selected.extend(_round_robin_host_sample(residual, quota - len(selected)))
+    return selected[:quota]
+
+
+def _stratified_stirrup_zone_sample(items: list[dict[str, Any]], quota: int) -> list[dict[str, Any]]:
+    """Keep A-end, middle and B-end stirrups visible in a global sample."""
+    if quota <= 0 or not items:
+        return []
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    order = ["end_left", "middle", "end_right", "full_length"]
+    for item in items:
+        grouped[str(item.get("stirrupZoneType") or "full_length")].append(item)
+    active = [zone for zone in order if grouped.get(zone)]
+    active.extend(sorted(zone for zone in grouped if zone not in active))
+    if not active:
+        return _round_robin_host_sample(items, quota)
+    base = quota // len(active)
+    remainder = quota % len(active)
+    selected: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    for index, zone in enumerate(active):
+        zone_quota = min(len(grouped[zone]), base + (1 if index < remainder else 0))
+        rows = _round_robin_host_sample(grouped[zone], zone_quota)
         selected.extend(rows)
         selected_ids.update(str(row.get("id")) for row in rows)
     if len(selected) < quota:
@@ -816,46 +872,76 @@ def _governing_wall_cage_reinforcement(wall: Any, zones: list[dict[str, Any]]) -
     return {"faces": faces, "horizontal": horizontal, "ties": ties, "zoneIds": [z for z in zone_ids if z]}
 
 
-def _wall_cage_descriptors(wall: Any, zones: list[dict[str, Any]], line_cap: int = 160) -> list[dict[str, Any]]:
-    if len(wall.axis.points) < 2:
-        return []
-    a, b = wall.axis.points[0], wall.axis.points[-1]
-    ux, uy, total_length = _unit(a, b)
-    if total_length <= 1.0e-9:
-        return []
+def _wall_axis_is_valid(wall: Any) -> bool:
+    points = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    if len(points) < 2:
+        return False
+    a, b = points[0], points[-1]
+    values = (getattr(a, "x", None), getattr(a, "y", None), getattr(b, "x", None), getattr(b, "y", None))
+    try:
+        return all(math.isfinite(float(value)) for value in values) and _dist(a, b) > 1.0e-6
+    except (TypeError, ValueError):
+        return False
+
+
+def _resolve_wall_for_visualization(project: Project, wall: Any, wall_index: int) -> tuple[Any, str | None]:
+    """Resolve every cage against the current excavation/wall geometry contract.
+
+    Existing wall axes and construction-panel endpoint coordinates can survive a
+    later outline edit.  The viewer must therefore derive plan geometry from the
+    current excavation segment first and treat saved panel coordinates as audit
+    metadata, never as authoritative geometry.
+    """
+    resolution = resolve_wall_plan_path(project, wall, wall_index)
+    if len(resolution.points) < 2:
+        return wall, "unresolved"
+    resolved = wall.model_copy(deep=True)
+    resolved.axis = Polyline2D(points=resolution.points, closed=False)
+    resolved.design_length = polyline_length(resolution.points)
+    return resolved, (resolution.source if resolution.repaired else None)
+
+def _wall_cage_descriptors(
+    wall: Any,
+    zones: list[dict[str, Any]],
+    *,
+    line_cap: int = 160,
+    target_panel_length_m: float = 6.0,
+    minimum_panel_length_m: float = 3.0,
+    maximum_panel_length_m: float = 7.0,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    total_length = polyline_length(path)
+    if len(path) < 2 or total_length <= 1.0e-9:
+        return [], {"status": "unresolved", "panelCount": 0, "repairedPanelCount": 0, "maximumStoredDeviationM": None}
     reinforcement = _governing_wall_cage_reinforcement(wall, zones)
-    panels = list(getattr(wall, "construction_panels", []) or [])
-    if not panels:
-        panels = [{
-            "panelIndex": 1, "panelCode": f"{wall.panel_code}-P01",
-            "startChainageM": 0.0, "endChainageM": total_length, "lengthM": total_length,
-            "start": {"x": a.x, "y": a.y}, "end": {"x": b.x, "y": b.y},
-            "cageCount": 1, "jointType": "project_specific", "liftingReviewRequired": True,
-        }]
+    panels, panel_audit = normalize_construction_panels(
+        wall,
+        path,
+        target_length_m=target_panel_length_m,
+        minimum_length_m=minimum_panel_length_m,
+        maximum_length_m=maximum_panel_length_m,
+    )
     cage_rows: list[dict[str, Any]] = []
     height = max(float(wall.top_elevation) - float(wall.bottom_elevation), 0.1)
-    cover = min(max(float(wall.thickness) * 0.08, 0.07), 0.12)
+    cover = min(max(float(wall.thickness) * 0.38, 0.08), max(float(wall.thickness) / 2.2, 0.08))
     for idx, panel in enumerate(panels, start=1):
-        c0 = float(panel.get("startChainageM") or 0.0)
-        c1 = float(panel.get("endChainageM") or panel.get("lengthM") or total_length)
-        c0 = max(0.0, min(total_length, c0)); c1 = max(c0, min(total_length, c1))
-        start = panel.get("start") or {"x": a.x + ux * c0, "y": a.y + uy * c0}
-        end = panel.get("end") or {"x": a.x + ux * c1, "y": a.y + uy * c1}
-        panel_length = max(c1 - c0, 0.01)
-        faces = []
-        for face in ("inner", "outer"):
-            spec = reinforcement["faces"].get(face, reinforcement["faces"]["inner"])
-            spacing_m = max(float(spec.get("spacingMm") or 200.0) / 1000.0, 0.05)
-            faces.append({
+        panel_path_raw = list(panel.get("planPath") or [])
+        panel_path = [Point2D(x=float(item["x"]), y=float(item["y"])) for item in panel_path_raw]
+        panel_length = polyline_length(panel_path)
+        if len(panel_path) < 2 or panel_length <= 1.0e-9:
+            continue
+        panel_code = str(panel.get("panelCode") or f"{wall.panel_code}-P{idx:02d}")
+        start_point = _pt(panel_path[0].x, panel_path[0].y, float(wall.top_elevation))
+        end_point = _pt(panel_path[-1].x, panel_path[-1].y, float(wall.top_elevation))
+        vertical_rows = []
+        for face, spec in reinforcement["faces"].items():
+            spacing_m = max(float(spec["spacingMm"]) / 1000.0, 0.05)
+            vertical_rows.append({
                 "face": face,
-                "diameterMm": float(spec.get("diameterMm") or 25.0),
-                "spacingMm": float(spec.get("spacingMm") or 200.0),
+                **spec,
                 "estimatedVerticalBarCount": max(2, int(math.floor(panel_length / spacing_m)) + 1),
             })
-        h_spacing_m = max(float(reinforcement["horizontal"].get("spacingMm") or 200.0) / 1000.0, 0.05)
-        panel_code = str(panel.get("panelCode") or f"{wall.panel_code}-P{idx:02d}")
-        start_point = _pt(float(start.get("x", a.x)), float(start.get("y", a.y)), float(wall.top_elevation))
-        end_point = _pt(float(end.get("x", b.x)), float(end.get("y", b.y)), float(wall.top_elevation))
+        h_spacing_m = max(float(reinforcement["horizontal"]["spacingMm"]) / 1000.0, 0.05)
         segment_count = max(1, int(math.ceil(height / 12.0)))
         splice_elevations = [
             round(float(wall.bottom_elevation) + height * segment / segment_count, 3)
@@ -863,29 +949,32 @@ def _wall_cage_descriptors(wall: Any, zones: list[dict[str, Any]], line_cap: int
         ]
         lifting_points = []
         for lifting_index, ratio in enumerate((0.25, 0.75), start=1):
+            point, _, _ = point_tangent_at_chainage(panel_path, panel_length * ratio)
             lifting_points.append({
                 "id": f"LP-{panel_code}-{lifting_index}",
                 "ratio": ratio,
-                "point": _pt(
-                    float(start.get("x", a.x)) + (float(end.get("x", b.x)) - float(start.get("x", a.x))) * ratio,
-                    float(start.get("y", a.y)) + (float(end.get("y", b.y)) - float(start.get("y", a.y))) * ratio,
-                    float(wall.top_elevation) - 0.35,
-                ),
+                "point": _pt(point.x, point.y, float(wall.top_elevation) - 0.35),
                 "reviewRequired": bool(panel.get("liftingReviewRequired", True)),
             })
         cage_rows.append({
             "id": f"cage-{wall.id}-{idx}",
-            "hostId": wall.id, "hostCode": wall.panel_code,
+            "hostId": wall.id,
+            "hostCode": wall.panel_code,
             "panelCode": panel_code,
             "panelIndex": int(panel.get("panelIndex") or idx),
             "start": start_point,
             "end": end_point,
-            "topElevation": float(wall.top_elevation), "bottomElevation": float(wall.bottom_elevation),
-            "heightM": round(height, 3), "panelLengthM": round(panel_length, 3),
-            "thicknessM": float(wall.thickness), "coverM": round(cover, 3),
-            "faces": faces,
+            "planPath": [_pt(point.x, point.y, float(wall.top_elevation)) for point in panel_path],
+            "topElevation": float(wall.top_elevation),
+            "bottomElevation": float(wall.bottom_elevation),
+            "heightM": round(height, 3),
+            "panelLengthM": round(panel_length, 3),
+            "thicknessM": float(wall.thickness),
+            "coverM": round(cover, 3),
+            "faces": vertical_rows,
             "horizontal": {**reinforcement["horizontal"], "estimatedBarCountPerFace": max(2, int(math.floor(height / h_spacing_m)) + 1)},
-            "ties": reinforcement["ties"], "zoneIds": reinforcement["zoneIds"],
+            "ties": reinforcement["ties"],
+            "zoneIds": reinforcement["zoneIds"],
             "jointType": panel.get("jointType") or "project_specific",
             "jointMarkers": [
                 {"end": "start", "point": start_point, "jointType": panel.get("jointType") or "project_specific"},
@@ -898,10 +987,14 @@ def _wall_cage_descriptors(wall: Any, zones: list[dict[str, Any]], line_cap: int
             "liftingReviewRequired": bool(panel.get("liftingReviewRequired", True)),
             "displayLineCap": int(line_cap),
             "representation": "construction_panel_rebar_cage_grid_with_joints_lifting_and_splice_zones",
+            "planGeometryRepresentation": "canonical_wall_path_chainage_polyline",
+            "geometrySource": panel.get("geometrySource"),
+            "geometryStatus": panel.get("geometryStatus"),
+            "storedGeometryDeviationM": panel.get("storedGeometryDeviationM"),
         })
-    return cage_rows
+    return cage_rows, panel_audit
 
-def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict[str, Any]:
+def build_rebar_ifc_visualization(project: Project, max_bars: int = 950, focus_host_id: str | None = None) -> dict[str, Any]:
     retaining = project.retaining_system
     host_summaries: list[dict[str, Any]] = []
     estimated_full_count = 0
@@ -924,25 +1017,84 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
 
     zone_scheme = retaining.rebar_design_scheme if retaining and isinstance(retaining.rebar_design_scheme, dict) else {}
     wall_zones_by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    support_scheme_by_host = {str(item.get("hostId")): dict(item) for item in (zone_scheme.get("supportSchemes", []) if isinstance(zone_scheme, dict) else [])}
+    support_scheme_by_host: dict[str, dict[str, Any]] = {}
+    for item in zone_scheme.get("supportSchemes", []) if isinstance(zone_scheme, dict) else []:
+        row = dict(item)
+        if row.get("hostId"):
+            support_scheme_by_host[str(row.get("hostId"))] = row
+        if row.get("hostCode"):
+            support_scheme_by_host[str(row.get("hostCode"))] = row
+    regenerated_support_scheme_count = 0
+    if retaining and list(zone_scheme.get("supportSchemes") or []):
+        missing_current_supports = [
+            support for support in retaining.supports
+            if support.id not in support_scheme_by_host and support.code not in support_scheme_by_host
+        ]
+        if missing_current_supports:
+            from app.services.rebar_scheme_optimizer import build_current_support_rebar_rows
+            current_rows = build_current_support_rebar_rows(project, mode=str(zone_scheme.get("mode") or "balanced"))
+            for item in current_rows:
+                row = dict(item)
+                if row.get("hostId"):
+                    support_scheme_by_host[str(row.get("hostId"))] = row
+                if row.get("hostCode"):
+                    support_scheme_by_host[str(row.get("hostCode"))] = row
+            regenerated_support_scheme_count = len(current_rows)
     support_contracts: list[dict[str, Any]] = []
     cages: list[dict[str, Any]] = []
+    repaired_wall_axis_count = 0
+    repaired_panel_geometry_count = 0
+    wall_panel_geometry_mismatch_count = 0
+    maximum_panel_geometry_deviation_m = 0.0
+    unresolved_wall_codes: list[str] = []
+    represented_wall_codes: set[str] = set()
+    wall_focus_selected = bool(
+        retaining and focus_host_id and any(
+            focus_host_id in {wall.id, wall.panel_code}
+            for wall in retaining.diaphragm_walls
+        )
+    )
+    wall_coverage_active = not focus_host_id or wall_focus_selected
     for zone in zone_scheme.get("wallZones", []) if isinstance(zone_scheme, dict) else []:
         wall_zones_by_host[str(zone.get("hostId"))].append(zone)
 
     if retaining:
-        for wall in retaining.diaphragm_walls:
+        for wall_index, wall in enumerate(retaining.diaphragm_walls):
+            if focus_host_id and focus_host_id not in {wall.id, wall.panel_code}:
+                continue
+            visual_wall, axis_source = _resolve_wall_for_visualization(project, wall, wall_index)
+            if axis_source and axis_source not in {"unresolved", "missing_excavation"}:
+                repaired_wall_axis_count += 1
+            if not _wall_axis_is_valid(visual_wall):
+                unresolved_wall_codes.append(str(wall.panel_code))
             host_bars: list[dict[str, Any]] = []
             wall_zones = wall_zones_by_host.get(wall.id, [])
-            cages.extend(_wall_cage_descriptors(wall, wall_zones, line_cap=int(getattr(project.design_settings, "rebar_cage_grid_max_lines_per_face", 140) or 140)))
+            wall_cages, panel_audit = _wall_cage_descriptors(
+                visual_wall,
+                wall_zones,
+                line_cap=int(getattr(project.design_settings, "rebar_cage_grid_max_lines_per_face", 140) or 140),
+                target_panel_length_m=float(getattr(project.design_settings, "wall_panel_target_length_m", 6.0) or 6.0),
+                minimum_panel_length_m=float(getattr(project.design_settings, "wall_panel_min_length_m", 3.0) or 3.0),
+                maximum_panel_length_m=float(getattr(project.design_settings, "wall_panel_max_length_m", 7.0) or 7.0),
+            )
+            cages.extend(wall_cages)
+            repaired_panel_geometry_count += int(panel_audit.get("repairedPanelCount") or 0)
+            if str(panel_audit.get("status") or "") in {"repaired", "rebuilt"}:
+                wall_panel_geometry_mismatch_count += 1
+            maximum_panel_geometry_deviation_m = max(
+                maximum_panel_geometry_deviation_m,
+                float(panel_audit.get("maximumStoredDeviationM") or 0.0),
+            )
             if wall_zones:
-                sampled, estimated = _add_wall_zone_rebars(host_bars, wall, wall_zones)
+                sampled, estimated = _add_wall_zone_rebars(host_bars, visual_wall, wall_zones)
                 tokens = sorted({str(face.get("token")) for zone in wall_zones for face in zone.get("faces", []) if face.get("token")})
                 group_count = sum(len(zone.get("faces", [])) + 2 for zone in wall_zones)
             else:
-                sampled, estimated = _add_wall_rebars(host_bars, wall)
+                sampled, estimated = _add_wall_rebars(host_bars, visual_wall)
                 tokens = [_group_token(g) for g in wall.reinforcement]
                 group_count = len(wall.reinforcement)
+            if wall_cages or sampled or estimated:
+                represented_wall_codes.add(str(wall.panel_code))
             _capture(
                 "diaphragm_wall",
                 wall.panel_code,
@@ -953,6 +1105,8 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
                 host_bars,
             )
         for beam in [*retaining.crown_beams, *retaining.wale_beams, *(retaining.ring_beams or [])]:
+            if focus_host_id and focus_host_id not in {beam.id, beam.code}:
+                continue
             host_bars = []
             sampled, estimated = _add_beam_rebars(host_bars, beam)
             if sampled or estimated:
@@ -966,10 +1120,21 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
                     host_bars,
                 )
         for support in retaining.supports:
+            if focus_host_id and focus_host_id not in {support.id, support.code}:
+                continue
             host_bars = []
-            resolved_groups, contract = _support_reinforcement_contract(support, support_scheme_by_host.get(support.id))
+            resolved_groups, contract = _support_reinforcement_contract(support, support_scheme_by_host.get(support.id) or support_scheme_by_host.get(support.code))
             sampled, estimated = _add_support_rebars(host_bars, support, resolved_groups)
             contract["sampledBarTypes"] = sorted({str(item.get("barType")) for item in host_bars})
+            sampled_stirrup_zones = sorted({str(item.get("stirrupZoneType")) for item in host_bars if item.get("barType") == "stirrup" and item.get("stirrupZoneType")})
+            required_stirrup_zones = ["end_left", "end_right"]
+            if any(group.bar_type == "stirrup" and group.zone_type == "middle_zone" and float(group.zone_length_m or 0.0) > 0.0 for group in resolved_groups):
+                required_stirrup_zones.append("middle")
+            contract["sampledStirrupZones"] = sampled_stirrup_zones
+            contract["requiredStirrupZones"] = required_stirrup_zones
+            contract["missingSampledStirrupZones"] = [zone for zone in required_stirrup_zones if zone not in sampled_stirrup_zones]
+            contract["stirrupPreviewStatus"] = "complete" if not contract["missingSampledStirrupZones"] else "incomplete"
+            contract["status"] = "complete" if not contract.get("missingBarTypes") and not contract.get("missingStirrupZones") and not contract["missingSampledStirrupZones"] else "incomplete"
             contract["sampledBarCount"] = sampled
             support_contracts.append(contract)
             append_event("rebar-contract", "support-contract-resolved", projectId=project.id, **contract)
@@ -983,6 +1148,8 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
                 host_bars,
             )
         for node in retaining.support_nodes or []:
+            if focus_host_id and focus_host_id not in {node.id, node.code}:
+                continue
             host_bars = []
             sampled, estimated = _add_node_rebars(host_bars, node)
             if sampled or estimated:
@@ -1058,20 +1225,32 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
         steel_mass_proxy_kg += area * float(bar.get("lengthM") or 0.0) * 7850.0
     support_types_present = sorted({str(bar.get("barType")) for bar in bars if str(bar.get("hostType")) == "internal_support"})
     support_types_missing = [name for name in _SUPPORT_EXPECTED_BAR_TYPES if name not in support_types_present]
-    incomplete_contracts = [item for item in support_contracts if item.get("missingBarTypes")]
+    incomplete_contracts = [item for item in support_contracts if item.get("status") != "complete"]
+    stirrup_zone_complete_contracts = [item for item in support_contracts if item.get("stirrupZoneStatus") == "complete" and item.get("stirrupPreviewStatus") == "complete"]
+    expected_wall_codes = {
+        str(wall.panel_code) for wall in (retaining.diaphragm_walls if retaining and wall_coverage_active else [])
+    }
+    missing_wall_codes = sorted(expected_wall_codes.difference(represented_wall_codes).union(unresolved_wall_codes))
     append_event(
-        "rebar-visualization", "visualization-built", projectId=project.id, maxBars=max_bars,
+        "rebar-visualization", "visualization-built", projectId=project.id, maxBars=max_bars, focusHostId=focus_host_id,
         sampledBarCount=len(bars), totalAvailableBarCount=total_available,
         supportBarTypesPresent=support_types_present, supportBarTypesMissing=support_types_missing,
         incompleteSupportContractCount=len(incomplete_contracts), supportCount=len(support_contracts),
+        regeneratedSupportSchemeCount=regenerated_support_scheme_count,
+        expectedWallHostCount=len(expected_wall_codes),
+        representedWallHostCount=len(represented_wall_codes), repairedWallAxisCount=repaired_wall_axis_count,
+        repairedPanelGeometryCount=repaired_panel_geometry_count,
+        wallPanelGeometryMismatchCount=wall_panel_geometry_mismatch_count,
+        maximumPanelGeometryDeviationM=round(maximum_panel_geometry_deviation_m, 4),
+        unresolvedWallCodes=missing_wall_codes,
         byBarType=dict(by_type), byHostType=dict(by_host), omittedHostCount=omitted_hosts,
     )
     return {
         "projectId": project.id,
         "exportProfileMapping": {
-            "designDetailed": "representative bars are exported as IfcReinforcingBar with Pset_ReinforcementGroup",
-            "constructionVisual": "same representative bars are exported as viewer-safe IfcBuildingElementProxy with Pset_ReinforcementVisualProxy",
-            "coordinationLight": "physical bar geometry is omitted; reinforcement remains as parameterized property sets on host elements",
+            "designDetailed": "设计深化模型：代表钢筋按 IfcReinforcingBar 导出，并保留钢筋组、直径、间距、分区和宿主关系。",
+            "constructionVisual": "施工可视模型：使用兼容性较好的代理实体表达同一批钢筋几何，便于通用 IFC 查看器浏览。",
+            "coordinationLight": "轻量协调模型：不输出逐根实体，仅在宿主构件属性中保留钢筋参数和关联关系。",
         },
         "summary": {
             "sampledBarCount": len(bars),
@@ -1085,24 +1264,36 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950) -> dict
             "supportBarTypesPresent": support_types_present,
             "supportBarTypesExpected": list(_SUPPORT_EXPECTED_BAR_TYPES),
             "supportBarTypesMissing": support_types_missing,
-            "supportContractCompleteCount": sum(1 for item in support_contracts if not item.get("missingBarTypes")),
+            "supportContractCompleteCount": sum(1 for item in support_contracts if item.get("status") == "complete"),
             "supportContractIncompleteCount": len(incomplete_contracts),
+            "supportStirrupZoneCompleteCount": len(stirrup_zone_complete_contracts),
+            "supportStirrupZoneIncompleteCount": len(support_contracts) - len(stirrup_zone_complete_contracts),
+            "supportStirrupPreviewCount": sum(1 for bar in bars if bar.get("hostType") == "internal_support" and bar.get("barType") == "stirrup"),
+            "regeneratedSupportSchemeCount": regenerated_support_scheme_count,
+            "expectedWallHostCount": len(expected_wall_codes),
+            "representedWallHostCount": len(represented_wall_codes),
+            "repairedWallAxisCount": repaired_wall_axis_count,
+            "repairedPanelGeometryCount": repaired_panel_geometry_count,
+            "wallPanelGeometryMismatchCount": wall_panel_geometry_mismatch_count,
+            "maximumPanelGeometryDeviationM": round(maximum_panel_geometry_deviation_m, 4),
+            "wallPlanGeometryStatus": "matched" if wall_panel_geometry_mismatch_count == 0 and not missing_wall_codes else "auto_repaired" if not missing_wall_codes else "unresolved",
+            "missingWallHostCodes": missing_wall_codes,
+            "focusHostId": focus_host_id,
             "byHostType": dict(by_host),
             "byCheckStatus": dict(by_status),
             "detailLevel": "construction_panel_cage_grid_plus_zone_linked_sampled_bars" if cages else ("zone_linked_sampled_bar_level" if wall_zones_by_host else "sampled_bar_level_from_parameterized_reinforcement_groups"),
             "zoneLinked": bool(wall_zones_by_host),
-            "officialDetailingLimit": "sampled browser geometry is linked to design zones and drawing references; full fabrication quantities, couplers, exact laps, hooks and cage lifting remain governed by CAD schedules and engineering review",
+            "officialDetailingLimit": "浏览器显示的是与设计分区和图纸编号关联的代表性钢筋；完整下料数量、套筒、精确搭接、弯钩及吊装仍以施工图钢筋表和专业复核为准。",
         },
         "bars": bars,
         "cages": cages,
         "hosts": host_summaries[:200],
         "supportContracts": support_contracts[:500],
         "notes": [
-            "The visualization is generated from the applied reinforcement design scheme and the same host object IDs used by IFC/CAD exports.",
-            "Applied wall-zone schemes display separate elevation ranges, inner/outer faces and drawing references; unapplied projects fall back to governing member groups.",
-            "Each diaphragm-wall construction panel is also represented by a cage-grid LOD using the governing actual bar spacing; selectable cylinders remain a sampled inspection layer.",
-            "estimatedFullBarCount records the implied full count while cage descriptors preserve panel, face, cover and spacing semantics.",
-            "Sampling is balanced across walls, beams, supports and nodes so support detailing remains visible in mixed scenes.",
-            "design_detailed.ifc keeps semantic IfcReinforcingBar entities; construction_visual.ifc uses proxy geometry for viewer reliability.",
+            "三维钢筋来自已应用的配筋方案，并与 IFC/CAD 导出使用相同的宿主构件编号。",
+            "水平支撑箍筋分别按 A 端加密区、跨中普通区和 B 端加密区生成，通用箍筋记录不会再被误判为分区完整。",
+            "地下连续墙钢筋笼网格按当前围护墙规范化平面路径和实际间距表达；历史槽段端点只作为审计信息，不再直接驱动几何。",
+            "估算完整数量记录理论逐根数量，近景模式可按单根支撑重新加载完整的分区样本。",
+            "设计深化 IFC 保留钢筋语义，施工可视 IFC 使用兼容代理几何。",
         ],
     }

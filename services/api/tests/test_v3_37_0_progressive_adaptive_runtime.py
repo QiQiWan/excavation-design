@@ -51,7 +51,7 @@ def _candidate(candidate_id: str = "C-1") -> dict:
     }
 
 
-def test_adaptive_policy_ignores_legacy_96mb_ceiling(monkeypatch) -> None:
+def test_adaptive_policy_respects_operator_96mb_ceiling(monkeypatch) -> None:
     import app.services.runtime_resource_policy as resource
 
     monkeypatch.setenv("PITGUARD_RESOURCE_POLICY_MODE", "adaptive")
@@ -67,7 +67,7 @@ def test_adaptive_policy_ignores_legacy_96mb_ceiling(monkeypatch) -> None:
         "processRssBytes": 512 * 1024**2,
     })
     policy = resource.adaptive_resource_policy(role="api")
-    assert policy["apiFullLoadLimitBytes"] > 96 * 1024**2
+    assert policy["apiFullLoadLimitBytes"] == 96 * 1024**2
     assert policy["workspaceFirst"] is True
     assert policy["recommendedHeavyConcurrency"] >= 1
 

@@ -49,8 +49,12 @@ def get_rebar_design_scheme(
     mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
-    from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
-    return build_rebar_design_scheme(repo.require_workspace_with_latest_calculation(project_id), mode=mode)
+    from app.services.rebar_scheme_optimizer import build_rebar_design_scheme, rebar_scheme_is_current
+    project = repo.require_workspace_with_latest_calculation(project_id)
+    stored = project.retaining_system.rebar_design_scheme if project.retaining_system and isinstance(project.retaining_system.rebar_design_scheme, dict) else {}
+    if rebar_scheme_is_current(project, stored, mode):
+        return stored
+    return build_rebar_design_scheme(project, mode=mode)
 
 
 @router.post("/apply-design-scheme")
@@ -59,43 +63,62 @@ def apply_design_scheme(
     payload: ApplyRebarSchemePayload = Body(default=ApplyRebarSchemePayload()),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
-    from app.services.beam_design_recovery import recover_missing_beam_designs
-    from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme
+    from app.services.rebar_scheme_optimizer import apply_rebar_design_scheme, rebar_scheme_is_current
     project = repo.require_with_latest_calculation(project_id)
-    beam_recovery = recover_missing_beam_designs(project)
+    execution_mode = str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower()
+    if payload.recalculate and execution_mode == "external":
+        # Never build a multi-thousand-row reinforcement preview inside the API
+        # process.  The isolated worker owns generation, section updates and any
+        # required recalculation; the API only queues and returns immediately.
+        queued_task = task_manager.submit(
+            project.id,
+            "rebar_design",
+            {"mode": payload.mode, "apply": True, "recalculate": True},
+        )
+        stored = project.retaining_system.rebar_design_scheme if project.retaining_system and isinstance(project.retaining_system.rebar_design_scheme, dict) else {}
+        if not rebar_scheme_is_current(project, stored, payload.mode):
+            stored = {}
+        return {
+            "projectId": project.id,
+            "mode": payload.mode,
+            "scheme": stored or {"projectId": project.id, "mode": payload.mode, "status": "queued", "summary": {}, "checks": []},
+            "retainingSystem": project.retaining_system,
+            "recalculated": False,
+            "recalculationCount": 0,
+            "recalculationQueued": True,
+            "calculationTask": queued_task.as_dict(include_logs=False),
+        }
     scheme = apply_rebar_design_scheme(project, mode=payload.mode)
-    recalculated = False
+    recalculation_count = 0
     queued_task = None
     if payload.recalculate and bool(scheme.get("requiresRecalculation")):
-        if str(os.getenv("PITGUARD_TASK_EXECUTION_MODE", "embedded")).strip().lower() == "external":
-            repo.save(project)
-            queued_task = task_manager.submit(project.id, "calculation_full", {"topN": 0})
-        else:
+        if execution_mode != "external":
             from app.services.intelligent_design_closure import run_intelligent_design_closure
             from app.services.calculation_state import mark_calculation_state_current
             from app.services.construction_stages import select_calculation_case_for_run
-            case, _stage_selection = select_calculation_case_for_run(project)
-            if not project.calculation_cases or project.calculation_cases[-1].id != case.id:
-                project.calculation_cases = [case]
-            result, _closure = run_intelligent_design_closure(
-                project,
-                case,
-                auto_repair=False,
-            )
-            project.calculation_results.append(result)
-            mark_calculation_state_current(project, result.id)
-            # Rebuild and reapply the final reinforcement using the updated member
-            # stiffness, force envelope and node bearing checks.
-            scheme = apply_rebar_design_scheme(project, mode=payload.mode)
-            recalculated = True
+            while bool(scheme.get("requiresRecalculation")) and recalculation_count < 3:
+                recalculation_count += 1
+                case, _stage_selection = select_calculation_case_for_run(project)
+                if not project.calculation_cases or project.calculation_cases[-1].id != case.id:
+                    project.calculation_cases = [case]
+                result, _closure = run_intelligent_design_closure(
+                    project,
+                    case,
+                    auto_repair=False,
+                )
+                project.calculation_results.append(result)
+                mark_calculation_state_current(project, result.id)
+                # Rebuild and reapply against the updated stiffness and force
+                # envelope until stable, with a bounded three-round closure.
+                scheme = apply_rebar_design_scheme(project, mode=payload.mode)
     repo.save(project)
     return {
         "projectId": project.id,
         "mode": payload.mode,
         "scheme": scheme,
         "retainingSystem": project.retaining_system,
-        "recalculated": recalculated,
-        "beamDesignRecovery": beam_recovery,
+        "recalculated": recalculation_count > 0,
+        "recalculationCount": recalculation_count,
         "recalculationQueued": queued_task is not None,
         "calculationTask": queued_task.as_dict(include_logs=False) if queued_task else None,
     }

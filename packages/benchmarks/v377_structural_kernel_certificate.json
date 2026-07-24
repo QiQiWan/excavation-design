@@ -1,0 +1,357 @@
+{
+  "schema": "pitguard-external-structural-kernel-certificate-v2",
+  "softwareVersion": "3.77.0",
+  "algorithmVersion": "3.77.0-accuracy-geotech-spatial-verification-statutory",
+  "structuralKernelVersion": "3.77.0-planar-plus-6dof-verification-kernel",
+  "referenceSoftware": "OpenSeesPy/OpenSees",
+  "status": "unavailable",
+  "caseCount": 3,
+  "passCount": 0,
+  "externalReference": {
+    "schema": "pitguard-opensees-benchmark-v3",
+    "softwareVersion": "3.77.0",
+    "algorithmVersion": "3.77.0-accuracy-geotech-spatial-verification-statutory",
+    "referenceSoftware": "OpenSeesPy/OpenSees",
+    "status": "unavailable",
+    "caseCount": 3,
+    "passCount": 0,
+    "unavailableCount": 3,
+    "failCount": 0,
+    "maximumRelativeDisplacementError": null,
+    "cases": [
+      {
+        "name": "asymmetric_portal_frame",
+        "status": "unavailable",
+        "pitguard": {
+          "status": "pass",
+          "displacements": {
+            "1": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "2": [
+              0.010900947489294186,
+              7.998682895812275e-06,
+              -0.002572234792513238
+            ],
+            "3": [
+              0.010851028166986802,
+              -2.299868289581227e-05,
+              -0.0025540823116741904
+            ],
+            "4": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "reactions": {
+            "1": [
+              -50.08067769261746,
+              -10.664910527749699,
+              88.83960209899678
+            ],
+            "4": [
+              -49.91932230738145,
+              30.664910527749694,
+              88.5007557900012
+            ]
+          },
+          "numericalGate": {
+            "status": "pass",
+            "blocked": false,
+            "conditionGrade": {
+              "grade": "A",
+              "status": "pass",
+              "label": "稳定",
+              "blocked": false,
+              "message": "尺度化矩阵条件数为 4.382e+02，数值等级 A（稳定）。"
+            },
+            "rawConditionNumber": 463.6546002523718,
+            "scaledConditionNumber": 438.2269449993353,
+            "rawConditionMethod": "symmetric_eigenvalue_ratio",
+            "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+            "rawEigenMin": 4329.016980388507,
+            "rawEigenMax": 2007168.637527763,
+            "scaledEigenMin": 0.0045534410823941385,
+            "scaledEigenMax": 1.9954405747720498,
+            "matrixRank": 6,
+            "matrixSize": 6,
+            "rankDeficient": false,
+            "positiveDefinite": true,
+            "regularized": false,
+            "regularization": 0.0,
+            "solveMethod": "scaled_direct",
+            "relativeResidual": 2.3050168316001745e-14,
+            "residualNorm": 2.3506651606978208e-12,
+            "scalingMin": 0.0008650527662236622,
+            "scalingMax": 0.005175491695067656,
+            "message": "尺度化求解通过。"
+          }
+        },
+        "reference": {
+          "status": "unavailable",
+          "reason": "No module named 'openseespy'"
+        },
+        "referenceSoftware": "OpenSeesPy"
+      },
+      {
+        "name": "closed_ring_with_radial_trusses",
+        "status": "unavailable",
+        "pitguard": {
+          "status": "pass",
+          "displacements": {
+            "1": [
+              5.064924890141271e-05,
+              7.4635281433283116e-06,
+              7.166907057341226e-06
+            ],
+            "2": [
+              2.621352814332832e-05,
+              -2.189633484481724e-06,
+              5.197676275992112e-06
+            ],
+            "3": [
+              -2.764668473421744e-05,
+              -4.33852814332831e-06,
+              5.1976762759921126e-06
+            ],
+            "4": [
+              -1.371352814332832e-05,
+              5.314633484481725e-06,
+              7.166907057341228e-06
+            ],
+            "5": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "6": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "7": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "8": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "reactions": {
+            "8": [
+              87.76658011730125,
+              0.0,
+              0.0
+            ],
+            "5": [
+              0.0,
+              -47.766580117301196,
+              0.0
+            ],
+            "6": [
+              -167.76658011730126,
+              0.0,
+              0.0
+            ],
+            "7": [
+              0.0,
+              27.766580117301185,
+              0.0
+            ]
+          },
+          "numericalGate": {
+            "status": "pass",
+            "blocked": false,
+            "conditionGrade": {
+              "grade": "A",
+              "status": "pass",
+              "label": "稳定",
+              "blocked": false,
+              "message": "尺度化矩阵条件数为 7.723e+00，数值等级 A（稳定）。"
+            },
+            "rawConditionNumber": 9.177195648171802,
+            "scaledConditionNumber": 7.722861327150777,
+            "rawConditionMethod": "symmetric_eigenvalue_ratio",
+            "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+            "rawEigenMin": 2177388.151775187,
+            "rawEigenMax": 19982317.070852086,
+            "scaledEigenMin": 0.23645139629776213,
+            "scaledEigenMax": 1.8260813442187895,
+            "matrixRank": 12,
+            "matrixSize": 12,
+            "rankDeficient": false,
+            "positiveDefinite": true,
+            "regularized": false,
+            "regularization": 0.0,
+            "solveMethod": "scaled_direct",
+            "relativeResidual": 3.6675684568189466e-16,
+            "residualNorm": 9.307245349850798e-14,
+            "scalingMin": 0.00026380954721579513,
+            "scalingMax": 0.00044721368494270386,
+            "message": "尺度化求解通过。"
+          }
+        },
+        "reference": {
+          "status": "unavailable",
+          "reason": "No module named 'openseespy'"
+        },
+        "referenceSoftware": "OpenSeesPy"
+      },
+      {
+        "name": "spatial_reduced_rotational_node",
+        "status": "unavailable",
+        "pitguard": {
+          "status": "pass",
+          "blocked": false,
+          "message": "节点三维转动平衡通过。",
+          "rotationsRad": [
+            0.00024221218228387447,
+            -0.00017875632392803326,
+            3.5702746365105006e-05
+          ],
+          "maximumAbsoluteRotationRad": 0.00024221218228387447,
+          "appliedMomentVectorKnm": [
+            850.0,
+            -430.0,
+            260.0
+          ],
+          "recoveredMomentVectorKnm": [
+            850.0000000000001,
+            -429.99999999999994,
+            260.0
+          ],
+          "equilibriumResidualVectorKnm": [
+            1.1368683772161603e-13,
+            5.684341886080802e-14,
+            0.0
+          ],
+          "relativeEquilibriumResidual": 1.2872499543670934e-16,
+          "stiffnessMatrixKnmPerRad": [
+            [
+              4158700.980392157,
+              879901.9607843141,
+              0.0
+            ],
+            [
+              879901.9607843141,
+              3597763.480392157,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              7282352.94117647
+            ]
+          ],
+          "numericalGate": {
+            "status": "pass",
+            "blocked": false,
+            "conditionGrade": {
+              "grade": "A",
+              "status": "pass",
+              "label": "稳定",
+              "blocked": false,
+              "message": "尺度化矩阵条件数为 1.589e+00，数值等级 A（稳定）。"
+            },
+            "rawConditionNumber": 2.4646577041242312,
+            "scaledConditionNumber": 1.588922563986846,
+            "rawConditionMethod": "symmetric_eigenvalue_ratio",
+            "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+            "rawEigenMin": 2954711.6944436366,
+            "rawEigenMax": 7282352.94117647,
+            "scaledEigenMin": 0.7725221402219437,
+            "scaledEigenMax": 1.2274778597780565,
+            "matrixRank": 3,
+            "matrixSize": 3,
+            "rankDeficient": false,
+            "positiveDefinite": true,
+            "regularized": false,
+            "regularization": 0.0,
+            "solveMethod": "scaled_direct",
+            "relativeResidual": 1.6282567094991301e-16,
+            "residualNorm": 1.6077746776921858e-13,
+            "scalingMin": 0.00037056477875049577,
+            "scalingMax": 0.0005272100682009657,
+            "message": "尺度化求解通过。"
+          },
+          "members": [
+            {
+              "beam": null,
+              "beamCode": "SP-1",
+              "momentVectorKnm": [
+                37.845653481855386,
+                -429.0151774272798,
+                85.68659127625202
+              ],
+              "torsionKnm": 37.845653481855386,
+              "outOfPlaneMomentKnm": -429.0151774272798,
+              "inPlaneEccentricMomentKnm": 85.68659127625202,
+              "torsionalRotationRad": 0.00024221218228387447,
+              "outOfPlaneRotationRad": -0.00017875632392803326,
+              "inPlaneRotationRad": 3.5702746365105006e-05,
+              "rigidZoneLengthM": 0.0,
+              "effectiveLengthM": 4.0,
+              "torsionStiffnessKnmPerRad": 156250.0,
+              "outOfPlaneBendingStiffnessKnmPerRad": 2400000.0,
+              "inPlaneBendingStiffnessKnmPerRad": 2400000.0
+            },
+            {
+              "beam": null,
+              "beamCode": "SP-2",
+              "momentVectorKnm": [
+                726.6365468516234,
+                -34.913344517194,
+                107.10823909531501
+              ],
+              "torsionKnm": -34.913344517194,
+              "outOfPlaneMomentKnm": -726.6365468516234,
+              "inPlaneEccentricMomentKnm": 107.10823909531501,
+              "torsionalRotationRad": -0.00017875632392803326,
+              "outOfPlaneRotationRad": -0.00024221218228387447,
+              "inPlaneRotationRad": 3.5702746365105006e-05,
+              "rigidZoneLengthM": 0.0,
+              "effectiveLengthM": 3.2,
+              "torsionStiffnessKnmPerRad": 195312.5,
+              "outOfPlaneBendingStiffnessKnmPerRad": 3000000.0,
+              "inPlaneBendingStiffnessKnmPerRad": 3000000.0
+            },
+            {
+              "beam": null,
+              "beamCode": "SP-3",
+              "momentVectorKnm": [
+                85.51779966652138,
+                33.928521944473864,
+                67.20516962843296
+              ],
+              "torsionKnm": -36.479128113775886,
+              "outOfPlaneMomentKnm": -84.46130399892401,
+              "inPlaneEccentricMomentKnm": 67.20516962843296,
+              "torsionalRotationRad": -0.0002976696854084112,
+              "outOfPlaneRotationRad": -4.487006774942836e-05,
+              "inPlaneRotationRad": 3.5702746365105006e-05,
+              "rigidZoneLengthM": 0.0,
+              "effectiveLengthM": 5.1,
+              "torsionStiffnessKnmPerRad": 122549.01960784315,
+              "outOfPlaneBendingStiffnessKnmPerRad": 1882352.9411764708,
+              "inPlaneBendingStiffnessKnmPerRad": 1882352.9411764708
+            }
+          ]
+        },
+        "reference": {
+          "status": "unavailable",
+          "reason": "No module named 'openseespy'"
+        },
+        "referenceSoftware": "OpenSeesPy"
+      }
+    ],
+    "scope": "linear 2D elasticBeamColumn/truss plus reduced 3D rotational-node benchmark; nonlinear geotechnical constitutive and global 6-DOF spatial verification remain separate",
+    "message": "OpenSeesPy is unavailable in the current runtime; no external-software equivalence claim is made."
+  },
+  "message": "OpenSeesPy was unavailable in the release runtime; no external equivalence claim is made and formal issue remains blocked."
+}

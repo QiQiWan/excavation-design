@@ -1,32 +1,61 @@
 import { useState } from 'react';
 import { api } from '../api/client';
-import type { ImportResult, Project } from '../types/domain';
+import type { ImportResult, PitTask, Project } from '../types/domain';
+import { waitForTaskWithHealth } from '../utils/taskPolling';
 
-export default function BoreholeImport({ project, onImported }: { project: Project; onImported: () => void }) {
+export default function BoreholeImport({ project, onImported }: { project: Project; onImported: () => void | Promise<void> }) {
   const [result, setResult] = useState<ImportResult | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [task, setTask] = useState<PitTask | undefined>();
+  const [busy, setBusy] = useState(false);
 
   async function handleFile(file?: File) {
-    if (!file) return;
+    if (!file || busy) return;
+    setBusy(true);
+    setResult(undefined);
+    setError(undefined);
     try {
-      setError(undefined);
-      const imported = await api.importBoreholes(project.id, file);
+      const created = await api.importBoreholesTask(project.id, file);
+      setTask(created);
+      const finished = await waitForTaskWithHealth(created, setTask, { timeoutMs: 20 * 60 * 1000 });
+      if (finished.status !== 'success') throw new Error(finished.error || `地勘解析未完成：${finished.status}`);
+      const imported = finished.result?.importResult as ImportResult | undefined;
+      if (!imported) throw new Error('地勘任务已结束，但没有返回解析结果。请查看 worker.log。');
       setResult(imported);
-      if (imported.success) onImported();
+      if (imported.success) await onImported();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    if (!task || !['queued', 'running'].includes(task.status)) return;
+    try {
+      setTask(await api.cancelTask(task.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
+  const taskActive = Boolean(task && ['queued', 'running'].includes(task.status));
+
   return (
     <div className="card">
-      <h3>钻孔 CSV 导入</h3>
-      <input aria-label="钻孔 CSV" type="file" accept=".csv" onChange={(event) => handleFile(event.target.files?.[0])} />
+      <h3>地质钻孔导入</h3>
+      <p className="muted">支持 CSV、XLSX 和 XLSM。上传后由独立 worker 解析，页面保持可响应；旧地质模型和旧计算证据会按工程版本规则失效。</p>
+      <input aria-label="地质钻孔文件" type="file" accept=".csv,.xlsx,.xlsm" disabled={busy} onChange={(event) => void handleFile(event.target.files?.[0])} />
+      {task ? <div className="importTaskProgress" aria-live="polite">
+        <div><strong>{task.currentStep || task.title}</strong><span>{Math.max(0, Math.min(100, Number(task.progress || 0)))}%</span></div>
+        <progress max={100} value={Math.max(0, Math.min(100, Number(task.progress || 0)))} />
+        {taskActive ? <button type="button" className="secondary compactButton" onClick={() => void cancel()}>取消导入</button> : null}
+      </div> : null}
       {error && <div className="error">{error}</div>}
       {result && (
-        <div>
-          <p>success={String(result.success)}；钻孔 {result.boreholeCount}；层数 {result.layerCount}；地层 {result.stratumCount}</p>
-          {result.errors.map((item) => <div key={item} className="error">{item}</div>)}
+        <div className={result.success ? 'successNotice' : 'error'}>
+          <p>{result.success ? '导入完成' : '数据校验未通过'}：钻孔 {result.boreholeCount}；分层 {result.layerCount}；地层 {result.stratumCount}</p>
+          {result.errors.map((item) => <div key={item}>{item}</div>)}
           {result.warnings.map((item) => <div key={item} className="warning">{item}</div>)}
         </div>
       )}

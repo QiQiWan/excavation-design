@@ -1,0 +1,28 @@
+{
+  "version": "3.87.4",
+  "validatedAt": "2026-07-24",
+  "checks": {
+    "pythonCompileAll": "passed",
+    "focusedBackendTests": {
+      "status": "passed",
+      "count": 76,
+      "groups": [
+        "workspace route and design-basis persistence",
+        "asynchronous borehole import",
+        "design qualification and topology recovery",
+        "intelligent design closure",
+        "workflow, roadmap and frontend source contracts"
+      ]
+    },
+    "typescriptSyntax": "passed",
+    "shellSyntax": "passed",
+    "fullBackendSuite": {
+      "status": "not_completed_in_packaging_container",
+      "reason": "15 drawing/export test modules require ezdxf, which is not installed in the packaging container. The project dependency manifest and startup checker include ezdxf; the user's target environment previously reported ezdxf 1.4.4 installed."
+    },
+    "frontendProductionBuild": {
+      "status": "not_completed_in_packaging_container",
+      "reason": "node_modules is intentionally excluded from the source package and dependency installation was unavailable in the offline packaging container. Changed TypeScript/TSX sources passed transpile syntax checks."
+    }
+  }
+}

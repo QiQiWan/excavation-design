@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
 from typing import Literal
@@ -13,6 +15,20 @@ from app.storage.repository import ProjectRepository, get_repository
 router = APIRouter(prefix="/api/projects/{project_id}/export", tags=["export"])
 
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
+
+
+def _record_export_manifest(project, key: str, path: Path, *, export_type: str, metadata: dict | None = None) -> dict:
+    payload = {
+        "schema": "pitguard-export-manifest-v387",
+        "exportType": export_type,
+        "fileName": path.name,
+        "fileSize": path.stat().st_size if path.exists() else 0,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "metadata": metadata or {},
+    }
+    project.advanced_engineering[key] = payload
+    return payload
 
 
 def _lazy_call(module: str, name: str, *args, **kwargs):
@@ -110,7 +126,9 @@ def export_ifc(
     repo: ProjectRepository = Depends(get_repository),
 ) -> FileResponse:
     project = repo.require(project_id)
-    path, _ = _export_ifc_with_check(project, mode)
+    path, check = _export_ifc_with_check(project, mode)
+    _record_export_manifest(project, "ifcExportManifest", path, export_type=f"ifc:{mode}", metadata={"checkStatus": getattr(check, "status", None)})
+    repo.save(project, action="export.ifc_manifest", summary=f"Record IFC {mode} export manifest")
     return FileResponse(path=path, filename=path.name, media_type="application/octet-stream")
 
 
@@ -165,10 +183,11 @@ def export_ifc_check(
 def export_ifc_rebar_visualization(
     project_id: str,
     max_bars: int = Query(2400, ge=50, le=5000, description="Maximum sampled bars returned for browser visualization"),
+    focus_host_id: str | None = Query(None, description="Optional host id/code for a complete single-component reinforcement preview"),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     project = repo.require(project_id)
-    return build_rebar_ifc_visualization(project, max_bars=max_bars)
+    return build_rebar_ifc_visualization(project, max_bars=max_bars, focus_host_id=focus_host_id)
 
 
 @router.post("/drawings-cad")
@@ -199,6 +218,8 @@ def export_drawings_cad(
             },
         )
     path = export_construction_cad_package(project, EXPORT_DIR, scope=scope, rebar_mode=rebar_mode, issue_mode=issue_mode)
+    _record_export_manifest(project, "drawingExportManifest", path, export_type=f"cad:{issue_mode}:{scope}", metadata={"rebarMode": rebar_mode})
+    repo.save(project, action="export.cad_manifest", summary="Record CAD drawing package manifest")
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
 
 
@@ -234,6 +255,14 @@ def export_rebar_detailing_zip(
 def export_report(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> FileResponse:
     project = repo.require(project_id)
     path = export_docx_report(project, EXPORT_DIR)
+    sections = [
+        "project_overview", "design_basis", "geology_groundwater", "surroundings", "parameters",
+        "scheme", "analysis_model", "loads", "design_stages", "wall_results", "support_results",
+        "stability", "reinforcement", "adverse_scenarios", "conclusions", "manual_review",
+    ]
+    project.advanced_engineering["calculationReportSections"] = sections
+    _record_export_manifest(project, "calculationReportManifest", path, export_type="docx_calculation_report", metadata={"sections": sections})
+    repo.save(project, action="export.report_manifest", summary="Record calculation report manifest")
     return FileResponse(path=path, filename=path.name, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
@@ -289,6 +318,8 @@ def export_formal_drawings(
             "diagnostics": scheme.get("diagnostics"), "drawingIssueGate": issue_gate,
         })
     path = export_formal_drawing_package(project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode)
+    _record_export_manifest(project, "formalDrawingManifest", path, export_type=f"formal_drawings:{issue_mode}", metadata={"rebarMode": rebar_mode})
+    repo.save(project, action="export.formal_drawing_manifest", summary="Record formal drawing package manifest")
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
 
 
@@ -320,4 +351,6 @@ def export_coordinated_delivery(
             "message": str(exc),
             "releaseReadiness": evaluate_delivery_release_readiness(project, issue_mode=issue_mode),
         }) from exc
+    _record_export_manifest(project, "coordinatedDeliveryManifest", path, export_type=f"coordinated_delivery:{issue_mode}", metadata={"rebarMode": rebar_mode, "includeIfcProfiles": include_ifc_profiles})
+    repo.save(project, action="export.coordinated_delivery_manifest", summary="Record coordinated delivery package manifest")
     return FileResponse(path=path, filename=path.name, media_type="application/zip")

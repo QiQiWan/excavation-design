@@ -1,0 +1,127 @@
+{
+  "schema": "pitguard-v3872-integrity-evaluation-v1",
+  "version": {
+    "softwareVersion": "3.87.2",
+    "algorithmVersion": "3.87.0-design-core-governance-joint-optimization-detailing-delivery",
+    "ruleSetVersion": "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence",
+    "exportSchemaVersion": "3.87",
+    "structuralKernelVersion": "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel",
+    "resultPipelineVersion": "3.87.2-nine-stage-design-core-integrity-preview-v3-workspace-summary"
+  },
+  "durationSeconds": 0.852,
+  "candidateCount": 3,
+  "candidates": [
+    {
+      "rank": 1,
+      "candidateId": "slopt-zoned-direct-compact-elbow-ring-t4p5-c15p0-as_generated-0p0",
+      "template": "compact_elbow_ring",
+      "supportCount": 72,
+      "columnCount": 19,
+      "transferBeamCount": 18,
+      "transferZoneCount": 1,
+      "compactPreviewSchema": "candidate-plan-v3",
+      "previewIntegrity": {
+        "status": "complete",
+        "message": "预览已完整保留普通支撑、转接梁、闭合环梁和立柱。",
+        "truncated": false,
+        "truncation": {
+          "outline": false,
+          "supports": false,
+          "columns": false,
+          "transferBeams": false,
+          "transferZones": false,
+          "obstacles": false
+        },
+        "invalidPointCount": 0,
+        "invalidMemberCount": 0,
+        "expectedTransferSystem": true,
+        "transferGeometryPresent": true
+      },
+      "compactSupportCount": 72,
+      "compactColumnCount": 19,
+      "compactTransferBeamCount": 18,
+      "compactTransferZoneCount": 1,
+      "closedGeometryRetained": true
+    },
+    {
+      "rank": 2,
+      "candidateId": "slopt-zoned-direct-junction-hub-frame-t5p0-c15p0-as_generated-0p0",
+      "template": "junction_hub_frame",
+      "supportCount": 72,
+      "columnCount": 22,
+      "transferBeamCount": 30,
+      "transferZoneCount": 1,
+      "compactPreviewSchema": "candidate-plan-v3",
+      "previewIntegrity": {
+        "status": "complete",
+        "message": "预览已完整保留普通支撑、转接梁、闭合环梁和立柱。",
+        "truncated": false,
+        "truncation": {
+          "outline": false,
+          "supports": false,
+          "columns": false,
+          "transferBeams": false,
+          "transferZones": false,
+          "obstacles": false
+        },
+        "invalidPointCount": 0,
+        "invalidMemberCount": 0,
+        "expectedTransferSystem": true,
+        "transferGeometryPresent": true
+      },
+      "compactSupportCount": 72,
+      "compactColumnCount": 22,
+      "compactTransferBeamCount": 30,
+      "compactTransferZoneCount": 1,
+      "closedGeometryRetained": true
+    },
+    {
+      "rank": 3,
+      "candidateId": "slopt-zoned-direct-ring-chord-frame-t4p5-c18p0-as_generated-0p0",
+      "template": "ring_chord_frame",
+      "supportCount": 72,
+      "columnCount": 22,
+      "transferBeamCount": 24,
+      "transferZoneCount": 1,
+      "compactPreviewSchema": "candidate-plan-v3",
+      "previewIntegrity": {
+        "status": "complete",
+        "message": "预览已完整保留普通支撑、转接梁、闭合环梁和立柱。",
+        "truncated": false,
+        "truncation": {
+          "outline": false,
+          "supports": false,
+          "columns": false,
+          "transferBeams": false,
+          "transferZones": false,
+          "obstacles": false
+        },
+        "invalidPointCount": 0,
+        "invalidMemberCount": 0,
+        "expectedTransferSystem": true,
+        "transferGeometryPresent": true
+      },
+      "compactSupportCount": 72,
+      "compactColumnCount": 22,
+      "compactTransferBeamCount": 24,
+      "compactTransferZoneCount": 1,
+      "closedGeometryRetained": true
+    }
+  ],
+  "frontend": {
+    "singleStylesheetEntry": true,
+    "designCoreCssPresent": true,
+    "statusTextDeclarationCount": 1,
+    "sharedCandidateSanitizer": true
+  },
+  "parameters": {
+    "softwareSuggestionFormalEligible": false,
+    "standardWithoutReferenceFormalEligible": false,
+    "formalBlockerCount": 11
+  },
+  "api": {
+    "bundleSchemaPresent": true,
+    "readEndpointSaveRemoved": true
+  },
+  "passed": true
+}

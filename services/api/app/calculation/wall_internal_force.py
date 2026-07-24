@@ -93,6 +93,7 @@ def analyze_wall_on_elastic_foundation(
     wall_stiffness_factor: float = 1.0,
     soil_modulus_factor: float = 1.0,
     support_stiffness_factor: float = 1.0,
+    support_stiffness_overrides_kn_per_m: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Finite-difference beam-on-elastic-foundation wall analysis.
 
@@ -117,6 +118,7 @@ def analyze_wall_on_elastic_foundation(
         water_soil_method="separate",
     )
     transferred_supports = list(transferred_supports or [])
+    support_stiffness_overrides_kn_per_m = dict(support_stiffness_overrides_kn_per_m or {})
     wall_restraints = [*supports, *transferred_supports]
     supports_depth = [top_elevation - s.elevation for s in wall_restraints if 0.0 < top_elevation - s.elevation < wall_depth]
     n = max(31, min(121, int(math.ceil(wall_depth / step)) + 1))
@@ -169,7 +171,9 @@ def analyze_wall_on_elastic_foundation(
     if 0 in support_indices:
         top_level_stiffness = 0.0
         for support, stiffness_factor, _source in support_indices[0]:
-            if support_spring_kn_per_m is not None:
+            if support.id in support_stiffness_overrides_kn_per_m:
+                support_k = float(support_stiffness_overrides_kn_per_m[support.id])
+            elif support_spring_kn_per_m is not None:
                 support_k = float(support_spring_kn_per_m)
             elif segment is not None:
                 support_k, _projection = support_spring_stiffness(support, segment)
@@ -244,7 +248,9 @@ def analyze_wall_on_elastic_foundation(
     distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
     for idx, support_list in support_indices.items():
         for support, stiffness_factor, source in support_list:
-            if support_spring_kn_per_m is not None:
+            if support.id in support_stiffness_overrides_kn_per_m:
+                support_k = float(support_stiffness_overrides_kn_per_m[support.id])
+            elif support_spring_kn_per_m is not None:
                 support_k = float(support_spring_kn_per_m)
             elif segment is not None:
                 support_k, _projection = support_spring_stiffness(support, segment)

@@ -16,10 +16,6 @@ export interface CoordinateSystem {
 
 export interface DesignSettings {
   designBasisConfirmed?: boolean;
-  designIntentConfirmed?: boolean;
-  designIntentGoal?: 'quick_scheme' | 'standard_design' | 'formal_issue';
-  designObjective?: 'balanced' | 'safety_first' | 'economy_first';
-  designIntentSource?: 'guided_recommendation' | 'professional_override';
   projectGrade?: '一级' | '二级' | '三级';
   excavationSafetyLevel?: '一级' | '二级' | '三级';
   siteComplexity?: '简单' | '中等' | '复杂';
@@ -173,6 +169,18 @@ export interface BoreholeLayer {
   bottomElevation: number;
 }
 
+export interface GroundwaterRecord {
+  id: string;
+  waterLevel: number;
+  description?: string;
+  observedAt?: string;
+  sourceFile?: string;
+  sourceFileSha256?: string;
+  sourceArtifactId?: string;
+  quality?: 'verified' | 'provisional' | 'rejected';
+  verifiedBy?: string;
+}
+
 export interface Borehole {
   id: string;
   code: string;
@@ -181,6 +189,12 @@ export interface Borehole {
   collarElevation: number;
   depth: number;
   layers: BoreholeLayer[];
+  waterLevels?: GroundwaterRecord[];
+  sourceFile?: string;
+  sourceFileSha256?: string;
+  sourceArtifactId?: string;
+  sourceDocumentRevision?: string;
+  sourceVerified?: boolean;
 }
 
 export interface Stratum {
@@ -441,17 +455,18 @@ export interface DrawingSheetResult { sheetId: string; title: string; scale: str
 
 
 export interface RebarVisualizationPoint { x: number; y: number; z: number }
-export interface RebarVisualizationBar { id: string; ifcClass: string; hostType: string; hostCode: string; hostId: string; groupId: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; count?: number; grade: string; locationDescription?: string; checkStatus?: string; start: RebarVisualizationPoint; end: RebarVisualizationPoint; points?: RebarVisualizationPoint[]; lengthM: number; representation: string; shapeKind?: string; estimatedFullCount?: number; sampledFromCount?: number; zoneId?: string; zoneType?: string; face?: string; drawingRefs?: string[]; envelopeSource?: string; zoneTopElevation?: number; zoneBottomElevation?: number }
+export interface RebarVisualizationBar { id: string; ifcClass: string; hostType: string; hostCode: string; hostId: string; groupId: string; groupName: string; barType: string; diameterMm: number; spacingMm?: number; count?: number; grade: string; locationDescription?: string; checkStatus?: string; start: RebarVisualizationPoint; end: RebarVisualizationPoint; points?: RebarVisualizationPoint[]; lengthM: number; representation: string; shapeKind?: string; estimatedFullCount?: number; sampledFromCount?: number; zoneId?: string; zoneType?: string; face?: string; drawingRefs?: string[]; envelopeSource?: string; zoneTopElevation?: number; zoneBottomElevation?: number; stirrupZoneType?: 'end_left' | 'middle' | 'end_right' | string; stirrupZoneLabel?: string; zoneStartM?: number; zoneEndM?: number; previewStationM?: number; geometricLegCount?: number; designSource?: string }
 export interface RebarVisualizationHost { hostType: string; hostCode: string; groupCount: number; sampledBarCount: number; estimatedFullBarCount: number; tokens: string[] }
 export interface RebarVisualizationCageFace { face: 'inner' | 'outer' | string; diameterMm: number; spacingMm: number; estimatedVerticalBarCount: number }
-export interface RebarVisualizationCage { id: string; hostId: string; hostCode: string; panelCode: string; panelIndex: number; start: RebarVisualizationPoint; end: RebarVisualizationPoint; topElevation: number; bottomElevation: number; heightM: number; panelLengthM: number; thicknessM: number; coverM: number; faces: RebarVisualizationCageFace[]; horizontal: { diameterMm: number; spacingMm: number; estimatedBarCountPerFace?: number }; ties: { diameterMm: number; spacingMm: number }; zoneIds: string[]; jointType?: string; jointMarkers?: { end: string; point: RebarVisualizationPoint; jointType?: string }[]; liftingPoints?: { id: string; ratio: number; point: RebarVisualizationPoint; reviewRequired?: boolean }[]; spliceZones?: { elevation: number; type: string; reviewRequired?: boolean }[]; segmentCount?: number; cageStatus?: string; liftingReviewRequired?: boolean; displayLineCap?: number; representation?: string }
-export interface RebarSupportContract { hostId: string; hostCode: string; expectedBarTypes: string[]; sourceBarTypes: string[]; resolvedBarTypes: string[]; synthesizedBarTypes: string[]; missingBarTypes: string[]; sampledBarTypes?: string[]; sampledBarCount?: number; schemeRowFound: boolean; status: string }
-export interface RebarIfcVisualization { projectId: string; exportProfileMapping: Record<string, string>; summary: { sampledBarCount: number; estimatedFullBarCount: number; cageCount?: number; constructionPanelCount?: number; hostCount: number; omittedHostCount?: number; steelMassProxyKg?: number; byBarType: Record<string, number>; supportBarTypesPresent?: string[]; supportBarTypesExpected?: string[]; supportBarTypesMissing?: string[]; supportContractCompleteCount?: number; supportContractIncompleteCount?: number; byHostType: Record<string, number>; byCheckStatus: Record<string, number>; detailLevel: string; officialDetailingLimit?: string }; bars: RebarVisualizationBar[]; cages?: RebarVisualizationCage[]; hosts: RebarVisualizationHost[]; supportContracts?: RebarSupportContract[]; notes: string[] }
+export interface RebarVisualizationCage { id: string; hostId: string; hostCode: string; panelCode: string; panelIndex: number; start: RebarVisualizationPoint; end: RebarVisualizationPoint; planPath?: RebarVisualizationPoint[]; topElevation: number; bottomElevation: number; heightM: number; panelLengthM: number; thicknessM: number; coverM: number; faces: RebarVisualizationCageFace[]; horizontal: { diameterMm: number; spacingMm: number; estimatedBarCountPerFace?: number }; ties: { diameterMm: number; spacingMm: number }; zoneIds: string[]; jointType?: string; jointMarkers?: { end: string; point: RebarVisualizationPoint; jointType?: string }[]; liftingPoints?: { id: string; ratio: number; point: RebarVisualizationPoint; reviewRequired?: boolean }[]; spliceZones?: { elevation: number; type: string; reviewRequired?: boolean }[]; segmentCount?: number; cageStatus?: string; liftingReviewRequired?: boolean; displayLineCap?: number; representation?: string; planGeometryRepresentation?: string; geometrySource?: string; geometryStatus?: string; storedGeometryDeviationM?: number }
+export interface SupportTransverseDesign { status?: string; calculationStatus?: string; evidenceStatus?: string; designShearKn?: number; concreteCapacityKn?: number; stirrupCapacityKn?: number; totalCapacityKn?: number; utilization?: number; targetUtilization?: number; maximumConstructuralSpacingMm?: number; effectiveLegCount?: number; geometricLegCount?: number; endZone?: { lengthM?: number; diameterMm?: number; spacingMm?: number; token?: string }; middleZone?: { lengthM?: number; diameterMm?: number; spacingMm?: number; token?: string }; formula?: string; engineeringNote?: string; governingCriteria?: string[] }
+export interface RebarSupportContract { hostId: string; hostCode: string; expectedBarTypes: string[]; sourceBarTypes: string[]; resolvedBarTypes: string[]; synthesizedBarTypes: string[]; missingBarTypes: string[]; sampledBarTypes?: string[]; sampledBarCount?: number; schemeRowFound: boolean; stirrupZoneStatus?: string; missingStirrupZones?: string[]; sampledStirrupZones?: string[]; requiredStirrupZones?: string[]; missingSampledStirrupZones?: string[]; stirrupPreviewStatus?: string; stirrupZones?: Record<string, Record<string, unknown>[]>; transverseDesign?: SupportTransverseDesign; status: string }
+export interface RebarIfcVisualization { projectId: string; exportProfileMapping: Record<string, string>; summary: { sampledBarCount: number; estimatedFullBarCount: number; cageCount?: number; constructionPanelCount?: number; hostCount: number; omittedHostCount?: number; steelMassProxyKg?: number; byBarType: Record<string, number>; supportBarTypesPresent?: string[]; supportBarTypesExpected?: string[]; supportBarTypesMissing?: string[]; supportContractCompleteCount?: number; supportContractIncompleteCount?: number; supportStirrupZoneCompleteCount?: number; supportStirrupZoneIncompleteCount?: number; supportStirrupPreviewCount?: number; regeneratedSupportSchemeCount?: number; expectedWallHostCount?: number; representedWallHostCount?: number; repairedWallAxisCount?: number; repairedPanelGeometryCount?: number; wallPanelGeometryMismatchCount?: number; maximumPanelGeometryDeviationM?: number; wallPlanGeometryStatus?: string; missingWallHostCodes?: string[]; focusHostId?: string; byHostType: Record<string, number>; byCheckStatus: Record<string, number>; detailLevel: string; officialDetailingLimit?: string }; bars: RebarVisualizationBar[]; cages?: RebarVisualizationCage[]; hosts: RebarVisualizationHost[]; supportContracts?: RebarSupportContract[]; notes: string[] }
 
 export interface QualityGateIssue { id?: string; category: string; severity: string; objectId?: string; objectType?: string; message: string; recommendation?: string; highlightGeometry?: Record<string, unknown>; relatedObjectIds?: string[]; displayHint?: string }
 export interface SupportLayoutQualitySummary { score: number; status: string; summary: string; metrics: Record<string, unknown>; issues: QualityGateIssue[]; highlights?: Record<string, unknown>[]; crossingPairs?: Record<string, unknown>[]; checkedAt?: string }
 export interface SupportLayoutOptimizationCandidate { id?: string; rank: number; score: number; status: string; targetSpacing: number; columnMaxSpan: number; objectiveTerms: Record<string, number>; softObjectives?: Record<string, number>; hardConstraints?: Record<string, unknown>; variableSummary?: Record<string, unknown>; lineAdjustments?: Record<string, unknown>[]; planGeometry?: Record<string, unknown>; deltaGeometry?: Record<string, unknown>; weightSummary?: Record<string, unknown>; exportReadiness?: Record<string, unknown>; metrics: Record<string, unknown>; issueCount: number; failCount: number; warningCount: number; supportCount: number; columnCount: number; maxSpanLength?: number; maxBaySpacing?: number; crossingCount?: number; junctionCount?: number; highDegreeJunctionCount?: number; wallJunctionCount?: number; planIntersectionComplexity?: number; obstacleConflictCount?: number; axialPeakProxy?: number; symmetryScore?: number; muckPathContinuityScore?: number; fullCalculation?: Record<string, unknown>; constructabilityNote?: string }
-export interface SupportLayoutRepairSummary { optimizationMethod?: string; optimizationPhase?: string; hardConstraintLabels?: string[]; softObjectiveLabels?: string[]; objectiveWeights?: Record<string, number>; candidateCount?: number; bestCandidateId?: string; selectedCandidateId?: string; lockedSupportIds?: string[]; lockSummary?: Record<string, unknown>; candidates?: SupportLayoutOptimizationCandidate[]; candidateFullCalculations?: Record<string, unknown>[]; status: string; scoreBefore?: number; scoreAfter?: number; actions: Record<string, unknown>[]; unresolvedIssues: QualityGateIssue[]; summary: string; checkedAt?: string }
+export interface SupportLayoutRepairSummary { optimizationMethod?: string; optimizationPhase?: string; candidateSourceHash?: string; candidateState?: 'not_generated' | 'formal_ready' | 'diagnostic_only' | 'stale'; formalCandidateCount?: number; controlledCandidateCount?: number; staleCandidateCount?: number; comparisonEligibility?: Record<string, unknown>; hardConstraintLabels?: string[]; softObjectiveLabels?: string[]; objectiveWeights?: Record<string, number>; candidateCount?: number; bestCandidateId?: string; selectedCandidateId?: string; lockedSupportIds?: string[]; lockSummary?: Record<string, unknown>; candidates?: SupportLayoutOptimizationCandidate[]; candidateFullCalculations?: Record<string, unknown>[]; status: string; scoreBefore?: number; scoreAfter?: number; actions: Record<string, unknown>[]; unresolvedIssues: QualityGateIssue[]; summary: string; checkedAt?: string }
 export interface IfcViewerProfileRisk { viewer: string; status: string; riskLevel: string; score: number; riskItems: string[]; recommendation?: string }
 export interface IfcCompatibilityCheckResult { score: number; status: string; summary: string; filePath?: string; exportMode?: string; entityCounts: Record<string, number>; rawUnicodeFound?: boolean; missingReferences?: string[]; zeroDimensionCount?: number; invalidPlacementCount?: number; missingMaterialAssociationCount?: number; missingSpatialContainmentCount?: number; viewerProfiles?: IfcViewerProfileRisk[]; issues: QualityGateIssue[]; checkedAt?: string }
 export interface FormalReportGate { status: string; allowedForOfficialIssue: boolean; headline: string; blockingItems: QualityGateIssue[]; warningItems: QualityGateIssue[]; missingItems: QualityGateIssue[]; checklistSections?: Record<string, unknown>[]; summary: Record<string, unknown>; checkedAt?: string }
@@ -474,7 +489,98 @@ export interface ConstructionStage {
   groundwaterLevelInside?: number;
   groundwaterLevelOutside?: number;
   surcharge: number;
+  sourceDocument?: string;
+  sourceDocumentSha256?: string;
+  sourceArtifactId?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  dataStatus?: 'draft' | 'verified' | 'superseded';
 }
+export interface DesignControlStage {
+  id: string;
+  name: string;
+  designBasisRevisionId: string;
+  excavationElevationLower: number;
+  excavationElevationUpper: number;
+  requiredSupportIds: string[];
+  permittedInactiveSupportIds: string[];
+  groundwaterLevelLimit?: number;
+  surchargeLimit?: number;
+  preloadTarget?: number;
+  preloadLower?: number;
+  preloadUpper?: number;
+  overexcavationLimit?: number;
+  stiffnessReductionLimit?: number;
+  holdPoints: string[];
+  designScenarioIds: string[];
+  sourceCalculationCaseId?: string;
+  sourceStageId?: string;
+  stageType: ConstructionStageType;
+  zone?: string;
+  revision: number;
+  dataStatus: 'draft' | 'approved' | 'frozen' | 'superseded';
+  valueType: 'design_value' | 'design_limit' | 'design_assumption';
+  createdAt?: string;
+  updatedAt?: string;
+}
+export interface DesignScenario {
+  id: string; code: string; name: string; stageId?: string; category: string; enabled: boolean;
+  parameterOverrides: Record<string, unknown>; assumptions: string[]; source: 'auto_generated' | 'user_defined';
+  approvalStatus: 'draft' | 'approved' | 'rejected'; createdAt?: string;
+}
+export interface ConstructionPlanStage {
+  id: string; designControlStageId: string; contractorRevision: string; plannedStart?: string; plannedFinish?: string;
+  plannedExcavationElevation?: number; plannedSupportIds: string[]; plannedPreloads: Record<string, number>;
+  plannedGroundwaterLevel?: number; plannedSurcharge?: number; methodStatementId?: string;
+  approvalStatus: 'draft' | 'submitted' | 'approved' | 'rejected' | 'superseded'; submittedBy?: string; note?: string; createdAt?: string; updatedAt?: string;
+}
+export interface FieldExecutionSnapshot {
+  id: string; constructionPlanStageId: string; observedAt: string; actualExcavationElevation?: number; activeSupportIds: string[];
+  measuredPreloads: Record<string, number>; groundwaterLevels: Record<string, number>; concreteStrengths: Record<string, number>;
+  monitoringSnapshotId?: string; evidenceFileIds: string[]; quality: 'verified' | 'provisional' | 'rejected'; source: string; note?: string;
+}
+export interface DeviationEvent {
+  id: string; deviationType: string; designControlStageId?: string; constructionPlanStageId?: string; fieldSnapshotId?: string;
+  affectedStageIds: string[]; affectedMemberIds: string[]; designLimit?: number; plannedValue?: number; observedValue?: number;
+  severity: 'info' | 'warning' | 'major' | 'critical'; workHoldRequired: boolean; recalculationRequired: boolean; designerResponseRequired: boolean;
+  responsibleParty: string; status: 'open' | 'assigned' | 'responded' | 'accepted' | 'closed'; resolution?: string; createdAt?: string; updatedAt?: string;
+}
+export interface WorkflowGateItem {
+  code: string; label: string; status: string; blocking: boolean; responsibility: string; affects: string; action: string; detail?: unknown;
+}
+export interface WorkflowGate {
+  schema: string; status: string; eligible: boolean; readiness: number; items: WorkflowGateItem[]; blockingCodes: string[]; boundary: string;
+}
+export interface BusinessWorkflowOverview {
+  schema: string; designIssue: WorkflowGate; constructionPreparation: WorkflowGate; fieldExecution: WorkflowGate;
+  counts: { designControlStages: number; designScenarios: number; constructionPlanStages: number; fieldSnapshots: number; openDeviationEvents: number };
+  responsibilityBoundary: { domain: string; owner: string; output: string }[]; evaluatedAt: string;
+}
+
+
+export interface DesignCoreStage {
+  stageId: string; title: string; status: string; readiness: number; blockers: string[]; warnings: string[]; metrics: Record<string, unknown>; nextActions: string[];
+}
+export interface DesignCoreOverview {
+  schema: string; version: string; productPositioning: string; overallReadiness: number; status: string; stages: DesignCoreStage[];
+  externalCollaboration: { recordCount: number; openDesignReviewRequestCount: number; boundary: string };
+  legacyConstructionFieldModules: Record<string, unknown>; productionQualification: Record<string, unknown>;
+}
+export interface ParameterGovernanceRecord {
+  id: string; parameterKey: string; displayName: string; value?: unknown; unit?: string; sourceType: string; sourceReference?: string;
+  confidence: string; confirmationStatus: string; formalDesignAllowed: boolean; affects: string[]; critical: boolean; usableForFormalDesign: boolean;
+  sourceEligibleForFormalDesign: boolean; formalEligibilityReason?: string; impactCount?: number;
+}
+export interface ParameterGovernance {
+  schema: string; status: string; total: number; confirmed: number; formalAllowed: number; formalBlockerCount: number; formalBlockerKeys: string[]; sourceCounts: Record<string, number>; records: ParameterGovernanceRecord[]; impactPolicy: string;
+}
+export interface ExternalCollaborationRecord {
+  id: string; category: 'construction_reference' | 'field_feedback' | 'monitoring_report' | 'other'; title: string; sourceParty?: string; receivedAt?: string; summary: string; affectedObjectIds: string[]; fileIds: string[]; designReviewRequired: boolean; status: string;
+}
+export interface DesignReviewRequestRecord {
+  id: string; title: string; sourceRecordId?: string; sourceParty?: string; description: string; affectedObjectIds: string[]; originalDesignCondition?: string; exceedsDesignBoundary?: boolean; recalculationRequired: boolean; designChangeRequired: boolean; status: string; designResponse?: string; responseRevision: number;
+}
+
 export interface CalculationCase {
   id: string;
   name: string;
@@ -496,6 +602,8 @@ export interface ConstructionStageWorkspace {
   validation: { status: string; valid: boolean; failCount: number; warningCount: number; stageCount: number; issues: ConstructionStageIssue[] };
   supportOptions: { id: string; code: string; levelIndex: number; elevation: number; role?: string }[];
   inputGuide: { field: string; label: string; source: string; location: string; provider: string; designStageAvailable: boolean; action: string }[];
+  semanticType?: 'design_control_stage' | 'legacy_construction_stage';
+  responsibilityBoundary?: string;
 }
 
 export interface StageCalculationResult { stageId: string; segmentId: string; pressureProfile: PressureProfile; supportForces: SupportForceResult[]; waleBeamResults?: WaleBeamInternalForceResult[]; coupledSystemResult?: Record<string, unknown>; globalCoupledResult?: GlobalCoupledSystemResult; wallInternalForce?: WallInternalForceResult; wallInternalForcePlaceholder?: Record<string, unknown>; stabilityChecks?: CheckResult[]; rcChecks?: CheckResult[]; checks: CheckResult[] }
@@ -509,6 +617,10 @@ export interface CalculationResult {
   calculationContractId?: string;
   resultHash?: string;
   calculationAssurance?: Record<string, any>;
+  calculationExecution?: Record<string, any>;
+  numericalHealth?: Record<string, any>;
+  resultCompleteness?: Record<string, any>;
+  resultCatalog?: Record<string, any>;
   deliveryReadiness?: Record<string, any>;
   stageResultSummary?: Record<string, any>;
   stageResults: StageCalculationResult[];
@@ -566,6 +678,11 @@ export interface Project {
   excavation?: ExcavationModel;
   retainingSystem?: RetainingSystem;
   calculationCases: CalculationCase[];
+  designControlStages?: DesignControlStage[];
+  designScenarios?: DesignScenario[];
+  constructionPlanStages?: ConstructionPlanStage[];
+  fieldExecutionSnapshots?: FieldExecutionSnapshot[];
+  deviationEvents?: DeviationEvent[];
   calculationResults: CalculationResult[];
   cadTemplate?: CadTemplateConfig;
   drawingRuleSet?: DrawingRuleSet;
@@ -889,6 +1006,12 @@ export interface OnlineDocumentation {
   version: string;
   chapters: { id: string; title: string; summary: string }[];
   calculationPrinciples: { name: string; inputs: string; method: string; equations?: string[]; assumptions?: string[]; outputs: string; verification?: string; standards: string[] }[];
+  analysisLevels: { level: string; name: string; use: string }[];
+  complianceSemantics: { type: string; label: string; formalUse: boolean; description: string }[];
+  statutoryWorkflow: { classification: string; evidence: string[]; issueGate: string; references?: { title: string; url: string }[] };
+  responsibilityWorkflow?: { principle: string; domains: { id: string; name: string; owner: string; objects: string[]; gate: string }[]; valueTypes: string[]; deviationLogic: string };
+  releaseRoadmap: { version: string; focus: string }[];
+  recoveryGuide?: { release: string; fixed: string[]; deployment: string[]; acceptance: string[] };
   fileGuide: { file: string; use: string }[];
   standardsMatrix: StandardsProcessMatrix;
 }

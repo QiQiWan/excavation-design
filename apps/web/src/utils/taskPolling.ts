@@ -19,6 +19,7 @@ export async function waitForTaskWithHealth(
   const staleHeartbeatMs = options.staleHeartbeatMs ?? 75_000;
   let failures = 0;
   let lastHealthCheck = 0;
+  let maximumProgress = Number(initial.progress ?? 0);
 
   while (!TERMINAL.has(task.status)) {
     const elapsed = Date.now() - started;
@@ -28,7 +29,9 @@ export async function waitForTaskWithHealth(
     const delay = document.hidden ? 5000 : Math.min(3500, 900 + Math.floor(elapsed / 120000) * 350);
     await new Promise((resolve) => window.setTimeout(resolve, delay));
     try {
-      task = await api.getTask(task.id);
+      const next = await api.getTask(task.id);
+      maximumProgress = Math.max(maximumProgress, Number(next.progress ?? 0));
+      task = { ...next, progress: maximumProgress };
       failures = 0;
       onUpdate(task);
     } catch (reason) {

@@ -15,6 +15,57 @@ from app.services.issue_center import build_issue_center
 from app.services.review_workflow import review_status, transition_review
 
 
+def _install_review_credential_registry(tmp_path: Path, monkeypatch, holder: str = "approver-D") -> dict[str, object]:
+    registry_path = tmp_path / "verified-professional-credentials.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "schema": "pitguard-professional-credential-registry-v1",
+                "credentials": [
+                    {
+                        "registryRecordId": "TEST-ADVANCED-STRUCT-0001",
+                        "licenseType": "registered_structural_engineer",
+                        "licenseNumber": "TEST-ADVANCED-0001",
+                        "holderName": holder,
+                        "jurisdiction": "TEST",
+                        "organization": "PitGuard synthetic test fixture",
+                        "status": "verified",
+                        "validUntil": "2099-12-31",
+                        "verificationSource": "synthetic-unit-test-registry",
+                        "verificationReference": "TEST-ONLY-NOT-A-REAL-LICENSE",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PITGUARD_PROFESSIONAL_CREDENTIAL_REGISTRY", str(registry_path))
+    return {
+        "licenseType": "registered_structural_engineer",
+        "licenseNumber": "TEST-ADVANCED-0001",
+        "holderName": holder,
+        "jurisdiction": "TEST",
+        "verified": False,
+    }
+
+
+def _approve_project(project: Project, tmp_path: Path, monkeypatch, *, holder: str = "approver-D") -> None:
+    credential = _install_review_credential_registry(tmp_path, monkeypatch, holder)
+    transition_review(project, "designer", "designer-A", "submit")
+    transition_review(project, "checker", "checker-B", "accept")
+    transition_review(project, "reviewer", "reviewer-C", "accept")
+    transition_review(
+        project,
+        "approver",
+        holder,
+        "approve",
+        credential=credential,
+        digital_signature_hash="c" * 64,
+    )
+
+
 @pytest.fixture(scope="module")
 def benchmark_project() -> Project:
     result = run_benchmark_case_isolated("URBAN-TOPDOWN-32M-WALL-5SUPPORT", persist=False)
@@ -53,12 +104,14 @@ def test_v3_3_monitoring_calibration_is_applied_to_next_calculation_inputs(bench
     assert "previousFactors" in factors
 
 
-def test_v3_3_review_approval_becomes_stale_after_design_change(benchmark_project: Project) -> None:
+def test_v3_3_review_approval_becomes_stale_after_design_change(
+    benchmark_project: Project,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     project = benchmark_project.model_copy(deep=True)
-    transition_review(project, "designer", "designer-A", "submit")
-    transition_review(project, "checker", "checker-B", "accept")
-    transition_review(project, "reviewer", "reviewer-C", "accept")
-    approved = transition_review(project, "approver", "approver-D", "approve")
+    _approve_project(project, tmp_path, monkeypatch)
+    approved = review_status(project)
     assert approved["approvalValid"] is True
     project.design_settings.temperature_range_c += 5.0
     stale = review_status(project)
@@ -66,12 +119,13 @@ def test_v3_3_review_approval_becomes_stale_after_design_change(benchmark_projec
     assert stale["approvalValid"] is False
 
 
-def test_v3_3_formal_package_contains_geometry_pdf_quality_and_revision_files(benchmark_project: Project, tmp_path: Path) -> None:
+def test_v3_3_formal_package_contains_geometry_pdf_quality_and_revision_files(
+    benchmark_project: Project,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     project = benchmark_project.model_copy(deep=True)
-    transition_review(project, "designer", "designer-A", "submit")
-    transition_review(project, "checker", "checker-B", "accept")
-    transition_review(project, "reviewer", "reviewer-C", "accept")
-    transition_review(project, "approver", "approver-D", "approve")
+    _approve_project(project, tmp_path, monkeypatch)
     path = export_formal_drawing_package(project, tmp_path, issue_mode="review", rebar_mode="balanced")
     assert path.exists() and path.stat().st_size > 10_000
     with zipfile.ZipFile(path) as zf:
@@ -151,12 +205,13 @@ def test_v3_3_design_setting_update_invalidates_old_results(benchmark_project: P
     assert updated.advanced_engineering["invalidationReason"]["keys"] == ["designSettings"]
 
 
-def test_v3_3_stale_approval_can_be_resubmitted(benchmark_project: Project) -> None:
+def test_v3_3_stale_approval_can_be_resubmitted(
+    benchmark_project: Project,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     project = benchmark_project.model_copy(deep=True)
-    transition_review(project, "designer", "designer-A", "submit")
-    transition_review(project, "checker", "checker-B", "accept")
-    transition_review(project, "reviewer", "reviewer-C", "accept")
-    transition_review(project, "approver", "approver-D", "approve")
+    _approve_project(project, tmp_path, monkeypatch)
     project.design_settings.temperature_range_c += 1.0
     assert review_status(project)["status"] == "stale"
     submitted = transition_review(project, "designer", "designer-A", "submit", "design updated")
@@ -164,13 +219,14 @@ def test_v3_3_stale_approval_can_be_resubmitted(benchmark_project: Project) -> N
     assert submitted["approvedSnapshotHash"] is None
 
 
-def test_v3_3_construction_issue_requires_current_snapshot_revision(benchmark_project: Project) -> None:
+def test_v3_3_construction_issue_requires_current_snapshot_revision(
+    benchmark_project: Project,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     from app.drawings.formal_issue import create_drawing_revision
     project = benchmark_project.model_copy(deep=True)
-    transition_review(project, "designer", "designer-A", "submit")
-    transition_review(project, "checker", "checker-B", "accept")
-    transition_review(project, "reviewer", "reviewer-C", "accept")
-    transition_review(project, "approver", "approver-D", "approve")
+    _approve_project(project, tmp_path, monkeypatch)
     before = build_advanced_engineering_suite(project)
     assert before["formalDrawings"]["constructionRevisionValid"] is False
     item = create_drawing_revision(project, "approved construction issue", ["S-00", "R-02"], "designer-A", "construction")

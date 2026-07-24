@@ -47,14 +47,6 @@ class DesignSettings(DomainModel):
     # workflow step so load combinations, safety reserves and RC checks share
     # one auditable source instead of relying on scattered defaults.
     design_basis_confirmed: bool = False
-    # V3.59: the engineer first confirms a small design brief.  The complete
-    # parameter set remains available for audit and professional override, but
-    # it is no longer presented as a prerequisite for generating a concept
-    # retaining scheme.
-    design_intent_confirmed: bool = False
-    design_intent_goal: Literal["quick_scheme", "standard_design", "formal_issue"] = "quick_scheme"
-    design_objective: Literal["balanced", "safety_first", "economy_first"] = "balanced"
-    design_intent_source: Literal["guided_recommendation", "professional_override"] = "guided_recommendation"
     project_grade: Literal["一级", "二级", "三级"] = "二级"
     safety_grade: str = "二级"
     excavation_safety_level: Literal["一级", "二级", "三级"] = "二级"
@@ -144,6 +136,21 @@ class DesignSettings(DomainModel):
     monitoring_groundwater_alarm_offset_m: float = Field(default=1.0, ge=0.0, le=20.0)
     monitoring_projection_hours: float = Field(default=24.0, ge=1.0, le=168.0)
     require_formal_approval_for_construction: bool = False
+    # V3.73-V3.77 model-fidelity, compliance and statutory workflow controls.
+    formal_issue_strict_mode: bool = True
+    required_formal_analysis_level: Literal["L1", "L2", "L3"] = "L2"
+    geotechnical_analysis_level: Literal["screening", "nonlinear_spring", "external_fem"] = "nonlinear_spring"
+    enable_six_dof_verification: bool = True
+    require_external_benchmark_for_issue: bool = True
+    hazardous_work_classification: Literal["unclassified", "hazardous", "large_scale_hazardous"] = "unclassified"
+    hazardous_work_basis: str | None = None
+    require_expert_review_for_large_hazard: bool = True
+    require_monitoring_feedback_before_next_stage: bool = False
+    monitoring_feedback_max_age_hours: float = Field(default=48.0, ge=1.0, le=720.0)
+    allow_empirical_soil_parameters_for_preliminary: bool = True
+    allow_default_soil_spring_for_preliminary: bool = True
+    verification_displacement_tolerance_ratio: float = Field(default=0.25, ge=0.05, le=1.0)
+    verification_force_tolerance_ratio: float = Field(default=0.25, ge=0.05, le=1.0)
     support_wall_clearance_m: float = 1.0
     max_direct_strut_span_m: float = 24.0
     max_wale_support_bay_m: float = 7.5
@@ -280,6 +287,12 @@ class GroundwaterRecord(DomainModel):
     id: str = Field(default_factory=lambda: new_id("gw"))
     water_level: float
     description: str | None = None
+    observed_at: str | None = None
+    source_file: str | None = None
+    source_file_sha256: str | None = None
+    source_artifact_id: str | None = None
+    quality: Literal["verified", "provisional", "rejected"] = "provisional"
+    verified_by: str | None = None
 
 
 class BoreholeLayer(DomainModel):
@@ -329,6 +342,10 @@ class Borehole(DomainModel):
     layers: list[BoreholeLayer] = Field(default_factory=list)
     water_levels: list[GroundwaterRecord] = Field(default_factory=list)
     source_file: str | None = None
+    source_file_sha256: str | None = None
+    source_artifact_id: str | None = None
+    source_document_revision: str | None = None
+    source_verified: bool = False
 
 
 class SurfaceGrid(DomainModel):
@@ -451,6 +468,14 @@ class ReinforcementGroup(DomainModel):
     count: int | None = None
     grade: str
     location_description: str
+    # Construction-detailing semantics keep support end and middle stirrups
+    # distinct after save/reload instead of collapsing into one type flag.
+    zone_type: Literal["full_length", "end_zones", "middle_zone", "node_zone", "lap_zone"] | None = None
+    zone_start_m: float | None = None
+    zone_end_m: float | None = None
+    zone_length_m: float | None = None
+    stirrup_legs: int | None = None
+    design_source: str | None = None
     area_per_meter: float | None = None
     required_area_per_meter: float | None = None
     check_status: Literal["preliminary", "pass", "fail", "warning", "manual_review"] = "manual_review"
@@ -565,10 +590,15 @@ class WaleBeamDesignResult(DomainModel):
     provided_reinforcement_area: float | None = None
     moment_capacity: float | None = None
     shear_capacity: float | None = None
+    concrete_shear_capacity: float | None = None
+    stirrup_shear_capacity: float | None = None
+    shear_utilization: float | None = None
     main_bar_diameter: float | None = None
     main_bar_spacing: float | None = None
     stirrup_diameter: float | None = None
     stirrup_spacing: float | None = None
+    stirrup_leg_count: int | None = None
+    shear_formula: str | None = None
     node_additional_reinforcement_note: str | None = None
     deflection_limit: float | None = None
     deflection_ratio: float | None = None
@@ -592,15 +622,29 @@ class BeamElement(DomainModel):
     elevation: float
     section: SectionDefinition
     material: MaterialDefinition
-    beam_role: Literal["crown_beam", "wale_beam", "ring_beam", "replacement_slab_edge", "manual"] = "manual"
+    beam_role: Literal[
+        "crown_beam", "wale_beam", "ring_beam", "transfer_ring_beam",
+        "transfer_frame_beam", "transfer_brace", "partition_beam",
+        "replacement_slab_edge", "manual"
+    ] = "manual"
     design_axial_force: float | None = None
     design_moment: float | None = None
     design_shear: float | None = None
+    design_torsion: float | None = None
+    design_out_of_plane_moment: float | None = None
+    design_eccentric_in_plane_moment: float | None = None
+    spatial_analysis_status: Literal["missing", "proxy", "calculated", "verified", "fail"] = "missing"
     support_level: int | None = None
     internal_force_results: list[WaleBeamInternalForceResult] = Field(default_factory=list)
     design_result: WaleBeamDesignResult | None = None
     reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
     professional_review_required: bool = True
+    transfer_system_id: str | None = None
+    transfer_zone_id: str | None = None
+    start_node_id: str | None = None
+    end_node_id: str | None = None
+    load_path_id: str | None = None
+    analysis_status: Literal["missing", "proxy", "calculated", "verified", "fail"] = "missing"
 
 
 class BearingPlateDesign(DomainModel):
@@ -629,6 +673,7 @@ class SupportWaleNode(DomainModel):
     reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
     check_status: Literal["pass", "fail", "warning", "manual_review"] = "manual_review"
     design_note: str | None = None
+    spatial_detailing: dict[str, Any] = Field(default_factory=dict)
 
 
 class SupportElement(DomainModel):
@@ -681,12 +726,21 @@ class SupportElement(DomainModel):
     centerline_offset_m: float | None = None
     start_wall_clearance_m: float | None = None
     end_wall_clearance_m: float | None = None
-    topology_family: Literal["direct_grid", "hybrid_diagonal", "bidirectional_grid", "ring_radial", "manual"] = "direct_grid"
+    topology_family: Literal[
+        "direct_grid", "hybrid_diagonal", "bidirectional_grid", "ring_radial",
+        "zoned_direct", "zoned_ring_transfer", "transfer_frame", "ring_truss",
+        "partition_wall", "center_island", "manual"
+    ] = "direct_grid"
     design_zone: str | None = None
     station_chainage_m: float | None = None
     local_clear_span_m: float | None = None
     placement_reason: str | None = None
-    load_path_class: Literal["wall_to_wall", "wall_to_ring", "supported_frame_node", "manual"] = "wall_to_wall"
+    load_path_class: Literal["wall_to_wall", "wall_to_ring", "supported_frame_node", "wall_to_transfer_frame", "manual"] = "wall_to_wall"
+    transfer_system_id: str | None = None
+    transfer_zone_id: str | None = None
+    start_node_id: str | None = None
+    end_node_id: str | None = None
+    load_path_id: str | None = None
 
 
 class FoundationDesign(DomainModel):
@@ -760,6 +814,196 @@ class ConstructionStage(DomainModel):
     groundwater_level_inside: float | None = None
     groundwater_level_outside: float | None = None
     surcharge: float = 20.0
+    source_document: str | None = None
+    source_document_sha256: str | None = None
+    source_artifact_id: str | None = None
+    approved_by: str | None = None
+    approved_at: str | None = None
+    data_status: Literal["draft", "verified", "superseded"] = "draft"
+
+
+class DesignControlStage(DomainModel):
+    """Designer-owned control envelope used by formal staged calculations.
+
+    It records the conditions under which the design is valid. Planned dates,
+    contractor resources and field observations are intentionally excluded.
+    """
+    id: str = Field(default_factory=lambda: new_id("dcs"))
+    name: str
+    design_basis_revision_id: str = "current"
+    excavation_elevation_lower: float
+    excavation_elevation_upper: float
+    required_support_ids: list[str] = Field(default_factory=list)
+    permitted_inactive_support_ids: list[str] = Field(default_factory=list)
+    # Semantic support-level lineage survives topology regeneration even when
+    # concrete support IDs change. These fields are the authoritative bridge
+    # for auditable remapping of excavation, replacement and removal stages.
+    required_support_levels: list[int] = Field(default_factory=list)
+    permitted_inactive_support_levels: list[int] = Field(default_factory=list)
+    replacement_action: str | None = None
+    transfer_path_status: Literal["not_applicable", "mapped", "provisional", "manual_review"] = "not_applicable"
+    transfer_path_source: str | None = None
+    groundwater_level_limit: float | None = None
+    surcharge_limit: float | None = None
+    preload_target: float | None = None
+    preload_lower: float | None = None
+    preload_upper: float | None = None
+    overexcavation_limit: float | None = None
+    stiffness_reduction_limit: float | None = None
+    hold_points: list[str] = Field(default_factory=list)
+    design_scenario_ids: list[str] = Field(default_factory=list)
+    source_calculation_case_id: str | None = None
+    source_stage_id: str | None = None
+    stage_type: Literal["excavation", "support_installation", "bottom_slab", "replacement", "support_removal", "final"] = "excavation"
+    zone: str | None = None
+    revision: int = Field(default=1, ge=1)
+    data_status: Literal["draft", "approved", "frozen", "superseded"] = "draft"
+    value_type: Literal["design_value", "design_limit", "design_assumption"] = "design_limit"
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class DesignScenario(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("scenario"))
+    code: str
+    name: str
+    stage_id: str | None = None
+    category: Literal["baseline", "support_delay", "overexcavation", "preload", "groundwater", "surcharge", "stiffness", "member_anomaly", "custom"] = "custom"
+    enabled: bool = True
+    parameter_overrides: dict[str, Any] = Field(default_factory=dict)
+    assumptions: list[str] = Field(default_factory=list)
+    source: Literal["auto_generated", "user_defined"] = "auto_generated"
+    approval_status: Literal["draft", "approved", "rejected"] = "draft"
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ConstructionPlanStage(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("cps"))
+    design_control_stage_id: str
+    contractor_revision: str = "A"
+    planned_start: str | None = None
+    planned_finish: str | None = None
+    planned_excavation_elevation: float | None = None
+    planned_support_ids: list[str] = Field(default_factory=list)
+    planned_preloads: dict[str, float] = Field(default_factory=dict)
+    planned_groundwater_level: float | None = None
+    planned_surcharge: float | None = None
+    method_statement_id: str | None = None
+    approval_status: Literal["draft", "submitted", "approved", "rejected", "superseded"] = "draft"
+    submitted_by: str | None = None
+    note: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class FieldExecutionSnapshot(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("field"))
+    construction_plan_stage_id: str
+    observed_at: str = Field(default_factory=now_iso)
+    actual_excavation_elevation: float | None = None
+    active_support_ids: list[str] = Field(default_factory=list)
+    measured_preloads: dict[str, float] = Field(default_factory=dict)
+    groundwater_levels: dict[str, float] = Field(default_factory=dict)
+    concrete_strengths: dict[str, float] = Field(default_factory=dict)
+    monitoring_snapshot_id: str | None = None
+    evidence_file_ids: list[str] = Field(default_factory=list)
+    quality: Literal["verified", "provisional", "rejected"] = "provisional"
+    source: str = "manual"
+    note: str | None = None
+
+
+class DeviationEvent(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("dev"))
+    deviation_type: str
+    design_control_stage_id: str | None = None
+    construction_plan_stage_id: str | None = None
+    field_snapshot_id: str | None = None
+    affected_stage_ids: list[str] = Field(default_factory=list)
+    affected_member_ids: list[str] = Field(default_factory=list)
+    design_limit: float | None = None
+    planned_value: float | None = None
+    observed_value: float | None = None
+    severity: Literal["info", "warning", "major", "critical"] = "warning"
+    work_hold_required: bool = False
+    recalculation_required: bool = False
+    designer_response_required: bool = False
+    responsible_party: str = "construction_unit"
+    status: Literal["open", "assigned", "responded", "accepted", "closed"] = "open"
+    resolution: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class ParameterProvenanceRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("param"))
+    parameter_key: str
+    display_name: str
+    value: Any = None
+    unit: str | None = None
+    source_type: Literal[
+        "survey_report", "owner_provided", "standard_value", "project_approved",
+        "enterprise_standard", "software_suggestion", "manual_estimate", "derived"
+    ] = "software_suggestion"
+    source_reference: str | None = None
+    confidence: Literal["high", "medium", "low", "unknown"] = "unknown"
+    confirmation_status: Literal["unconfirmed", "confirmed", "rejected", "superseded"] = "unconfirmed"
+    formal_design_allowed: bool = False
+    affects: list[str] = Field(default_factory=list)
+    confirmed_by: str | None = None
+    confirmed_at: str | None = None
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class ExternalCollaborationRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("collab"))
+    category: Literal["construction_reference", "field_feedback", "monitoring_report", "other"] = "other"
+    title: str
+    source_party: str | None = None
+    received_at: str = Field(default_factory=now_iso)
+    summary: str = ""
+    affected_object_ids: list[str] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list)
+    design_review_required: bool = False
+    status: Literal["received", "reviewed", "archived"] = "received"
+    created_at: str = Field(default_factory=now_iso)
+
+
+class DesignReviewRequest(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("drr"))
+    title: str
+    source_record_id: str | None = None
+    source_party: str | None = None
+    description: str = ""
+    affected_object_ids: list[str] = Field(default_factory=list)
+    original_design_condition: str | None = None
+    exceeds_design_boundary: bool | None = None
+    recalculation_required: bool = False
+    design_change_required: bool = False
+    status: Literal["open", "under_review", "responded", "closed"] = "open"
+    design_response: str | None = None
+    response_revision: int = Field(default=0, ge=0)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class DesignSnapshotManifest(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("snapshot"))
+    purpose: Literal["internal_review", "external_review", "approval", "construction"] = "internal_review"
+    status: Literal["draft", "qualified", "blocked", "issued", "superseded"] = "draft"
+    design_basis_hash: str | None = None
+    parameter_hash: str | None = None
+    topology_hash: str | None = None
+    calculation_result_hash: str | None = None
+    reinforcement_hash: str | None = None
+    drawing_hash: str | None = None
+    report_hash: str | None = None
+    ifc_hash: str | None = None
+    consistency_hash: str | None = None
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    created_by: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    issued_at: str | None = None
 
 
 class CalculationCase(DomainModel):
@@ -891,6 +1135,9 @@ class GlobalCoupledSupportReaction(DomainModel):
     direction_cosine_y: float | None = None
     rigid_node_factor: float | None = None
     governing_source: str | None = None
+    local_support_stiffness: float | None = None
+    transfer_far_end_stiffness: float | None = None
+    effective_series_stiffness: float | None = None
 
 
 class GlobalCoupledSystemResult(DomainModel):
@@ -901,6 +1148,11 @@ class GlobalCoupledSystemResult(DomainModel):
     reason: str | None = None
     matrix_size: int = 0
     condition_number: float | None = None
+    raw_condition_number: float | None = None
+    scaled_condition_number: float | None = None
+    condition_grade: dict[str, Any] = Field(default_factory=dict)
+    numerical_gate: dict[str, Any] = Field(default_factory=dict)
+    ill_conditioned_blocked: bool = False
     equilibrium_diagnostics: dict[str, Any] = Field(default_factory=dict)
     dof_summary: dict[str, Any] = Field(default_factory=dict)
     dofs: list[GlobalCoupledDof] = Field(default_factory=list)
@@ -926,21 +1178,41 @@ class GlobalCoupledSystemResult(DomainModel):
     rigid_node_zones: list[dict[str, Any]] = Field(default_factory=list)
     model_assumptions: dict[str, Any] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
+    soil_spring_kn_m2: float | None = None
+    soil_spring_source: str | None = None
+    soil_spring_formal_use_allowed: bool | None = None
+    soil_spring_layer_values: list[dict[str, Any]] = Field(default_factory=list)
 
 
 
 
 class StabilityDetailedResult(DomainModel):
-    method: str = "V2.0 reviewable stability calculation package"
+    method: str = "V2.1 reviewable stability calculation package with metric semantics"
     controlling_section_id: str | None = None
     controlling_section_name: str | None = None
+    embedment_factor: float | None = None
+    embedment_limit: float | None = None
     heave_factor: float | None = None
+    heave_limit: float | None = None
     confined_uplift_factor: float | None = None
+    confined_uplift_limit: float | None = None
     seepage_factor: float | None = None
+    seepage_limit: float | None = None
     overall_stability_factor: float | None = None
+    overall_stability_limit: float | None = None
     weak_layer_index: float | None = None
+    weak_layer_limit: float | None = None
+    layered_seepage_risk_index: float | None = None
+    layered_seepage_risk_limit: float | None = None
+    dewatering_control_ratio: float | None = None
+    dewatering_control_limit: float | None = None
     min_safety_factor: float | None = None
     controlling_mode: str | None = None
+    controlling_safety_mode: str | None = None
+    controlling_safety_factor: float | None = None
+    controlling_risk_mode: str | None = None
+    controlling_risk_utilization: float | None = None
+    metric_semantics: list[dict[str, Any]] = Field(default_factory=list)
     circular_slip_surfaces: list[dict[str, Any]] = Field(default_factory=list)
     seepage_paths: list[dict[str, Any]] = Field(default_factory=list)
     drawdown_process: list[dict[str, Any]] = Field(default_factory=list)
@@ -1027,6 +1299,12 @@ class SupportLayoutOptimizationCandidate(DomainModel):
 
 class SupportLayoutRepairSummary(DomainModel):
     optimization_method: str | None = None
+    candidate_source_hash: str | None = None
+    candidate_state: Literal["not_generated", "formal_ready", "diagnostic_only", "stale"] = "not_generated"
+    formal_candidate_count: int = 0
+    controlled_candidate_count: int = 0
+    stale_candidate_count: int = 0
+    comparison_eligibility: dict[str, Any] = Field(default_factory=dict)
     optimization_phase: str | None = None
     hard_constraint_labels: list[str] = Field(default_factory=list)
     soft_objective_labels: list[str] = Field(default_factory=list)
@@ -1145,7 +1423,16 @@ class CalculationResult(DomainModel):
     calculation_contract_id: str | None = None
     result_hash: str | None = None
     calculation_assurance: dict[str, Any] = Field(default_factory=dict)
+    calculation_execution: dict[str, Any] = Field(default_factory=dict)
+    numerical_health: dict[str, Any] = Field(default_factory=dict)
+    result_completeness: dict[str, Any] = Field(default_factory=dict)
+    result_catalog: dict[str, Any] = Field(default_factory=dict)
     delivery_readiness: dict[str, Any] = Field(default_factory=dict)
+    analysis_assurance: dict[str, Any] = Field(default_factory=dict)
+    geotechnical_assurance: dict[str, Any] = Field(default_factory=dict)
+    spatial_verification: dict[str, Any] = Field(default_factory=dict)
+    verification_matrix: dict[str, Any] = Field(default_factory=dict)
+    statutory_workflow_assurance: dict[str, Any] = Field(default_factory=dict)
     stage_result_summary: dict[str, Any] = Field(default_factory=dict)
     stage_results: list[StageCalculationResult] = Field(default_factory=list)
     governing_values: GoverningValues = Field(default_factory=GoverningValues)
@@ -1209,6 +1496,23 @@ class CalibrationRun(DomainModel):
     created_at: str = Field(default_factory=now_iso)
 
 
+class ProfessionalCredential(DomainModel):
+    license_type: Literal[
+        "registered_structural_engineer",
+        "registered_geotechnical_engineer",
+        "registered_civil_engineer",
+        "other"
+    ]
+    license_number: str
+    holder_name: str
+    jurisdiction: str = "CN"
+    organization: str | None = None
+    valid_until: str | None = None
+    verified: bool = False
+    verification_source: str | None = None
+    verification_reference: str | None = None
+
+
 class ReviewAction(DomainModel):
     id: str = Field(default_factory=lambda: new_id("review"))
     role: Literal["designer", "checker", "reviewer", "approver"]
@@ -1216,6 +1520,8 @@ class ReviewAction(DomainModel):
     action: Literal["submit", "accept", "reject", "reopen", "approve"]
     comment: str | None = None
     snapshot_hash: str
+    credential: ProfessionalCredential | None = None
+    digital_signature_hash: str | None = None
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -1295,6 +1601,21 @@ class Project(DomainModel):
     excavation: ExcavationModel | None = None
     retaining_system: RetainingSystem | None = None
     calculation_cases: list[CalculationCase] = Field(default_factory=list)
+    # V3.78-V3.81 separates designer-owned control stages, contractor plans and
+    # field observations. Legacy CalculationCase remains the numerical engine
+    # contract and is synchronized from design_control_stages before a run.
+    design_control_stages: list[DesignControlStage] = Field(default_factory=list)
+    design_scenarios: list[DesignScenario] = Field(default_factory=list)
+    construction_plan_stages: list[ConstructionPlanStage] = Field(default_factory=list)
+    field_execution_snapshots: list[FieldExecutionSnapshot] = Field(default_factory=list)
+    deviation_events: list[DeviationEvent] = Field(default_factory=list)
+    # V3.82-V3.87 design-core records. Detailed construction and field objects
+    # remain backward compatible, while the primary designer workflow consumes
+    # only external references and explicit design review requests.
+    parameter_provenance: list[ParameterProvenanceRecord] = Field(default_factory=list)
+    external_collaboration_records: list[ExternalCollaborationRecord] = Field(default_factory=list)
+    design_review_requests: list[DesignReviewRequest] = Field(default_factory=list)
+    design_snapshots: list[DesignSnapshotManifest] = Field(default_factory=list)
     calculation_results: list[CalculationResult] = Field(default_factory=list)
     cad_template: dict[str, Any] = Field(default_factory=dict)
     drawing_rule_set: dict[str, Any] = Field(default_factory=dict)

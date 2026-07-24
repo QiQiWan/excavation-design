@@ -6,6 +6,16 @@ export type BrowserRoute = {
 
 export const LOGIN_PATH = '/login';
 
+export function projectPath(projectId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}`;
+}
+
+export function projectIdFromPath(pathname: string): string | undefined {
+  const match = /^\/projects\/([^/?#]+)\/?$/.exec(pathname || '');
+  if (!match) return undefined;
+  try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+}
+
 export function readBrowserRoute(): BrowserRoute {
   return {
     pathname: window.location.pathname || '/',

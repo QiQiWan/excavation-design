@@ -41,7 +41,7 @@ RC_SHEAR_RULE = DesignRule(
     standard_version="2010-2024",
     clause_reference="斜截面受剪承载力基本诊断（软件简化）",
     name="矩形截面受剪承载力诊断",
-    description="按混凝土项 0.7*ft*b*h0 进行快速受剪诊断；箍筋详细设计需人工复核。",
+    description="按混凝土项与箍筋项共同进行矩形截面受剪诊断，并记录箍筋肢数、直径和间距。",
     severity="warning",
     applicable_to=["DiaphragmWallPanel", "SupportElement"],
 )
@@ -312,6 +312,68 @@ def check_rectangular_shear_capacity(
         "formula": "V <= 0.7*ft*b*h0 (screening without detailed stirrup contribution)",
         "reviewRequired": True,
     }
+
+
+def design_rectangular_shear_reinforcement(
+    shear_design_kn: float,
+    width_m: float,
+    height_m: float,
+    concrete_grade: str = "C35",
+    rebar_grade: str = "HRB400",
+    cover_mm: float = 70.0,
+) -> dict[str, Any]:
+    """Design a traceable multi-leg stirrup cage for total beam shear.
+
+    The returned capacity is the sum of the concrete and transverse-steel
+    contributions. Wide wales receive enough distributed legs to keep the
+    maximum horizontal distance between effective legs within about 900 mm.
+    """
+    b_mm = max(float(width_m), 0.2) * 1000.0
+    h_mm = max(float(height_m), 0.2) * 1000.0
+    h0_mm = max(h_mm - float(cover_mm), 0.65 * h_mm)
+    ft = concrete_ft(concrete_grade)
+    fyv = rebar_fy(rebar_grade)
+    concrete_capacity = 0.7 * ft * b_mm * h0_mm / 1000.0
+    minimum_leg_count = max(2, 2 * math.ceil(max(b_mm - 2.0 * cover_mm, 1.0) / 900.0))
+    candidates: list[dict[str, Any]] = []
+    for leg_count in range(minimum_leg_count, 11, 2):
+        for diameter_mm in (10, 12, 14, 16):
+            asv_mm2 = leg_count * bar_area(diameter_mm)
+            for spacing_mm in (200, 180, 160, 150, 140, 120, 100):
+                stirrup_capacity = fyv * asv_mm2 * h0_mm / spacing_mm / 1000.0
+                total_capacity = concrete_capacity + stirrup_capacity
+                utilization = abs(float(shear_design_kn)) / max(total_capacity, 1.0e-9)
+                minimum_ratio = 0.24 * ft / max(fyv, 1.0e-9)
+                provided_ratio = asv_mm2 / max(b_mm * spacing_mm, 1.0e-9)
+                spacing_ok = spacing_mm <= min(300.0, 0.75 * h0_mm)
+                candidates.append({
+                    "status": "pass" if utilization <= 1.0 and provided_ratio >= minimum_ratio and spacing_ok else "fail",
+                    "diameterMm": diameter_mm,
+                    "spacingMm": spacing_mm,
+                    "legCount": leg_count,
+                    "effectiveLegAreaMm2": round(asv_mm2, 3),
+                    "concreteShearCapacity": round(concrete_capacity, 3),
+                    "stirrupShearCapacity": round(stirrup_capacity, 3),
+                    "totalShearCapacity": round(total_capacity, 3),
+                    "utilization": round(utilization, 4),
+                    "minimumStirrupRatio": round(minimum_ratio, 6),
+                    "providedStirrupRatio": round(provided_ratio, 6),
+                    "steelPerLength": round(asv_mm2 / spacing_mm, 6),
+                    "formula": "Vd <= 0.7*ft*b*h0 + fyv*Asv*h0/s",
+                    "reviewRequired": True,
+                })
+    passing = [item for item in candidates if item["status"] == "pass"]
+    if passing:
+        return min(
+            passing,
+            key=lambda item: (
+                float(item["steelPerLength"]),
+                int(item["legCount"]),
+                int(item["diameterMm"]),
+                -int(item["spacingMm"]),
+            ),
+        )
+    return max(candidates, key=lambda item: float(item["totalShearCapacity"]))
 
 
 def check_rectangular_shear(

@@ -90,12 +90,16 @@ def check_rebar_anchorage_and_lap(
     available_lap_length_mm: float,
     seismic: bool = False,
 ) -> list[CheckResult]:
-    # Conservative engineering screening values. Final detailing must use current code tables,
-    # concrete grade, bond condition, anchorage form, compression/tension state and seismic category.
-    grade_factor = 1.10 if "500" in (rebar_grade or "") else 1.0
-    seismic_factor = 1.15 if seismic else 1.0
-    lb = 35.0 * max(bar_diameter_mm, 1.0) * grade_factor * seismic_factor
-    lap = 1.2 * lb
+    lb = required_rebar_anchorage_length_mm(
+        bar_diameter_mm,
+        rebar_grade,
+        seismic=seismic,
+    )
+    lap = required_rebar_lap_length_mm(
+        bar_diameter_mm,
+        rebar_grade,
+        seismic=seismic,
+    )
     return [
         CheckResult(
             rule_id=GB50010_ANCHORAGE_RULE.rule_id + "-ANCHOR",
@@ -126,3 +130,36 @@ def check_rebar_anchorage_and_lap(
             formula="l_lap_available >= 1.2 * l_anchor_screen",
         ),
     ]
+
+
+def required_rebar_anchorage_length_mm(
+    bar_diameter_mm: float,
+    rebar_grade: str = "HRB400",
+    *,
+    seismic: bool = False,
+) -> float:
+    """Return the single anchorage contract used by checks and generators.
+
+    This is a conservative parameterized screening value. The final detailing
+    still needs the applicable bond condition, concrete grade, stress state and
+    anchorage form from the project-specific design basis.
+    """
+    grade_factor = 1.10 if "500" in (rebar_grade or "") else 1.0
+    seismic_factor = 1.15 if seismic else 1.0
+    return round(35.0 * max(float(bar_diameter_mm), 1.0) * grade_factor * seismic_factor, 3)
+
+
+def required_rebar_lap_length_mm(
+    bar_diameter_mm: float,
+    rebar_grade: str = "HRB400",
+    *,
+    seismic: bool = False,
+) -> float:
+    return round(
+        1.2 * required_rebar_anchorage_length_mm(
+            bar_diameter_mm,
+            rebar_grade,
+            seismic=seismic,
+        ),
+        3,
+    )

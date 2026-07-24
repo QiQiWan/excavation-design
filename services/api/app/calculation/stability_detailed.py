@@ -4,16 +4,25 @@ import math
 from typing import Any
 
 from app.schemas.domain import Project, StageCalculationResult, StabilityDetailedResult
+from app.calculation.stability_metric_semantics import (
+    select_controlling,
+    stability_metric_rows,
+)
 
 
-def _min_check(checks: list[dict[str, Any]], token: str) -> float | None:
-    vals = []
-    for c in checks:
-        rid = str(c.get("ruleId", ""))
-        val = c.get("calculatedValue")
-        if token in rid and isinstance(val, (int, float)):
-            vals.append(float(val))
-    return min(vals) if vals else None
+def _metric_by_id(checks: list[dict[str, Any]], metric_id: str) -> dict[str, Any] | None:
+    rows = [row for row in stability_metric_rows(checks) if row.get("metricId") == metric_id and row.get("value") is not None]
+    if not rows:
+        return None
+    # Repeated stages/segments are reduced according to the engineering direction.
+    if rows[0].get("direction") == "larger_is_better":
+        return min(rows, key=lambda row: float(row["value"]))
+    return max(rows, key=lambda row: float(row.get("utilization") or 0.0))
+
+
+def _metric_value(row: dict[str, Any] | None, key: str = "value") -> float | None:
+    value = row.get(key) if row else None
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _segment_width(project: Project) -> float:
@@ -47,16 +56,17 @@ def build_reviewable_stability_package(
     # Choose the section with the smallest stability factor and then largest pressure as tiebreaker.
     best_segment_id = excavation.segments[0].id if excavation.segments else None
     best_name = excavation.segments[0].name if excavation.segments else None
-    best_score = 999.0
+    best_score = -1.0
     for seg in excavation.segments:
         seg_checks = checks_by_segment.get(seg.id, [])
-        factors = [
-            float(c.get("calculatedValue"))
-            for c in seg_checks
-            if isinstance(c.get("calculatedValue"), (int, float)) and any(tok in str(c.get("ruleId", "")) for tok in ("HEAVE", "SEEPAGE", "UPLIFT", "OVERALL", "WEAK"))
-        ]
-        score = min(factors) if factors else 999.0
-        if score < best_score:
+        metric_rows = stability_metric_rows(seg_checks)
+        safety_control = select_controlling(metric_rows, "safety_factor")
+        risk_control = select_controlling(metric_rows, "risk_ratio")
+        # Safety utilization governs first. Risk ratios are used only when no formal safety factor exists.
+        score = float((safety_control or {}).get("utilization") or 0.0)
+        if safety_control is None and risk_control is not None:
+            score = float(risk_control.get("utilization") or 0.0)
+        if score > best_score:
             best_score = score
             best_segment_id = seg.id
             best_name = seg.name
@@ -72,7 +82,7 @@ def build_reviewable_stability_package(
         radius = rf * depth
         center_x = (0.45 + 0.18 * i) * width
         center_z = bottom + (0.25 + 0.08 * i) * depth
-        raw_factor = max(0.85, (best_score if best_score < 900 else 1.7) + 0.04 * (i - 2))
+        raw_factor = max(0.85, 1.7 + 0.04 * (i - 2))
         slip_surfaces.append({
             "id": f"SLIP-{i+1}",
             "centerX": round(center_x, 3),
@@ -137,26 +147,44 @@ def build_reviewable_stability_package(
         {"option": "depressurization", "description": "承压水减压井和分级降水", "expectedEffect": "降低突涌水头和坑内外水位差"},
         {"option": "add_support_or_lower_level", "description": "增加支撑或降低支撑标高", "expectedEffect": "降低墙体位移并改善整体稳定控制剖面"},
     ]
-    factors = {
-        "heave": _min_check(checks, "HEAVE"),
-        "confined": _min_check(checks, "UPLIFT"),
-        "seepage": _min_check(checks, "SEEPAGE"),
-        "overall": _min_check(checks, "OVERALL"),
-        "weak": _min_check(checks, "WEAK"),
-    }
-    numeric = [v for v in factors.values() if v is not None]
-    min_factor = min(numeric) if numeric else None
-    mode = min(factors, key=lambda k: factors[k] if factors[k] is not None else 999.0)
+    metric_rows = stability_metric_rows(checks)
+    metrics = {metric_id: _metric_by_id(checks, metric_id) for metric_id in (
+        "embedment", "base_heave", "confined_uplift", "seepage", "overall", "weak_layer",
+        "layered_seepage", "dewatering",
+    )}
+    safety_control = select_controlling(metric_rows, "safety_factor")
+    risk_control = select_controlling(metric_rows, "risk_ratio")
+    if _metric_value(risk_control, "utilization") is not None and _metric_value(risk_control, "utilization") <= 0.0:
+        risk_control = None
+    min_factor = _metric_value(safety_control)
+    safety_mode = str((safety_control or {}).get("metricId") or "") or None
+    risk_mode = str((risk_control or {}).get("metricId") or "") or None
     return StabilityDetailedResult(
         controlling_section_id=best_segment_id,
         controlling_section_name=best_name,
-        heave_factor=factors["heave"],
-        confined_uplift_factor=factors["confined"],
-        seepage_factor=factors["seepage"],
-        overall_stability_factor=factors["overall"],
-        weak_layer_index=factors["weak"],
+        embedment_factor=_metric_value(metrics["embedment"]),
+        embedment_limit=_metric_value(metrics["embedment"], "limit"),
+        heave_factor=_metric_value(metrics["base_heave"]),
+        heave_limit=_metric_value(metrics["base_heave"], "limit"),
+        confined_uplift_factor=_metric_value(metrics["confined_uplift"]),
+        confined_uplift_limit=_metric_value(metrics["confined_uplift"], "limit"),
+        seepage_factor=_metric_value(metrics["seepage"]),
+        seepage_limit=_metric_value(metrics["seepage"], "limit"),
+        overall_stability_factor=_metric_value(metrics["overall"]),
+        overall_stability_limit=_metric_value(metrics["overall"], "limit"),
+        weak_layer_index=_metric_value(metrics["weak_layer"]),
+        weak_layer_limit=_metric_value(metrics["weak_layer"], "limit"),
+        layered_seepage_risk_index=_metric_value(metrics["layered_seepage"]),
+        layered_seepage_risk_limit=_metric_value(metrics["layered_seepage"], "limit"),
+        dewatering_control_ratio=_metric_value(metrics["dewatering"]),
+        dewatering_control_limit=_metric_value(metrics["dewatering"], "limit"),
         min_safety_factor=min_factor,
-        controlling_mode=mode,
+        controlling_mode=safety_mode,
+        controlling_safety_mode=safety_mode,
+        controlling_safety_factor=min_factor,
+        controlling_risk_mode=risk_mode,
+        controlling_risk_utilization=_metric_value(risk_control, "utilization"),
+        metric_semantics=metric_rows,
         circular_slip_surfaces=slip_surfaces,
         seepage_paths=seepage_paths,
         drawdown_process=drawdown_process,
@@ -170,6 +198,7 @@ def build_reviewable_stability_package(
             "drawdownProcess": drawdown_process,
         },
         review_notes=[
+            "稳定安全系数、风险比值和质量指数已按工程方向分离，避免将越小越优的风险指标误报为最小安全系数。",
             "已从孤立筛查升级为可审查稳定专项包：控制剖面、圆弧候选、渗流路径、降水过程、井点和加固方案均可追溯。",
             "本包仍属于设计辅助计算；正式工程应结合详勘、水文地质试验、降水试验和审查意见进行专项设计。",
         ],

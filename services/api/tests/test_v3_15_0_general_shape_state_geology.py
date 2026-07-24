@@ -193,7 +193,7 @@ def test_general_polygon_layouts_keep_support_centrelines_inside() -> None:
         assert all(_sample_segment_inside(line.start, line.end, points) for line in lines), name
 
 
-def test_one_click_support_design_completes_strength_topology_preflight_for_general_shapes() -> None:
+def test_one_click_support_design_requires_explicit_transfer_system_for_concave_shapes() -> None:
     from app.quality.support_layout_quality import evaluate_support_layout_quality
 
     shapes = {
@@ -217,8 +217,16 @@ def test_one_click_support_design_completes_strength_topology_preflight_for_gene
         summary = evaluate_support_layout_quality(project)
         preflight = project.retaining_system.layout_summary.get("strengthTopologyPreflight", {})
         assert preflight.get("executed") is True, name
-        assert preflight.get("status") != "fail", name
-        assert summary.status != "fail", (name, [issue.message for issue in summary.issues if issue.severity == "fail"])
+        if name in {"l_shape", "u_shape"}:
+            assert preflight.get("status") == "fail", name
+            assert preflight.get("requiresAlternativeSupportSystem") is True, name
+            assert preflight.get("shapeTransferSystemRequired") is True, name
+            assert preflight.get("shapeTransferSystemComplete") is False, name
+            assert preflight.get("recommendedSupportSystems"), name
+            assert summary.status == "fail", name
+        else:
+            assert preflight.get("status") != "fail", name
+            assert summary.status != "fail", (name, [issue.message for issue in summary.issues if issue.severity == "fail"])
         assert summary.metrics.get("supportOutsideExcavationCount") == 0, name
 
 
@@ -263,13 +271,15 @@ def _general_shape_project(name: str = "general-shape") -> Project:
     return project
 
 
-def test_optimizer_scores_constructible_preflight_geometry_for_concave_pit() -> None:
+def test_optimizer_keeps_concave_candidates_blocked_until_transfer_system_is_explicit() -> None:
     project = _general_shape_project("optimizer-concave")
     _system, candidates = optimize_support_layout_candidates(project, max_candidates=3)
     assert len(candidates) == 3
-    assert all(candidate.score > 0.0 for candidate in candidates)
-    assert all(candidate.fail_count == 0 for candidate in candidates)
-    assert all(bool(candidate.hard_constraints.get("passed")) for candidate in candidates)
+    assert all(candidate.score == 0.0 for candidate in candidates)
+    assert all(candidate.fail_count > 0 for candidate in candidates)
+    assert all(candidate.hard_constraints.get("passed") is False for candidate in candidates)
+    assert all(candidate.hard_constraints.get("shapeTransferSystemRequired") is True for candidate in candidates)
+    assert all(candidate.hard_constraints.get("shapeTransferSystemComplete") is False for candidate in candidates)
     assert all(
         int(candidate.metrics.get("supportOutsideExcavationCount", 0) or 0) == 0
         for candidate in candidates
@@ -278,6 +288,7 @@ def test_optimizer_scores_constructible_preflight_geometry_for_concave_pit() -> 
         "strengthTopologyPreflight" in candidate.variable_summary
         for candidate in candidates
     )
+    assert all("不得作为正式采用方案" in candidate.constructability_note for candidate in candidates)
 
 
 def test_repository_invalidates_legacy_results_and_candidate_full_rows(tmp_path) -> None:

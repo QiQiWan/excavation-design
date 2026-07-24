@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import time
@@ -40,6 +41,98 @@ def _api_full_load_limit_bytes() -> int:
     return int(adaptive_resource_policy(role=_process_role())["apiFullLoadLimitBytes"])
 
 
+def _compact_candidate_calculation_summary(value: Any) -> dict[str, Any]:
+    """Keep the auditable A/B/C decision summary without heavy result arrays."""
+    if not isinstance(value, dict):
+        return {}
+    compact: dict[str, Any] = {
+        key: item for key, item in value.items()
+        if isinstance(item, (str, int, float, bool)) or item is None
+    }
+    for key in (
+        "checkSummary", "decisionComponentScores", "geologyCoverage",
+        "calculationDiagnostics", "transferReadiness", "pareto",
+    ):
+        item = value.get(key)
+        if isinstance(item, dict):
+            compact[key] = item
+    for key in ("blockers", "warnings", "decisionReasons"):
+        item = value.get(key)
+        if isinstance(item, list):
+            compact[key] = item[:20]
+    return compact
+
+
+
+def _compact_calculation_execution(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact = {key: item for key, item in value.items() if isinstance(item, (str, int, float, bool)) or item is None}
+    compact["phases"] = [
+        {key: item for key, item in row.items() if key in {"phaseId", "label", "status", "durationSeconds", "message", "blockerCount"}}
+        for row in list(value.get("phases") or [])[:20] if isinstance(row, dict)
+    ]
+    if isinstance(value.get("bottleneckPhase"), dict):
+        compact["bottleneckPhase"] = {
+            key: item for key, item in value["bottleneckPhase"].items()
+            if key in {"phaseId", "label", "durationSeconds", "durationSharePercent"}
+        }
+    return compact
+
+
+def _compact_numerical_health(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact = {key: item for key, item in value.items() if isinstance(item, (str, int, float, bool)) or item is None}
+    for key in ("reactionIteration", "conditionNumber", "matrixHealth", "sensitivity"):
+        row = value.get(key)
+        if isinstance(row, dict):
+            compact[key] = {
+                nested_key: nested_value for nested_key, nested_value in row.items()
+                if isinstance(nested_value, (str, int, float, bool)) or nested_value is None
+            }
+    return compact
+
+
+def _compact_result_completeness(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact = {key: item for key, item in value.items() if isinstance(item, (str, int, float, bool)) or item is None}
+    compact["criticalBlockingDomains"] = list(value.get("criticalBlockingDomains") or [])[:30]
+    if isinstance(value.get("readinessPolicy"), dict):
+        compact["readinessPolicy"] = value["readinessPolicy"]
+    compact["domains"] = []
+    for row in list(value.get("domains") or [])[:40]:
+        if not isinstance(row, dict):
+            continue
+        domain = {
+            key: item for key, item in row.items()
+            if key in {"domainId", "label", "status", "coveragePercent", "message"}
+        }
+        evidence = row.get("evidence")
+        if isinstance(evidence, dict):
+            domain["evidence"] = {
+                key: item for key, item in evidence.items()
+                if isinstance(item, (str, int, float, bool)) or item is None
+            }
+        compact["domains"].append(domain)
+    return compact
+
+
+def _compact_result_catalog(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact = {key: item for key, item in value.items() if isinstance(item, (str, int, float, bool)) or item is None}
+    for key in ("counts", "ruleStatusCounts", "reinforcementInventory"):
+        if isinstance(value.get(key), dict):
+            compact[key] = value[key]
+    compact["criticalStages"] = list(value.get("criticalStages") or [])[:10]
+    for key in ("blockingCheckLedger", "warningCheckLedger", "manualReviewLedger"):
+        compact[key] = list(value.get(key) or [])[:50]
+    # Per-member envelopes, stage matrices and node arrays remain external.
+    compact["workspaceSummaryOnly"] = True
+    return compact
+
 def _compact_result_for_workspace(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
@@ -52,12 +145,46 @@ def _compact_result_for_workspace(value: Any) -> dict[str, Any]:
         "professionalReviewRequired", "calculatedAt",
     }
     compact = {key: value[key] for key in keep if key in value}
-    # Preserve the schema while excluding stage arrays, diagrams and duplicated
-    # candidate calculations from the project-opening payload.
+    execution = value.get("calculationExecution") or value.get("calculation_execution")
+    numerical = value.get("numericalHealth") or value.get("numerical_health")
+    completeness = value.get("resultCompleteness") or value.get("result_completeness")
+    catalog = value.get("resultCatalog") or value.get("result_catalog")
+    compact["calculationExecution"] = _compact_calculation_execution(execution)
+    compact["numericalHealth"] = _compact_numerical_health(numerical)
+    compact["resultCompleteness"] = _compact_result_completeness(completeness)
+    compact["resultCatalog"] = _compact_result_catalog(catalog)
+    repair = value.get("supportLayoutRepair") or value.get("support_layout_repair")
+    if isinstance(repair, dict):
+        compact["supportLayoutRepair"] = {
+            "selectedCandidateId": repair.get("selectedCandidateId", repair.get("selected_candidate_id")),
+            "bestCandidateId": repair.get("bestCandidateId", repair.get("best_candidate_id")),
+            "candidateFullCalculations": [
+                _compact_candidate_calculation_summary(row)
+                for row in list(repair.get("candidateFullCalculations") or repair.get("candidate_full_calculations") or [])[:12]
+                if isinstance(row, dict)
+            ],
+        }
+    report = value.get("reportDiagramData") or value.get("report_diagram_data")
+    compact_report: dict[str, Any] = {}
+    if isinstance(report, dict):
+        if isinstance(report.get("calculationExecution"), dict):
+            compact_report["calculationExecution"] = _compact_calculation_execution(report["calculationExecution"])
+        if isinstance(report.get("numericalHealth"), dict):
+            compact_report["numericalHealth"] = _compact_numerical_health(report["numericalHealth"])
+        if isinstance(report.get("resultCompleteness"), dict):
+            compact_report["resultCompleteness"] = _compact_result_completeness(report["resultCompleteness"])
+        if isinstance(report.get("resultCatalog"), dict):
+            compact_report["resultCatalog"] = _compact_result_catalog(report["resultCatalog"])
+        rows = report.get("candidateFullCalculationComparison")
+        if isinstance(rows, list):
+            compact_report["candidateFullCalculationComparison"] = [
+                _compact_candidate_calculation_summary(row) for row in rows[:12] if isinstance(row, dict)
+            ]
+    compact["reportDiagramData"] = compact_report
+    # Preserve the result contract while excluding stage matrices and diagrams.
     compact.setdefault("stageResults", [])
     compact.setdefault("checks", [])
     compact.setdefault("optimizationActions", [])
-    compact.setdefault("reportDiagramData", {})
     compact.setdefault("drawingSheets", [])
     compact.setdefault("supportLayoutRepair", None)
     compact.setdefault("stabilityDetailedResult", None)
@@ -98,45 +225,210 @@ def _workspace_limit_bytes() -> int:
     return int(adaptive_resource_policy(role=_process_role())["workspaceLimitBytes"])
 
 
-def _compact_candidate_plan_geometry(value: Any, *, max_supports: int = 4000, max_columns: int = 4000) -> dict[str, Any]:
+CANDIDATE_PREVIEW_SCHEMA = "candidate-plan-v3"
+
+
+def _compact_candidate_plan_geometry(
+    value: Any,
+    *,
+    max_supports: int = 4000,
+    max_columns: int = 4000,
+    max_transfer_beams: int = 4000,
+    max_transfer_zones: int = 200,
+) -> dict[str, Any]:
+    """Create a bounded, topology-complete and self-auditing plan preview.
+
+    V3 rejects invalid coordinates instead of drawing phantom members at (0, 0),
+    preserves transfer-system readiness, and declares any collection truncation.
+    The browser can therefore distinguish a genuinely open topology from a
+    deliberately bounded preview.
+    """
     if not isinstance(value, dict):
         return {}
-    outline = []
-    for point in list(value.get("outline") or [])[:2000]:
-        if isinstance(point, dict):
-            outline.append({"x": point.get("x"), "y": point.get("y")})
+
+    invalid_point_count = 0
+
+    def compact_point(point: Any) -> dict[str, float] | None:
+        nonlocal invalid_point_count
+        if not isinstance(point, dict):
+            invalid_point_count += 1
+            return None
+        try:
+            x = float(point.get("x"))
+            y = float(point.get("y"))
+        except (TypeError, ValueError):
+            invalid_point_count += 1
+            return None
+        if not (math.isfinite(x) and math.isfinite(y)):
+            invalid_point_count += 1
+            return None
+        return {"x": round(x, 6), "y": round(y, 6)}
+
+    raw_outline = list(value.get("outline") or [])
+    outline = [row for row in (compact_point(point) for point in raw_outline[:2000]) if row]
+
+    raw_supports = list(value.get("supports") or [])
     supports = []
-    for support in list(value.get("supports") or [])[:max_supports]:
+    invalid_member_count = 0
+    for support in raw_supports[:max_supports]:
         if not isinstance(support, dict):
+            invalid_member_count += 1
             continue
-        start = support.get("start") if isinstance(support.get("start"), dict) else {}
-        end = support.get("end") if isinstance(support.get("end"), dict) else {}
+        start_point = compact_point(support.get("start"))
+        end_point = compact_point(support.get("end"))
+        if not start_point or not end_point:
+            invalid_member_count += 1
+            continue
         supports.append({
             "id": support.get("id"),
             "code": support.get("code"),
             "role": support.get("role", support.get("supportRole")),
             "supportRole": support.get("supportRole", support.get("role")),
             "levelIndex": support.get("levelIndex"),
-            "start": {"x": start.get("x"), "y": start.get("y")},
-            "end": {"x": end.get("x"), "y": end.get("y")},
+            "elevation": support.get("elevation"),
+            "topologyFamily": support.get("topologyFamily"),
+            "spanLength": support.get("spanLength"),
+            "baySpacing": support.get("baySpacing"),
+            "locked": bool(support.get("locked")),
+            "lockState": support.get("lockState") if isinstance(support.get("lockState"), dict) else {},
+            "changed": bool(support.get("changed")),
+            "start": start_point,
+            "end": end_point,
         })
+
+    raw_columns = list(value.get("columns") or [])
     columns = []
-    for column in list(value.get("columns") or [])[:max_columns]:
+    for column in raw_columns[:max_columns]:
         if not isinstance(column, dict):
+            invalid_member_count += 1
             continue
-        location = column.get("location") if isinstance(column.get("location"), dict) else {}
-        columns.append({
-            "id": column.get("id"),
-            "code": column.get("code"),
-            "location": {"x": location.get("x"), "y": location.get("y")},
+        location = compact_point(column.get("location"))
+        if not location:
+            invalid_member_count += 1
+            continue
+        columns.append({"id": column.get("id"), "code": column.get("code"), "location": location})
+
+    raw_transfer_beams = list(value.get("transferBeams") or value.get("transfer_beams") or [])
+    transfer_beams = []
+    member_point_truncated = False
+    for beam in raw_transfer_beams[:max_transfer_beams]:
+        if not isinstance(beam, dict):
+            invalid_member_count += 1
+            continue
+        raw_points = list(beam.get("points") or [])
+        if len(raw_points) > 500:
+            member_point_truncated = True
+        points = [row for row in (compact_point(point) for point in raw_points[:500]) if row]
+        if len(points) < 2:
+            invalid_member_count += 1
+            continue
+        transfer_beams.append({
+            "id": beam.get("id"),
+            "code": beam.get("code"),
+            "role": beam.get("role", beam.get("beamRole")),
+            "beamRole": beam.get("beamRole", beam.get("role")),
+            "elevation": beam.get("elevation"),
+            "supportLevel": beam.get("supportLevel"),
+            "points": points,
         })
+
+    raw_transfer_zones = list(value.get("transferZones") or value.get("transfer_zones") or [])
+    transfer_zones = []
+    zone_point_truncated = False
+    for zone in raw_transfer_zones[:max_transfer_zones]:
+        if not isinstance(zone, dict):
+            continue
+        raw_zone_outline = list(zone.get("outline") or [])
+        if len(raw_zone_outline) > 1000:
+            zone_point_truncated = True
+        zone_outline = [row for row in (compact_point(point) for point in raw_zone_outline[:1000]) if row]
+        transfer_zones.append({
+            "id": zone.get("id"),
+            "zoneId": zone.get("zoneId"),
+            "zoneType": zone.get("zoneType"),
+            "outline": zone_outline,
+        })
+
+    raw_obstacles = list(value.get("obstacles") or [])
+    obstacles = []
+    for obstacle in raw_obstacles[:200]:
+        if not isinstance(obstacle, dict):
+            continue
+        points = [row for row in (compact_point(point) for point in list(obstacle.get("points") or [])[:1000]) if row]
+        obstacles.append({
+            "id": obstacle.get("id"),
+            "name": obstacle.get("name"),
+            "type": obstacle.get("type"),
+            "points": points,
+        })
+
+    layout_summary = value.get("layoutSummary") if isinstance(value.get("layoutSummary"), dict) else {}
+    transfer_audit_raw = value.get("transferAudit") if isinstance(value.get("transferAudit"), dict) else layout_summary.get("transferSystem")
+    transfer_audit_raw = transfer_audit_raw if isinstance(transfer_audit_raw, dict) else {}
+    readiness = transfer_audit_raw.get("readiness") if isinstance(transfer_audit_raw.get("readiness"), dict) else {}
+    transfer_audit = {
+        "templateId": transfer_audit_raw.get("templateId"),
+        "topologyClass": transfer_audit_raw.get("topologyClass"),
+        "status": transfer_audit_raw.get("status"),
+        "calculationReady": transfer_audit_raw.get("calculationReady"),
+        "formalCalculationReady": transfer_audit_raw.get("formalCalculationReady"),
+        "readiness": {
+            key: readiness.get(key) for key in (
+                "geometryClosed", "loadPathClosed", "structuralModelClosed",
+                "constructionStageClosed", "formalCalculationReady",
+            ) if key in readiness
+        },
+    }
+
+    truncation = {
+        "outline": len(raw_outline) > 2000,
+        "supports": len(raw_supports) > max_supports,
+        "columns": len(raw_columns) > max_columns,
+        "transferBeams": len(raw_transfer_beams) > max_transfer_beams or member_point_truncated,
+        "transferZones": len(raw_transfer_zones) > max_transfer_zones or zone_point_truncated,
+        "obstacles": len(raw_obstacles) > 200,
+    }
+    preview_truncated = any(truncation.values())
+    expected_transfer = bool(raw_transfer_beams or transfer_audit.get("templateId") not in {None, "", "none"})
+    transfer_geometry_present = bool(transfer_beams)
+    if invalid_point_count or invalid_member_count or (expected_transfer and not transfer_geometry_present):
+        integrity_status = "incomplete"
+        integrity_message = "预览存在无效坐标、无效构件或缺失的转接体系，不能据此判断闭合。"
+    elif preview_truncated:
+        integrity_status = "warning"
+        integrity_message = "预览为有界抽样，完整构件仍保存在工程模型中；正式判断应读取完整拓扑。"
+    else:
+        integrity_status = "complete"
+        integrity_message = "预览已完整保留普通支撑、转接梁、闭合环梁和立柱。"
+
     return {
         "outline": outline,
         "supports": supports,
         "columns": columns,
-        "previewSchema": "candidate-plan-v1",
-        "sourceSupportCount": len(value.get("supports") or []),
-        "sourceColumnCount": len(value.get("columns") or []),
+        "transferBeams": transfer_beams,
+        "transferZones": transfer_zones,
+        "obstacles": obstacles,
+        "supportElevations": list(value.get("supportElevations") or [])[:100],
+        "transferAudit": transfer_audit,
+        "previewIntegrity": {
+            "status": integrity_status,
+            "message": integrity_message,
+            "truncated": preview_truncated,
+            "truncation": truncation,
+            "invalidPointCount": invalid_point_count,
+            "invalidMemberCount": invalid_member_count,
+            "expectedTransferSystem": expected_transfer,
+            "transferGeometryPresent": transfer_geometry_present,
+        },
+        "previewSchema": CANDIDATE_PREVIEW_SCHEMA,
+        "sourceSupportCount": len(raw_supports),
+        "renderedSupportCount": len(supports),
+        "sourceColumnCount": len(raw_columns),
+        "renderedColumnCount": len(columns),
+        "sourceTransferBeamCount": len(raw_transfer_beams),
+        "renderedTransferBeamCount": len(transfer_beams),
+        "sourceTransferZoneCount": len(raw_transfer_zones),
+        "renderedTransferZoneCount": len(transfer_zones),
     }
 
 
@@ -191,9 +483,12 @@ def _compact_candidate_for_workspace(candidate: Any) -> dict[str, Any]:
     compact["metrics"] = _compact_candidate_metrics(candidate.get("metrics"))
     compact["lineAdjustments"] = list(candidate.get("lineAdjustments") or candidate.get("line_adjustments") or [])[:24]
     compact["deltaGeometry"] = {}
-    compact["fullCalculation"] = {}
+    compact["fullCalculation"] = _compact_candidate_calculation_summary(
+        candidate.get("fullCalculation") or candidate.get("full_calculation")
+    )
     compact["workspacePreviewAvailable"] = bool(
-        compact["planGeometry"].get("outline") and compact["planGeometry"].get("supports")
+        compact["planGeometry"].get("outline")
+        and (compact["planGeometry"].get("supports") or compact["planGeometry"].get("transferBeams"))
     )
     return compact
 
@@ -230,7 +525,11 @@ def _aggressively_compact_workspace(workspace: dict[str, Any]) -> dict[str, Any]
                 for candidate in list(rep.get("candidates") or [])[:8]
                 if isinstance(candidate, dict)
             ]
-            rep["candidateFullCalculations"] = []
+            rep["candidateFullCalculations"] = [
+                _compact_candidate_calculation_summary(row)
+                for row in list(repair.get("candidateFullCalculations") or repair.get("candidate_full_calculations") or [])[:6]
+                if isinstance(row, dict)
+            ]
             ret["supportLayoutRepair"] = rep
         bounded["retainingSystem"] = ret
     bounded["monitoringRecords"] = []
@@ -243,7 +542,7 @@ def _aggressively_compact_workspace(workspace: dict[str, Any]) -> dict[str, Any]
         if key in {
             "calculationState", "requiresRecalculation", "invalidationReason",
             "wallLengthOptimization", "supportDesignerAudit", "planShapeDiagnostics",
-            "industrialReadiness", "workspaceStorage", "artifactStorage",
+            "industrialReadiness", "calculationBlockerRecovery", "workspaceStorage", "artifactStorage",
         }
     }
     bounded["advancedEngineering"]["workspaceStorage"] = workspace_meta
@@ -295,7 +594,11 @@ def _compact_project_for_workspace(project: dict[str, Any]) -> dict[str, Any]:
                 for candidate in list(repair.get("candidates") or [])[:12]
                 if isinstance(candidate, dict)
             ]
-            compact_repair["candidateFullCalculations"] = []
+            compact_repair["candidateFullCalculations"] = [
+                _compact_candidate_calculation_summary(row)
+                for row in list(repair.get("candidateFullCalculations") or repair.get("candidate_full_calculations") or [])[:12]
+                if isinstance(row, dict)
+            ]
             compact_retaining["supportLayoutRepair"] = compact_repair
         rebar_scheme = compact_retaining.get("rebarDesignScheme")
         if isinstance(rebar_scheme, dict):
@@ -710,7 +1013,7 @@ class SQLiteProjectStore:
                     continue
                 candidate_id = str(candidate.get("id") or f"candidate-{index + 1}")
                 geometry = _compact_candidate_plan_geometry(candidate.get("planGeometry") or candidate.get("plan_geometry"))
-                if not geometry.get("outline") or not geometry.get("supports"):
+                if not geometry.get("outline") or not (geometry.get("supports") or geometry.get("transferBeams")):
                     continue
                 conn.execute(
                     """
@@ -1060,7 +1363,7 @@ class SQLiteProjectStore:
                 if not isinstance(candidate, dict):
                     continue
                 geometry = _compact_candidate_plan_geometry(candidate.get("planGeometry") or candidate.get("plan_geometry"))
-                if not geometry.get("outline") or not geometry.get("supports"):
+                if not geometry.get("outline") or not (geometry.get("supports") or geometry.get("transferBeams")):
                     continue
                 conn.execute(
                     """
@@ -1193,17 +1496,28 @@ class SQLiteProjectStore:
             ).fetchall()
         if cached:
             previews = []
+            cache_current = True
             for row in cached:
                 try:
                     geometry = json.loads(str(row["plan_geometry"] or "{}"))
                 except json.JSONDecodeError:
                     geometry = {}
+                if geometry.get("previewSchema") != CANDIDATE_PREVIEW_SCHEMA:
+                    cache_current = False
+                    break
                 previews.append({
                     "candidateId": row["candidate_id"],
                     "rank": row["candidate_rank"],
                     "planGeometry": _compact_candidate_plan_geometry(geometry),
                 })
-            return {"projectId": project_id, "source": "preview_cache", "previews": previews}
+            if cache_current:
+                return {"projectId": project_id, "source": "preview_cache", "previews": previews}
+            # Older preview schemas may omit transfer frames, integrity metadata
+            # or current result evidence. Delete them and rebuild once.
+            # once from the authoritative project snapshot.
+            with self._connect() as conn:
+                conn.execute("DELETE FROM project_candidate_previews WHERE project_id = ?", (project_id,))
+                conn.commit()
 
         rows: list[sqlite3.Row] = []
         source = "full_snapshot_json1"
@@ -1254,7 +1568,7 @@ class SQLiteProjectStore:
                 candidate_id = str(row["candidate_id"] or f"candidate-{index + 1}")
                 rank = int(row["candidate_rank"] or index + 1)
                 previews.append({"candidateId": candidate_id, "rank": rank, "planGeometry": compact})
-                if compact.get("outline") and compact.get("supports"):
+                if compact.get("outline") and (compact.get("supports") or compact.get("transferBeams")):
                     conn.execute(
                         """
                         INSERT INTO project_candidate_previews(project_id, candidate_id, candidate_rank, plan_geometry, updated_at)

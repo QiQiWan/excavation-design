@@ -32,6 +32,9 @@ def create_project(payload: ProjectCreate, repo: ProjectRepository = Depends(get
         coordinate_system=payload.coordinate_system or CoordinateSystem(),
         design_settings=payload.design_settings or DesignSettings(),
     )
+    from app.services.engineering_templates import enforce_safety_target_floors
+
+    enforce_safety_target_floors(project, actor="project.create")
     return repo.create(project)
 
 
@@ -116,7 +119,53 @@ def get_design_scheme_ledger(project_id: str, mode: str = "balanced", repo: Proj
 DESIGN_AFFECTING_KEYS = {
     "unitSystem", "coordinateSystem", "designSettings", "boreholes", "strata",
     "geologicalModel", "excavation", "retainingSystem", "calculationCases",
+    "designControlStages", "designScenarios",
 }
+
+
+def _build_updated_project(
+    project: Project,
+    payload: dict[str, Any],
+    *,
+    actor: str,
+) -> tuple[Project, list[str]]:
+    data = project.model_dump(mode="json", by_alias=True)
+    immutable = {"id", "createdAt"}
+    changed_design_keys: list[str] = []
+    for key, value in payload.items():
+        if key in immutable:
+            continue
+        if key in DESIGN_AFFECTING_KEYS and data.get(key) != value:
+            changed_design_keys.append(key)
+        data[key] = value
+    updated = Project.model_validate(data)
+    from app.services.engineering_templates import enforce_safety_target_floors
+
+    enforcement = enforce_safety_target_floors(updated, actor=actor)
+    if enforcement.get("adjusted"):
+        updated.messages.append("低于项目安全底线的目标值已由服务端提升，并记录于安全目标审计。")
+    if changed_design_keys:
+        updated.calculation_results = []
+        if any(key != "calculationCases" for key in changed_design_keys):
+            updated.calculation_cases = []
+        updated.advanced_engineering.pop("latestSuite", None)
+        updated.advanced_engineering["requiresRecalculation"] = True
+        updated.advanced_engineering["invalidationReason"] = {
+            "type": "design_input_changed",
+            "keys": changed_design_keys,
+        }
+        candidate_affecting_keys = {"unitSystem", "coordinateSystem", "designSettings", "excavation", "retainingSystem"}
+        if candidate_affecting_keys.intersection(changed_design_keys):
+            from app.services.support_candidate_contract import archive_and_clear_stale_candidates
+
+            archive_and_clear_stale_candidates(
+                updated,
+                reason=f"project design input changed: {', '.join(changed_design_keys)}",
+            )
+        message = "设计输入已变更，原计算结果与正式发行状态已失效，请重新建立工况并计算。"
+        if not updated.messages or updated.messages[-1] != message:
+            updated.messages.append(message)
+    return updated, changed_design_keys
 
 
 def _apply_project_patch(
@@ -128,29 +177,7 @@ def _apply_project_patch(
     actor: str,
 ) -> Project:
     project = repo.require(project_id)
-    data = project.model_dump(mode="json", by_alias=True)
-    immutable = {"id", "createdAt"}
-    changed_design_keys: list[str] = []
-    for key, value in payload.items():
-        if key in immutable:
-            continue
-        if key in DESIGN_AFFECTING_KEYS and data.get(key) != value:
-            changed_design_keys.append(key)
-        data[key] = value
-    updated = Project.model_validate(data)
-    if changed_design_keys:
-        updated.calculation_results = []
-        if any(key != "calculationCases" for key in changed_design_keys):
-            updated.calculation_cases = []
-        updated.advanced_engineering.pop("latestSuite", None)
-        updated.advanced_engineering["requiresRecalculation"] = True
-        updated.advanced_engineering["invalidationReason"] = {
-            "type": "design_input_changed",
-            "keys": changed_design_keys,
-        }
-        message = "设计输入已变更，原计算结果与正式发行状态已失效，请重新建立工况并计算。"
-        if not updated.messages or updated.messages[-1] != message:
-            updated.messages.append(message)
+    updated, changed_design_keys = _build_updated_project(project, payload, actor=actor)
     return repo.save(
         updated,
         expected_revision=expected_revision,
@@ -176,10 +203,12 @@ def update_project(
     try:
         return _apply_project_patch(project_id, payload, repo, expected_revision=expected_revision, actor=actor)
     except TypeError:
+        # Compatibility repositories used by embedded deployments may expose a
+        # minimal ``save(project)`` signature. They must still receive the same
+        # invalidation and safety-floor enforcement as the primary repository.
         project = repo.require(project_id)
-        data = project.model_dump(mode="json", by_alias=True)
-        data.update(payload)
-        return repo.save(Project.model_validate(data))
+        updated, _changed_design_keys = _build_updated_project(project, payload, actor=actor)
+        return repo.save(updated)
 
 
 @router.patch("/{project_id}/workspace")

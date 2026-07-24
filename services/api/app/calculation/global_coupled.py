@@ -6,6 +6,8 @@ from typing import Any
 import numpy as np
 
 from app.calculation.wale_beam import support_spring_stiffness
+from app.calculation.numerical_conditioning import ConditionThresholds, solve_scaled_symmetric
+from app.calculation.nonlinear_geotechnical import representative_horizontal_spring
 from app.schemas.domain import PressureProfile, Point2D, SupportElement
 
 EPS = 1e-9
@@ -392,26 +394,22 @@ def _solve_spatial_frame_proxy(
             "jointRotationalFactor": round(float(joint_rotational_factor), 4),
             "imperfectionLateralLoad": round(imperfection_load, 3),
         })
-    regularization = 0.0
-    solve_failed = False
-    try:
-        U = np.linalg.solve(K, F)
-        fallback = False
-        reason = None
-    except np.linalg.LinAlgError as exc:
-        regularization = max(float(np.max(np.diag(K))) * 1e-6, 10.0)
-        try:
-            U = np.linalg.solve(K + np.eye(n) * regularization, F)
-            fallback = True
-            reason = f"regularized spatial frame matrix: {exc}"
-        except np.linalg.LinAlgError:
-            U = np.zeros(n)
-            fallback = True
-            solve_failed = True
-            reason = f"failed spatial frame matrix: {exc}"
+    U, numerical_gate = solve_scaled_symmetric(
+        K,
+        F,
+        thresholds=ConditionThresholds(),
+        allow_screening_regularization=False,
+    )
+    solve_failed = U is None
+    if U is None:
+        U = np.zeros(n, dtype=float)
+    regularization = float(numerical_gate.get("regularization") or 0.0)
+    fallback = solve_failed
+    reason = numerical_gate.get("message") if solve_failed else None
     equilibrium_diagnostics = _matrix_equilibrium_diagnostics(
         K, F, U, regularization=regularization, solve_failed=solve_failed
     )
+    equilibrium_diagnostics["scaledSolve"] = numerical_gate
     max_axial = 0.0
     support_axial_dofs: list[dict[str, Any]] = []
     column_dofs: list[dict[str, Any]] = []
@@ -490,7 +488,8 @@ def _solve_spatial_frame_proxy(
             "elevation": round(top_elevation - depth, 3),
             "rotation": round(float(U[wall_t[i]]), 8),
         })
-    cond_raw, cond_method = _fast_matrix_condition(K + np.eye(n) * 1e-9)
+    cond_raw = numerical_gate.get("scaledConditionNumber")
+    cond_method = numerical_gate.get("scaledConditionMethod") or "symmetric_diagonal_scaling"
     cond = round(float(cond_raw), 3) if cond_raw is not None and math.isfinite(float(cond_raw)) else None
     return {
         "available": True,
@@ -499,6 +498,11 @@ def _solve_spatial_frame_proxy(
         "matrixSize": n,
         "conditionNumber": cond,
         "conditionNumberMethod": cond_method,
+        "rawConditionNumber": numerical_gate.get("rawConditionNumber"),
+        "scaledConditionNumber": numerical_gate.get("scaledConditionNumber"),
+        "conditionGrade": numerical_gate.get("conditionGrade"),
+        "numericalGate": numerical_gate,
+        "illConditionedBlocked": bool(numerical_gate.get("blocked")),
         "equilibriumDiagnostics": equilibrium_diagnostics,
         "dofs": [
             {"index": i, "name": name, "value": round(float(U[i]), 8), "unit": dof_meta[i]["unit"], "dofType": dof_meta[i]["type"], "objectId": dof_meta[i].get("objectId"), "stageStatus": stage_type}
@@ -562,6 +566,7 @@ def solve_global_wall_wale_support_system(
     rigid_zone_length_factor: float = 0.04,
     initial_imperfection_ratio: float = 0.001,
     long_term_stiffness_factor: float = 1.0,
+    support_far_end_stiffness_by_id: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Solve a compact wall-wale-support global stiffness model.
 
@@ -594,6 +599,7 @@ def solve_global_wall_wale_support_system(
 
     wall_dofs = [f"wall:h:{face_code}:{i}:z={round(d,3)}" for i, d in enumerate(wall_depths)]
     support_nodes: list[dict[str, Any]] = []
+    support_far_end_stiffness_by_id = dict(support_far_end_stiffness_by_id or {})
     for support in active_supports:
         endpoint = _endpoint_for_face(support, face_code)
         if not endpoint:
@@ -604,6 +610,11 @@ def solve_global_wall_wale_support_system(
             spring_k *= max(0.25, min(float(support_stiffness_factor), 4.0))
         except Exception:
             spring_k, normal_projection = 1.0e5, 1.0
+        local_spring_k = float(spring_k)
+        far_end_axis = float(support_far_end_stiffness_by_id.get(str(support.id), 0.0) or 0.0)
+        far_end_projected = far_end_axis * max(float(normal_projection), 0.2) ** 2
+        if far_end_projected > 0.0 and local_spring_k > 0.0:
+            spring_k = 1.0 / (1.0 / local_spring_k + 1.0 / far_end_projected)
         if spring_k <= 0:
             continue
         z_depth = max(0.0, min(wall_depth, top_elevation - support.elevation))
@@ -614,6 +625,9 @@ def solve_global_wall_wale_support_system(
             "chainage": _chainage(point, segment),
             "depth": z_depth,
             "spring": spring_k,
+            "localSpring": local_spring_k,
+            "farEndAxisSpring": far_end_axis if far_end_axis > 0.0 else None,
+            "farEndProjectedSpring": far_end_projected if far_end_projected > 0.0 else None,
             "projection": max(0.2, normal_projection),
             "faceCode": face_code,
         })
@@ -643,14 +657,14 @@ def solve_global_wall_wale_support_system(
         f_global[i] += load * 0.5
         f_global[i + 1] += load * 0.5
 
-    # Embedded-side soil resistance.  Soil profile parameters are sparse in early
-    # projects; use horizontal_subgrade_modulus if present, otherwise a stable
-    # project-level screening value.
-    soil_k = DEFAULT_SOIL_SPRING_KN_M2
-    for layer in soil_profile or []:
-        m = getattr(getattr(layer, "parameters", None), "horizontal_subgrade_modulus", None)
-        if m:
-            soil_k = max(soil_k, float(m))
+    # Embedded-side soil resistance with explicit provenance. V3.74 prefers
+    # measured/imported horizontal subgrade modulus, derives a transparent
+    # preliminary value from elastic modulus when needed, and marks the fixed
+    # fallback as non-formal instead of silently treating it as project data.
+    soil_spring = representative_horizontal_spring(
+        soil_profile, excavation_depth_m=excavation_depth, allow_default=True
+    )
+    soil_k = float(soil_spring.get("valueKnM2") or DEFAULT_SOIL_SPRING_KN_M2)
     for i, d in enumerate(wall_depths):
         if d >= excavation_depth:
             dz_left = d - wall_depths[i - 1] if i > 0 else 0.5
@@ -680,26 +694,22 @@ def solve_global_wall_wale_support_system(
             span = max(abs(b["chainage"] - a["chainage"]), 1.0)
             _add_spring(k_global, idx_a, idx_b, 12.0 * wale_ei / (span ** 3))
 
-    regularization = 0.0
-    solve_failed = False
-    try:
-        u = np.linalg.solve(k_global, f_global)
-        fallback = False
-        reason = None
-    except np.linalg.LinAlgError as exc:
-        regularization = max(float(np.max(np.diag(k_global))) * 1.0e-6, 1.0)
-        try:
-            u = np.linalg.solve(k_global + np.eye(n) * regularization, f_global)
-            fallback = True
-            reason = f"regularized global matrix: {exc}"
-        except np.linalg.LinAlgError:
-            u = np.zeros(n)
-            fallback = True
-            solve_failed = True
-            reason = f"failed to solve global matrix: {exc}"
+    u, condensed_numerical_gate = solve_scaled_symmetric(
+        k_global,
+        f_global,
+        thresholds=ConditionThresholds(),
+        allow_screening_regularization=False,
+    )
+    solve_failed = u is None
+    if u is None:
+        u = np.zeros(n, dtype=float)
+    regularization = float(condensed_numerical_gate.get("regularization") or 0.0)
+    fallback = solve_failed
+    reason = condensed_numerical_gate.get("message") if solve_failed else None
     condensed_equilibrium_diagnostics = _matrix_equilibrium_diagnostics(
         k_global, f_global, u, regularization=regularization, solve_failed=solve_failed
     )
+    condensed_equilibrium_diagnostics["scaledSolve"] = condensed_numerical_gate
 
     support_reactions: list[dict[str, Any]] = []
     max_axial = 0.0
@@ -719,6 +729,9 @@ def solve_global_wall_wale_support_system(
             "depth": round(node["depth"], 3),
             "nodeDisplacement": round(float(u[idx]), 8),
             "springStiffness": round(float(node["spring"]), 3),
+            "localSupportStiffness": round(float(node.get("localSpring") or node["spring"]), 3),
+            "transferFarEndStiffness": round(float(node.get("farEndAxisSpring")), 3) if node.get("farEndAxisSpring") else None,
+            "effectiveSeriesStiffness": round(float(node["spring"]), 3),
             "nodeReaction": round(reaction, 3),
             "axialForce": round(axial, 3),
             "axialDeformation": round(deformation, 8),
@@ -776,7 +789,8 @@ def solve_global_wall_wale_support_system(
             rigid_zone_length_factor=rigid_zone_length_factor,
             initial_imperfection_ratio=initial_imperfection_ratio,
         )
-    condensed_cond_raw, condensed_condition_method = _fast_matrix_condition(k_global + np.eye(n) * 1e-9) if n else (None, "unavailable")
+    condensed_cond_raw = condensed_numerical_gate.get("scaledConditionNumber") if n else None
+    condensed_condition_method = condensed_numerical_gate.get("scaledConditionMethod") if n else "unavailable"
     condensed_condition_number = (
         round(float(condensed_cond_raw), 3)
         if condensed_cond_raw is not None and math.isfinite(float(condensed_cond_raw))
@@ -793,6 +807,10 @@ def solve_global_wall_wale_support_system(
     return {
         "method": "V2.0 spatial wall-wale-support-column-slab stiffness matrix prototype",
         "modelDimension": "space-frame-proxy-with-wall-and-wale-rotational-dofs" if spatial.get("available") else "condensed-wall-wale-support-matrix",
+        "soilSpringKnM2": round(soil_k, 3),
+        "soilSpringSource": soil_spring.get("source"),
+        "soilSpringFormalUseAllowed": bool(soil_spring.get("formalUseAllowed")),
+        "soilSpringLayerValues": soil_spring.get("layerValues"),
         "solverMode": spatial.get("solverMode") or ("spatial_frame_proxy" if spatial.get("available") else "condensed"),
         "spatialFallbackReason": spatial.get("reason") if not spatial.get("available") else None,
         "stageId": stage_id,
@@ -802,6 +820,11 @@ def solve_global_wall_wale_support_system(
         "matrixSize": spatial.get("matrixSize", n) if spatial.get("available") else n,
         "conditionNumber": spatial.get("conditionNumber") if spatial.get("available") else condensed_condition_number,
         "conditionNumberMethod": spatial.get("conditionNumberMethod") if spatial.get("available") else condensed_condition_method,
+        "rawConditionNumber": spatial.get("rawConditionNumber") if spatial.get("available") else condensed_numerical_gate.get("rawConditionNumber"),
+        "scaledConditionNumber": spatial.get("scaledConditionNumber") if spatial.get("available") else condensed_numerical_gate.get("scaledConditionNumber"),
+        "conditionGrade": spatial.get("conditionGrade") if spatial.get("available") else condensed_numerical_gate.get("conditionGrade"),
+        "numericalGate": spatial.get("numericalGate") if spatial.get("available") else condensed_numerical_gate,
+        "illConditionedBlocked": bool(spatial.get("illConditionedBlocked")) if spatial.get("available") else bool(condensed_numerical_gate.get("blocked")),
         "equilibriumDiagnostics": spatial.get("equilibriumDiagnostics") if spatial.get("available") else condensed_equilibrium_diagnostics,
         "spatialMatrixSize": spatial.get("matrixSize") if spatial.get("available") else None,
         "spatialConditionNumber": spatial.get("conditionNumber") if spatial.get("available") else None,

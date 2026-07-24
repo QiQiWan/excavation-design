@@ -127,7 +127,7 @@ def test_workspace_hard_limit_removes_large_candidate_preview(tmp_path: Path, mo
     payload, metadata = store.get_workspace_json(project.id) or ("", {})
     parsed = json.loads(payload)
     candidate = parsed["retainingSystem"]["supportLayoutRepair"]["candidates"][0]
-    assert candidate["planGeometry"]["previewSchema"] == "candidate-plan-v1"
+    assert candidate["planGeometry"]["previewSchema"] == "candidate-plan-v3"
     assert candidate["planGeometry"]["supports"] == []
     assert candidate["planGeometry"]["columns"] == []
     assert candidate["deltaGeometry"] == {}

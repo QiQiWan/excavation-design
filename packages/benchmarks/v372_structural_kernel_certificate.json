@@ -1,0 +1,425 @@
+{
+  "schema": "pitguard-external-structural-kernel-certificate-v1",
+  "referenceSoftware": "OpenSeesPy/OpenSees",
+  "status": "pass",
+  "caseCount": 3,
+  "passCount": 3,
+  "maximumRelativeDisplacementError": 2.6474138251490866e-14,
+  "cases": [
+    {
+      "name": "asymmetric_portal_frame",
+      "status": "pass",
+      "maximumRelativeDisplacementError": 2.6474138251490866e-14,
+      "tolerance": 1e-06,
+      "components": [
+        {
+          "nodeId": 1,
+          "component": "ux",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 1,
+          "component": "uy",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 1,
+          "component": "rz",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 2,
+          "component": "ux",
+          "pitguard": 0.010900947489294186,
+          "reference": 0.010900947489294287,
+          "relativeError": 9.229836370229909e-15
+        },
+        {
+          "nodeId": 2,
+          "component": "uy",
+          "pitguard": 7.998682895812275e-06,
+          "reference": 7.998682895812486e-06,
+          "relativeError": 2.6474138251490866e-14
+        },
+        {
+          "nodeId": 2,
+          "component": "rz",
+          "pitguard": -0.002572234792513238,
+          "reference": -0.0025722347925132617,
+          "relativeError": 9.273044538587984e-15
+        },
+        {
+          "nodeId": 3,
+          "component": "ux",
+          "pitguard": 0.010851028166986802,
+          "reference": 0.010851028166986904,
+          "relativeError": 9.43216472278789e-15
+        },
+        {
+          "nodeId": 3,
+          "component": "uy",
+          "pitguard": -2.299868289581227e-05,
+          "reference": -2.2998682895812485e-05,
+          "relativeError": 9.281066384325351e-15
+        },
+        {
+          "nodeId": 3,
+          "component": "rz",
+          "pitguard": -0.0025540823116741904,
+          "reference": -0.0025540823116742134,
+          "relativeError": 8.999352116269839e-15
+        },
+        {
+          "nodeId": 4,
+          "component": "ux",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 4,
+          "component": "uy",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 4,
+          "component": "rz",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        }
+      ],
+      "pitguardNumericalGate": {
+        "status": "pass",
+        "blocked": false,
+        "conditionGrade": {
+          "grade": "A",
+          "status": "pass",
+          "label": "稳定",
+          "blocked": false,
+          "message": "尺度化矩阵条件数为 4.382e+02，数值等级 A（稳定）。"
+        },
+        "rawConditionNumber": 463.6546002523718,
+        "scaledConditionNumber": 438.2269449993353,
+        "rawConditionMethod": "symmetric_eigenvalue_ratio",
+        "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+        "rawEigenMin": 4329.016980388507,
+        "rawEigenMax": 2007168.637527763,
+        "scaledEigenMin": 0.0045534410823941385,
+        "scaledEigenMax": 1.9954405747720498,
+        "matrixRank": 6,
+        "matrixSize": 6,
+        "rankDeficient": false,
+        "positiveDefinite": true,
+        "regularized": false,
+        "regularization": 0.0,
+        "solveMethod": "scaled_direct",
+        "relativeResidual": 2.3050168316001745e-14,
+        "residualNorm": 2.3506651606978208e-12,
+        "scalingMin": 0.0008650527662236622,
+        "scalingMax": 0.005175491695067656,
+        "message": "尺度化求解通过。"
+      },
+      "referenceSoftware": "OpenSeesPy",
+      "referenceVersion": "3.8.0.0"
+    },
+    {
+      "name": "closed_ring_with_radial_trusses",
+      "status": "pass",
+      "maximumRelativeDisplacementError": 9.45493435845987e-16,
+      "tolerance": 1e-06,
+      "components": [
+        {
+          "nodeId": 1,
+          "component": "ux",
+          "pitguard": 5.064924890141271e-05,
+          "reference": 5.064924890141268e-05,
+          "relativeError": 5.351521473674136e-16
+        },
+        {
+          "nodeId": 1,
+          "component": "uy",
+          "pitguard": 7.4635281433283116e-06,
+          "reference": 7.463528143328312e-06,
+          "relativeError": 1.1348961657114773e-16
+        },
+        {
+          "nodeId": 1,
+          "component": "rz",
+          "pitguard": 7.166907057341226e-06,
+          "reference": 7.1669070573412234e-06,
+          "relativeError": 3.54560038442245e-16
+        },
+        {
+          "nodeId": 2,
+          "component": "ux",
+          "pitguard": 2.621352814332832e-05,
+          "reference": 2.6213528143328304e-05,
+          "relativeError": 6.46256347198255e-16
+        },
+        {
+          "nodeId": 2,
+          "component": "uy",
+          "pitguard": -2.189633484481724e-06,
+          "reference": -2.1896334844817247e-06,
+          "relativeError": 3.8683777593709423e-16
+        },
+        {
+          "nodeId": 2,
+          "component": "rz",
+          "pitguard": 5.197676275992112e-06,
+          "reference": 5.197676275992109e-06,
+          "relativeError": 4.888913250523413e-16
+        },
+        {
+          "nodeId": 3,
+          "component": "ux",
+          "pitguard": -2.764668473421744e-05,
+          "reference": -2.764668473421743e-05,
+          "relativeError": 3.67653317740172e-16
+        },
+        {
+          "nodeId": 3,
+          "component": "uy",
+          "pitguard": -4.33852814332831e-06,
+          "reference": -4.338528143328312e-06,
+          "relativeError": 3.9047018678758507e-16
+        },
+        {
+          "nodeId": 3,
+          "component": "rz",
+          "pitguard": 5.1976762759921126e-06,
+          "reference": 5.197676275992112e-06,
+          "relativeError": 1.6296377501744701e-16
+        },
+        {
+          "nodeId": 4,
+          "component": "ux",
+          "pitguard": -1.371352814332832e-05,
+          "reference": -1.3713528143328319e-05,
+          "relativeError": 1.2353246201873803e-16
+        },
+        {
+          "nodeId": 4,
+          "component": "uy",
+          "pitguard": 5.314633484481725e-06,
+          "reference": 5.314633484481725e-06,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 4,
+          "component": "rz",
+          "pitguard": 7.166907057341228e-06,
+          "reference": 7.166907057341221e-06,
+          "relativeError": 9.45493435845987e-16
+        },
+        {
+          "nodeId": 5,
+          "component": "ux",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 5,
+          "component": "uy",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 5,
+          "component": "rz",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 6,
+          "component": "ux",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 6,
+          "component": "uy",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 6,
+          "component": "rz",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 7,
+          "component": "ux",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 7,
+          "component": "uy",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 7,
+          "component": "rz",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 8,
+          "component": "ux",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 8,
+          "component": "uy",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        },
+        {
+          "nodeId": 8,
+          "component": "rz",
+          "pitguard": 0.0,
+          "reference": 0.0,
+          "relativeError": 0.0
+        }
+      ],
+      "pitguardNumericalGate": {
+        "status": "pass",
+        "blocked": false,
+        "conditionGrade": {
+          "grade": "A",
+          "status": "pass",
+          "label": "稳定",
+          "blocked": false,
+          "message": "尺度化矩阵条件数为 7.723e+00，数值等级 A（稳定）。"
+        },
+        "rawConditionNumber": 9.177195648171802,
+        "scaledConditionNumber": 7.722861327150777,
+        "rawConditionMethod": "symmetric_eigenvalue_ratio",
+        "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+        "rawEigenMin": 2177388.151775187,
+        "rawEigenMax": 19982317.070852086,
+        "scaledEigenMin": 0.23645139629776213,
+        "scaledEigenMax": 1.8260813442187895,
+        "matrixRank": 12,
+        "matrixSize": 12,
+        "rankDeficient": false,
+        "positiveDefinite": true,
+        "regularized": false,
+        "regularization": 0.0,
+        "solveMethod": "scaled_direct",
+        "relativeResidual": 3.6675684568189466e-16,
+        "residualNorm": 9.307245349850798e-14,
+        "scalingMin": 0.00026380954721579513,
+        "scalingMax": 0.00044721368494270386,
+        "message": "尺度化求解通过。"
+      },
+      "referenceSoftware": "OpenSeesPy",
+      "referenceVersion": "3.8.0.0"
+    },
+    {
+      "name": "spatial_reduced_rotational_node",
+      "status": "pass",
+      "maximumRelativeDisplacementError": 2.238124776099849e-16,
+      "tolerance": 1e-06,
+      "components": [
+        {
+          "component": "rx",
+          "pitguard": 0.00024221218228387447,
+          "reference": 0.00024221218228387441,
+          "relativeError": 2.238124776099849e-16
+        },
+        {
+          "component": "ry",
+          "pitguard": -0.00017875632392803326,
+          "reference": -0.00017875632392803326,
+          "relativeError": 0.0
+        },
+        {
+          "component": "rz",
+          "pitguard": 3.5702746365105006e-05,
+          "reference": 3.570274636510501e-05,
+          "relativeError": 1.8979670383725317e-16
+        }
+      ],
+      "pitguardNumericalGate": {
+        "status": "pass",
+        "blocked": false,
+        "conditionGrade": {
+          "grade": "A",
+          "status": "pass",
+          "label": "稳定",
+          "blocked": false,
+          "message": "尺度化矩阵条件数为 1.589e+00，数值等级 A（稳定）。"
+        },
+        "rawConditionNumber": 2.4646577041242312,
+        "scaledConditionNumber": 1.588922563986846,
+        "rawConditionMethod": "symmetric_eigenvalue_ratio",
+        "scaledConditionMethod": "symmetric_eigenvalue_ratio",
+        "rawEigenMin": 2954711.6944436366,
+        "rawEigenMax": 7282352.94117647,
+        "scaledEigenMin": 0.7725221402219437,
+        "scaledEigenMax": 1.2274778597780565,
+        "matrixRank": 3,
+        "matrixSize": 3,
+        "rankDeficient": false,
+        "positiveDefinite": true,
+        "regularized": false,
+        "regularization": 0.0,
+        "solveMethod": "scaled_direct",
+        "relativeResidual": 1.6282567094991301e-16,
+        "residualNorm": 1.6077746776921858e-13,
+        "scalingMin": 0.00037056477875049577,
+        "scalingMax": 0.0005272100682009657,
+        "message": "尺度化求解通过。"
+      },
+      "pitguardEquilibriumResidual": 1.2872499543670934e-16,
+      "referenceSoftware": "OpenSeesPy",
+      "referenceVersion": "3.8.0.0"
+    }
+  ],
+  "scope": "linear 2D elasticBeamColumn/truss plus reduced 3D rotational-node benchmark; nonlinear geotechnical constitutive and global 6-DOF spatial verification remain separate",
+  "certificateId": "PG-EXT-KERNEL-20260721-001",
+  "structuralKernelVersion": "3.71.0-planar-spatial-linear-kernel",
+  "validatedSoftwareVersion": "3.71.0",
+  "validatedAlgorithmVersion": "3.71.0-conditioned-coupled-spatial-validation",
+  "compatibleSoftwareVersions": [
+    "3.71.x",
+    "3.72.x"
+  ],
+  "compatibilityBasis": "V3.72 changes calculation transaction, adaptive coupling diagnostics and result enrichment; the validated linear 2D frame/truss and reduced 3D rotational-node element kernels remain unchanged.",
+  "provenance": {
+    "sourceCertificate": "v371_opensees_certificate.json",
+    "referenceSoftware": "OpenSeesPy/OpenSees",
+    "resultValuesPreserved": true,
+    "revalidationRequiredWhen": [
+      "frame element formulation changes",
+      "truss formulation changes",
+      "reduced spatial node stiffness formulation changes",
+      "unit convention changes"
+    ]
+  }
+}

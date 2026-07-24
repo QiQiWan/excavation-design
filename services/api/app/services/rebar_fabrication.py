@@ -4,6 +4,7 @@ import math
 from collections import defaultdict
 from typing import Any
 
+from app.rules.gb50010.detailing_rules import required_rebar_lap_length_mm
 from app.schemas.domain import Project
 
 
@@ -25,14 +26,22 @@ def _splice_type(bar: dict[str, Any]) -> str:
     return "lap_splice"
 
 
-def _lap_length_m(diameter_mm: float) -> float:
-    return max(0.60, 40.0 * diameter_mm / 1000.0)
+def _lap_length_m(diameter_mm: float, grade: str = "HRB400", *, seismic: bool = False) -> float:
+    return required_rebar_lap_length_mm(diameter_mm, grade, seismic=seismic) / 1000.0
 
 
-def _split_lengths(total_m: float, splice_type: str, diameter_mm: float, max_len_m: float) -> list[float]:
+def _split_lengths(
+    total_m: float,
+    splice_type: str,
+    diameter_mm: float,
+    max_len_m: float,
+    *,
+    grade: str = "HRB400",
+    seismic: bool = False,
+) -> list[float]:
     if total_m <= max_len_m + 1e-9:
         return [max(total_m, 0.05)]
-    lap = _lap_length_m(diameter_mm) if splice_type == "lap_splice" else 0.08
+    lap = _lap_length_m(diameter_mm, grade, seismic=seismic) if splice_type == "lap_splice" else 0.08
     count = max(2, int(math.ceil(total_m / max(max_len_m - lap, 0.5))))
     while True:
         segment = (total_m + (count - 1) * lap) / count
@@ -133,6 +142,7 @@ def build_rebar_fabrication_package(
     transport_length_m: float = DEFAULT_TRANSPORT_LENGTH_M,
 ) -> dict[str, Any]:
     max_len = min(float(stock_length_m), float(transport_length_m))
+    seismic = project.design_settings.seismic_grade not in {"non_seismic_temporary", "none"}
     fabrication_segments: list[dict[str, Any]] = []
     bbs: list[dict[str, Any]] = []
     splice_records: list[dict[str, Any]] = []
@@ -156,7 +166,8 @@ def build_rebar_fabrication_package(
             invalid.append({"barId": bar_id, "status": "fail", "message": "钢筋长度或直径无效"})
             continue
         splice_type = _splice_type(bar)
-        lengths = _split_lengths(total, splice_type, diameter, max_len)
+        grade = str(bar.get("grade") or "HRB400")
+        lengths = _split_lengths(total, splice_type, diameter, max_len, grade=grade, seismic=seismic)
         stagger_group = int(bar.get("subIndex") or 0) % 2 + 1
         station = 0.0
         for idx, length in enumerate(lengths, start=1):
@@ -197,7 +208,7 @@ def build_rebar_fabrication_package(
                     "diameterMm": diameter,
                     "staggerGroup": stagger_group,
                     "nominalStationRatio": 0.30 if stagger_group == 1 else 0.70,
-                    "lapLengthM": _lap_length_m(diameter) if splice_type == "lap_splice" else 0.0,
+                    "lapLengthM": _lap_length_m(diameter, grade, seismic=seismic) if splice_type == "lap_splice" else 0.0,
                     "couplerSpec": f"直螺纹套筒 D{diameter:g}" if splice_type == "mechanical_coupler" else "",
                     "status": "pass",
                 })

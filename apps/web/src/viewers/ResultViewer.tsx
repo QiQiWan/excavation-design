@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { Project, SupportLayoutOptimizationCandidate, CalculationResult } from '../types/domain';
 import WallCloud3DViewer from './WallCloud3DViewer';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
+import { sanitizeCandidatePlanGeometry } from '../drawing/candidateGeometry';
 
 function conclusion(status?: string) {
   if (status === 'fail') return '存在 fail 项，自动方案不得进入施工图或正式报审。';
@@ -241,21 +242,17 @@ function RadarBar({ label, value }: { label: string; value: number }) {
 }
 
 function candidateGeometry(candidate: SupportLayoutOptimizationCandidate) {
-  const geom = (candidate.planGeometry ?? {}) as Record<string, any>;
-  return {
-    outline: (geom.outline ?? []) as { x: number; y: number }[],
-    supports: (geom.supports ?? []) as Record<string, any>[],
-    columns: (geom.columns ?? []) as Record<string, any>[],
-    obstacles: (geom.obstacles ?? []) as Record<string, any>[],
-  };
+  return sanitizeCandidatePlanGeometry(candidate.planGeometry);
 }
 
 function candidateBounds(candidate: SupportLayoutOptimizationCandidate) {
-  const { outline, supports, columns } = candidateGeometry(candidate);
+  const { outline, supports, columns, transferBeams, transferZones } = candidateGeometry(candidate);
   const adjustments = (candidate.lineAdjustments ?? []) as Record<string, any>[];
   const adjustmentPts = adjustments.flatMap((item) => [item.before?.start, item.before?.end, item.after?.start, item.after?.end]).filter(Boolean) as { x: number; y: number }[];
-  const xs = [...outline.map((p) => Number(p.x)), ...supports.flatMap((item) => [Number(item.start?.x), Number(item.end?.x)]), ...columns.map((item) => Number(item.location?.x)), ...adjustmentPts.map((p) => Number(p.x))].filter(Number.isFinite);
-  const ys = [...outline.map((p) => Number(p.y)), ...supports.flatMap((item) => [Number(item.start?.y), Number(item.end?.y)]), ...columns.map((item) => Number(item.location?.y)), ...adjustmentPts.map((p) => Number(p.y))].filter(Number.isFinite);
+  const transferPts = transferBeams.flatMap((item) => (item.points ?? []) as { x: number; y: number }[]);
+  const zonePts = transferZones.flatMap((item) => (item.outline ?? []) as { x: number; y: number }[]);
+  const xs = [...outline.map((p) => Number(p.x)), ...supports.flatMap((item) => [Number(item.start?.x), Number(item.end?.x)]), ...columns.map((item) => Number(item.location?.x)), ...transferPts.map((p) => Number(p.x)), ...zonePts.map((p) => Number(p.x)), ...adjustmentPts.map((p) => Number(p.x))].filter(Number.isFinite);
+  const ys = [...outline.map((p) => Number(p.y)), ...supports.flatMap((item) => [Number(item.start?.y), Number(item.end?.y)]), ...columns.map((item) => Number(item.location?.y)), ...transferPts.map((p) => Number(p.y)), ...zonePts.map((p) => Number(p.y)), ...adjustmentPts.map((p) => Number(p.y))].filter(Number.isFinite);
   if (!xs.length || !ys.length) return { minX: 0, maxX: 100, minY: 0, maxY: 50 };
   return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
 }
@@ -274,7 +271,7 @@ function sharedCandidateViewBox(candidates: SupportLayoutOptimizationCandidate[]
 }
 
 function CandidatePlanGraphic({ candidate, viewBox, selected = false }: { candidate: SupportLayoutOptimizationCandidate; viewBox: string; selected?: boolean }) {
-  const { outline, supports, columns, obstacles } = candidateGeometry(candidate);
+  const { outline, supports, columns, obstacles, transferBeams, transferZones } = candidateGeometry(candidate);
   const adjustments = (candidate.lineAdjustments ?? []) as Record<string, any>[];
   const outlinePts = outline.map((point) => `${point.x},${point.y}`).join(' ');
   return <svg viewBox={viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`方案 ${schemeLetter(candidate.rank)} 平面支撑布置`}>
@@ -282,6 +279,16 @@ function CandidatePlanGraphic({ candidate, viewBox, selected = false }: { candid
     {obstacles.map((obs, index) => {
       const pts = ((obs.points ?? []) as { x: number; y: number }[]).map((point) => `${point.x},${point.y}`).join(' ');
       return pts ? <polygon key={`obs-${index}`} points={pts} className="candidateObstacle" /> : null;
+    })}
+    {transferZones.map((zone, index) => {
+      const pts = ((zone.outline ?? []) as { x: number; y: number }[]).map((point) => `${point.x},${point.y}`).join(' ');
+      return pts ? <polygon key={`transfer-zone-${index}`} points={pts} className="candidateTransferZone" vectorEffect="non-scaling-stroke"><title>异形支撑闭合转接区</title></polygon> : null;
+    })}
+    {transferBeams.map((beam, index) => {
+      const points = ((beam.points ?? []) as { x: number; y: number }[]).filter((point) => Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)));
+      if (points.length < 2) return null;
+      const role = String(beam.role ?? 'transfer_ring_beam');
+      return <polyline key={String(beam.id ?? index)} points={points.map((point) => `${point.x},${point.y}`).join(' ')} className={`candidateTransferBeam ${role}`} vectorEffect="non-scaling-stroke"><title>{String(beam.code ?? beam.id ?? '转接构件')}</title></polyline>;
     })}
     {selected && adjustments.slice(0, 24).map((item, index) => {
       const before = item.before ?? {}; const after = item.after ?? {};
@@ -350,7 +357,7 @@ function CandidateSchemePlanCard({ candidate, selected = false, onClick, fullCal
   );
 }
 
-function statusText(status?: string) {
+function optimizationStatusText(status?: string) {
   const map: Record<string, string> = {
     applied_pending_recalculation: '已采纳，待复算',
     candidate_ready: '可优化',
@@ -472,7 +479,7 @@ function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Pro
       {error && <div className="error">{error}</div>}
       {loading && <div className="operationPanel compactOperation"><div className="operationHeader"><strong>正在分析设计长度冗余</strong><span>读取计算追溯链、墙段分组和设计面长度。</span></div><div className="operationBar"><em style={{ width: '54%' }} /></div></div>}
       {data && <>
-        <div className={`redundancyClosedLoop ${statusClass}`}><strong>{statusText(String(closed.status ?? ''))}</strong><span>{String(closed.message ?? '')}</span><em>{String(closed.nextAction ?? '')}</em></div>
+        <div className={`redundancyClosedLoop ${statusClass}`}><strong>{optimizationStatusText(String(closed.status ?? ''))}</strong><span>{String(closed.message ?? '')}</span><em>{String(closed.nextAction ?? '')}</em></div>
         <div className="metricGrid compact">
           <div><strong>{String(thickness?.value ?? '-')} m</strong><span>项目统一墙厚</span></div>
           <div><strong>{String(band?.low ?? '-')}–{String(band?.high ?? '-')}</strong><span>目标冗余带 R</span></div>
@@ -496,6 +503,71 @@ function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Pro
       </>}
     </section>
   );
+}
+
+function statusText(status: unknown) {
+  const value = String(status ?? 'missing');
+  if (value === 'pass' || value === 'completed') return '通过';
+  if (value === 'warning' || value === 'completed_with_review' || value === 'completed_with_engineering_review' || value === 'completed_with_delivery_review') return '警告';
+  if (value === 'manual_review') return '人工复核';
+  if (value === 'not_applicable' || value === 'skipped') return '不适用';
+  if (value === 'completed_with_blocks' || value === 'completed_with_delivery_blocks') return '计算完成，交付阻断';
+  if (value === 'engineering_failed' || value === 'completed_with_engineering_blocks') return '计算完成，工程条件阻断';
+  if (value === 'fail') return '阻断';
+  return '缺失';
+}
+
+function CalculationHealthPanel({ latest, compact = false }: { latest: CalculationResult; compact?: boolean }) {
+  const execution = (latest.calculationExecution ?? latest.reportDiagramData?.calculationExecution ?? {}) as Record<string, any>;
+  const numerical = (latest.numericalHealth ?? latest.reportDiagramData?.numericalHealth ?? {}) as Record<string, any>;
+  const completeness = (latest.resultCompleteness ?? latest.reportDiagramData?.resultCompleteness ?? {}) as Record<string, any>;
+  const catalog = (latest.resultCatalog ?? latest.reportDiagramData?.resultCatalog ?? {}) as Record<string, any>;
+  const phases = (execution.phases ?? []) as Record<string, any>[];
+  const domains = (completeness.domains ?? []) as Record<string, any>[];
+  const criticalStages = (catalog.criticalStages ?? latest.reportDiagramData?.criticalStages ?? []) as Record<string, any>[];
+  if (!phases.length && !domains.length && !Object.keys(numerical).length) return null;
+  return <section className={`calculationHealthPanel ${compact ? 'compact' : ''}`}>
+    <div className="calculationHealthHeader">
+      <div><span className="sectionKicker">计算流程与结果可信度</span><h4>流程、数值稳定性和结果完整性</h4></div>
+      <div className="calculationHealthScores">
+        <span><strong>{String(completeness.engineeringCompletenessPercent ?? '-')}%</strong>计算结果完整度</span>
+        <span><strong>{String(completeness.engineeringReadinessPercent ?? completeness.engineeringCompletenessPercent ?? '-')}%</strong>工程就绪度</span>
+        <span><strong>{String(completeness.formalIssueReadinessPercent ?? '-')}%</strong>正式交付就绪度</span>
+        <span><strong>{statusText(execution.engineeringStatus ?? execution.status)}</strong>工程计算</span>
+        <span><strong>{statusText(execution.deliveryStatus)}</strong>交付门禁</span>
+        <span><strong>{statusText(numerical.status)}</strong>数值健康</span>
+      </div>
+    </div>
+    {execution.bottleneckPhase ? <p className="calculationBottleneck">耗时控制阶段：<strong>{String(execution.bottleneckPhase.label ?? execution.bottleneckPhase.phaseId ?? '-')}</strong>，{Number(execution.bottleneckPhase.durationSeconds ?? 0).toFixed(2)} s，占总耗时 {String(execution.bottleneckPhase.durationSharePercent ?? '-')}%。</p> : null}
+    {Array.isArray(completeness.criticalBlockingDomains) && completeness.criticalBlockingDomains.length ? <p className="calculationBottleneck warningText">工程就绪度受关键结果域限制：<strong>{completeness.criticalBlockingDomains.join('、')}</strong>。完整度不会抵消关键阻断。</p> : null}
+    <div className="calculationPhaseStrip">
+      {phases.map((phase, index) => <div key={String(phase.phaseId ?? index)} className={`calculationPhase ${String(phase.status ?? 'missing')}`} title={String(phase.message ?? '')}>
+        <span>{index + 1}</span><strong>{String(phase.label ?? phase.phaseId ?? '-')}</strong><em>{statusText(phase.status)} · {Number(phase.durationSeconds ?? 0).toFixed(2)}s</em>
+      </div>)}
+    </div>
+    <div className="calculationHealthGrid">
+      <div className="calculationHealthCard">
+        <strong>数值稳定性</strong>
+        <div className="metricLine"><span>最大尺度化条件数</span><b>{toNumber(numerical.maximumScaledConditionNumber).toExponential(3)}</b></div>
+        <div className="metricLine"><span>最大平衡残差</span><b>{toNumber(numerical.maximumRelativeResidual).toExponential(3)}</b></div>
+        <div className="metricLine"><span>回退 / 阻断矩阵</span><b>{String(numerical.fallbackCount ?? 0)} / {String(numerical.blockedSystemCount ?? 0)}</b></div>
+        <div className="metricLine"><span>反力迭代</span><b>{statusText(numerical.reactionIteration?.status)} · {String(numerical.reactionIteration?.iterationCount ?? 0)}轮</b></div>
+        <div className="metricLine"><span>阻断根因 / 预警根因</span><b>{String((catalog.blockingCheckLedger ?? []).length)} / {String((catalog.warningCheckLedger ?? []).length)}</b></div>
+        {numerical.reactionIteration?.oscillationDetected ? <p className="small warningText">检测到两周期振荡，已启用自适应松弛。</p> : null}
+      </div>
+      <div className="calculationHealthCard">
+        <strong>结果域完整度</strong>
+        <div className="resultDomainList">{domains.slice(0, compact ? 5 : 11).map((domain, index) => <div key={String(domain.domainId ?? index)} className={`resultDomain ${String(domain.status ?? 'missing')}`}>
+          <span>{String(domain.label ?? domain.domainId ?? '-')}</span><div><em style={{ width: `${Math.max(0, Math.min(100, toNumber(domain.coveragePercent)))}%` }} /></div><b>{statusText(domain.status)}</b>
+        </div>)}</div>
+      </div>
+    </div>
+    {!compact && criticalStages.length ? <DeferredResultDetails summary="查看关键施工阶段排序与控制指标" className="engineeringDetails calculationCriticalDetails">
+      <table className="table compactTable"><thead><tr><th>阶段</th><th>类型</th><th>关键度</th><th>状态</th><th>墙位移</th><th>墙弯矩</th><th>支撑轴力</th><th>最小稳定指标</th><th>控制原因</th></tr></thead><tbody>
+        {criticalStages.map((stage, index) => <tr key={String(stage.stageId ?? index)}><td>{String(stage.stageName ?? stage.stageId ?? '-')}</td><td>{String(stage.stageType ?? '-')}</td><td>{String(stage.criticalityScore ?? '-')}</td><td>{statusText(stage.status)}</td><td>{String(stage.metrics?.maximumWallDisplacementMm ?? '-')}</td><td>{String(stage.metrics?.maximumWallMomentKnmPerM ?? '-')}</td><td>{String(stage.metrics?.maximumSupportForceKn ?? '-')}</td><td>{String(stage.metrics?.minimumStabilityFactor ?? '-')}</td><td>{(stage.reasons ?? []).join('；') || '-'}</td></tr>)}
+      </tbody></table>
+    </DeferredResultDetails> : null}
+  </section>;
 }
 
 function CheckSummaryPills({ summary }: { summary?: Record<string, unknown> }) {
@@ -527,6 +599,7 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
           <div><strong>{formatEngineeringValue(latest.governingValues.maxDisplacement, 'displacement')}</strong><span>最大墙体位移</span></div>
         </div>
         <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
+        <CalculationHealthPanel latest={latest} compact />
         <div className="compactDecisionGrid">
           <section className="summaryPanel"><h4>校核数量</h4><CheckSummaryPills summary={latest.checkSummary} /></section>
           <section className="summaryPanel"><h4>施工图闸门</h4><div className="metricLine"><span>状态</span><strong>{latest.formalReportGate?.status ?? '未评估'}</strong></div><div className="metricLine"><span>正式发行</span><strong>{latest.formalReportGate?.allowedForOfficialIssue ? '允许' : '暂不允许'}</strong></div><p className="small">{latest.formalReportGate?.headline ?? '完成计算后自动评估。'}</p></section>
@@ -549,6 +622,7 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
             <div><strong>{latest.governingValues.maxDisplacement ?? '-'}</strong><span>最大位移 mm</span></div>
           </div>
           <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
+          <CalculationHealthPanel latest={latest} />
           <OnDemandResultDetails project={project} latest={latest} highlightLocator={highlightLocator}>{(hydrated) => <>
             <InternalForceVisualization latest={hydrated} highlightLocator={highlightLocator} />
             <WallCloud3DViewer project={project} latest={hydrated} highlightLocator={highlightLocator} />

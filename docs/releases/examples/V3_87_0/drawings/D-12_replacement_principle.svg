@@ -1,0 +1,18 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'>
+<rect x='0' y='0' width='1400' height='900' fill='white'/>
+<rect x='35' y='35' width='1330' height='830' fill='none' stroke='black' stroke-width='2'/>
+<style>text{font-family:Arial,'Microsoft YaHei',sans-serif;font-size:20px} .small{font-size:14px} .thin{stroke:#333;stroke-width:1;fill:none} .thick{stroke:#111;stroke-width:4;fill:none} .rebar{stroke:#111;stroke-width:3} .dim{stroke:#777;stroke-width:1;fill:none;stroke-dasharray:6 4}</style>
+<text x='80' y='85'>换撑与拆撑设计原则</text>
+<rect x='100' y='125' width='1120' height='540' fill='none' stroke='#222' stroke-width='2'/>
+<circle cx='145' cy='173' r='5' fill='#244f78'/><text x='170' y='180'>1. 设计控制工况</text>
+<circle cx='145' cy='245' r='5' fill='#244f78'/><text x='170' y='252'>2. 传力交接</text>
+<circle cx='145' cy='317' r='5' fill='#244f78'/><text x='170' y='324'>3. 拆撑前置条件</text>
+<circle cx='145' cy='389' r='5' fill='#244f78'/><text x='170' y='396'>4. 永久结构要求</text>
+<text x='100' y='710' class='small'>本图由当前 DesignSnapshotId 对应模型生成；正式发行前执行图面规则、构件编号、标高、尺寸和成果一致性校核。</text>
+<rect x='880' y='750' width='470' height='105' fill='none' stroke='black' stroke-width='1'/>
+<line x1='880' y1='785' x2='1350' y2='785' stroke='black'/>
+<line x1='1040' y1='750' x2='1040' y2='855' stroke='black'/>
+<text x='895' y='775' class='small'>图名</text><text x='1055' y='775' class='small'>换撑与拆撑设计原则</text>
+<text x='895' y='812' class='small'>比例</text><text x='1055' y='812' class='small'>1:100</text>
+<text x='895' y='842' class='small'>阶段</text><text x='1055' y='842' class='small'>方案/施工图深化接口</text>
+</svg>

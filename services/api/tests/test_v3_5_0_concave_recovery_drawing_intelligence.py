@@ -52,57 +52,63 @@ def lshape_result(tmp_path_factory: pytest.TempPathFactory):
         yield client, project_id, supports.json(), calculation.json(), stored
 
 
-def test_v3_5_lshape_generates_direct_return_wall_supports(lshape_result) -> None:
+def test_lshape_without_transfer_system_is_blocked_without_fake_return_supports(lshape_result) -> None:
     _client, _project_id, retaining, _calculation, stored = lshape_result
     direct_supports = [item for item in retaining["supports"] if "S4" in (item.get("startFaceCode"), item.get("endFaceCode"))]
-    assert len(direct_supports) >= 2
-    # V3.16 permits a wall-connected corner diagonal to participate in the
-    # return-wall reaction path, while every non-ring member remains forbidden
-    # from passing through another support.
-    assert all(item["supportRole"] in {"main_strut", "secondary_strut", "corner_diagonal"} for item in direct_supports)
+    assert direct_supports == []
+    preflight = retaining["layoutSummary"]["strengthTopologyPreflight"]
+    assert preflight["status"] == "fail"
+    assert preflight["requiresAlternativeSupportSystem"] is True
+    assert preflight["shapeTransferSystemRequired"] is True
+    assert preflight["shapeTransferSystemComplete"] is False
+    assert preflight["recommendedSupportSystems"]
     quality = evaluate_support_layout_quality(Project.model_validate(stored))
     assert int(quality.metrics.get("nonRingCrossingCount", 0) or 0) == 0
     assert len(retaining["columns"]) >= 1
 
 
-def test_v3_5_lshape_calculation_has_no_hard_failure_and_compact_issue_register(lshape_result) -> None:
+def test_lshape_calculation_reports_missing_transfer_path_as_hard_failure(lshape_result) -> None:
     _client, _project_id, _retaining, calculation, _stored = lshape_result
-    assert calculation["checkSummary"]["fail"] == 0
+    assert calculation["checkSummary"]["fail"] > 0
     assert calculation["checkSummary"]["warning"] < 20
-    assert calculation["governingValues"]["maxDisplacement"] < 10.0
+    assert calculation["governingValues"]["maxDisplacement"] > 10.0
     diagnostics = calculation["designIterationSummary"]["calculationDiagnostics"]
-    assert diagnostics["status"] in {"pass", "warning"}
+    assert diagnostics["status"] == "fail"
     s4 = next(item for item in diagnostics["wallCoverage"] if item["segmentId"] == "S4")
-    assert s4["directSupportCount"] >= 1
-    assert s4["supportCoverageStatus"] == "pass"
+    assert s4["directSupportCount"] == 0
+    assert s4["supportCoverageStatus"] == "fail"
+    assert s4["supportCoverageMethod"] == "missing_direct_or_valid_corner_transfer_path"
 
 
 
 
-def test_v3_5_existing_v34_lshape_is_repaired_before_calculation(lshape_result) -> None:
+def test_existing_lshape_is_not_repaired_with_unsupported_midspan_reactions(lshape_result) -> None:
     _client, _project_id, _retaining, _calculation, stored = lshape_result
     project = Project.model_validate(stored).model_copy(deep=True)
     project.retaining_system.supports = [item for item in project.retaining_system.supports if "S4" not in (item.start_face_code, item.end_face_code)]
-    reduced_count = len(project.retaining_system.supports)
     project.retaining_system.columns = []
     project.retaining_system.support_nodes = []
     assert "S4" in unrestrained_concave_face_codes(project.excavation, project.retaining_system.supports)
     result = run_calculation(project, project.calculation_cases[-1], auto_repair=True)
     diagnostics = result.design_iteration_summary["calculationDiagnostics"]
-    assert diagnostics["topologyPreflight"]["changed"] is True
-    assert diagnostics["topologyPreflight"]["addedSupportCount"] >= 3
-    assert diagnostics["supportTopologySynchronization"]["synchronized"] is True
-    assert result.check_summary["fail"] == 0
-    assert len(project.retaining_system.supports) > reduced_count
+    assert diagnostics["topologyPreflight"]["changed"] is False
+    assert diagnostics["topologyPreflight"]["addedSupportCount"] == 0
+    assert "S4" in diagnostics["topologyPreflight"]["missingFacesBefore"]
+    assert result.check_summary["fail"] > 0
+    assert all(
+        item.support_role == "ring_strut" or (item.start_face_code and item.end_face_code)
+        for item in project.retaining_system.supports
+    )
 
 
-def test_v3_5_diagnose_and_repair_endpoint_is_idempotent(lshape_result) -> None:
+def test_diagnose_and_repair_preserves_controlled_concave_block(lshape_result) -> None:
     client, project_id, _retaining, _calculation, _stored = lshape_result
     response = client.post(f"/api/projects/{project_id}/calculation/diagnose-and-repair")
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["checkSummary"]["fail"] == 0
+    assert payload["checkSummary"]["fail"] > 0
     assert payload["diagnostics"]["topologyPreflight"]["changed"] is False
+    assert "S4" in payload["diagnostics"]["topologyPreflight"]["missingFacesBefore"]
     assert payload["diagnostics"]["supportTopologySynchronization"]["reason"] == "topology_current"
 
 

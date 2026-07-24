@@ -1,6 +1,7 @@
 import type { Point2D, Project, QualityGateIssue, SupportLayoutOptimizationCandidate } from '../types/domain';
 import Engineering3DViewer from './Engineering3DViewer';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
+import { sanitizeCandidatePlanGeometry } from '../drawing/candidateGeometry';
 
 function fmt(value: unknown, digits = 2) {
   if (typeof value !== 'number') return value === undefined || value === null ? '-' : String(value);
@@ -32,10 +33,14 @@ function supportStroke(severity?: string, role?: string) {
 
 type PlanSupport = { id?: string; code?: string; start: Point2D; end: Point2D; role?: string; supportRole?: string; spanLength?: number };
 type PlanColumn = { id?: string; code?: string; location: Point2D; supportCodes?: string[] };
+type PlanTransferBeam = { id?: string; code?: string; role?: string; beamRole?: string; points?: Point2D[]; axis?: { points?: Point2D[] } };
+type PlanTransferZone = { id?: string; outline?: Point2D[] };
 type SupportPlanSource = {
   outline: Point2D[];
   supports: PlanSupport[];
   columns: PlanColumn[];
+  transferBeams: PlanTransferBeam[];
+  transferZones: PlanTransferZone[];
   score?: number;
   metrics: Record<string, any>;
   qualityIssues?: QualityGateIssue[];
@@ -54,6 +59,8 @@ function projectBounds(source: SupportPlanSource, project: Project) {
   project.excavation?.obstacles?.forEach((o) => o.outline?.points.forEach((p) => pts.push(p)));
   source.supports.forEach((s) => { pts.push(s.start, s.end); });
   source.columns.forEach((c) => pts.push(c.location));
+  source.transferBeams.forEach((beam) => (beam.points ?? beam.axis?.points ?? []).forEach((point) => pts.push(point)));
+  source.transferZones.forEach((zone) => (zone.outline ?? []).forEach((point) => pts.push(point)));
   if (!pts.length) return { minX: -5, minY: -5, maxX: 65, maxY: 45 };
   const xs = pts.map((p) => p.x); const ys = pts.map((p) => p.y);
   const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 1);
@@ -71,17 +78,21 @@ function planSource(project: Project, previewCandidate?: SupportLayoutOptimizati
     ?? repair?.candidates?.find((row) => String(row.id ?? '') === String(repair.selectedCandidateId ?? ''))
     ?? repair?.candidates?.find((row) => Boolean(row.hardConstraints?.passed))
     ?? repair?.candidates?.[0];
-  const candidateGeometry = toRecord(fallbackCandidate?.planGeometry);
-  const candidateSupports = Array.isArray(candidateGeometry.supports) ? candidateGeometry.supports as PlanSupport[] : [];
-  const useCandidate = Boolean(fallbackCandidate && candidateSupports.length && (previewCandidate || !ret.supports.length));
+  const candidateGeometry = sanitizeCandidatePlanGeometry(fallbackCandidate?.planGeometry);
+  const candidateSupports = candidateGeometry.supports as PlanSupport[];
+  const candidateTransferBeams = candidateGeometry.transferBeams as PlanTransferBeam[];
+  const useCandidate = Boolean(fallbackCandidate && (candidateSupports.length || candidateTransferBeams.length) && (previewCandidate || !ret.supports.length));
   if (useCandidate && fallbackCandidate) {
-    const candidateOutline = Array.isArray(candidateGeometry.outline) ? candidateGeometry.outline as Point2D[] : project.excavation.outline.points;
-    const candidateColumns = Array.isArray(candidateGeometry.columns) ? candidateGeometry.columns as PlanColumn[] : [];
+    const candidateOutline = candidateGeometry.outline.length ? candidateGeometry.outline as Point2D[] : project.excavation.outline.points;
+    const candidateColumns = candidateGeometry.columns as PlanColumn[];
+    const candidateTransferZones = candidateGeometry.transferZones as PlanTransferZone[];
     const metrics = toRecord(fallbackCandidate.metrics);
     return {
       outline: candidateOutline,
       supports: candidateSupports,
       columns: candidateColumns,
+      transferBeams: candidateTransferBeams,
+      transferZones: candidateTransferZones,
       score: Number.isFinite(Number(fallbackCandidate.score)) ? Number(fallbackCandidate.score) : undefined,
       metrics,
       label: `方案 ${String.fromCharCode(64 + Math.max(1, Number(fallbackCandidate.rank || 1)))} · ${String(fallbackCandidate.variableSummary?.schemeLabel ?? fallbackCandidate.variableSummary?.topologyFamily ?? '候选支撑体系')}`,
@@ -94,6 +105,8 @@ function planSource(project: Project, previewCandidate?: SupportLayoutOptimizati
     outline: project.excavation.outline.points,
     supports: ret.supports as PlanSupport[],
     columns: ret.columns as PlanColumn[],
+    transferBeams: (ret.ringBeams ?? []).filter((beam: any) => String(beam.beamRole ?? '').startsWith('transfer_') || ['TR-', 'TF-', 'TB-'].some((prefix) => String(beam.code ?? '').startsWith(prefix))) as unknown as PlanTransferBeam[],
+    transferZones: [],
     score: quality?.score,
     metrics: toRecord(quality?.metrics),
     qualityIssues: quality?.issues,
@@ -118,15 +131,22 @@ function SupportQualityPlan({ project, highlightLocator, previewCandidate }: { p
     <div className="supportQualityPlan">
       <div className="planHeader">
         <h4>支撑布置评分平面高亮</h4>
-        <span className="small">红=阻断/交叉/严重超限，橙=角撑或警告，蓝=普通对撑；黄色半透明区=障碍/出土口。</span>
+        <span className="small">红=阻断/交叉/严重超限，橙=角撑或警告，蓝=普通对撑，紫/青=闭合转接构件；黄色半透明区=障碍/出土口。</span>
       </div>
-      <div className="supportQualitySource"><b>{source.label}</b><span className={source.formal ? 'formal' : 'diagnostic'}>{source.formal ? '正式体系' : '诊断候选'}</span><span>支撑 {source.supports.length} · 立柱 {source.columns.length}</span></div>
+      <div className="supportQualitySource"><b>{source.label}</b><span className={source.formal ? 'formal' : 'diagnostic'}>{source.formal ? '正式体系' : '诊断候选'}</span><span>支撑 {source.supports.length} · 转接构件 {source.transferBeams.length} · 立柱 {source.columns.length}</span></div>
       <svg viewBox={viewBox} className="supportPlanSvg" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${source.label}支撑布置评分平面`}>
         <defs>
           <pattern id="plan-grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.08" /></pattern>
         </defs>
         <rect x={b.minX} y={b.minY} width={w} height={h} fill="url(#plan-grid)" />
         <polygon points={source.outline.map((p) => `${p.x},${p.y}`).join(' ')} fill="rgba(37,99,235,0.05)" stroke="#0f172a" strokeWidth="0.25" />
+        {source.transferZones.map((zone, index) => (zone.outline ?? []).length ? <polygon key={`transfer-zone-${index}`} points={(zone.outline ?? []).map((p) => `${p.x},${p.y}`).join(' ')} className="supportTransferZone" vectorEffect="non-scaling-stroke"><title>异形闭合转接区</title></polygon> : null)}
+        {source.transferBeams.map((beam, index) => {
+          const points = (beam.points ?? beam.axis?.points ?? []).filter((point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)));
+          if (points.length < 2) return null;
+          const role = String(beam.role ?? beam.beamRole ?? 'transfer_ring_beam');
+          return <polyline key={String(beam.id ?? index)} points={points.map((point) => `${point.x},${point.y}`).join(' ')} className={`supportTransferBeam ${role}`} vectorEffect="non-scaling-stroke"><title>{String(beam.code ?? beam.id ?? '转接构件')}</title></polyline>;
+        })}
         {project.excavation.obstacles?.map((obs) => obs.outline?.points?.length ? (
           <polygon key={obs.id} points={obs.outline.points.map((p) => `${p.x},${p.y}`).join(' ')} fill={conflictObstacle ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.16)'} stroke={conflictObstacle ? '#dc2626' : '#f59e0b'} strokeWidth="0.22" />
         ) : null)}

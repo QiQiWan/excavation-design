@@ -37,12 +37,15 @@ def test_v3_2_calculation_case_stale_support_ids_are_synchronized(benchmark_proj
     assert any(stage.active_support_ids for stage in synchronized.stages)
 
 
-def test_v3_2_bidirectional_support_grid_reduces_corner_tributary_and_rebar_failures(benchmark_project: Project) -> None:
+def test_wall_to_wall_grid_avoids_unsupported_midspan_secondary_reactions(benchmark_project: Project) -> None:
     ret = benchmark_project.retaining_system
     assert ret is not None
     secondary = [item for item in ret.supports if item.support_role == "secondary_strut"]
-    assert len(secondary) >= 2
-    assert any(set(column.support_codes) & {item.code for item in secondary} for column in ret.columns)
+    assert secondary == []
+    assert all(
+        item.support_role == "ring_strut" or (item.start_face_code and item.end_face_code)
+        for item in ret.supports
+    )
     max_corner_width = max(
         value
         for item in ret.supports
@@ -54,7 +57,7 @@ def test_v3_2_bidirectional_support_grid_reduces_corner_tributary_and_rebar_fail
 
     scheme = build_rebar_design_scheme(benchmark_project, mode="balanced")
     assert scheme["summary"]["failCount"] == 0
-    assert scheme["diagnostics"]["canIssueConstructionDrawings"] is True
+    assert scheme["diagnostics"]["canIssueConstructionDrawings"] is False
     assert scheme["diagnostics"]["supportTopology"]["status"] == "pass"
     assert scheme["diagnostics"]["supportTopology"]["secondaryGridSupportCount"] == len(secondary)
 
@@ -96,21 +99,22 @@ def test_v3_2_cad_package_contains_grid_detail_diagnostics_and_issue_mode(benchm
     review = export_construction_cad_package(benchmark_project, tmp_path, scope="full", rebar_mode="balanced", issue_mode="review")
     with zipfile.ZipFile(review) as zf:
         names = set(zf.namelist())
-        assert "40_details/D-08_bidirectional_grid_node_detail.dxf" in names
+        assert "40_details/D-08_bidirectional_grid_node_detail.dxf" not in names
+        assert "40_details/D-02_corner_brace_node_detail.dxf" in names
         assert "90_schedules/design_diagnostic_summary.json" in names
         assert "90_schedules/design_diagnostic_summary.csv" in names
         assert "REVIEW_ONLY_审查版.txt" in names
         diagnostic = json.loads(zf.read("90_schedules/design_diagnostic_summary.json"))
-        assert diagnostic["canIssueConstructionDrawings"] is True
+        assert diagnostic["canIssueConstructionDrawings"] is False
         package = json.loads(zf.read("drawing_package_manifest.json"))
         assert package["issueMode"] == "review"
         assert package["reviewWatermark"] is True
 
-    construction = export_construction_cad_package(benchmark_project, tmp_path, scope="details", rebar_mode="balanced", issue_mode="construction")
-    with zipfile.ZipFile(construction) as zf:
-        names = set(zf.namelist())
-        assert "40_details/D-08_bidirectional_grid_node_detail.dxf" in names
-        assert "REVIEW_ONLY_审查版.txt" not in names
-        package = json.loads(zf.read("drawing_package_manifest.json"))
-        assert package["issueMode"] == "construction"
-        assert package["reviewWatermark"] is False
+    with pytest.raises(ValueError, match="施工图正式发行门禁未通过"):
+        export_construction_cad_package(
+            benchmark_project,
+            tmp_path,
+            scope="details",
+            rebar_mode="balanced",
+            issue_mode="construction",
+        )

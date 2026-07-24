@@ -12,6 +12,7 @@ from typing import Any, Iterable
 from app.drawings.detail_sheets import generate_construction_detail_sheets
 from app.drawing_rules import build_drawing_plan, get_effective_drawing_rule_set
 from app.schemas.domain import Point2D, Project, ReinforcementGroup
+from app.geometry.wall_path import normalize_construction_panels, resolve_wall_plan_path
 from app.services.rebar_detailing import build_rebar_detailing
 from app.services.rebar_scheme_optimizer import build_rebar_design_scheme
 from app.services.advanced_suite import build_advanced_engineering_suite
@@ -726,9 +727,14 @@ def _write_wall_panel_cage_traceability_csv(project: Project, path: Path) -> Non
         if not retaining:
             return
         for wall in retaining.diaphragm_walls:
-            panels = list(getattr(wall, "construction_panels", []) or [])
-            if not panels:
-                panels = [{"panelCode": f"{wall.panel_code}-P01", "panelIndex": 1, "startChainageM": 0.0, "endChainageM": wall.design_length or 0.0, "lengthM": wall.design_length or 0.0, "cageCount": 1, "jointType": "project_specific", "liftingReviewRequired": True}]
+            resolution = resolve_wall_plan_path(project, wall)
+            panels, _ = normalize_construction_panels(
+                wall,
+                resolution.points,
+                target_length_m=float(getattr(project.design_settings, "wall_panel_target_length_m", 6.0) or 6.0),
+                minimum_length_m=float(getattr(project.design_settings, "wall_panel_min_length_m", 3.0) or 3.0),
+                maximum_length_m=float(getattr(project.design_settings, "wall_panel_max_length_m", 7.0) or 7.0),
+            )
             groups = "; ".join(_group_token(group) for group in wall.reinforcement)
             for index, panel in enumerate(panels, start=1):
                 panel_code = str(panel.get("panelCode") or f"{wall.panel_code}-P{index:02d}")

@@ -66,16 +66,21 @@ def download_project_artifact(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=410, detail="Artifact file is missing") from exc
     relative = str(ref.get("relativePath") or "")
-    filename = f"{ref.get('kind', 'dataset')}-{artifact_id}.json.gz"
+    metadata = dict(ref.get("metadata") or {})
+    filename = str(metadata.get("originalFilename") or f"{ref.get('kind', 'dataset')}-{artifact_id}")
+    content_type = str(ref.get("contentType") or "application/octet-stream")
+    content_encoding = str(ref.get("contentEncoding") or "").strip()
+    headers = {
+        "X-Accel-Redirect": f"/protected-artifacts/{quote(relative, safe='/')}",
+        "Content-Type": content_type,
+        "Content-Disposition": f'attachment; filename="{filename.replace(chr(34), "")}"',
+        "Cache-Control": "private, no-store",
+    }
+    if content_encoding:
+        headers["Content-Encoding"] = content_encoding
     return Response(
         status_code=200,
-        headers={
-            "X-Accel-Redirect": f"/protected-artifacts/{quote(relative, safe='/')}" ,
-            "Content-Type": "application/json",
-            "Content-Encoding": "gzip",
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "private, no-store",
-        },
+        headers=headers,
     )
 
 

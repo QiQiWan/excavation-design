@@ -10,6 +10,11 @@ from app.services.design_service import auto_supports, support_layout_config_fro
 from app.services.support_layout_optimizer import OBJECTIVE_WEIGHTS, build_support_system_from_candidate, normalize_objective_weights, optimize_support_layout_candidates
 from app.services.calculation_state import invalidate_calculation_state
 from app.services.wall_embedment_design import auto_design_wall_embedment
+from app.services.support_candidate_contract import (
+    candidate_is_current,
+    candidate_set_state,
+    support_candidate_source_hash,
+)
 
 
 REPAIRABLE_CATEGORIES = {
@@ -273,11 +278,13 @@ def auto_repair_support_layout(
     if (
         existing
         and existing.candidates
+        and all(candidate_is_current(project, item) for item in existing.candidates)
         and old_support_count > 0
         and before.status not in {"fail", "manual_review"}
         and not objective_weights
         and not preset
         and not topology_family
+        and not search_config
     ):
         # V2.6.0: normal calculation should not repeatedly re-enumerate every
         # support candidate.  Large projects with many stored calculation results
@@ -384,9 +391,16 @@ def auto_repair_support_layout(
         summary += " 未发现需要自动修复的支撑布置问题。"
 
     final_lock_summary = _current_lock_summary(project)
+    candidate_state = candidate_set_state(project, candidates)
     repair = SupportLayoutRepairSummary(
         optimization_method="constrained support-line position optimizer with ranked alternatives and local locks",
-        optimization_phase="V2.0.9 local locks, animated candidate delta, and candidate calculation comparison",
+        optimization_phase="V3.66 candidate provenance, concave transfer templates, and delivery gates",
+        candidate_source_hash=str(candidate_state.get("currentSourceHash") or support_candidate_source_hash(project)),
+        candidate_state=str(candidate_state.get("state") or "not_generated"),
+        formal_candidate_count=int(candidate_state.get("formalCandidateCount", 0) or 0),
+        controlled_candidate_count=int(candidate_state.get("controlledCandidateCount", 0) or 0),
+        stale_candidate_count=int(candidate_state.get("staleCandidateCount", 0) or 0),
+        comparison_eligibility=candidate_state,
         hard_constraint_labels=[
             "支撑不得交叉",
             "支撑不得穿越出土口/坡道/保护区",
@@ -475,10 +489,25 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
             status="fail",
             summary=f"未找到候选方案 {candidate_id}。请先重新生成 A/B/C；系统不会在采用按钮中重新执行完整搜索。",
         )
+    if not candidate_is_current(project, selected):
+        return SupportLayoutRepairSummary(
+            status="fail",
+            candidate_state="stale",
+            summary="候选方案来源与当前轮廓、标高、墙体或设计参数不一致，已阻止采用。请重新生成候选。",
+        )
+    if not bool((selected.hard_constraints or {}).get("passed")) or (selected.variable_summary or {}).get("formalSchemeEligible", True) is False:
+        return SupportLayoutRepairSummary(
+            status="fail",
+            candidate_state="diagnostic_only",
+            summary="该候选属于受控阻断诊断试案，未通过正式方案硬约束，不能采用。",
+        )
     pattern = str((selected.variable_summary or {}).get("positionPattern", "as_generated"))
     amplitude = float((selected.variable_summary or {}).get("lineOffsetAmplitude", 0.0) or 0.0)
     topology_strategy = str((selected.variable_summary or {}).get("topologyFamily", "balanced_grid"))
-    system, adjustments = build_support_system_from_candidate(project, selected.target_spacing, selected.column_max_span, pattern, amplitude, topology_strategy)
+    transfer_template = str((selected.variable_summary or {}).get("transferSystemTemplate", "none") or "none")
+    system, adjustments = build_support_system_from_candidate(
+        project, selected.target_spacing, selected.column_max_span, pattern, amplitude, topology_strategy, transfer_template
+    )
     if system is None:
         return SupportLayoutRepairSummary(status="fail", summary=f"候选方案 {candidate_id} 重建失败。")
     # Preserve lock registry and support-local lock flags from the current retained system.
@@ -488,8 +517,15 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
     quality = evaluate_support_layout_quality(project)
     selected.delta_geometry = {"changedSupportCount": len(adjustments), "adjustments": adjustments[:20]}
     lock_summary = _current_lock_summary(project)
+    candidate_state = candidate_set_state(project, candidates)
     repair = SupportLayoutRepairSummary(
         optimization_method="interactive candidate adoption after weighted constrained optimization",
+        candidate_source_hash=str(candidate_state.get("currentSourceHash") or support_candidate_source_hash(project)),
+        candidate_state=str(candidate_state.get("state") or "formal_ready"),
+        formal_candidate_count=int(candidate_state.get("formalCandidateCount", 0) or 0),
+        controlled_candidate_count=int(candidate_state.get("controlledCandidateCount", 0) or 0),
+        stale_candidate_count=int(candidate_state.get("staleCandidateCount", 0) or 0),
+        comparison_eligibility=candidate_state,
         optimization_phase="V2.0.9 adopted support optimization candidate",
         hard_constraint_labels=[
             "支撑不得交叉", "支撑不得穿越出土口/坡道/保护区", "支撑端点必须落在围檩/环梁/节点上", "立柱不得落入障碍区", "换撑路径不得中断",
@@ -518,12 +554,13 @@ def adopt_support_layout_candidate(project: Project, candidate_id: str) -> Suppo
             "columnMaxSpan": selected.column_max_span,
             "positionPattern": pattern,
             "topologyFamily": topology_strategy,
+            "transferSystemTemplate": transfer_template,
             "changedSupportCount": len(adjustments),
             "lockSummary": lock_summary,
         }],
         unresolved_issues=[i for i in quality.issues if i.severity in {"fail", "warning", "manual_review"}][:30],
         summary=(
-            f"已采用支撑优化候选方案 {selected.id}：整体拓扑 {topology_strategy}，目标分仓 {selected.target_spacing:.1f}m，"
+            f"已采用支撑优化候选方案 {selected.id}：整体拓扑 {topology_strategy}，转接模板 {transfer_template}，目标分仓 {selected.target_spacing:.1f}m，"
             f"立柱服务跨 {selected.column_max_span:.1f}m，线位策略 {pattern}，非法穿越 {selected.crossing_count} 处，"
             f"内部汇交节点 {selected.junction_count} 处。"
         ),

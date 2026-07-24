@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.schemas.domain import Project
+from app.services.enterprise_library import resolve_enterprise_library
 
 # Project templates intentionally expose their provenance. Values marked
 # ``project_default`` must be confirmed by the project engineer; they are not
@@ -232,8 +233,57 @@ def build_action_group_contract(project: Project) -> list[dict[str, Any]]:
 def safety_targets(project: Project) -> dict[str, float]:
     ensure_design_basis_defaults(project)
     base = deepcopy(SAFETY_TARGETS_BY_LEVEL.get(project.design_settings.excavation_safety_level, SAFETY_TARGETS_BY_LEVEL["二级"]))
-    base.update({str(k): float(v) for k, v in project.design_settings.safety_factor_overrides.items() if v is not None})
+    enterprise_standard = resolve_enterprise_library(project).get("standardTemplate") or {}
+    enterprise = dict(enterprise_standard.get("safetyTargets") or {}) if isinstance(enterprise_standard, dict) else {}
+    if "heave" in enterprise and "base_heave" not in enterprise:
+        enterprise["base_heave"] = enterprise["heave"]
+    project_values = {
+        str(key): float(value)
+        for key, value in project.design_settings.safety_factor_overrides.items()
+        if value is not None
+    }
+    for key in set(base) | set(enterprise) | set(project_values):
+        values = [float(base.get(key, 1.0))]
+        if enterprise.get(key) is not None:
+            values.append(float(enterprise[key]))
+        if project_values.get(key) is not None:
+            values.append(float(project_values[key]))
+        base[key] = max(values)
     return base
+
+
+def enforce_safety_target_floors(project: Project, *, actor: str = "system") -> dict[str, Any]:
+    """Persist the same safety floor used by calculations and the UI.
+
+    A project may raise a target. A lower submitted value is promoted to the
+    safety-level/enterprise floor and recorded so saved settings never disagree
+    with the value actually used by the solver.
+    """
+    ensure_design_basis_defaults(project)
+    submitted = {
+        str(key): float(value)
+        for key, value in project.design_settings.safety_factor_overrides.items()
+        if value is not None
+    }
+    effective = safety_targets(project)
+    adjusted: list[dict[str, Any]] = []
+    for key, value in effective.items():
+        original = submitted.get(key)
+        if original is None or original + 1.0e-12 < value:
+            adjusted.append({
+                "target": key,
+                "submitted": original,
+                "enforced": float(value),
+                "reason": "安全等级、企业模板与项目提高值取最大值",
+            })
+        submitted[key] = float(value)
+    project.design_settings.safety_factor_overrides = submitted
+    if adjusted:
+        project.advanced_engineering = dict(project.advanced_engineering or {})
+        history = list(project.advanced_engineering.get("safetyTargetEnforcementAudit") or [])
+        history.append({"actor": actor, "adjustments": adjusted})
+        project.advanced_engineering["safetyTargetEnforcementAudit"] = history[-50:]
+    return {"adjusted": adjusted, "effective": effective}
 
 
 def action_group_enabled(project: Project, action_id: str, default: bool = True) -> bool:

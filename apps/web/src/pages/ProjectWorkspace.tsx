@@ -5,6 +5,7 @@ import ExcavationEditor from '../components/ExcavationEditor';
 import RebarDesignPanel from '../components/RebarDesignPanel';
 import DrawingRuleSetPanel from '../components/DrawingRuleSetPanel';
 import CalculationRecoveryPanel from '../components/CalculationRecoveryPanel';
+import PanelErrorBoundary from '../app/PanelErrorBoundary';
 import ConstructionStageEditor from '../components/ConstructionStageEditor';
 import SchemeComparisonPanel from '../components/SchemeComparisonPanel';
 import ProjectDataWorkspacePanel from '../components/ProjectDataWorkspacePanel';
@@ -28,6 +29,14 @@ type WorkspaceRole = 'designer' | 'calculator' | 'detailer' | 'construction' | '
 
 const ROLE_LABELS: Record<WorkspaceRole, string> = { designer: '方案设计', calculator: '结构计算', detailer: '配筋深化', construction: '施工策划', reviewer: '校核审核', publisher: '图纸发行' };
 const ROLE_STEPS: Record<WorkspaceRole, WorkflowStepKey[]> = { designer: ['settings','boreholes','geology','excavation','retaining'], calculator: ['retaining','calculation','assurance'], detailer: ['calculation','assurance','export'], construction: ['retaining','assurance','export'], reviewer: ['calculation','assurance'], publisher: ['assurance','export'] };
+const REBAR_TYPE_LABELS: Record<string, string> = { longitudinal: '纵向主筋', stirrup: '箍筋', distribution: '分布构造筋', tie: '拉结/架立筋', additional: '附加筋' };
+const ENGINEERING_STATUS_LABELS: Record<string, string> = { pass: '通过', warning: '需复核', manual_review: '人工复核', fail: '不通过', ready: '已就绪', preliminary: '初步结果', not_applicable: '不适用' };
+const DETAIL_LEVEL_LABELS: Record<string, string> = { shop_drawing: '施工详图级', construction: '施工配筋级', full: '完整逐根钢筋几何', detailed: '深化设计级' };
+
+function engineeringLabel(value: unknown, labels: Record<string, string>): string {
+  const token = String(value ?? '-');
+  return labels[token] ?? token.replace(/_/g, ' ');
+}
 
 type OperationPhaseStatus = 'pending' | 'running' | 'done' | 'error';
 
@@ -1218,7 +1227,7 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
             {objectiveMeta.map(([key, label]) => <label key={key}><span>{label}</span><input type="range" min="0" max="80" value={weights[key] ?? 0} onChange={(event) => setWeights((prev) => ({ ...prev, [key]: Number(event.target.value) }))} /><strong>{weights[key] ?? 0}</strong></label>)}
           </div>
           {previewRows.length ? <table className="table compactTable"><thead><tr><th>实时预览排名</th><th>原排名</th><th>原评分</th><th>新评分</th><th>支撑/立柱</th></tr></thead><tbody>{previewRows.map((row, idx) => <tr key={row.id}><td>{idx + 1}</td><td>{row.rank}</td><td>{row.oldScore}</td><td>{row.previewScore.toFixed(1)}</td><td>{row.supportCount}/{row.columnCount}</td></tr>)}</tbody></table> : <p className="small">生成候选方案后，滑块会实时显示权重变化对候选排序的影响。</p>}
-          <button onClick={() => runTask('正在由独立进程按平面类型生成候选支撑方案', 'support_layout_optimization', { preset: weightPreset, objectiveWeights: weights })} disabled={!project.excavation}>按当前权重生成 3-5 个候选方案</button>
+          <button onClick={() => runTask('正在由独立进程按平面类型生成候选支撑方案', 'support_layout_optimization', { preset: weightPreset, objectiveWeights: weights, searchConfig: { requireDiverseSchemes: true, enableConcaveTransferTemplates: true, concaveTransferTemplates: ['compact_elbow_ring', 'junction_hub_frame', 'ring_chord_frame'] } })} disabled={!project.excavation}>按当前权重生成 3-5 个候选方案</button>
           <p className="small">优化器先剔除非法穿越、障碍冲突、端点失效、围檩支点超限和换撑中断方案，再优先减少内部 T/Y/X 汇交节点与高度拥挤节点。综合评分只用于区分同等整洁度的可行方案。</p>
         </div>
         <div className="drawerSection">
@@ -1264,14 +1273,14 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
           <ol>{designNotes.map((item, index) => <li key={`retaining-note-${index}`}>{item}</li>)}</ol>
         </details>}
       </section>}
-      <SchemeComparisonPanel
+      <PanelErrorBoundary title="方案比选" resetKey={`${project.id}-${project.updatedAt}`}><SchemeComparisonPanel
         project={project}
         compact={viewMode === 'compact'}
-        onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })}
+        onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced', maxCandidates: 3, searchConfig: { requireDiverseSchemes: true, enableConcaveTransferTemplates: true, concaveTransferTemplates: ['compact_elbow_ring', 'junction_hub_frame', 'ring_chord_frame'] } })}
         onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })}
         onAdopt={(candidateId) => runTask('正在由独立worker采用支撑优化方案', 'adopt_support_candidate', { candidateId })}
         onRefresh={onRefresh}
-      />
+      /></PanelErrorBoundary>
       <DeferredDetails summary="查看当前围护结构模型与构件明细" defaultOpen={viewMode === 'professional'}><RetainingSystemViewer project={project} highlightLocator={selectedLocator} /></DeferredDetails>
     </div>
   );
@@ -1350,9 +1359,9 @@ function CalculationStep({ project, runStep, runWorkflow, runTask, onRefresh, se
         
       </div>
       {open && <div className="drawerBackdrop" onClick={() => setOpen(false)}><aside className="sideDrawer" onClick={(e) => e.stopPropagation()}><div className="drawerHeader"><h3>计算高级操作</h3><button className="secondary" onClick={() => setOpen(false)}>关闭</button></div><button onClick={() => runStep('正在生成施工工况', () => api.buildCases(project.id))} disabled={calculationDisabled}>仅生成工况</button><button onClick={() => runTask('正在由独立计算进程运行当前方案', 'calculation_full', { topN: 0 })} disabled={calculationDisabled}>仅运行当前方案</button><button onClick={() => runTask('正在受控计算前 3 个候选方案', 'candidate_comparison', { topN: 3 })} disabled={calculationDisabled}>并行计算前 3 个候选方案</button></aside></div>}
-      <SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced' })} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runTask('正在由独立worker采用支撑优化方案', 'adopt_support_candidate', { candidateId })} onRefresh={onRefresh} />
+      <PanelErrorBoundary title="计算阶段方案比选" resetKey={`${project.id}-${project.updatedAt}`}><SchemeComparisonPanel project={project} compact={viewMode === 'compact'} onGenerateCandidates={() => runTask('正在由独立进程生成 A/B/C 整体候选方案', 'support_layout_optimization', { preset: 'balanced', maxCandidates: 3, searchConfig: { requireDiverseSchemes: true, enableConcaveTransferTemplates: true, concaveTransferTemplates: ['compact_elbow_ring', 'junction_hub_frame', 'ring_chord_frame'] } })} onRunComparison={() => runTask('正在受控计算 A/B/C 整体方案', 'candidate_comparison', { topN: 3 })} onAdopt={(candidateId) => runTask('正在由独立worker采用支撑优化方案', 'adopt_support_candidate', { candidateId })} onRefresh={onRefresh} /></PanelErrorBoundary>
       <CalculationRecoveryPanel project={calculationProject} runStep={runStep} onNavigate={navigateClosureTarget} />
-      <ResultViewer project={calculationProject} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} />
+      <PanelErrorBoundary title="计算结果与规范复核" resetKey={`${calculationProject.id}-${calculationProject.updatedAt}`}><ResultViewer project={calculationProject} runStep={runStep} runTask={runTask} highlightLocator={selectedLocator} density={viewMode} /></PanelErrorBoundary>
       {viewMode === 'professional' ? <CalculationTracePanel project={calculationProject} /> : <details className="focusDetails"><summary>查看完整计算追溯链、公式和规范条文</summary><CalculationTracePanel project={calculationProject} /></details>}
     </div>
   );
@@ -1719,7 +1728,7 @@ function RebarDetailingPanel({ project }: { project: Project }) {
   if (error) return <div className="error">钢筋大样读取失败：{error}</div>;
   if (!data) return <div className="summaryPanel"><h3>钢筋大样与料表</h3><p className="small">正在读取钢筋编号、逐根几何、分节、吊装、搭接、保护层和签审清单。</p></div>;
   const bars = data.individualBars ?? [];
-  return <section className="summaryPanel"><h3>钢筋施工详图</h3><p className="small">{data.detailLevel}</p><div className="maturityGrid"><StatusCard title="钢筋编号" value={String(data.summary.barMarkCount ?? data.entries.length)} detail="bar mark" tone="pass" /><StatusCard title="逐根几何" value={String(data.summary.individualBarCount ?? bars.length)} detail={`omitted ${String(data.summary.omittedBarCount ?? 0)}`} tone="pass" /><StatusCard title="下料总长" value={`${data.summary.totalCutLengthM ?? '-'} m`} detail="中心线+锚固/搭接/弯钩" tone="review" /><StatusCard title="总重量" value={`${data.summary.totalWeightKg ?? '-'} kg`} detail="按 7850kg/m³ 估算" tone="review" /><StatusCard title="笼段" value={String(data.summary.cageSegmentCount ?? data.cageSegments?.length ?? 0)} detail="施工缝/分节" tone="pass" /><StatusCard title="签审清单" value={String(data.signoffChecklist?.length ?? 0)} detail={String(data.shopDrawingReadiness?.status ?? 'ready')} tone="pass" /></div><table className="table compactTable"><thead><tr><th>编号</th><th>宿主</th><th>类型</th><th>直径</th><th>形状</th><th>数量</th><th>单长</th><th>重量</th></tr></thead><tbody>{data.entries.slice(0, 12).map((item) => <tr key={item.barMark}><td>{item.barMark}</td><td>{item.hostCode}</td><td>{item.barType}</td><td>D{item.diameterMm}</td><td>{item.shapeCode}</td><td>{item.quantity}</td><td>{item.singleLengthM}m</td><td>{item.totalWeightKg}kg</td></tr>)}</tbody></table><h4>施工详图深化状态</h4><table className="table compactTable"><thead><tr><th>项目</th><th>状态</th><th>证据数</th></tr></thead><tbody>{(data.signoffChecklist ?? []).map((item) => <tr key={String(item.id)}><td>{String(item.label ?? item.item)}</td><td>{String(item.status)}</td><td>{String(item.evidenceCount ?? '-')}</td></tr>)}</tbody></table><h4>逐根钢筋几何样本</h4><table className="table compactTable"><thead><tr><th>Bar ID</th><th>宿主</th><th>类型</th><th>点数</th><th>中心线</th><th>锚固</th><th>搭接</th><th>弯钩</th><th>下料</th></tr></thead><tbody>{bars.slice(0, 12).map((bar) => <tr key={bar.barId}><td>{bar.barId}</td><td>{bar.hostCode}</td><td>{bar.barType}</td><td>{bar.points.length}</td><td>{bar.centerlineLengthM}m</td><td>{bar.anchorageLengthM}m</td><td>{bar.lapLengthM}m</td><td>{bar.hookLengthM}m</td><td>{bar.cutLengthM}m</td></tr>)}</tbody></table></section>;
+  return <section className="summaryPanel"><h3>钢筋施工详图</h3><p className="small">{engineeringLabel(data.detailLevel, DETAIL_LEVEL_LABELS)}</p><div className="maturityGrid"><StatusCard title="钢筋编号" value={String(data.summary.barMarkCount ?? data.entries.length)} detail="钢筋标记" tone="pass" /><StatusCard title="逐根几何" value={String(data.summary.individualBarCount ?? bars.length)} detail={`因显示上限省略 ${String(data.summary.omittedBarCount ?? 0)} 根`} tone="pass" /><StatusCard title="下料总长" value={`${data.summary.totalCutLengthM ?? '-'} m`} detail="中心线+锚固/搭接/弯钩" tone="review" /><StatusCard title="总重量" value={`${data.summary.totalWeightKg ?? '-'} kg`} detail="按 7850kg/m³ 估算" tone="review" /><StatusCard title="笼段" value={String(data.summary.cageSegmentCount ?? data.cageSegments?.length ?? 0)} detail="施工缝/分节" tone="pass" /><StatusCard title="签审清单" value={String(data.signoffChecklist?.length ?? 0)} detail={engineeringLabel(data.shopDrawingReadiness?.status ?? 'ready', ENGINEERING_STATUS_LABELS)} tone="pass" /></div><table className="table compactTable"><thead><tr><th>编号</th><th>宿主</th><th>类型</th><th>直径</th><th>形状代码</th><th>数量</th><th>单长</th><th>重量</th></tr></thead><tbody>{data.entries.slice(0, 12).map((item) => <tr key={item.barMark}><td>{item.barMark}</td><td>{item.hostCode}</td><td>{engineeringLabel(item.barType, REBAR_TYPE_LABELS)}</td><td>D{item.diameterMm}</td><td>{item.shapeCode}</td><td>{item.quantity}</td><td>{item.singleLengthM}m</td><td>{item.totalWeightKg}kg</td></tr>)}</tbody></table><h4>施工详图深化状态</h4><table className="table compactTable"><thead><tr><th>项目</th><th>状态</th><th>证据数</th></tr></thead><tbody>{(data.signoffChecklist ?? []).map((item) => <tr key={String(item.id)}><td>{String(item.label ?? item.item)}</td><td>{engineeringLabel(item.status, ENGINEERING_STATUS_LABELS)}</td><td>{String(item.evidenceCount ?? '-')}</td></tr>)}</tbody></table><h4>逐根钢筋几何样本</h4><table className="table compactTable"><thead><tr><th>钢筋 ID</th><th>宿主</th><th>类型</th><th>点数</th><th>中心线</th><th>锚固</th><th>搭接</th><th>弯钩</th><th>下料</th></tr></thead><tbody>{bars.slice(0, 12).map((bar) => <tr key={bar.barId}><td>{bar.barId}</td><td>{bar.hostCode}</td><td>{engineeringLabel(bar.barType, REBAR_TYPE_LABELS)}</td><td>{bar.points.length}</td><td>{bar.centerlineLengthM}m</td><td>{bar.anchorageLengthM}m</td><td>{bar.lapLengthM}m</td><td>{bar.hookLengthM}m</td><td>{bar.cutLengthM}m</td></tr>)}</tbody></table></section>;
 }
 
 function BenchmarkPanel() {

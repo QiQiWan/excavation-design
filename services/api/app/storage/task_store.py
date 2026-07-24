@@ -130,6 +130,58 @@ class SQLiteTaskStore:
             connection.commit()
             return True
 
+    def mark_stale_running_interrupted(
+        self,
+        reason: str,
+        *,
+        stale_seconds: float = 120.0,
+        exclude_task_ids: set[str] | None = None,
+    ) -> int:
+        """Interrupt only genuinely stale running tasks.
+
+        A fresh worker process is intentionally created after every heavy task.
+        Therefore worker process restart is not evidence that every running row
+        failed.  This method uses the persisted task heartbeat and keeps active
+        task ids excluded from recovery.
+        """
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        cutoff = max(float(stale_seconds), 5.0)
+        excluded = {str(value) for value in (exclude_task_ids or set()) if value}
+        count = 0
+        with self._connect() as connection:
+            rows = connection.execute("SELECT id, data FROM task_records WHERE status='running'").fetchall()
+            for row in rows:
+                task_id = str(row["id"] or "")
+                if not task_id or task_id in excluded:
+                    continue
+                task = json.loads(row["data"])
+                stamp = task.get("heartbeatAt") or task.get("updatedAt")
+                try:
+                    parsed = datetime.fromisoformat(str(stamp))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    age = max(0.0, (now_dt - parsed).total_seconds())
+                except (TypeError, ValueError):
+                    age = cutoff + 1.0
+                if age <= cutoff:
+                    continue
+                task["status"] = "interrupted"
+                task["currentStep"] = "计算worker心跳超时，任务已中断，可重新提交"
+                task["error"] = task.get("error") or reason
+                task["updatedAt"] = now
+                task["finishedAt"] = now
+                logs = list(task.get("logs") or [])
+                logs.append(f"[{now}] {reason}（任务心跳已过期 {age:.0f}s）")
+                task["logs"] = logs[-500:]
+                connection.execute(
+                    "UPDATE task_records SET status='interrupted', updated_at=?, data=? WHERE id=? AND status='running'",
+                    (now, json.dumps(task, ensure_ascii=False, separators=(",", ":")), task_id),
+                )
+                count += 1
+            connection.commit()
+        return count
+
     def mark_running_interrupted(self, reason: str = "External worker restarted") -> int:
         now = _now()
         count = 0

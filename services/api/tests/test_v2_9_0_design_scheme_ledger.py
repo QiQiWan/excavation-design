@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.version import SOFTWARE_VERSION
 
 ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_CSV = ROOT / "packages/sample-data/boreholes/sample_boreholes.csv"
@@ -42,7 +43,7 @@ def test_v3_0_0_dashboard_scheme_snapshot_and_export() -> None:
     pid = _project(client)
 
     dashboard = client.get(f"/api/projects/{pid}/dashboard").json()
-    assert dashboard["dashboardVersion"] == "3.2.0"
+    assert dashboard["dashboardVersion"] == SOFTWARE_VERSION
     assert "deliveryGate" in dashboard
     assert "currentKpis" in dashboard
 
@@ -53,7 +54,7 @@ def test_v3_0_0_dashboard_scheme_snapshot_and_export() -> None:
     assert apply.status_code == 200, apply.text
 
     ledger_pending = client.get(f"/api/projects/{pid}/design-scheme-ledger").json()
-    assert ledger_pending["ledgerVersion"] == "3.2.0"
+    assert ledger_pending["ledgerVersion"] == SOFTWARE_VERSION
     assert ledger_pending["schemeSnapshots"][-1]["status"] == "pending_recalculation"
     assert ledger_pending["deliveryGate"]["recomputeRequired"] is True
 

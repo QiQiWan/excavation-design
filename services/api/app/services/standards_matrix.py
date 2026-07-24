@@ -437,7 +437,7 @@ def build_standards_process_matrix(project: Project | None = None) -> dict[str, 
             "GB 55030、GB 55032 和 GB 50202 用于防水节点、施工质量控制及验收信息的成果发行追溯。",
             "地方标准、勘察报告、审图意见、专家论证和企业标准应在项目级规则集中补充。",
         ],
-        "usageNote": "V3.20按设计依据、体系方案、候选完整计算、构件设计、钢筋笼深化、成果生产和审签发行八级门禁展示流程；普通非环形水平支撑执行同层零穿越，支撑分支在首个主构件交点终止并形成带临时立柱的T/Y节点，明确的环梁—径向撑体系采用独立环撑规则。矩阵同时保留一般多边形拓扑、计算快照状态和地质设计域覆盖证据，仅覆盖软件已实现的规则子集，不替代标准全文。",
+        "usageNote": "V3.87.3只保留设计基准、工程输入、围护方案、计算验算、配筋深化和成果交付六阶段主流程。原九个设计核心阶段调整为内部质量证据域，仅在按需打开的质量与追溯中心中分组展示，不再作为第二套流程导航。V3.87.2的参数来源门禁、candidate-plan-v3预览完整性、工作区计算摘要保留和候选几何去重继续有效；闭合环梁、转接框架和内环弦杆不会在缓存压缩后静默丢失。施工和现场信息仅作为外部设计复核资料接入。矩阵只覆盖软件已实现的规则子集，不替代标准全文。",
     }
 
 
@@ -447,10 +447,18 @@ def build_online_documentation() -> dict[str, Any]:
         "title": "PitGuard 在线设计与计算文档",
         "version": SOFTWARE_VERSION,
         "chapters": [
-            {"id": "workflow", "title": "操作流程", "summary": "按设计院式八级门禁组织：设计依据与设计域、支护体系与施工分幅、候选完整计算、选定方案复算、构件与配筋、钢筋笼和节点深化、成果生成、校审发行。"},
+            {"id": "workflow", "title": "六阶段单一设计主流程", "summary": "按设计基准、工程输入、围护方案、计算验算、配筋深化和成果交付组织；内部证据域不再作为独立导航。"},
             {"id": "principles", "title": "计算原理", "summary": "说明土水压力、弹性地基梁、围檩连续梁、全局耦合、构件承载力、稳定性和钢筋深化的输入、公式、输出及边界。"},
             {"id": "standards", "title": "流程—规范矩阵", "summary": "每个设计步骤对应主控规范、条文关注点、已实现规则和人工复核项。"},
+            {"id": "accuracy", "title": "准确度与验证", "summary": "解释 L0-L3 分析等级、参数来源、默认值、六自由度验证、敏感性与成熟软件基准。"},
+            {"id": "compliance", "title": "合规与法定流程", "summary": "区分规范限值、企业值、项目值和算法建议值，并按设计发行、施工准备和现场放行拆分责任门禁。"},
+            {"id": "responsibility", "title": "历史责任边界兼容", "summary": "保留V3.81三域对象的数据兼容与审计读取；其施工计划、现场快照和偏差事件不参与V3.87设计主流程完成度。"},
+            {"id": "design-core", "title": "设计核心与外部协同边界", "summary": "施工计划、现场快照和偏差事件退出设计主流程；外部来文、监测报告和现场反馈以设计复核请求接入。"},
             {"id": "deliverables", "title": "工程图纸与协同成果导出", "summary": "说明施工图体系、CAD/PDF、IFC、DOCX、钢筋深化 ZIP、项目 JSON、交付清单、哈希和审签要求。"},
+            {"id": "scheme-search", "title": "五级方案搜索与联合优化", "summary": "围护体系、支撑体系族、空间拓扑、构件尺寸和完整计算分级推进，A/B/C必须具有实质体系差异。"},
+            {"id": "rebar-closure", "title": "配筋回代与节点深化", "summary": "实际钢筋选择后更新有效高度和刚度，重新验算承载力、裂缝、锚固、净距、拥挤和节点承压。"},
+            {"id": "delivery-qc", "title": "设计院级交付质检", "summary": "施工图、计算书、IFC和钢筋表共用DesignSnapshotId，并执行图种、章节、单位、编号和模型一致性检查。"},
+            {"id": "recovery", "title": "设计界面收敛与质量追溯", "summary": "说明V3.87.3单一主流程、按需质量中心、candidate-plan-v3完整性、参数来源门禁和局部错误隔离。"},
         ],
         "calculationPrinciples": [
             {
@@ -619,6 +627,91 @@ def build_online_documentation() -> dict[str, Any]:
             "folders": ["00_release", "10_drawings", "20_bim", "30_reports", "40_rebar", "50_data", "90_audit"],
             "releaseControl": ["release_manifest.json", "issue_transmittal.csv", "deliverable_register.csv", "acceptance_matrix.csv", "SHA256SUMS.txt", "verify_delivery_package.py"],
             "releaseGrades": ["development_only", "review_complete", "construction_issued"],
+        },
+        "analysisLevels": [
+            {"level": "L0", "name": "算法筛查", "use": "几何、构造和风险快速筛查；不得单独用于正式发行。"},
+            {"level": "L1", "name": "规范简化计算", "use": "按公开公式和适用条件完成方案与初步设计；需明确模型边界。"},
+            {"level": "L2", "name": "验证型工程计算", "use": "具备正式参数来源、收敛诊断、空间验证和独立基准证据。"},
+            {"level": "L3", "name": "高级专项复核", "use": "非线性有限元、渗流固结、接触、动力或成熟软件专项复核。"},
+        ],
+        "complianceSemantics": [
+            {"type": "normative_limit", "label": "规范控制值", "formalUse": True, "description": "直接追溯标准版本、条文、公式与适用条件。"},
+            {"type": "enterprise_control", "label": "企业标准值", "formalUse": True, "description": "需绑定已批准企业标准及版本。"},
+            {"type": "project_confirmed", "label": "项目控制值", "formalUse": True, "description": "需设计依据确认和项目责任人签署。"},
+            {"type": "algorithm_screening", "label": "算法建议值", "formalUse": False, "description": "用于候选生成和风险筛查，不显示为规范限值。"},
+            {"type": "template_default", "label": "待确认默认值", "formalUse": False, "description": "正式模式自动阻断。"},
+        ],
+        "statutoryWorkflow": {
+            "classification": "项目确认危大工程分类；软件筛查只用于提醒。设计单位定义设计控制边界，施工单位编制专项方案，监理、监测和现场责任方在后续阶段补充计划与实测证据。",
+            "evidence": ["设计发行：真实地质、水文与周边环境资料、设计控制工况、计算校审", "施工准备：危大工程清单、专项施工方案、监理审查、专家论证、监测方案和应急预案", "现场放行：实际开挖、支撑安装、实测预加轴力、水位、监测结果和阶段验收"],
+            "issueGate": "设计发行、施工准备和现场放行分别判断。尚未发生的现场数据不得降低设计发行就绪度；施工计划或现场状态超出设计允许域时触发复核、复算或设计变更。",
+            "references": [
+                {"title": "危险性较大的分部分项工程安全管理规定", "url": "https://www.mohurd.gov.cn/gongkai/zhengce/gzk/art/2022/art_17337_763794.html"},
+                {"title": "危险性较大的分部分项工程专项施工方案编制指南", "url": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_763509.html"},
+                {"title": "危险性较大的分部分项工程专项施工方案严重缺陷清单（试行）", "url": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2024/art_d0bab8f6afbd4bb2868b83fc0440f461.html"},
+            ],
+        },
+        "releaseRoadmap": [
+            {"version": "3.73", "focus": "分析等级、参数来源、合规语义和正式模式门禁"},
+            {"version": "3.74", "focus": "非线性地基反力、地下水敏感性和岩土保证包"},
+            {"version": "3.75", "focus": "全局六自由度空间杆系与钢支撑稳定曲线"},
+            {"version": "3.76", "focus": "验证矩阵、独立参考与成熟软件基准证书"},
+            {"version": "3.77", "focus": "危大工程法定流程、监测反馈、验收、审签和档案追溯"},
+            {"version": "3.77.1", "focus": "设计发行、施工准备、现场放行三门禁热修和责任方提示"},
+            {"version": "3.78", "focus": "设计控制工况取代含义混杂的施工阶段，计算只消费设计责任数据"},
+            {"version": "3.79", "focus": "设计不利情景、正式复算就绪台账和真实结果包络"},
+            {"version": "3.80", "focus": "施工计划符合性分级，超出设计允许域时触发复核或变更"},
+            {"version": "3.81", "focus": "现场执行快照、偏差事件、监测触发和阶段放行闭环"},
+            {"version": "3.82-3.87", "focus": "设计核心收敛、参数治理、五级方案搜索、逐构件包络、配筋回代和设计院级交付"},
+            {"version": "3.87.1", "focus": "设计主流程样式接入、异形转接体系完整预览、旧缓存自动重建和面板级故障隔离"},
+            {"version": "3.87.2", "focus": "设计核心完整性加固、参数来源门禁、候选预览V3、工作区证据保留和候选池前置去重"},
+            {"version": "3.87.3", "focus": "六阶段单一主流程、质量与追溯中心按需打开、九证据域分组映射和界面认知负担收敛"},
+            {"version": "3.87.4", "focus": "工程路由保持、地勘异步解析、计算阻断自动诊断修复与强制闭环复算"},
+        ],
+        "responsibilityWorkflow": {
+            "principle": "设计、施工准备和现场执行数据分别保存，后续业务对象不得覆盖已批准设计对象。",
+            "domains": [
+                {"id": "design", "name": "设计业务域", "owner": "设计单位", "objects": ["设计基准", "设计控制工况", "设计情景", "计算与配筋", "设计校审和设计发行"], "gate": "designIssueGate"},
+                {"id": "construction", "name": "施工准备域", "owner": "施工单位/监理单位", "objects": ["施工计划阶段", "专项施工方案", "监理审查", "专家论证", "监测方案和应急预案"], "gate": "constructionPreparationGate"},
+                {"id": "field", "name": "现场执行域", "owner": "施工单位/监理单位/监测单位", "objects": ["实际开挖状态", "支撑安装和实测预加轴力", "水位与监测快照", "偏差事件", "阶段验收"], "gate": "fieldStageReleaseGate"}
+            ],
+            "valueTypes": ["design_value", "design_limit", "design_assumption", "contractor_plan", "field_observation"],
+            "deviationLogic": "现场实际值先与施工计划比较，再与设计允许域比较。超出计划但仍在设计域内由施工侧处置；超出设计域时自动要求设计复核、复算或变更。设计控制工况须批准或冻结，施工计划须批准，现场快照须核验后才能进入对应正式门禁。"
+        },
+        "recoveryGuide": {
+            "release": "3.87.4",
+            "fixed": [
+                "设计质量证据面板样式纳入主入口，抽屉卡片、页签、表格和响应式布局正常",
+                "candidate-plan-v2预览缓存保留transferBeams、transferZones和obstacles",
+                "ResultViewer、方案比选、核心精简预览和围护评分平面统一显示转接体系",
+                "清除ResultViewer重复statusText声明，避免进入根级安全恢复模式",
+                "设计主流程、方案比选和结果可视化增加局部错误边界",
+                "设计核心聚合接口减少重复项目水合和首屏并发请求",
+                "正式参数确认增加来源资格校验，软件建议值和人工估算值不能被一键提升为正式参数",
+                "candidate-plan-v3记录预览完整性、无效构件和截断状态，并保留转接体系审计",
+                "工作区压缩保留候选完整计算摘要、数值健康和结果完整度证据",
+                "候选池在入池前按物理几何指纹去重，降低相同方案的内存占用",
+                "项目工作区仅保留六阶段主导航，质量证据面板改为按需侧栏",
+                "九个内部证据域映射到六个主阶段，不再形成竞争性流程",
+                "质量中心关闭时不加载设计核心聚合数据，减少首屏请求和视觉噪声"
+            ],
+            "deployment": [
+                "停止旧前端服务并执行npm ci及npm run build",
+                "部署新的dist目录，禁止继续使用历史dist",
+                "首次打开旧项目时由后端自动删除非candidate-plan-v3缓存并从项目快照重建",
+                "浏览器执行强制刷新，确认静态资源版本为3.87.4"
+            ],
+            "acceptance": [
+                "质量与追溯中心按六组证据卡片显示，无裸文本和大面积异常留白",
+                "L形方案A/B/C同时显示径向撑、闭合环梁/转接框架/内环弦杆和立柱",
+                "打开计算结果页不再出现Identifier statusText has already been declared",
+                "单个可视化面板异常时只显示局部重试卡片，不退出整个项目",
+                "预览被截断或含无效坐标时明确显示完整性警告，不把不完整图形解释为真实拓扑",
+                "重新打开项目后仍保留A/B/C完整计算摘要和推荐依据",
+                "软件建议参数不能直接通过批量确认进入正式设计",
+                "主页面只显示六个设计步骤，质量证据默认隐藏并通过质量与追溯按钮打开",
+                "质量中心的六组证据与主导航一一对应，点击后返回对应主步骤"
+            ]
         },
         "fileGuide": [
             {"file": "协同成果交付包 ZIP", "use": "统一组织图纸、计算书、IFC、钢筋深化、项目快照、验收矩阵和离线哈希校验；优先用于完整移交。"},

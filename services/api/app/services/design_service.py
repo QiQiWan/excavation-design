@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from statistics import mean
 from types import SimpleNamespace
+from typing import Any
 
 from app.rules.enterprise.preliminary_design_rules import select_embedment_depth, select_wall_thickness, support_elevations
 from app.schemas.domain import (
@@ -19,7 +20,8 @@ from app.schemas.domain import (
     WallDesignResult,
 )
 from app.services.reinforcement_service import diaphragm_wall_reinforcement, support_reinforcement
-from app.services.excavation_service import _unique_polygon_points
+from app.geometry.wall_path import normalize_construction_panels
+from app.services.excavation_service import _unique_polygon_points, generate_excavation_segments
 from app.services.support_layout import (
     SupportLayoutConfig,
     make_column_elements,
@@ -272,7 +274,15 @@ def auto_diaphragm_wall(project_excavation, existing_system: RetainingSystem | N
             maximum_length_m=maximum_panel,
         )
         if existing is not None and getattr(existing, "construction_panels", None):
-            construction_panels = list(existing.construction_panels)
+            # Keep panel identity and review metadata, but never keep historical
+            # endpoint coordinates after the excavation outline/segment moved.
+            construction_panels, _ = normalize_construction_panels(
+                existing,
+                [segment.start, segment.end],
+                target_length_m=target_panel,
+                minimum_length_m=minimum_panel,
+                maximum_length_m=maximum_panel,
+            )
         panel = DiaphragmWallPanel(
             segment_id=segment.id,
             panel_code=f"DW-{segment.name}-001",
@@ -376,7 +386,15 @@ def _pit_centroid(points: list[Point2D]) -> Point2D:
     return Point2D(x=mean([p.x for p in points]), y=mean([p.y for p in points]))
 
 
-def support_layout_config_from_settings(settings, *, topology_strategy: str = "balanced_grid", target_spacing: float | None = None, column_span: float | None = None) -> SupportLayoutConfig:
+def support_layout_config_from_settings(
+    settings,
+    *,
+    topology_strategy: str = "balanced_grid",
+    target_spacing: float | None = None,
+    column_span: float | None = None,
+    concave_transfer_template: str = "none",
+    concave_transfer_scale: float = 1.0,
+) -> SupportLayoutConfig:
     return SupportLayoutConfig(
         target_main_support_spacing_m=float(target_spacing if target_spacing is not None else getattr(settings, "default_support_spacing", 5.0)),
         column_max_unbraced_span_m=float(column_span if column_span is not None else 18.0),
@@ -398,17 +416,66 @@ def support_layout_config_from_settings(settings, *, topology_strategy: str = "b
         transition_zone_influence_m=float(getattr(settings, "support_transition_zone_influence_m", 8.0)),
         support_min_station_separation_m=float(getattr(settings, "support_min_station_separation_m", 2.8)),
         support_level_depths_m=tuple(getattr(settings, "support_level_depths_m", []) or []),
+        concave_transfer_template=concave_transfer_template,
+        concave_transfer_scale=concave_transfer_scale,
     ).normalized()
+
+
+def _sanitize_support_level_depths(values: tuple[float, ...] | list[float], excavation_depth: float) -> tuple[list[float], dict[str, Any]]:
+    """Collapse accidental per-member depth drift into engineering levels.
+
+    Automatic PitGuard schemes are limited to six vertical support levels. A
+    larger list almost always indicates that member elevations were persisted
+    as level settings. Values within 0.30 m are clustered, then an evenly
+    distributed six-level envelope is retained.
+    """
+    valid = sorted({
+        round(float(value), 3)
+        for value in values
+        if math.isfinite(float(value)) and 0.5 <= float(value) <= max(excavation_depth - 0.5, 0.5)
+    })
+    if not valid:
+        return [], {"changed": bool(values), "rawCount": len(values), "clusteredCount": 0, "finalCount": 0}
+    clusters: list[list[float]] = []
+    for value in valid:
+        if not clusters or value - clusters[-1][-1] > 0.30:
+            clusters.append([value])
+        else:
+            clusters[-1].append(value)
+    clustered = [round(sum(group) / len(group), 3) for group in clusters]
+    final = list(clustered)
+    if len(final) > 6:
+        indices = sorted({round(index * (len(final) - 1) / 5) for index in range(6)})
+        final = [final[index] for index in indices]
+    return final, {
+        "changed": final != valid,
+        "rawCount": len(values),
+        "uniqueCount": len(valid),
+        "clusteredCount": len(clustered),
+        "finalCount": len(final),
+        "clusterToleranceM": 0.30,
+        "maximumAutomaticLevelCount": 6,
+        "finalDepthsM": final,
+    }
 
 
 def auto_supports(project_excavation, existing_system: RetainingSystem | None = None, layout_config: SupportLayoutConfig | None = None) -> RetainingSystem:
     excavation = project_excavation
+    if not excavation.segments:
+        excavation.segments = generate_excavation_segments(excavation.outline)
     layout_config = (layout_config or SupportLayoutConfig()).normalized()
     warnings: list[str] = []
-    explicit_depths = [
-        depth for depth in layout_config.support_level_depths_m
-        if depth <= max(0.0, excavation.top_elevation - excavation.bottom_elevation - 0.5)
-    ]
+    excavation_depth = max(0.0, float(excavation.top_elevation) - float(excavation.bottom_elevation))
+    explicit_depths, level_sanitization = _sanitize_support_level_depths(
+        list(layout_config.support_level_depths_m),
+        excavation_depth,
+    )
+    if level_sanitization.get("changed"):
+        warnings.append(
+            "检测到支撑层深度清单包含重复漂移或超过自动设计上限；"
+            f"已由 {level_sanitization.get('uniqueCount', 0)} 个深度归并为 "
+            f"{level_sanitization.get('finalCount', 0)} 个工程支撑层。"
+        )
     if explicit_depths:
         elevations = [round(excavation.top_elevation - depth, 4) for depth in explicit_depths]
         omitted = len(layout_config.support_level_depths_m) - len(explicit_depths)
@@ -417,6 +484,8 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
     else:
         elevations, warnings = support_elevations(excavation.top_elevation, excavation.bottom_elevation)
     system = existing_system or RetainingSystem()
+    system.layout_summary = dict(system.layout_summary or {})
+    system.layout_summary["supportLevelSanitization"] = level_sanitization
 
     supports, layout_warnings = make_support_elements(excavation, elevations, config=layout_config)
     for support in supports:
@@ -430,8 +499,32 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
     system.supports = supports
     system.wale_beams = _make_wale_beams(excavation, elevations)
     system.ring_beams = make_ring_beams(excavation, elevations, config=layout_config, supports=supports)
+    from app.services.support_transfer_system import (
+        audit_concave_transfer_system,
+        concave_ring_points,
+        make_transfer_frame_columns,
+    )
+    from app.calculation.planar_transfer_frame import analyze_transfer_frame_system
+
+    _, ring_generation = concave_ring_points(
+        list(excavation.outline.points),
+        layout_config.concave_transfer_template,
+        scale=layout_config.concave_transfer_scale,
+    )
     system.columns = make_column_elements(excavation, supports, max_unbraced_span_m=layout_config.column_max_unbraced_span_m)
+    transfer_columns = make_transfer_frame_columns(
+        excavation,
+        system.ring_beams,
+        supports,
+        maximum_vertical_unbraced_span_m=min(layout_config.column_max_unbraced_span_m, 12.0),
+    )
+    existing_column_keys = {(round(float(item.location.x), 3), round(float(item.location.y), 3)) for item in system.columns}
+    system.columns.extend(
+        item for item in transfer_columns
+        if (round(float(item.location.x), 3), round(float(item.location.y), 3)) not in existing_column_keys
+    )
     system.support_nodes = make_support_wale_nodes(system.supports, system.wale_beams)
+    transfer_audit: dict[str, Any] = {}
 
     # Run the same topology/strength preflight used by optimized candidates on
     # the primary one-click layout.  Previously the raw Step-5 scheme could be
@@ -443,6 +536,33 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
     concave_preflight = repair_concave_return_supports(preflight_project, layout_config)
     wale_preflight = repair_wale_support_bays(preflight_project, layout_config)
 
+    # Repairs can add supports after the first geometry pass. Rebuild columns,
+    # nodes and the nominal planar frame on the exact scheme that will be scored.
+    system.columns = make_column_elements(excavation, system.supports, max_unbraced_span_m=layout_config.column_max_unbraced_span_m)
+    transfer_columns = make_transfer_frame_columns(
+        excavation,
+        system.ring_beams,
+        system.supports,
+        maximum_vertical_unbraced_span_m=min(layout_config.column_max_unbraced_span_m, 12.0),
+    )
+    existing_column_keys = {(round(float(item.location.x), 3), round(float(item.location.y), 3)) for item in system.columns}
+    system.columns.extend(
+        item for item in transfer_columns
+        if (round(float(item.location.x), 3), round(float(item.location.y), 3)) not in existing_column_keys
+    )
+    system.support_nodes = make_support_wale_nodes(system.supports, system.wale_beams)
+    frame_analysis = analyze_transfer_frame_system(system)
+    transfer_audit = audit_concave_transfer_system(
+        excavation,
+        elevations,
+        template_id=layout_config.concave_transfer_template if layout_config.topology_strategy == "zoned_direct" else "none",
+        ring_beams=system.ring_beams,
+        supports=system.supports,
+        ring_generation=ring_generation,
+        frame_analysis=frame_analysis,
+        construction_stage_closed=False,
+    )
+
     # Algorithm descriptions and successfully applied design actions are evidence,
     # not warnings. Only unresolved geometry/constructability conditions remain in
     # system.warnings and flow into the issue center.
@@ -450,7 +570,7 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
         "地连墙墙厚和墙深属于企业初选值；最终结果需经分阶段计算、稳定验算和注册专业工程师审签。",
         "主对撑按短跨方向布置，沿长向按目标间距分仓；凹形基坑通过线-多边形求交避免支撑穿越坑外空区。",
         "凸直角位置按长宽比和基坑尺度自动设置角撑；凹角、坡道、出土口和保护区作为拓扑约束。",
-        "支撑轴力按围檩节点反力计算，tributary width 仅作为结果解释和节点分配证据。",
+        "支撑轴力按围檩节点反力、墙—撑全局矩阵和异形二维转接框架共同计算；tributary width 仅作为初始荷载和结果解释证据。",
         "长跨支撑按有效无侧向支承长度自动设置临时立柱；已服务长跨不再重复产生几何长度预警。",
     ]
     if explicit_depths:
@@ -460,7 +580,13 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
         if explicit_depths[0] <= 0.05:
             design_notes.append("第一道支撑位于坑顶标高附近；应核实其为冠梁/顶撑还是独立支撑，并复核安装与拆撑工序。")
     if system.ring_beams:
-        design_notes.append(f"已生成 {len(system.ring_beams)} 段环梁。")
+        design_notes.append(f"已生成 {len(system.ring_beams)} 段环梁/转接梁。")
+    if transfer_audit.get("required"):
+        design_notes.append(
+            f"异形转接体系：{transfer_audit.get('templateLabel') or '未配置'}；"
+            f"闭合交汇区 {transfer_audit.get('coveredJunctionCount', 0)}/{transfer_audit.get('junctionCount', 0)}；"
+            f"平面框架 {str((transfer_audit.get('frameAnalysis') or {}).get('status') or 'missing')}。"
+        )
     if system.support_nodes:
         design_notes.append(f"已生成 {len(system.support_nodes)} 个支撑-围檩节点。")
     if system.columns:
@@ -499,11 +625,21 @@ def auto_supports(project_excavation, existing_system: RetainingSystem | None = 
         else "pass"
     )
     zoned_transfer_required = str(shape_diagnostics.get("capability") or "").startswith("zoned_")
+    transfer_audit = dict(transfer_audit or {})
+    transfer_audit["required"] = zoned_transfer_required
+    if zoned_transfer_required and bool(shape_diagnostics.get("hasCenterIsland")):
+        transfer_audit.update({
+            "templateId": "center_island",
+            "templateLabel": "中心岛转接体系",
+            "calculationReady": True,
+            "officialIssueReady": False,
+            "status": "warning",
+        })
     zoned_transfer_complete = (
         not zoned_transfer_required
-        or bool(system.ring_beams)
-        or bool(shape_diagnostics.get("hasCenterIsland"))
+        or bool(transfer_audit.get("calculationReady"))
     )
+    system.layout_summary["transferSystem"] = transfer_audit
     requires_alternative_system = (
         (
             preflight_status == "fail"

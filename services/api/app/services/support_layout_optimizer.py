@@ -14,8 +14,9 @@ from app.schemas.domain import Project, RetainingSystem, SupportElement, Support
 from app.services import design_service
 from app.services import support_layout as layout_mod
 from app.services.support_deep_design import evaluate_support_deep_design
+from app.services.support_candidate_contract import stamp_candidate_source, support_candidate_source_hash
 
-SUPPORT_CANDIDATE_CONTRACT_VERSION = "3.51-adaptive-topology-search-v3"
+SUPPORT_CANDIDATE_CONTRACT_VERSION = "3.66-concave-transfer-search-v1"
 
 OBJECTIVE_WEIGHTS: dict[str, float] = {
     "spacingDeviation": 20.0,
@@ -458,9 +459,10 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         ) if project.excavation else False,
     )
     transfer_required = str(shape_diagnostics.get("capability") or "").startswith("zoned_")
+    transfer_audit = dict((system.layout_summary or {}).get("transferSystem") or {})
     transfer_system_present = (
         not transfer_required
-        or bool(system.ring_beams)
+        or bool(transfer_audit.get("calculationReady"))
         or bool(shape_diagnostics.get("hasCenterIsland"))
     )
     col_obstacle_hits = 0
@@ -501,6 +503,9 @@ def _hard_constraints(project: Project, quality_metrics: dict[str, Any], system:
         "replacementPathContinuity": repl_penalty < 0.75,
         "shapeTransferSystemComplete": transfer_system_present,
         "shapeTransferSystemRequired": transfer_required,
+        "shapeTransferSystemTemplate": transfer_audit.get("templateId"),
+        "shapeTransferSystemOfficialIssueReady": bool(transfer_audit.get("officialIssueReady")) if transfer_required else True,
+        "shapeTransferSystemAudit": transfer_audit,
         "supportDeepDesignHardPass": deep_hard_pass,
         "supportDeepDesignRequired": deep_required,
         "supportMemberScreeningFailCount": int(deep_metrics.get("memberFailCount", 0) or 0),
@@ -797,7 +802,24 @@ def _plan_geometry(project: Project, system: RetainingSystem, adjustments: list[
         })
     columns = [{"id": c.id, "code": c.code, "location": _point_payload(c.location)} for c in system.columns]
     elevations = sorted({float(s.elevation) for s in system.supports}, reverse=True)
-    return {"outline": outline, "supports": supports, "columns": columns, "obstacles": obstacles, "lockSummary": _lock_summary(project), "supportElevations": elevations, "layoutSummary": dict(system.layout_summary or {})}
+    transfer_beams = [
+        {
+            "id": beam.id, "code": beam.code, "role": beam.beam_role, "elevation": beam.elevation,
+            "supportLevel": beam.support_level,
+            "points": [_point_payload(point) for point in beam.axis.points],
+        }
+        for beam in (system.ring_beams or [])
+        if str(getattr(beam, "code", "")).startswith(("TR-", "TF-", "TB-"))
+        or str(getattr(beam, "beam_role", "")).startswith("transfer_")
+    ]
+    transfer_audit = dict((system.layout_summary or {}).get("transferSystem") or {})
+    return {
+        "outline": outline, "supports": supports, "columns": columns, "obstacles": obstacles,
+        "transferBeams": transfer_beams, "transferZones": list(transfer_audit.get("transferZones") or []),
+        "zoneGraph": dict(transfer_audit.get("zoneGraph") or {}),
+        "lockSummary": _lock_summary(project), "supportElevations": elevations,
+        "layoutSummary": dict(system.layout_summary or {}),
+    }
 
 
 def _delta_geometry(adjustments: list[dict[str, Any]]) -> dict[str, Any]:
@@ -849,7 +871,15 @@ def _candidate_trial_project(project: Project) -> Project:
     trial.advanced_engineering = {}
     return trial
 
-def build_support_system_from_candidate(project: Project, target_spacing: float, column_span: float, pattern: str = "as_generated", amplitude: float = 0.0, topology_strategy: str = "balanced_grid") -> tuple[RetainingSystem | None, list[dict[str, Any]]]:
+def build_support_system_from_candidate(
+    project: Project,
+    target_spacing: float,
+    column_span: float,
+    pattern: str = "as_generated",
+    amplitude: float = 0.0,
+    topology_strategy: str = "balanced_grid",
+    concave_transfer_template: str = "none",
+) -> tuple[RetainingSystem | None, list[dict[str, Any]]]:
     if not project.excavation:
         return None, []
     trial_project = _candidate_trial_project(project)
@@ -858,6 +888,7 @@ def build_support_system_from_candidate(project: Project, target_spacing: float,
         topology_strategy=topology_strategy,
         target_spacing=target_spacing,
         column_span=column_span,
+        concave_transfer_template=concave_transfer_template,
     )
     trial_project.retaining_system = design_service.auto_supports(trial_project.excavation, trial_project.retaining_system, layout_config=config)
     if getattr(project, "retaining_system", None):
@@ -869,13 +900,12 @@ def build_support_system_from_candidate(project: Project, target_spacing: float,
 
 
 def _geometry_fingerprint(system: RetainingSystem, precision: float = 0.25) -> tuple[tuple[int, int, int, int, int, int], ...]:
-    """Return a force-path fingerprint for every support family.
+    """Return a physical load-path fingerprint for supports, transfer segments and columns.
 
-    Earlier releases only fingerprinted ``main_strut`` members. A genuine
-    terminal-brace or corner-diagonal scheme was therefore collapsed into the
-    direct-grid candidate whenever its primary struts happened to align. The
-    role code and normalized endpoints now preserve meaningful hybrid layouts
-    while still rejecting label-only duplicates.
+    The fingerprint includes every transfer-beam segment and temporary-column
+    position. Earlier endpoint-only fingerprints could collapse two chord paths
+    with the same end nodes, while support-only fingerprints could collapse
+    layouts with materially different column service spans.
     """
     def q(value: float) -> int:
         return int(round(float(value) / precision))
@@ -888,6 +918,13 @@ def _geometry_fingerprint(system: RetainingSystem, precision: float = 0.25) -> t
         "radial_strut": 5,
         "transfer_strut": 6,
     }
+    beam_role_codes = {
+        "transfer_ring_beam": 70,
+        "transfer_frame_beam": 71,
+        "transfer_brace": 72,
+        "partition_beam": 73,
+        "ring_beam": 74,
+    }
     rows: list[tuple[int, int, int, int, int, int]] = []
     for item in system.supports:
         start = (q(item.start.x), q(item.start.y))
@@ -899,6 +936,24 @@ def _geometry_fingerprint(system: RetainingSystem, precision: float = 0.25) -> t
             int(role_codes.get(str(item.support_role or "main_strut"), 99)),
             start[0], start[1], end[0], end[1],
         ))
+    for beam in system.ring_beams or []:
+        role = str(getattr(beam, "beam_role", "") or "")
+        if not (
+            str(getattr(beam, "code", "")).startswith(("TR-", "TF-", "TB-"))
+            or role.startswith("transfer_")
+            or role in beam_role_codes
+        ) or len(beam.axis.points) < 2:
+            continue
+        role_code = int(beam_role_codes.get(role, 79))
+        for start_point, end_point in zip(beam.axis.points, beam.axis.points[1:]):
+            start = (q(start_point.x), q(start_point.y))
+            end = (q(end_point.x), q(end_point.y))
+            if end < start:
+                start, end = end, start
+            rows.append((int(beam.support_level or 0), role_code, start[0], start[1], end[0], end[1]))
+    for column in system.columns or []:
+        point = (q(column.location.x), q(column.location.y))
+        rows.append((0, 90, point[0], point[1], point[0], point[1]))
     return tuple(sorted(rows))
 
 
@@ -1029,6 +1084,14 @@ def optimize_support_layout_candidates(
         "elongated_stepped_strip", "elongated_convex_polygon"
     }
     search = dict(search_config or {})
+    source_hash = support_candidate_source_hash(project)
+    enable_concave_transfer_templates = bool(search.get("enableConcaveTransferTemplates"))
+    from app.services.support_transfer_system import DEFAULT_TRANSFER_TEMPLATES, transfer_template_ids, transfer_topology_class
+    allowed_transfer_templates = transfer_template_ids()
+    configured_transfer_templates = [
+        str(item) for item in (search.get("concaveTransferTemplates") or DEFAULT_TRANSFER_TEMPLATES)
+        if str(item) in allowed_transfer_templates
+    ]
     core_mode = bool(search.get("coreMode"))
     require_diverse_schemes = bool(search.get("requireDiverseSchemes"))
     # Long strip pits need at least one denser and one wider-bay direct-path
@@ -1116,11 +1179,15 @@ def optimize_support_layout_candidates(
                         positionPattern=pattern,
                         candidatePoolSize=len(candidates),
                     )
+                    transfer_template = "none"
+                    if topology_strategy == "zoned_direct" and enable_concave_transfer_templates and configured_transfer_templates:
+                        transfer_template = configured_transfer_templates[(trial_count - 1) % len(configured_transfer_templates)]
                     layout_config = design_service.support_layout_config_from_settings(
                         project.design_settings,
                         topology_strategy=topology_strategy,
                         target_spacing=target_spacing,
                         column_span=column_span,
+                        concave_transfer_template=transfer_template,
                     )
                     trial_project.retaining_system = design_service.auto_supports(
                         trial_project.excavation,
@@ -1200,6 +1267,8 @@ def optimize_support_layout_candidates(
                     blocking_categories = list(quality_fail_categories)
                     if deep_member_fail_count:
                         blocking_categories.append("support_member_screening")
+                    if bool(hard.get("shapeTransferSystemRequired")) and not bool(hard.get("shapeTransferSystemComplete")):
+                        blocking_categories.append("shape_transfer_system")
                     hard["hardFailureKeys"] = hard_failure_keys
                     hard["blockingCategories"] = sorted(set(blocking_categories))
                     spans = _span_lengths(trial_project.retaining_system)
@@ -1208,7 +1277,7 @@ def optimize_support_layout_candidates(
                     fingerprint = _geometry_fingerprint(trial_project.retaining_system)
                     difference_score = _geometry_difference_score(adjustments, len(trial_project.retaining_system.supports))
                     candidate = SupportLayoutOptimizationCandidate(
-                        id=_candidate_id(target_spacing, column_span, pattern, amplitude, topology_strategy),
+                        id=_candidate_id(target_spacing, column_span, pattern, amplitude, f"{topology_strategy}-{transfer_template}" if transfer_template != "none" else topology_strategy),
                         score=score,
                         status=quality.status,
                         target_spacing=target_spacing,
@@ -1235,7 +1304,18 @@ def optimize_support_layout_candidates(
                             "variableType": "whole_scheme_topology_and_line_position",
                             "candidateContractVersion": SUPPORT_CANDIDATE_CONTRACT_VERSION,
                             "topologyFamily": topology_strategy,
-                            "schemeLabel": {"hybrid_diagonal": "转角墙—墙斜撑+对撑混合", "bidirectional_grid": "近方形双向框架", "direct_grid": "传统直对撑", "ring_radial": "闭合内环梁+径向支撑", "zoned_direct": "异形分区墙—墙对撑"}.get(topology_strategy, topology_strategy),
+                            "transferSystemTemplate": transfer_template,
+                            "transferTopologyClass": transfer_topology_class(transfer_template),
+                            "schemeFamily": (
+                                f"{topology_strategy}:{transfer_topology_class(transfer_template)}"
+                                if transfer_template != "none" else topology_strategy
+                            ),
+                            "transferSystemAudit": dict((trial_project.retaining_system.layout_summary or {}).get("transferSystem") or {}),
+                            "schemeLabel": (
+                                dict((trial_project.retaining_system.layout_summary or {}).get("transferSystem") or {}).get("templateLabel")
+                                if transfer_template != "none"
+                                else {"hybrid_diagonal": "转角墙—墙斜撑+对撑混合", "bidirectional_grid": "近方形双向框架", "direct_grid": "传统直对撑", "ring_radial": "闭合内环梁+径向支撑", "zoned_direct": "异形分区墙—墙对撑"}.get(topology_strategy, topology_strategy)
+                            ),
                             "positionPattern": pattern,
                             "lineOffsetAmplitude": amplitude,
                             "adjustedLineCount": len(adjustments),
@@ -1315,6 +1395,49 @@ def optimize_support_layout_candidates(
                             + _candidate_note(target_spacing, column_span, pattern, terms, hard)
                         ),
                     )
+                    stamp_candidate_source(candidate, project, source_hash=source_hash)
+                    candidate.variable_summary["formalSchemeEligible"] = bool(candidate.hard_constraints.get("passed"))
+                    # Snapped support stations can make different spacing/shift
+                    # variables produce the same physical load path. Keep only
+                    # the best-scoring representative immediately instead of
+                    # retaining duplicate systems until final ranking.
+                    duplicate_index = next((
+                        index for index, (_, existing_system) in enumerate(candidates)
+                        if _geometry_fingerprint(existing_system) == fingerprint
+                    ), None)
+                    if duplicate_index is not None:
+                        existing_candidate, _ = candidates[duplicate_index]
+                        new_key = (
+                            not candidate.hard_constraints.get("passed", False),
+                            int(candidate.fail_count or 0),
+                            _status_rank(candidate.status),
+                            -float(candidate.score or 0.0),
+                            int(candidate.support_count or 0),
+                            int(candidate.column_count or 0),
+                        )
+                        old_key = (
+                            not existing_candidate.hard_constraints.get("passed", False),
+                            int(existing_candidate.fail_count or 0),
+                            _status_rank(existing_candidate.status),
+                            -float(existing_candidate.score or 0.0),
+                            int(existing_candidate.support_count or 0),
+                            int(existing_candidate.column_count or 0),
+                        )
+                        replaced = new_key < old_key
+                        if replaced:
+                            candidates[duplicate_index] = (candidate, trial_project.retaining_system)
+                        memory_event(
+                            "candidate-geometry", "candidate-rejected",
+                            projectId=project.id,
+                            reason="identical_geometry_pre_pool_replaced" if replaced else "identical_geometry_pre_pool",
+                            topologyFamily=(candidate.variable_summary or {}).get("topologyFamily"),
+                            supportCount=candidate.support_count,
+                            columnCount=candidate.column_count,
+                        )
+                        del trial_project
+                        if trial_count % 2 == 0:
+                            gc.collect()
+                        continue
                     candidates.append((candidate, trial_project.retaining_system))
                     memory_event(
                         "candidate-search",
@@ -1349,7 +1472,7 @@ def optimize_support_layout_candidates(
                         ))
                         family_best: dict[str, tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = {}
                         for pair in candidates:
-                            family = str((pair[0].variable_summary or {}).get("topologyFamily") or "unknown")
+                            family = str((pair[0].variable_summary or {}).get("schemeFamily") or (pair[0].variable_summary or {}).get("topologyFamily") or "unknown")
                             family_best.setdefault(family, pair)
                         keep = list(family_best.values())
                         selected_ids = {id(pair[0]) for pair in keep}
@@ -1420,6 +1543,12 @@ def optimize_support_layout_candidates(
             int(round(float(candidate.max_span_length or 0.0) * 10.0)),
             _role_histogram(system),
             _angle_histogram(system),
+            len([
+                beam for beam in (system.ring_beams or [])
+                if str(getattr(beam, "code", "")).startswith(("TR-", "TF-", "TB-"))
+                or str(getattr(beam, "beam_role", "")).startswith("transfer_")
+            ]),
+            str(((system.layout_summary or {}).get("transferSystem") or {}).get("templateId") or "none"),
         )
 
     def _fingerprint_distance(left: RetainingSystem, right: RetainingSystem) -> float:
@@ -1540,8 +1669,16 @@ def optimize_support_layout_candidates(
     # operator compares complete A/B/C schemes rather than confirming wall faces
     # one by one.  Remaining slots are filled by score and spacing diversity.
     family_best: list[tuple[SupportLayoutOptimizationCandidate, RetainingSystem]] = []
-    for family in available_strategies:
-        item = next((pair for pair in candidates if pair[0].hard_constraints.get("passed", False) and str((pair[0].variable_summary or {}).get("topologyFamily")) == family), None)
+    scheme_families = list(dict.fromkeys(
+        str((pair[0].variable_summary or {}).get("schemeFamily") or (pair[0].variable_summary or {}).get("topologyFamily") or "unknown")
+        for pair in candidates
+    ))
+    for family in scheme_families:
+        item = next((
+            pair for pair in candidates
+            if pair[0].hard_constraints.get("passed", False)
+            and str((pair[0].variable_summary or {}).get("schemeFamily") or (pair[0].variable_summary or {}).get("topologyFamily") or "unknown") == family
+        ), None)
         if item:
             family_best.append(item)
     family_best.sort(key=lambda item: (int(item[0].fail_count or 0), _status_rank(item[0].status), *_cleanliness_sort_key(item[0]), -item[0].score))

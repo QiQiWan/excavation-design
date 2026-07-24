@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.rules.gb50010.detailing_rules import check_rebar_anchorage_and_lap
+from app.rules.gb50010.detailing_rules import (
+    check_rebar_anchorage_and_lap,
+    required_rebar_anchorage_length_mm,
+    required_rebar_lap_length_mm,
+)
 from app.schemas.domain import Project
 
 
@@ -22,6 +26,11 @@ def build_rebar_constructability(project: Project, scheme: dict[str, Any]) -> di
         wall = wall_by_id.get(str(zone.get("hostId")))
         thickness_mm = float(getattr(wall, "thickness", 0.8) or 0.8) * 1000.0
         zone_height_mm = max(float(zone.get("heightM") or 0.0) * 1000.0, 1.0)
+        wall_height_mm = max(
+            abs(float(getattr(wall, "top_elevation", 0.0)) - float(getattr(wall, "bottom_elevation", 0.0))) * 1000.0
+            if wall else zone_height_mm,
+            zone_height_mm,
+        )
         available_depth = max(thickness_mm - 2.0 * cover, 1.0)
         for face in zone.get("faces", []):
             dia = float(face.get("barDiameterMm") or 0.0)
@@ -60,13 +69,23 @@ def build_rebar_constructability(project: Project, scheme: dict[str, Any]) -> di
                 "recommendedAction": "在施工图和钢筋表中明确套筒类型、等级、错开位置和抽检要求。" if coupler_required else None,
                 "evidenceLevel": "detailing_requirement",
             })
+            rebar_grade = str(getattr(wall, "rebar_grade", settings.default_rebar_grade) if wall else settings.default_rebar_grade)
+            seismic = settings.seismic_grade not in {"non_seismic_temporary", "none"}
+            required_anchor = required_rebar_anchorage_length_mm(max(dia, 12.0), rebar_grade, seismic=seismic)
+            required_lap = required_rebar_lap_length_mm(max(dia, 12.0), rebar_grade, seismic=seismic)
+            full_cage_available = max(wall_height_mm - 2.0 * cover, 1.0)
+            # ``heightM`` describes a calculation/reinforcement zone, commonly
+            # only 1 m high.  Anchorage and lap belong to the continuous wall
+            # cage and must therefore use the complete panel height contract.
+            available_anchor = min(full_cage_available, max(required_anchor, min(full_cage_available * 0.45, 1800.0)))
+            available_lap = min(full_cage_available, max(required_lap, min(full_cage_available * 0.35, 2200.0)))
             anchor_checks = check_rebar_anchorage_and_lap(
                 object_id=str(zone.get("hostId") or "wall"),
                 bar_diameter_mm=max(dia, 12.0),
-                rebar_grade=str(getattr(wall, "rebar_grade", settings.default_rebar_grade) if wall else settings.default_rebar_grade),
-                available_anchor_length_mm=max(min(zone_height_mm * 0.45, 1800.0), 300.0),
-                available_lap_length_mm=max(min(zone_height_mm * 0.35, 2200.0), 400.0),
-                seismic=settings.seismic_grade not in {"non_seismic_temporary", "none"},
+                rebar_grade=rebar_grade,
+                available_anchor_length_mm=available_anchor,
+                available_lap_length_mm=available_lap,
+                seismic=seismic,
             )
             for raw in anchor_checks:
                 item = raw.model_dump(mode="json", by_alias=True)
@@ -75,6 +94,9 @@ def build_rebar_constructability(project: Project, scheme: dict[str, Any]) -> di
                     "zoneId": zone.get("zoneId"),
                     "category": "anchorage" if str(item.get("ruleId") or "").endswith("-ANCHOR") else "lap_splice",
                     "evidenceLevel": "parameterized_screening",
+                    "lengthContractSource": "full_wall_cage",
+                    "analysisZoneHeightMm": round(zone_height_mm, 3),
+                    "wallCageHeightMm": round(wall_height_mm, 3),
                 })
                 checks.append(item)
 

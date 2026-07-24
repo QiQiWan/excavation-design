@@ -315,6 +315,15 @@ def build_scheme_comparison(project: Project) -> dict[str, Any]:
     system = project.retaining_system
     repair = system.support_layout_repair if system else None
     candidates = list(repair.candidates or [])[:3] if repair else []
+    selected_candidate_id = repair.selected_candidate_id if repair else None
+    if not candidates and system:
+        from app.schemas.domain import SupportLayoutOptimizationCandidate
+        raw_candidates = list((system.layout_summary or {}).get("candidateSchemes", []) or [])[:3]
+        candidates = [
+            item if isinstance(item, SupportLayoutOptimizationCandidate) else SupportLayoutOptimizationCandidate.model_validate(item)
+            for item in raw_candidates
+        ]
+        selected_candidate_id = (system.layout_summary or {}).get("selectedCandidateId")
     full_rows = list(repair.candidate_full_calculations or []) if repair else []
     if not full_rows and project.calculation_results:
         full_rows = list(project.calculation_results[-1].report_diagram_data.get("candidateFullCalculationComparison") or [])
@@ -371,7 +380,7 @@ def build_scheme_comparison(project: Project) -> dict[str, Any]:
     return {
         "candidateCount": len(rows),
         "fullCalculationCount": sum(1 for row in rows if row.get("fullCalculationReady")),
-        "selectedCandidateId": repair.selected_candidate_id if repair else None,
+        "selectedCandidateId": selected_candidate_id,
         "rows": rows,
         "comparisonAvailable": len(rows) >= 2,
         "paretoFrontCount": sum(1 for row in rows if row.get("paretoFront")),

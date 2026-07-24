@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Project, SupportLayoutOptimizationCandidate, WallInternalForcePoint } from '../types/domain';
 import { formatEngineeringValue } from '../utils/units';
+import { sanitizeCandidatePlanGeometry } from '../drawing/candidateGeometry';
 
 type StandardRef = {
   id?: string;
@@ -13,6 +14,19 @@ type StandardRef = {
   boundary?: string;
   sourceUrl?: string;
 };
+
+const CORE_STATUS_LABELS: Record<string, string> = { pass: '通过', warning: '需复核', manual_review: '人工复核', preliminary: '初步结果', fail: '不通过' };
+const REBAR_CHECK_LABELS: Record<string, string> = { anchorage: '锚固长度', lap_splice: '搭接长度', mechanical_coupler: '机械连接', rebar_congestion: '钢筋拥挤与净距', support_stirrup_reinforcement: '支撑箍筋', support_longitudinal_ratio: '支撑总纵筋率', support_single_side_longitudinal_ratio: '支撑单侧纵筋率' };
+const SCENARIO_LABELS: Record<string, string> = { groundwater_failure: '降水失效', over_excavation: '超挖', temperature: '温差作用', installation_deviation: '安装偏差', confined_water_rise: '承压水位抬升', local_seepage: '局部渗流' };
+const PARAMETER_LABELS: Record<string, string> = { groundwaterOffsetM: '坑外水位抬升', overExcavationM: '超挖深度', temperatureDeltaC: '温差', installationDeviationMm: '安装偏差', surchargeKpa: '地面附加荷载' };
+
+function readableEngineeringText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value !== 'object') return String(value);
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, item]) => `${PARAMETER_LABELS[key] ?? key} ${String(item)}`)
+    .join('；');
+}
 
 export function CoreStandardGuidance({ standards }: { standards: StandardRef[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -89,21 +103,23 @@ export function GeologySectionVisual({ project }: { project: Project }) {
 }
 
 function planGeometry(project: Project, candidate?: SupportLayoutOptimizationCandidate) {
-  const candidateGeometry = (candidate?.planGeometry ?? {}) as Record<string, any>;
-  const outline = (Array.isArray(candidateGeometry.outline) && candidateGeometry.outline.length ? candidateGeometry.outline : project.excavation?.outline.points ?? []).map((point: any) => ({ x: Number(point.x), y: Number(point.y) })).filter((point: any) => Number.isFinite(point.x) && Number.isFinite(point.y));
-  const supports = Array.isArray(candidateGeometry.supports) && candidateGeometry.supports.length
-    ? candidateGeometry.supports
-    : project.retainingSystem?.supports ?? [];
-  const columns = Array.isArray(candidateGeometry.columns) && candidateGeometry.columns.length
-    ? candidateGeometry.columns
-    : project.retainingSystem?.columns ?? [];
+  const rawGeometry = candidate?.planGeometry ?? {
+    outline: project.excavation?.outline.points ?? [],
+    supports: project.retainingSystem?.supports ?? [],
+    columns: project.retainingSystem?.columns ?? [],
+    transferBeams: (project.retainingSystem?.ringBeams ?? []).filter((beam: any) => String(beam.beamRole ?? '').startsWith('transfer_') || ['TR-', 'TF-', 'TB-'].some((prefix) => String(beam.code ?? '').startsWith(prefix))),
+    transferZones: [],
+  };
+  const geometry = sanitizeCandidatePlanGeometry(rawGeometry);
   const walls = project.retainingSystem?.diaphragmWalls ?? [];
   const points = [
-    ...outline,
-    ...supports.flatMap((support: any) => [support.start, support.end]).filter(Boolean).map((point: any) => ({ x: Number(point.x), y: Number(point.y) })),
-    ...columns.map((column: any) => ({ x: Number(column.location?.x), y: Number(column.location?.y) })),
-  ].filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
-  return { outline, supports, columns, walls, bounds: boundsFromPoints(points) };
+    ...geometry.outline,
+    ...geometry.supports.flatMap((support) => [support.start, support.end]),
+    ...geometry.columns.map((column) => column.location),
+    ...geometry.transferBeams.flatMap((beam) => beam.points ?? []),
+    ...geometry.transferZones.flatMap((zone) => zone.outline ?? []),
+  ];
+  return { ...geometry, walls, bounds: boundsFromPoints(points) };
 }
 
 export function RetainingPlanVisual({ project, candidate }: { project: Project; candidate?: SupportLayoutOptimizationCandidate }) {
@@ -118,10 +134,20 @@ export function RetainingPlanVisual({ project, candidate }: { project: Project; 
     <svg className="coreEngineeringSvg retaining" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label="围护结构设计模型平面图">
       <polygon points={polygon} className="corePitFill" />
       <polyline points={`${polygon} ${geometry.outline[0]?.x},${-geometry.outline[0]?.y}`} className="coreWallLine" vectorEffect="non-scaling-stroke" />
+      {geometry.transferZones.map((zone: any, index: number) => {
+        const points = (zone.outline ?? []).map((point: any) => `${Number(point.x)},${-Number(point.y)}`).join(' ');
+        return points ? <polygon key={`core-transfer-zone-${index}`} points={points} className="coreTransferZone" vectorEffect="non-scaling-stroke"><title>异形闭合转接区</title></polygon> : null;
+      })}
+      {geometry.transferBeams.map((beam: any, index: number) => {
+        const points = (beam.points ?? beam.axis?.points ?? []).filter((point: any) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)));
+        if (points.length < 2) return null;
+        const role = String(beam.role ?? beam.beamRole ?? 'transfer_ring_beam');
+        return <polyline key={String(beam.id ?? index)} points={points.map((point: any) => `${Number(point.x)},${-Number(point.y)}`).join(' ')} className={`coreTransferBeam ${role}`} vectorEffect="non-scaling-stroke"><title>{String(beam.code ?? beam.id ?? '转接构件')}</title></polyline>;
+      })}
       {geometry.supports.slice(0, 1200).map((support: any, index: number) => <line key={String(support.id ?? index)} x1={Number(support.start?.x ?? 0)} y1={-Number(support.start?.y ?? 0)} x2={Number(support.end?.x ?? 0)} y2={-Number(support.end?.y ?? 0)} className={String(support.role ?? support.supportRole ?? '').includes('corner') ? 'coreBraceLine' : 'coreSupportLine'} vectorEffect="non-scaling-stroke"><title>{String(support.code ?? support.id ?? `S${index + 1}`)}</title></line>)}
       {geometry.columns.slice(0, 500).map((column: any, index: number) => <circle key={String(column.id ?? index)} cx={Number(column.location?.x ?? 0)} cy={-Number(column.location?.y ?? 0)} r={Math.max(Math.min(b.width, b.height) * .008, .25)} className="coreColumnMark" vectorEffect="non-scaling-stroke"><title>{String(column.code ?? column.id ?? `C${index + 1}`)}</title></circle>)}
     </svg>
-    <footer><span>围护墙 {geometry.walls.length}</span><span>支撑 {geometry.supports.length}</span><span>立柱 {geometry.columns.length}</span></footer>
+    <footer><span>围护墙 {geometry.walls.length}</span><span>支撑 {geometry.supports.length}</span><span>转接构件 {geometry.transferBeams.length}</span><span>立柱 {geometry.columns.length}</span></footer>
   </section>;
 }
 
@@ -337,7 +363,9 @@ export function AdverseScenarioPanel({ scenarios }: { scenarios?: Record<string,
     <header><div><strong>不利工况与敏感性</strong><span>基于当前正式计算包络的透明筛查；高风险场景需要独立施工阶段重算。</span></div><em>{rows.filter((r) => r.status === 'fail').length} 不通过</em></header>
     <div className="adverseScenarioGrid">{rows.map((row, index) => {
       const formal = String(row.evidenceLevel ?? '').includes('formal');
-      return <article key={String(row.id ?? row.scenarioId ?? row.scenarioCode ?? index)} className={String(row.status ?? 'manual_review')}><strong>{String(row.label ?? row.name ?? row.scenarioId ?? row.scenarioCode ?? `场景 ${index + 1}`)}</strong><span>{String(row.description ?? row.message ?? '')}</span><dl>{formal ? <><div><dt>墙体位移</dt><dd>{row.maxWallDisplacementMm == null ? '-' : `${Number(row.maxWallDisplacementMm).toFixed(2)} mm`}</dd></div><div><dt>最大支撑轴力</dt><dd>{row.maxSupportForceKn == null ? '-' : `${Number(row.maxSupportForceKn).toFixed(0)} kN`}</dd></div></> : <><div><dt>控制值</dt><dd>{row.governingValue == null ? '-' : String(row.governingValue)}</dd></div><div><dt>基准值</dt><dd>{row.baselineValue == null ? '-' : String(row.baselineValue)}</dd></div></>}<div><dt>最小安全系数</dt><dd>{row.safetyFactor == null ? '-' : Number(row.safetyFactor).toFixed(3)}</dd></div><div><dt>证据</dt><dd>{formal ? '正式复算' : '筛查'}</dd></div></dl><small>{String(row.boundary ?? row.recommendedAction ?? row.error ?? '')}</small></article>;
+      const scenarioCode = String(row.scenarioCode ?? row.scenarioId ?? '');
+      const scenarioLabel = String(row.label ?? row.name ?? SCENARIO_LABELS[scenarioCode] ?? `场景 ${index + 1}`);
+      return <article key={String(row.id ?? row.scenarioId ?? row.scenarioCode ?? index)} className={String(row.status ?? 'manual_review')}><strong>{scenarioLabel}</strong><span>{readableEngineeringText(row.description ?? row.message ?? row.parameters)}</span><dl>{formal ? <><div><dt>墙体位移</dt><dd>{row.maxWallDisplacementMm == null ? '-' : `${Number(row.maxWallDisplacementMm).toFixed(2)} mm`}</dd></div><div><dt>最大支撑轴力</dt><dd>{row.maxSupportForceKn == null ? '-' : `${Number(row.maxSupportForceKn).toFixed(0)} kN`}</dd></div></> : <><div><dt>控制值</dt><dd>{row.governingValue == null ? '-' : readableEngineeringText(row.governingValue)}</dd></div><div><dt>基准值</dt><dd>{row.baselineValue == null ? '-' : readableEngineeringText(row.baselineValue)}</dd></div></>}<div><dt>最小安全系数</dt><dd>{row.safetyFactor == null ? '-' : Number(row.safetyFactor).toFixed(3)}</dd></div><div><dt>证据</dt><dd>{formal ? '正式复算' : '筛查'}</dd></div></dl><small>{readableEngineeringText(row.boundary ?? row.recommendedAction ?? row.error)}</small></article>;
     })}</div>
   </section>;
 }
@@ -349,7 +377,7 @@ export function RebarConstructabilityPanel({ scheme }: { scheme?: Record<string,
   const checks = (constructability.checks ?? []) as Record<string, any>[];
   return <section className="coreVisualModule rebarConstructabilityPanel">
     <header><div><strong>钢筋可施工性闭环</strong><span>锚固、搭接、机械连接、钢筋拥挤和节点刚域筛查。</span></div><em className={Number(summary.failCount ?? 0) ? 'fail' : Number(summary.warningCount ?? 0) ? 'warning' : 'pass'}>{Number(summary.failCount ?? 0)} 阻断 · {Number(summary.warningCount ?? 0)} 复核</em></header>
-    <div className="verificationTableWrap"><table className="table compactTable"><thead><tr><th>构件</th><th>校核</th><th>计算值</th><th>控制值</th><th>状态</th><th>建议</th></tr></thead><tbody>{checks.filter((row) => row.status !== 'pass').slice(0, 30).map((row, index) => <tr key={String(row.checkId ?? row.ruleId ?? index)} className={String(row.status)}><td>{String(row.hostCode ?? row.objectId ?? '-')}</td><td>{String(row.category ?? row.ruleId ?? '-')}</td><td>{row.calculatedValue == null ? '-' : `${String(row.calculatedValue)} ${String(row.unit ?? '')}`}</td><td>{row.limitValue == null ? '-' : String(row.limitValue)}</td><td>{String(row.status)}</td><td>{String(row.recommendedAction ?? row.message ?? '')}</td></tr>)}</tbody></table></div>
+    <div className="verificationTableWrap"><table className="table compactTable"><thead><tr><th>构件</th><th>校核</th><th>计算值</th><th>控制值</th><th>状态</th><th>建议</th></tr></thead><tbody>{checks.filter((row) => row.status !== 'pass').slice(0, 30).map((row, index) => <tr key={String(row.checkId ?? row.ruleId ?? index)} className={String(row.status)}><td>{String(row.hostCode ?? row.objectId ?? '-')}</td><td>{REBAR_CHECK_LABELS[String(row.category)] ?? String(row.ruleId ?? '-')}</td><td>{row.calculatedValue == null ? '-' : `${String(row.calculatedValue)} ${String(row.unit ?? '')}`}</td><td>{row.limitValue == null ? '-' : String(row.limitValue)}</td><td>{CORE_STATUS_LABELS[String(row.status)] ?? '需复核'}</td><td>{String(row.recommendedAction ?? row.message ?? '')}</td></tr>)}</tbody></table></div>
     <footer><span>{String(constructability.boundary ?? '')}</span></footer>
   </section>;
 }

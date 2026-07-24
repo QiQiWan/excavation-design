@@ -10,37 +10,37 @@ from app.services.support_topology_contract import support_topology_hash
 STAGE_INPUT_GUIDE: list[dict[str, Any]] = [
     {
         "field": "excavationElevation", "label": "阶段开挖标高", "source": "基坑轮廓、施工组织设计",
-        "location": "基坑轮廓 / 施工阶段编辑器", "provider": "基坑设计与施工组织",
+        "location": "基坑轮廓 / 设计控制工况编辑器", "provider": "基坑设计",
         "designStageAvailable": True, "action": "按每道支撑下方工作面或分区开挖控制标高录入。",
     },
     {
         "field": "activeSupportIds", "label": "本阶段已激活支撑", "source": "围护结构与支撑安装顺序",
-        "location": "围护结构 / 施工阶段编辑器", "provider": "支护结构设计",
+        "location": "围护结构 / 设计控制工况编辑器", "provider": "支护结构设计",
         "designStageAvailable": True, "action": "勾选本阶段已经安装并形成传力的支撑构件。",
     },
     {
         "field": "deactivatedSupportIds", "label": "拆除或退出工作的支撑", "source": "换撑及拆撑专项方案",
-        "location": "施工阶段编辑器", "provider": "支护设计与施工专项",
+        "location": "设计控制工况编辑器", "provider": "支护设计",
         "designStageAvailable": True, "action": "仅在楼板/换撑达到设计条件后勾选退出工作的支撑。",
     },
     {
         "field": "groundwaterLevelOutside", "label": "坑外水位", "source": "勘察水位及设计水位",
-        "location": "项目设置 → 基本设计控制 / 施工阶段编辑器", "provider": "勘察与岩土设计",
+        "location": "项目设置 → 基本设计控制 / 设计控制工况编辑器", "provider": "勘察与岩土设计",
         "designStageAvailable": True, "action": "先设置项目设计水位；有阶段性回升或降深时在阶段中覆盖。",
     },
     {
         "field": "groundwaterLevelInside", "label": "坑内控制水位", "source": "降水专项设计",
-        "location": "项目设置 → 基本设计控制 / 施工阶段编辑器", "provider": "降水设计",
+        "location": "项目设置 → 基本设计控制 / 设计控制工况编辑器", "provider": "降水设计",
         "designStageAvailable": True, "action": "按降水分期填写坑内控制水位。",
     },
     {
         "field": "surcharge", "label": "阶段地面超载", "source": "总平面、交通及堆载控制",
-        "location": "项目设置 → 基本设计控制 / 施工阶段编辑器", "provider": "总图与基坑设计",
+        "location": "项目设置 → 基本设计控制 / 设计控制工况编辑器", "provider": "总图与基坑设计",
         "designStageAvailable": True, "action": "填写该阶段实际允许的坑边堆载与施工荷载。",
     },
     {
         "field": "replacementAction", "label": "换撑/拆撑生效条件", "source": "地下结构与换撑专项方案",
-        "location": "项目设置 → 高级设计控制 / 施工阶段编辑器", "provider": "结构设计与施工专项",
+        "location": "项目设置 → 高级设计控制 / 设计控制工况编辑器", "provider": "结构设计",
         "designStageAvailable": True, "action": "说明楼板强度、连接和传力验收条件，不得只填写拆除时间。",
     },
 ]
@@ -106,7 +106,7 @@ def validate_calculation_case(project: Project, case: CalculationCase) -> dict[s
     if excavation is None:
         issues.append(_issue("STAGE_EXCAVATION_MISSING", "fail", "缺少基坑轮廓和顶底标高。", "先完成基坑轮廓。"))
     if not case.stages:
-        issues.append(_issue("STAGE_LIST_EMPTY", "fail", "施工阶段列表为空。", "生成推荐阶段或至少新增一个开挖阶段。"))
+        issues.append(_issue("STAGE_LIST_EMPTY", "fail", "设计控制工况列表为空。", "生成推荐阶段或至少新增一个开挖阶段。"))
 
     stage_ids: set[str] = set()
     previous_elevation: float | None = None
@@ -116,7 +116,7 @@ def validate_calculation_case(project: Project, case: CalculationCase) -> dict[s
     for index, stage in enumerate(case.stages):
         label = stage.name or f"阶段 {index + 1}"
         if stage.id in stage_ids:
-            issues.append(_issue("STAGE_ID_DUPLICATE", "fail", f"施工阶段编号重复：{stage.id}。", "为每个阶段生成唯一编号。", stage_id=stage.id))
+            issues.append(_issue("STAGE_ID_DUPLICATE", "fail", f"设计控制工况编号重复：{stage.id}。", "为每个阶段生成唯一编号。", stage_id=stage.id))
         stage_ids.add(stage.id)
         elevation = float(stage.excavation_elevation)
         if not math.isfinite(elevation):
@@ -197,7 +197,7 @@ def validate_calculation_case(project: Project, case: CalculationCase) -> dict[s
 
     if excavation and case.stages and not reaches_bottom:
         issues.append(_issue(
-            "STAGE_FINAL_EXCAVATION_MISSING", "fail", "施工阶段没有到达设计坑底。",
+            "STAGE_FINAL_EXCAVATION_MISSING", "fail", "设计控制工况没有覆盖至设计坑底。",
             "增加开挖至坑底的最终阶段。", field="excavationElevation",
         ))
     elif case.stages and not has_final_stage:
@@ -213,7 +213,7 @@ def validate_calculation_case(project: Project, case: CalculationCase) -> dict[s
         ))
     if case.support_topology_hash and topology and case.support_topology_hash != topology:
         issues.append(_issue(
-            "STAGE_TOPOLOGY_STALE", "fail", "施工阶段绑定的支撑拓扑与当前方案不一致。",
+            "STAGE_TOPOLOGY_STALE", "fail", "设计控制工况绑定的支撑拓扑与当前方案不一致。",
             "重新打开阶段编辑器，在当前构件清单中确认并保存。",
         ))
 
@@ -234,12 +234,47 @@ def validate_calculation_case(project: Project, case: CalculationCase) -> dict[s
 def select_calculation_case_for_run(project: Project) -> tuple[CalculationCase, dict[str, Any]]:
     from app.calculation.engine import build_default_construction_cases
 
+    # An explicitly saved and locked user case is the highest-authority design
+    # decision. Semantic design-control stages may mirror it for assurance, but
+    # must never replace its identity or source classification.
+    explicit_user = next(
+        (row for row in reversed(project.calculation_cases) if row.source == "user_defined" and row.locked),
+        None,
+    )
+    if explicit_user is not None:
+        validation = validate_calculation_case(project, explicit_user)
+        if not validation["valid"]:
+            messages = "；".join(str(item["message"]) for item in validation["issues"] if item["severity"] == "fail")
+            raise ValueError("用户设计控制工况校验未通过：" + messages[:1200])
+        return explicit_user, {
+            "source": "user_defined", "preserved": True, "caseId": explicit_user.id,
+            "stageCount": len(explicit_user.stages), "validation": validation,
+        }
+
+    # V3.78+: formal staged calculations are otherwise driven by designer-owned
+    # semantic control stages. The synchronized CalculationCase is an internal
+    # numerical contract.
+    if project.design_control_stages:
+        from app.services.workflow_v381 import synchronize_design_control_case
+        synchronized, sync = synchronize_design_control_case(project)
+        if synchronized is None:
+            messages = "；".join(str(item.get("message") or "") for item in (sync.get("validation") or {}).get("issues") or [])
+            raise ValueError("设计控制工况校验未通过：" + messages[:1200])
+        validation = validate_calculation_case(project, synchronized)
+        if not validation["valid"]:
+            messages = "；".join(str(item["message"]) for item in validation["issues"] if item["severity"] == "fail")
+            raise ValueError("设计控制工况同步后的计算工况校验未通过：" + messages[:1200])
+        return synchronized, {
+            "source": "design_control_stage", "preserved": True, "caseId": synchronized.id,
+            "stageCount": len(synchronized.stages), "validation": validation, "synchronization": sync,
+        }
+
     existing = project.calculation_cases[-1] if project.calculation_cases else None
     if existing and (existing.source == "user_defined" or existing.locked):
         validation = validate_calculation_case(project, existing)
         if not validation["valid"]:
             messages = "；".join(str(item["message"]) for item in validation["issues"] if item["severity"] == "fail")
-            raise ValueError("用户施工阶段校验未通过：" + messages[:1200])
+            raise ValueError("用户设计控制工况校验未通过：" + messages[:1200])
         return existing, {
             "source": "user_defined", "preserved": True, "caseId": existing.id,
             "stageCount": len(existing.stages), "validation": validation,
@@ -255,13 +290,23 @@ def select_calculation_case_for_run(project: Project) -> tuple[CalculationCase, 
 def build_construction_stage_workspace(project: Project) -> dict[str, Any]:
     from app.calculation.engine import build_default_construction_cases
 
-    saved = bool(project.calculation_cases)
-    case = project.calculation_cases[-1] if saved else None
+    saved = bool(project.calculation_cases or project.design_control_stages)
+    explicit_user = next(
+        (row for row in reversed(project.calculation_cases) if row.source == "user_defined" and row.locked),
+        None,
+    )
+    if explicit_user is not None:
+        case = explicit_user
+    elif project.design_control_stages:
+        from app.services.workflow_v381 import synchronize_design_control_case
+        case, _sync = synchronize_design_control_case(project)
+    else:
+        case = project.calculation_cases[-1] if project.calculation_cases else None
     if case is None and project.excavation and project.retaining_system:
         case = build_default_construction_cases(project)[0]
     validation = validate_calculation_case(project, case) if case else {
         "status": "fail", "valid": False, "failCount": 1, "warningCount": 0, "stageCount": 0,
-        "issues": [_issue("STAGE_PREREQUISITE_MISSING", "fail", "缺少基坑或围护体系，无法生成施工阶段。", "先完成基坑轮廓和围护结构。")],
+        "issues": [_issue("STAGE_PREREQUISITE_MISSING", "fail", "缺少基坑或围护体系，无法生成设计控制工况。", "先完成基坑轮廓和围护结构。")],
     }
     supports = project.retaining_system.supports if project.retaining_system else []
     return {
@@ -286,4 +331,6 @@ def build_construction_stage_workspace(project: Project) -> dict[str, Any]:
             for support in sorted(supports, key=lambda item: (int(item.level_index), item.code))
         ],
         "inputGuide": STAGE_INPUT_GUIDE,
+        "semanticType": "design_control_stage" if project.design_control_stages else "legacy_construction_stage",
+        "responsibilityBoundary": "该编辑器表示设计计算控制工况，不记录施工计划日期或现场实际状态。",
     }

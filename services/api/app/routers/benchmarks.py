@@ -42,3 +42,9 @@ def export_package(persist: bool = False, repo: ProjectRepository = Depends(get_
     from app.services.benchmark_cases import export_benchmark_package
     path = export_benchmark_package(EXPORT_DIR, repo=repo, persist=persist)
     return FileResponse(path=path, filename=path.name, media_type="application/zip")
+
+
+@router.get("/v3.77-verification-matrix")
+def v377_verification_matrix() -> dict:
+    from app.services.verification_matrix_v377 import run_v377_verification_matrix
+    return run_v377_verification_matrix()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from app.services.support_topology_contract import support_topology_hash
+from app.services.concave_transfer_delivery import evaluate_concave_transfer_delivery
 from app.schemas.domain import FormalReportGate, IfcCompatibilityCheckResult, Project, QualityGateIssue, SupportLayoutQualitySummary
 from app.version import ALGORITHM_VERSION, RULE_SET_VERSION
 from app.services.calculation_assurance import verify_current_calculation_contract
@@ -93,6 +94,82 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
                 "A/B/C 候选方案尚未全部完成独立计算。",
                 recommendation="对前三个候选分别运行完整计算，比较轴力、位移、围檩内力、稳定性和施工复杂度。",
             ))
+        analysis_assurance = dict(getattr(latest, "analysis_assurance", {}) or {})
+        if analysis_assurance:
+            if not analysis_assurance.get("formalIssueEligible"):
+                blocking.append(_issue(
+                    "analysis_fidelity", "fail",
+                    "控制分析域、参数来源或代理/回退模型未达到正式发行的分析等级。",
+                    recommendation="关闭 analysisAssurance.strictBlocks 后重新计算；正式模式不得使用未确认默认参数或代理模型。",
+                ))
+        else:
+            missing.append(_issue("analysis_fidelity", "manual_review", "缺少分析等级与参数来源保证包。", recommendation="按 V3.73+ 重新计算。"))
+
+        geotechnical_assurance = dict(getattr(latest, "geotechnical_assurance", {}) or {})
+        if geotechnical_assurance:
+            if not geotechnical_assurance.get("formalUseAllowed"):
+                blocking.append(_issue(
+                    "geotechnical_model", "fail",
+                    "岩土参数、水平地基反力来源或非线性诊断未达到正式使用条件。",
+                    recommendation="补齐试验/核验参数，避免默认地基反力，并完成高级岩土复核。",
+                ))
+        else:
+            missing.append(_issue("geotechnical_model", "manual_review", "缺少非线性岩土与地下水保证包。"))
+
+        spatial_verification = dict(getattr(latest, "spatial_verification", {}) or {})
+        if project.design_settings.enable_six_dof_verification:
+            if not spatial_verification:
+                missing.append(_issue("spatial_verification", "manual_review", "缺少全局六自由度空间验证结果。"))
+            elif spatial_verification.get("status") == "fail":
+                blocking.append(_issue("spatial_verification", "fail", "六自由度空间验证失败或与平面模型差异超限。", recommendation="修复空间边界、节点刚度、截面和传力体系后重算。"))
+            elif spatial_verification.get("status") in {"warning", "manual_review"}:
+                warnings.append(_issue("spatial_verification", "manual_review", "六自由度空间验证存在差异或转角警告。", recommendation="使用成熟结构软件复核控制方案。"))
+
+        verification = dict(getattr(latest, "verification_matrix", {}) or {})
+        if project.design_settings.require_external_benchmark_for_issue:
+            if not verification:
+                missing.append(_issue("verification_matrix", "manual_review", "缺少 V3.77 验证矩阵与外部软件证书。"))
+            elif not verification.get("formalExternalBenchmarkReady"):
+                blocking.append(_issue(
+                    "verification_matrix", "fail",
+                    "成熟外部结构软件基准证书不可用、部分可用或未通过。",
+                    recommendation="在受控环境运行 OpenSees 或经批准的成熟结构软件基准，并绑定当前结构内核版本。",
+                ))
+
+        statutory = dict(getattr(latest, "statutory_workflow_assurance", {}) or {})
+        if statutory and not statutory.get("formalIssueEligible"):
+            blocking.append(_issue(
+                "statutory_workflow", "fail",
+                "设计阶段法定资料、危大工程分类确认或设计审签证据未闭合。施工专项方案、专家论证和现场验收不作为设计文件首次发行前置条件。",
+                recommendation="补齐设计责任范围内的真实资料和审签证据；施工准备及现场证据由对应责任主体在后续门禁中补充。",
+            ))
+    transfer_audit = dict(((project.retaining_system.layout_summary if project.retaining_system else {}) or {}).get("transferSystem") or {})
+    transfer_delivery = evaluate_concave_transfer_delivery(project, transfer_audit)
+    if transfer_audit.get("required"):
+        if not bool(transfer_audit.get("calculationReady")):
+            blocking.append(_issue(
+                "shape_transfer_system",
+                "fail",
+                "异形基坑转接体系未形成完整闭合传力路径或二维框架模型未通过，完整计算与正式成果发行均被阻断。",
+                recommendation="重新生成闭合环梁、枢纽框架或环梁—弦杆体系，并关闭二维框架平衡残差与构件连接失败。",
+            ))
+        elif not bool(transfer_audit.get("formalCalculationReady")):
+            blocking.append(_issue(
+                "shape_transfer_stage_analysis",
+                "fail",
+                "异形转接体系仅通过候选级二维框架筛查，尚未形成逐施工阶段内力包络。",
+                recommendation="运行当前方案完整计算，使每个有效施工阶段进入转接框架求解并形成梁系包络。",
+            ))
+        elif not bool(transfer_delivery.get("officialIssueReady")):
+            reason_text = "、".join(transfer_delivery.get("reasonCodes") or [])
+            blocking.append(_issue(
+                "shape_transfer_detailing",
+                "fail",
+                "异形闭合环撑已具备完整计算资格，但环梁弯剪扭、节点半刚性、锚固配筋和施工阶段复核尚未形成与当前拓扑匹配的审批证据。"
+                + (f" 当前状态：{reason_text}。" if reason_text else ""),
+                recommendation="提交二维/三维梁系复核、节点深化设计、施工阶段复核及复核人签署；拓扑变更后须重新审批。",
+            ))
+
     if fail_count > 0:
         blocking.append(_issue("calculation_check", "fail", f"当前计算结果存在 {fail_count} 个 fail 项。", recommendation="修复 fail 后重新计算。"))
     if warn_count > 0:
@@ -157,8 +234,25 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
             "viewerProfileCount": len(ifc_quality.viewer_profiles) if ifc_quality else 0,
             "calculationContractCurrent": bool(latest and verify_current_calculation_contract(project, latest).get("current")),
             "calculationAssuranceStatus": (getattr(latest, "calculation_assurance", {}) or {}).get("status") if latest else "missing",
+            "analysisAssuranceStatus": (getattr(latest, "analysis_assurance", {}) or {}).get("status") if latest else "missing",
+            "analysisFormalIssueEligible": (getattr(latest, "analysis_assurance", {}) or {}).get("formalIssueEligible") if latest else False,
+            "geotechnicalAssuranceStatus": (getattr(latest, "geotechnical_assurance", {}) or {}).get("status") if latest else "missing",
+            "spatialVerificationStatus": (getattr(latest, "spatial_verification", {}) or {}).get("status") if latest else "missing",
+            "statutoryWorkflowStatus": (getattr(latest, "statutory_workflow_assurance", {}) or {}).get("status") if latest else "missing",
+            "verificationMatrixStatus": (getattr(latest, "verification_matrix", {}) or {}).get("status") if latest else "missing",
+            "externalBenchmarkReady": (getattr(latest, "verification_matrix", {}) or {}).get("formalExternalBenchmarkReady") if latest else False,
             "inputSnapshotHash": getattr(latest, "input_snapshot_hash", None) if latest else None,
             "resultHash": getattr(latest, "result_hash", None) if latest else None,
+            "transferSystemStatus": transfer_audit.get("status") if transfer_audit else "not_required",
+            "transferSystemCalculationReady": transfer_audit.get("calculationReady") if transfer_audit else True,
+            "transferSystemFormalCalculationReady": transfer_audit.get("formalCalculationReady") if transfer_audit else True,
+            "transferSystemReadiness": transfer_audit.get("readiness") if transfer_audit else {},
+            "transferFrameAnalysisStatus": (transfer_audit.get("frameAnalysis") or {}).get("status") if transfer_audit else "not_required",
+            "transferAutoDetailingStatus": (transfer_delivery.get("autoDetailing") or {}).get("status") if transfer_audit else "not_required",
+            "transferSystemOfficialIssueReady": transfer_delivery.get("officialIssueReady") if transfer_audit else True,
+            "transferDetailingApprovalStatus": transfer_delivery.get("status") if transfer_audit else "not_required",
+            "transferDetailingTopologyCurrent": transfer_delivery.get("topologyCurrent") if transfer_audit else True,
+            "transferDetailingEvidenceComplete": transfer_delivery.get("evidenceComplete") if transfer_audit else True,
             "blockingCount": len(blocking),
             "warningCount": len(warnings),
             "missingCount": len(missing),

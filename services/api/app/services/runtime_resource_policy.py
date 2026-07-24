@@ -171,10 +171,11 @@ def adaptive_resource_policy(*, role: str | None = None) -> dict[str, Any]:
         derived = int((usable * api_fraction) / amplification)
         floor = 32 * 1024**2 if effective_total < 8 * 1024**3 else 64 * 1024**2
         full_limit = max(floor, min(hard_cap, derived))
-        # The historical PITGUARD_API_FULL_PROJECT_LIMIT_MB value is ignored in
-        # adaptive mode. Deployments that still export 96 MB therefore no longer
-        # impose a mechanical ceiling on a machine with ample headroom. Use the
-        # explicit *_HARD_CAP_MB variable when an administrative cap is required.
+        # Existing deployments use this variable as an administrative ceiling.
+        # Adaptive sizing may lower the limit under pressure, but must never
+        # silently exceed an explicit operator-configured cap.
+        if legacy_override is not None:
+            full_limit = min(full_limit, legacy_override)
 
     workspace_fraction = _env_float("PITGUARD_WORKSPACE_HEADROOM_FRACTION", 0.08, 0.02, 0.25)
     workspace_hard_cap = _env_optional_mb("PITGUARD_WORKSPACE_PAYLOAD_HARD_CAP_MB") or 256 * 1024**2

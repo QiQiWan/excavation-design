@@ -704,17 +704,29 @@ def verify_current_calculation_contract(project: Project, result: CalculationRes
         current_adopted_hash,
         dict(stored.get("solverRuntime") or current.get("solverRuntime") or _solver_runtime_manifest()),
     ) if stored_input_contract_id and current_adopted_hash else None
-    return {
-        "current": bool(
-            stored
-            and (stored.get("adoptedDesignSnapshotHash") or result.adopted_design_snapshot_hash) == current_adopted_hash
-            and result.calculation_contract_id == expected_final_contract_id
-            and result.support_topology_hash == current.get("supportTopologyHash")
-            and stored.get("caseHash") == current.get("caseHash")
-            and stored.get("algorithmVersion") == ALGORITHM_VERSION
-            and stored.get("ruleSetVersion") == RULE_SET_VERSION
-            and stored.get("solverRuntime") == current.get("solverRuntime")
+    comparisons = {
+        "adoptedDesignSnapshotHash": (
+            stored.get("adoptedDesignSnapshotHash") or result.adopted_design_snapshot_hash,
+            current_adopted_hash,
         ),
+        "calculationContractId": (result.calculation_contract_id, expected_final_contract_id),
+        "supportTopologyHash": (result.support_topology_hash, current.get("supportTopologyHash")),
+        "caseHash": (stored.get("caseHash"), current.get("caseHash")),
+        "algorithmVersion": (stored.get("algorithmVersion"), ALGORITHM_VERSION),
+        "ruleSetVersion": (stored.get("ruleSetVersion"), RULE_SET_VERSION),
+        "solverRuntime": (stored.get("solverRuntime"), current.get("solverRuntime")),
+    }
+    mismatches = [
+        key for key, (stored_value, current_value) in comparisons.items()
+        if stored_value != current_value
+    ]
+    is_current = bool(stored and not mismatches)
+    return {
+        "current": is_current,
+        "reason": "calculation contract matches current design snapshot" if is_current else (
+            "calculation contract differs in: " + ", ".join(mismatches)
+        ),
+        "mismatches": mismatches,
         "resultId": result.id,
         "storedContractId": result.calculation_contract_id,
         "currentContractId": expected_final_contract_id,

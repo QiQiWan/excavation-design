@@ -32,7 +32,7 @@ def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repositor
     from app.calculation.engine import build_default_construction_cases
     from app.services.calculation_state import invalidate_calculation_state
     from app.services.construction_stages import validate_calculation_case
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     existing = project.calculation_cases[-1] if project.calculation_cases else None
     if existing and (existing.locked or existing.source == "user_defined"):
         validation = validate_calculation_case(project, existing)
@@ -41,7 +41,7 @@ def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repositor
                 status_code=422,
                 detail={
                     "code": "CONSTRUCTION_STAGE_VALIDATION_FAILED",
-                    "message": "项目施工阶段已锁定，且与当前方案不一致；系统不会静默覆盖。",
+                    "message": "项目设计控制工况已锁定，且与当前方案不一致；系统不会静默覆盖。",
                     "validation": validation,
                 },
             )
@@ -53,7 +53,7 @@ def build_cases(project_id: str, repo: ProjectRepository = Depends(get_repositor
     project.calculation_cases = cases
     invalidate_calculation_state(
         project,
-        reason="施工阶段已按当前围护方案重新生成",
+        reason="设计控制工况已按当前围护方案重新生成",
         rebuild_cases=False,
         preserve_cases=True,
     )
@@ -84,7 +84,7 @@ def update_construction_stages(
         validate_calculation_case,
     )
 
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     existing = project.calculation_cases[-1] if project.calculation_cases else None
     normalized = normalize_user_calculation_case(project, case)
     normalized.revision = (
@@ -98,18 +98,20 @@ def update_construction_stages(
             status_code=422,
             detail={
                 "code": "CONSTRUCTION_STAGE_VALIDATION_FAILED",
-                "message": "施工阶段存在硬错误，未保存。",
+                "message": "设计控制工况存在硬错误，未保存。",
                 "validation": validation,
             },
         )
     project.calculation_cases = [normalized]
+    from app.services.workflow_v381 import migrate_legacy_stages
+    migrate_legacy_stages(project, force=True)
     invalidate_calculation_state(
         project,
-        reason="用户施工阶段已更新",
+        reason="用户设计控制工况已更新",
         rebuild_cases=False,
         preserve_cases=True,
     )
-    project.messages.append("施工阶段已保存；原计算结果已失效，请运行当前方案完整计算。")
+    project.messages.append("设计控制工况已保存；原计算结果已失效，请运行当前方案完整计算。")
     repo.save(project, action="calculation.update_construction_stages", summary="Saved user-defined construction stages")
     return build_construction_stage_workspace(project)
 
@@ -126,15 +128,17 @@ def reset_construction_stages(
     project = repo.require(project_id)
     try:
         project.calculation_cases = build_default_construction_cases(project)
+        from app.services.workflow_v381 import migrate_legacy_stages
+        migrate_legacy_stages(project, force=True)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     invalidate_calculation_state(
         project,
-        reason="施工阶段已恢复为当前方案推荐值",
+        reason="设计控制工况已恢复为当前方案推荐值",
         rebuild_cases=False,
         preserve_cases=True,
     )
-    project.messages.append("施工阶段已恢复为推荐值；原计算结果已失效，请重新计算。")
+    project.messages.append("设计控制工况已恢复为推荐值；原计算结果已失效，请重新计算。")
     repo.save(project, action="calculation.reset_construction_stages", summary="Reset construction stages to generated defaults")
     return build_construction_stage_workspace(project)
 
@@ -145,7 +149,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
     from app.calculation.engine import run_calculation
     from app.services.intelligent_design_closure import run_intelligent_design_closure
     from app.services.construction_stages import select_calculation_case_for_run, validate_calculation_case
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     case = None
     stage_selection: dict = {}
     if case_id:
@@ -159,7 +163,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
                     status_code=422,
                     detail={
                         "code": "CONSTRUCTION_STAGE_VALIDATION_FAILED",
-                        "message": "锁定施工阶段与当前方案不一致，未启动计算。",
+                        "message": "锁定设计控制工况与当前方案不一致，未启动计算。",
                         "validation": validation,
                     },
                 )
@@ -203,7 +207,7 @@ def diagnose_and_repair(project_id: str, repo: ProjectRepository = Depends(get_r
     The response is intentionally compact so the UI can explain the root cause
     before loading the full calculation result from the project history.
     """
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     try:
         result, closure = run_intelligent_design_closure(project, None, auto_repair=True)
     except ValueError as exc:
@@ -234,7 +238,7 @@ def apply_intelligent_closure_action(
     from app.services.construction_stages import select_calculation_case_for_run
     from app.services.intelligent_design_closure import apply_intervention_action, run_intelligent_design_closure
 
-    project = repo.require_with_latest_calculation(project_id)
+    project = repo.require_for_calculation(project_id)
     action_id = str(payload.get("actionId") or "").strip()
     if not action_id:
         raise HTTPException(status_code=422, detail="缺少 actionId。")
@@ -273,7 +277,7 @@ def apply_intelligent_closure_action(
 def run_candidate_comparison(project_id: str, top_n: int = 3, repo: ProjectRepository = Depends(get_repository)) -> list[dict]:
     _require_embedded_heavy_execution()
     from app.calculation.engine import run_candidate_comparison_for_project
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     try:
         comparison = run_candidate_comparison_for_project(project, top_n=top_n)
     except ValueError as exc:

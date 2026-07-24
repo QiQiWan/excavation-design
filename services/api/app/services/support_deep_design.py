@@ -18,6 +18,7 @@ from collections import defaultdict
 from typing import Any
 
 from app.schemas.domain import Project, RetainingSystem, SupportElement
+from app.rules.gb50017.steel_support_rules import steel_pipe_buckling_curve
 
 EPS = 1.0e-9
 STEEL_E_KN_M2 = 2.06e8
@@ -253,10 +254,21 @@ def _member_screening(project: Project, system: RetainingSystem, support: Suppor
     slenderness = effective_length / max(props["radiusM"], EPS)
     euler_kn = math.pi**2 * mat["elasticModulusKnM2"] * props["inertiaM4"] / max(effective_length**2, EPS)
     squash_kn = props["areaM2"] * mat["designStrengthMpa"] * 1000.0
-    # Preliminary stability capacity.  It intentionally remains below both the
-    # squash load and Euler load and therefore cannot replace the code-specific
-    # compression-member curve used by the final member check.
-    stability_capacity = min(0.85 * squash_kn, 0.75 * euler_kn)
+    buckling_curve = None
+    if support.section_type == "steel_pipe":
+        buckling_curve = steel_pipe_buckling_curve(
+            outer_diameter_m=float(support.section.diameter or 0.0),
+            wall_thickness_m=float(support.section.wall_thickness or 0.0),
+            length_m=effective_length,
+            yield_strength_mpa=mat["designStrengthMpa"],
+            effective_length_factor=1.0,
+            curve_class="b",
+        )
+    if buckling_curve and buckling_curve.get("status") == "ok":
+        stability_capacity = float(buckling_curve["stabilityReductionFactor"]) * squash_kn
+    else:
+        # RC and non-pipe sections retain the bounded screening relationship.
+        stability_capacity = min(0.85 * squash_kn, 0.75 * euler_kn)
 
     demand = _screening_demand(project, support, actual, level_count)
     base = float(demand["baseAxialKn"])
@@ -306,6 +318,10 @@ def _member_screening(project: Project, system: RetainingSystem, support: Suppor
         "designAxialKn": round(design_axial, 3),
         "stabilityCapacityKn": round(stability_capacity, 3),
         "eulerLoadKn": round(euler_kn, 3),
+        "bucklingCurveClass": buckling_curve.get("curveClass") if buckling_curve else None,
+        "normalizedSlenderness": round(float(buckling_curve.get("normalizedSlenderness") or 0.0), 4) if buckling_curve else None,
+        "stabilityReductionFactor": round(float(buckling_curve.get("stabilityReductionFactor") or 0.0), 4) if buckling_curve else None,
+        "diameterThicknessRatio": round(float(buckling_curve.get("diameterThicknessRatio") or 0.0), 3) if buckling_curve else None,
         "eccentricityM": round(node_eccentricity, 4),
         "eccentricityMomentKnm": round(eccentricity_moment, 3),
         "axialUtilization": round(axial_util, 4),

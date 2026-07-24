@@ -22,6 +22,14 @@ from app.services.core_engineering_presentation import (
     build_verification_distribution,
 )
 from app.services.design_basis import build_design_basis
+from app.services.design_core_v387 import (
+    build_delivery_quality,
+    build_member_envelopes,
+    build_parameter_confirmation,
+    build_reinforcement_closure,
+    build_rule_evidence,
+    build_scheme_search_assurance,
+)
 from app.services.standards_matrix import build_standards_process_matrix
 from app.version import SOFTWARE_VERSION, version_manifest
 
@@ -213,6 +221,22 @@ def _set_repeat_table_header(row) -> None:
     tr_pr.append(tbl_header)
 
 
+
+def _prevent_row_split(row) -> None:
+    tr_pr = row._tr.get_or_add_trPr()
+    cant_split = tr_pr.find(qn("w:cantSplit"))
+    if cant_split is None:
+        cant_split = OxmlElement("w:cantSplit")
+        tr_pr.append(cant_split)
+    cant_split.set(qn("w:val"), "1")
+
+
+def _remove_paragraph_borders(paragraph) -> None:
+    p_pr = paragraph._p.get_or_add_pPr()
+    borders = p_pr.find(qn("w:pBdr"))
+    if borders is not None:
+        p_pr.remove(borders)
+
 def _set_cell_text(cell, value: Any, *, bold: bool = False, size: float = 8.5, color: str | None = None) -> None:
     cell.text = ""
     paragraph = cell.paragraphs[0]
@@ -244,13 +268,16 @@ def _add_table(
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     header = table.rows[0]
     _set_repeat_table_header(header)
+    _prevent_row_split(header)
     for index, label in enumerate(headers):
         _set_cell_text(header.cells[index], label, bold=True, size=font_size, color="FFFFFF")
         _set_cell_fill(header.cells[index], "355B83")
         if widths and index < len(widths):
             header.cells[index].width = Inches(widths[index])
     for row in row_values:
-        cells = table.add_row().cells
+        table_row = table.add_row()
+        _prevent_row_split(table_row)
+        cells = table_row.cells
         for index, value in enumerate(row):
             text = _status(value) if status_column == index else value
             _set_cell_text(cells[index], text, size=font_size)
@@ -270,7 +297,9 @@ def _add_key_value_table(document: Document, rows: list[tuple[str, Any]], column
     table.style = "Table Grid"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     for offset in range(0, len(rows), columns):
-        cells = table.add_row().cells
+        table_row = table.add_row()
+        _prevent_row_split(table_row)
+        cells = table_row.cells
         group = rows[offset: offset + columns]
         for index in range(columns):
             label_cell = cells[index * 2]
@@ -360,6 +389,11 @@ def _styles(document: Document) -> None:
         style._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
         style.font.size = Pt(size)
         style.font.color.rgb = RGBColor.from_string(color)
+        if name == "Title":
+            style_p_pr = style.element.get_or_add_pPr()
+            title_borders = style_p_pr.find(qn("w:pBdr"))
+            if title_borders is not None:
+                style_p_pr.remove(title_borders)
     if "Caption" in styles:
         styles["Caption"].font.name = "Arial"
         styles["Caption"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
@@ -403,6 +437,12 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
     stability = build_stability_distribution(project)
     verification = build_verification_distribution(project)
     design_basis = build_design_basis(project)
+    parameter_governance = build_parameter_confirmation(project)
+    rule_evidence = build_rule_evidence(project)
+    scheme_assurance = build_scheme_search_assurance(project)
+    member_envelopes = build_member_envelopes(project)
+    reinforcement_closure = build_reinforcement_closure(project)
+    delivery_quality = build_delivery_quality(project)
     formal_scenarios = dict((project.advanced_engineering or {}).get("formalAdverseScenarioSuite") or {})
     p3_closure = dict((project.advanced_engineering or {}).get("p3DetailingClosure") or {})
     try:
@@ -414,6 +454,7 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
     # Cover page
     title = document.add_paragraph()
     title.style = document.styles["Title"]
+    _remove_paragraph_borders(title)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title.add_run("基坑围护结构设计计算书")
     subtitle = document.add_paragraph()
@@ -731,7 +772,17 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         else:
             document.add_paragraph("尚未执行企业节点、预埋件与钢筋空间深化闭环。")
     else:
-        document.add_paragraph("尚未生成配筋方案。")
+        _add_key_value_table(document, [
+            ("自动配筋闭合状态", _status(reinforcement_closure.get("status"))),
+            ("已检查构件", reinforcement_closure.get("componentCount")),
+            ("失败 / 预警", f"{reinforcement_closure.get('failCount', 0)} / {reinforcement_closure.get('warningCount', 0)}"),
+            ("截面回代需求", reinforcement_closure.get("sectionFeedbackRequiredCount")),
+            ("正式构件级配筋方案", "尚未形成"),
+        ])
+        document.add_paragraph(
+            "当前已完成构件级配筋闭合与构造完整性筛查，但尚未形成可直接发行的逐构件钢筋方案、钢筋表和节点排布。"
+            "筛查结果用于定位配筋与截面反馈需求，正式施工图仍应在构件配筋、锚固、碰撞和施工可实施性闭合后发行。"
+        )
 
     # 9. Review list
     document.add_heading("9 校核结论与复核清单", level=1)
@@ -783,7 +834,66 @@ def export_docx_report(project: Project, output_dir: str | Path) -> Path:
         ["混凝土配筋", "按内力包络计算需求钢筋并检查最小配筋与构造", "裂缝、锚固、搭接、节点和施工可实施性"],
     ], font_size=7.6)
 
-    document.add_heading("附录 C 计算追溯信息", level=1)
+    document.add_heading("附录 C V3.87 设计核心治理与成果质量", level=1)
+    document.add_heading("C.1 参数来源与正式设计资格", level=2)
+    parameter_rows = list(parameter_governance.get("records") or [])
+    critical_rows = [row for row in parameter_rows if row.get("critical")]
+    _add_key_value_table(document, [
+        ("参数记录", parameter_governance.get("total")),
+        ("关键参数", len(critical_rows)),
+        ("已确认关键参数", sum(bool(row.get("usableForFormalDesign")) for row in critical_rows)),
+        ("正式设计阻断", parameter_governance.get("formalBlockerCount")),
+        ("正式参数资格", "通过" if parameter_governance.get("status") == "ready" else "不通过"),
+    ])
+    if parameter_rows:
+        _add_table(document, ["参数", "数值", "单位", "来源", "确认", "正式可用", "影响范围"], [
+            [
+                row.get("displayName") or row.get("parameterKey"),
+                row.get("value"),
+                row.get("unit") or "—",
+                row.get("sourceType"),
+                row.get("confirmationStatus"),
+                "是" if row.get("formalDesignAllowed") else "否",
+                "、".join(row.get("affects") or []),
+            ]
+            for row in parameter_rows[:40]
+        ], font_size=6.8)
+
+    document.add_heading("C.2 条文执行证据与方案搜索保证", level=2)
+    _add_key_value_table(document, [
+        ("规则总数", rule_evidence.get("ruleCount")),
+        ("已执行规则", rule_evidence.get("executedRuleCount")),
+        ("自动证据覆盖率", rule_evidence.get("coverageRatio")),
+        ("候选方案数", scheme_assurance.get("candidateCount")),
+        ("完整计算候选", scheme_assurance.get("fullyCalculatedCount")),
+        ("方案族数量", scheme_assurance.get("familyCount")),
+        ("采用方案已完整计算", "是" if scheme_assurance.get("selectedCandidateFullyCalculated") else "否"),
+    ])
+    document.add_paragraph(str(rule_evidence.get("boundary") or "规则证据覆盖率仅反映当前规则库执行情况，不代表规范全文自动审查完成。"))
+
+    document.add_heading("C.3 逐构件包络、配筋闭环与交付质量", level=2)
+    _add_key_value_table(document, [
+        ("逐构件包络记录", member_envelopes.get("recordCount")),
+        ("包络对象数", member_envelopes.get("objectCount")),
+        ("配筋检查构件", reinforcement_closure.get("componentCount")),
+        ("配筋闭环硬失败", reinforcement_closure.get("failCount")),
+        ("施工图图种完成", f"{len(delivery_quality.get('presentDrawingTypes') or [])} / {len(delivery_quality.get('requiredDrawingTypes') or [])}"),
+        ("计算书章节完成", f"{len(delivery_quality.get('presentReportSections') or [])} / {len(delivery_quality.get('requiredReportSections') or [])}"),
+        ("成果生成完整", "是" if delivery_quality.get("artifactCompletenessStatus") == "ready" else "否"),
+        ("正式发行资格", "通过" if delivery_quality.get("officialIssueEligible") else "不通过"),
+    ])
+    envelope_rows = list(member_envelopes.get("records") or [])
+    if envelope_rows:
+        _add_table(document, ["构件", "响应", "单位", "最小值", "最大值", "绝对控制值", "控制工况"], [
+            [
+                row.get("objectId"), row.get("responseType"), row.get("unit"),
+                row.get("minimum"), row.get("maximum"), row.get("maximumAbsolute"),
+                row.get("controllingStageId"),
+            ]
+            for row in envelope_rows[:50]
+        ], font_size=6.6)
+
+    document.add_heading("附录 D 计算追溯信息", level=1)
     manifest = version_manifest()
     _add_key_value_table(document, [
         ("软件版本", manifest.get("softwareVersion")),

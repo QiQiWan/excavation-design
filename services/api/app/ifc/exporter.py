@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.schemas.domain import BeamElement, ColumnElement, DiaphragmWallPanel, Point2D, Project, SupportElement
+from app.geometry.wall_path import normalize_construction_panels, polyline_length, resolve_wall_plan_path
 from app.quality.support_layout_quality import evaluate_support_layout_quality
 from app.version import SOFTWARE_VERSION
 
@@ -257,58 +258,32 @@ def _add_reinforcing_bar(
 
 
 
-def _wall_construction_spans(wall: DiaphragmWallPanel) -> list[dict]:
-    """Return construction-panel geometry with stable calculation-wall traceability."""
-    if len(wall.axis.points) < 2:
+def _wall_construction_spans(project: Project, wall: DiaphragmWallPanel) -> list[dict]:
+    """Return construction panels rebased to the current canonical wall path."""
+    resolution = resolve_wall_plan_path(project, wall)
+    if len(resolution.points) < 2:
         return []
-    a, b = wall.axis.points[0], wall.axis.points[-1]
-    _, _, total_length, _ = _line_direction(a, b)
-    if total_length <= 1.0e-9:
-        return []
-    ux = (b.x - a.x) / total_length
-    uy = (b.y - a.y) / total_length
-    panels = list(getattr(wall, "construction_panels", []) or [])
-    if not panels:
-        panels = [{
-            "panelIndex": 1,
-            "panelCode": f"{wall.panel_code}-P01",
-            "startChainageM": 0.0,
-            "endChainageM": total_length,
-            "lengthM": total_length,
-            "cageCount": 1,
-            "jointType": "project_specific",
-            "liftingReviewRequired": True,
-        }]
+    settings = project.design_settings
+    panels, _ = normalize_construction_panels(
+        wall,
+        resolution.points,
+        target_length_m=float(getattr(settings, "wall_panel_target_length_m", 6.0) or 6.0),
+        minimum_length_m=float(getattr(settings, "wall_panel_min_length_m", 3.0) or 3.0),
+        maximum_length_m=float(getattr(settings, "wall_panel_max_length_m", 7.0) or 7.0),
+    )
     rows: list[dict] = []
-    for index, panel in enumerate(panels, start=1):
-        c0 = max(0.0, min(total_length, float(panel.get("startChainageM") or 0.0)))
-        c1 = max(c0, min(total_length, float(panel.get("endChainageM") or (c0 + float(panel.get("lengthM") or total_length)))))
-        if c1 - c0 <= 1.0e-6:
+    for panel in panels:
+        plan_path = [Point2D(x=float(item["x"]), y=float(item["y"])) for item in list(panel.get("planPath") or [])]
+        if len(plan_path) < 2:
             continue
-        start_data = panel.get("start") or {}
-        end_data = panel.get("end") or {}
-        start = Point2D(
-            x=float(start_data.get("x", a.x + ux * c0)),
-            y=float(start_data.get("y", a.y + uy * c0)),
-        )
-        end = Point2D(
-            x=float(end_data.get("x", a.x + ux * c1)),
-            y=float(end_data.get("y", a.y + uy * c1)),
-        )
         rows.append({
-            "panelIndex": int(panel.get("panelIndex") or index),
-            "panelCode": str(panel.get("panelCode") or f"{wall.panel_code}-P{index:02d}"),
-            "startChainageM": round(c0, 4),
-            "endChainageM": round(c1, 4),
-            "lengthM": round(c1 - c0, 4),
-            "start": start,
-            "end": end,
-            "cageCount": int(panel.get("cageCount") or 1),
-            "jointType": str(panel.get("jointType") or "project_specific"),
-            "liftingReviewRequired": bool(panel.get("liftingReviewRequired", True)),
+            **panel,
+            "start": plan_path[0],
+            "end": plan_path[-1],
+            "planPath": plan_path,
+            "lengthM": round(polyline_length(plan_path), 4),
         })
     return rows
-
 
 def _wall_design_properties(project: Project, wall: DiaphragmWallPanel, *, panel: dict | None = None) -> dict:
     result = wall.design_results
@@ -477,7 +452,7 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
         for wall in project.retaining_system.diaphragm_walls:
             if len(wall.axis.points) < 2:
                 continue
-            spans = _wall_construction_spans(wall)
+            spans = _wall_construction_spans(project, wall)
             object_manifest["calculationWalls"].append({
                 "id": wall.id, "code": wall.panel_code, "designFaceCode": wall.design_face_code,
                 "designLengthM": wall.design_length, "constructionPanelCount": len(spans),

@@ -34,7 +34,7 @@ def build_model(project_id: str, grid_size: float = 10.0, repo: ProjectRepositor
 
 @router.post("/import-vtu")
 async def import_vtu(project_id: str, file: UploadFile = File(...), repo: ProjectRepository = Depends(get_repository)) -> dict:
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     try:
         mesh = parse_vtu(await file.read())
     except ValueError as exc:
@@ -49,17 +49,17 @@ async def import_vtu(project_id: str, file: UploadFile = File(...), repo: Projec
 
 @router.get("/model", response_model=GeologicalModel | None)
 def get_model(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> GeologicalModel | None:
-    return repo.require(project_id).geological_model
+    return repo.require_for_calculation(project_id).geological_model
 
 
 @router.get("/coverage")
 def get_coverage(project_id: str, repo: ProjectRepository = Depends(get_repository)) -> dict:
-    return geological_coverage_audit(repo.require(project_id))
+    return geological_coverage_audit(repo.require_for_calculation(project_id))
 
 
 @router.get("/section", response_model=GeologicalSection)
 def get_section(project_id: str, segment_id: str, repo: ProjectRepository = Depends(get_repository)) -> GeologicalSection:
-    project = repo.require(project_id)
+    project = repo.require_for_calculation(project_id)
     try:
         return extract_representative_section(project, segment_id)
     except ValueError as exc:

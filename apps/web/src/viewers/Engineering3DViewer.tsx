@@ -3,6 +3,7 @@ import { AmbientLight, AxesHelper, BoxGeometry, BufferGeometry, Color, CylinderG
 import FullscreenShell from '../components/FullscreenShell';
 import type { GeologicalSurface, Point2D, Project, VtuCellBlock } from '../types/domain';
 import { effectiveGeologicalSurfaces } from '../utils/geology';
+import { bindWebglContextLifecycle, createStableWebGLRenderer, releaseStableWebGLRenderer, stablePixelRatio, startStableRenderLoop } from './webglRuntime';
 
 type LayerKey = 'boreholes' | 'surfaces' | 'vtu' | 'excavation' | 'walls' | 'beams' | 'supports' | 'columns' | 'results';
 
@@ -193,6 +194,8 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
   const [selected, setSelected] = useState<Record<string, unknown> | undefined>();
   const [hoverInfo, setHoverInfo] = useState<Record<string, unknown> | undefined>();
   const [renderQuality, setRenderQuality] = useState<'auto' | 'performance' | 'balanced' | 'high'>('auto');
+  const [renderError, setRenderError] = useState<string>();
+  const [renderNonce, setRenderNonce] = useState(0);
 
   const stats = useMemo(() => ({
     boreholes: project.boreholes.length,
@@ -234,11 +237,22 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
     const scene = new Scene();
     scene.background = new Color(0xf8fafc);
     const camera = new PerspectiveCamera(45, width / height, 0.1, 5000);
-    const renderer = new WebGLRenderer({ antialias: true });
+    let renderer: WebGLRenderer;
+    try {
+      renderer = createStableWebGLRenderer({ antialias: effectiveQuality !== 'performance' });
+      setRenderError(undefined);
+    } catch (reason) {
+      setRenderError(reason instanceof Error ? reason.message : '无法创建 WebGL 上下文。请关闭其他三维页面后重试。');
+      return;
+    }
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, effectiveQuality === 'high' ? 2 : effectiveQuality === 'balanced' ? 1.35 : 1));
+    renderer.setPixelRatio(stablePixelRatio(effectiveQuality === 'high' ? 1.75 : effectiveQuality === 'balanced' ? 1.35 : 1));
     renderer.localClippingEnabled = clip;
     mount.appendChild(renderer.domElement);
+    const detachContextLifecycle = bindWebglContextLifecycle(renderer, {
+      onLost: setRenderError,
+      onRestored: () => { setRenderError(undefined); setRenderNonce((value) => value + 1); },
+    });
 
     const pickables: Object3D[] = [];
     const clipNormal = clipAxis === 'x' ? new Vector3(-1, 0, 0) : clipAxis === 'y' ? new Vector3(0, -1, 0) : new Vector3(0, 0, -1);
@@ -494,28 +508,21 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
       camera.updateProjectionMatrix();
     });
     resizeObserver.observe(mount);
-    let raf = 0;
-    const animate = () => { raf = requestAnimationFrame(animate); renderer.render(scene, camera); };
-    animate();
+    const stopRenderLoop = startStableRenderLoop(renderer, scene, camera, mount, { maxFps: effectiveQuality === 'performance' ? 20 : 30 });
     return () => {
       setHoverMesh(undefined);
       setHoverInfo(undefined);
-      cancelAnimationFrame(raf);
+      stopRenderLoop();
+      detachContextLifecycle();
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('wheel', onWheel);
-      renderer.dispose();
-      scene.traverse((object: Object3D) => {
-        const mesh = object as Mesh;
-        mesh.geometry?.dispose?.();
-        const material = mesh.material as Material | Material[] | undefined;
-        if (Array.isArray(material)) material.forEach((item) => item.dispose()); else material?.dispose?.();
-      });
+      releaseStableWebGLRenderer(renderer, scene, mount);
       mount.innerHTML = '';
     };
-  }, [project, layers, opacity, clip, clipAxis, clipOffset, focus, stats.vtuCells, stats.maxSupportAxialForce, measureMode, measureStart, supportIssueMap, highlightId, effectiveQuality, vtuStride, radialSegments]);
+  }, [project, layers, opacity, clip, clipAxis, clipOffset, focus, stats.vtuCells, stats.maxSupportAxialForce, measureMode, measureStart, supportIssueMap, highlightId, effectiveQuality, vtuStride, radialSegments, renderNonce]);
 
   const layerEntries = Object.entries(layers) as [LayerKey, boolean][];
   return (
@@ -549,6 +556,7 @@ export default function Engineering3DViewer({ project, focus = 'all', highlightL
         ))}
       </div>}
       {measureText && <div className="warning">{measureText}</div>}
+      {renderError && <div className="modelRenderRecovery"><span>{renderError}</span><button type="button" className="secondary" onClick={() => setRenderNonce((value) => value + 1)}>重建三维视图</button></div>}
       {layers.results && <div className="viewerLegend"><span>支撑轴力云图：</span><span className="legendLow">低</span><span className="legendMid">中</span><span className="legendHigh">高</span><span>；质量高亮：红=支撑交叉/严重超限，橙=间距/避让/立柱服务警告。</span></div>}
       <div className="threeViewport" ref={mountRef} />
       {hoverInfo && <div className="hoverObjectBadge"><strong>悬浮</strong><span>{String(hoverInfo.code ?? hoverInfo.borehole ?? hoverInfo.type ?? '-')}</span><em>{String(hoverInfo.type ?? '-')}</em></div>}
