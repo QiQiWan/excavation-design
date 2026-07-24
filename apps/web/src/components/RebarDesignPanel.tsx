@@ -130,7 +130,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
         const blockers = (Array.isArray(record(next.diagnostics?.deepeningGate).blockers)
           ? record(next.diagnostics?.deepeningGate).blockers
           : []).map(record);
-        const transientCalculationBlocker = blockers.some((row) => String(row.reasonCode ?? '') === 'CALCULATION_NOT_CURRENT');
+        const transientCalculationBlocker = blockers.some((row: Record<string, unknown>) => String(row.reasonCode ?? '') === 'CALCULATION_NOT_CURRENT');
         if (!transientCalculationBlocker) break;
         await sleep(350 * (attempt + 1));
         next = await api.getRebarDesignScheme(project.id, mode);
