@@ -1,6 +1,6 @@
 [project]
 name = "pitguard-api"
-version = "3.87.11"
+version = "3.87.12"
 description = "FastAPI backend for PitGuard intelligent verification-strengthening-recalculation design closure"
 requires-python = ">=3.11"
 dependencies = [

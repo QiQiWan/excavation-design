@@ -83,6 +83,8 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
     return latest.stageResults.map((result) => result.wallInternalForce).filter(Boolean) as unknown as Record<string, unknown>[];
   }, [latest]);
 
+  const hasCalculatedSamples = useMemo(() => samples.some((sample) => Array.isArray(sample.points) && sample.points.length > 0), [samples]);
+
   const stages = useMemo(() => {
     const seen = new Set<string>();
     return samples.flatMap((sample) => {
@@ -171,11 +173,16 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
     const targetId = String(highlightLocator?.objectId ?? highlightLocator?.objectCode ?? '');
 
     data.rows.forEach(({ wall, points }) => {
-      const a = wall.axis.points[0]; const b = wall.axis.points[wall.axis.points.length - 1];
-      if (!a || !b) return;
-      const dx = b.x - a.x; const dy = b.y - a.y;
-      const length = Math.hypot(dx, dy) || 1;
-      const angle = -Math.atan2(dy, dx);
+      const axisPoints = wall.axis.points ?? [];
+      const axisSegments = axisPoints.slice(0, -1).flatMap((a, index) => {
+        const b = axisPoints[index + 1];
+        if (!a || !b) return [];
+        const dx = b.x - a.x; const dy = b.y - a.y;
+        const length = Math.hypot(dx, dy);
+        if (!Number.isFinite(length) || length < 1e-6) return [];
+        return [{ a, b, length, angle: -Math.atan2(dy, dx) }];
+      });
+      if (!axisSegments.length) return;
       const topElevation = wall.topElevation ?? project.excavation?.topElevation ?? 0;
       const normalizedPoints: Record<string, unknown>[] = points.map((point) => ({
         ...point,
@@ -191,32 +198,34 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
         const yTop = Math.max(elevation0, elevation1);
         const yBottom = Math.min(elevation0, elevation1);
         const cellHeight = Math.max(0.08, yTop - yBottom);
-        const geometry = new BoxGeometry(length, cellHeight, Math.max(0.18, wall.thickness * 1.06));
         const signedValue = rawMetricValue(point, metric);
         const renderedValue = displayMetricValue(point, metric, displayMode);
-        const material = new MeshStandardMaterial({
-          color: highlighted ? new Color(0xeab308) : colorForValue(renderedValue, data.maxAbs, displayMode),
-          transparent: true,
-          opacity: highlighted ? 0.98 : 0.9,
-          roughness: 0.45,
+        axisSegments.forEach(({ a, b, length, angle }) => {
+          const geometry = new BoxGeometry(length, cellHeight, Math.max(0.18, wall.thickness * 1.06));
+          const material = new MeshStandardMaterial({
+            color: highlighted ? new Color(0xeab308) : colorForValue(renderedValue, data.maxAbs, displayMode),
+            transparent: true,
+            opacity: highlighted ? 0.98 : 0.9,
+            roughness: 0.45,
+          });
+          disposableGeometries.push(geometry);
+          disposableMaterials.push(material);
+          const mesh = new Mesh(geometry, material);
+          mesh.position.set((a.x + b.x) / 2, (yTop + yBottom) / 2, (a.y + b.y) / 2);
+          mesh.rotation.y = angle;
+          mesh.userData.info = {
+            type: 'WallCloudCell',
+            wall: wall.panelCode,
+            stage: stageId === ENVELOPE_STAGE ? '包络' : stageId,
+            metric,
+            value: signedValue.toFixed(metric === 'displacement' ? 3 : 1),
+            depth: toNumber(point.depth, topElevation - elevation0).toFixed(2),
+            elevation: elevation0.toFixed(2),
+            status: highlighted ? 'highlight' : 'normal',
+          };
+          scene.add(mesh);
+          pickables.push(mesh);
         });
-        disposableGeometries.push(geometry);
-        disposableMaterials.push(material);
-        const mesh = new Mesh(geometry, material);
-        mesh.position.set((a.x + b.x) / 2, (yTop + yBottom) / 2, (a.y + b.y) / 2);
-        mesh.rotation.y = angle;
-        mesh.userData.info = {
-          type: 'WallCloudCell',
-          wall: wall.panelCode,
-          stage: stageId === ENVELOPE_STAGE ? '包络' : stageId,
-          metric,
-          value: signedValue.toFixed(metric === 'displacement' ? 3 : 1),
-          depth: toNumber(point.depth, topElevation - elevation0).toFixed(2),
-          elevation: elevation0.toFixed(2),
-          status: highlighted ? 'highlight' : 'normal',
-        };
-        scene.add(mesh);
-        pickables.push(mesh);
       });
     });
 
@@ -295,6 +304,7 @@ export default function WallCloud3DViewer({ project, latest, highlightLocator }:
           <button className={displayMode === 'absolute' ? 'active' : ''} onClick={() => setDisplayMode('absolute')}>绝对值</button>
         </div>
       </div>
+      {!hasCalculatedSamples ? <div className="warning">当前只显示围护墙几何占位，尚未载入施工阶段变形与内力样本；请重新展开云图或重新运行完整计算。</div> : null}
       {renderError && <div className="modelRenderRecovery"><span>{renderError}</span><button type="button" className="secondary" onClick={() => setRenderNonce((value) => value + 1)}>重建三维云图</button></div>}
       <div className="wallCloud3dViewport" ref={mountRef} />
       <div className={`heatLegend ${displayMode === 'signed' ? 'diverging' : ''}`}>

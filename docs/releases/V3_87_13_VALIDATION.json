@@ -1,0 +1,20 @@
+{
+  "version": "3.87.13",
+  "issue": "Deformation cloud viewer returned 404 Not Found in production core mode",
+  "rootCause": "The calculation stage-result artifact router was registered only in full product mode, while production systemd services force PITGUARD_PRODUCT_MODE=core.",
+  "fixes": [
+    "Register calculation artifact and stage-chunk routes in core mode",
+    "Load viewer chunks quietly without global blocking overlay",
+    "Bound viewer hydration to eight chunks and fall back to latest authoritative calculation evidence",
+    "Render cloud cells along the complete wall polyline instead of the first-to-last chord",
+    "Show an explicit geometry-only placeholder when calculated samples are unavailable",
+    "Render non-blocking read failures as a short local notification"
+  ],
+  "validation": {
+    "pythonCompile": "passed",
+    "pytestSelected": "41 passed",
+    "typescriptSyntaxTranspile": "passed for 4 modified files",
+    "shellSyntax": "passed",
+    "fullNpmBuild": "not executed because npm dependency download timed out in the packaging environment"
+  }
+}

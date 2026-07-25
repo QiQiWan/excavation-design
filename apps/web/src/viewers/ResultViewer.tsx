@@ -25,24 +25,53 @@ function OnDemandResultDetails({ project, latest, highlightLocator, children }: 
   useEffect(() => {
     if (!open || hydrated.stageResults.length || loading) return;
     let alive = true;
+    const MAX_VIEWER_CHUNKS = 8;
+    const hydrateFromLatestEvidence = async () => {
+      const evidence = await api.getLatestCalculationEvidenceForViewer(project.id);
+      const result = evidence.result;
+      return result?.id === latest.id ? (result.stageResults ?? []) : [];
+    };
     setLoading(true);
-    api.getCalculationStageChunks(project.id, latest.id)
-      .then(async (manifest) => {
-        const count = Number(manifest.chunkCount ?? 0);
-        if (!count) return [] as Record<string, unknown>[];
-        // Load only the first bounded chunk. Additional stage groups remain on
-        // disk and can be requested later, preventing browser heap spikes.
-        return api.getCalculationStageChunk(project.id, latest.id, 0);
-      })
-      .then((rows) => { if (alive && rows.length) setHydrated({ ...latest, stageResults: rows as any[] }); })
-      .catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); })
-      .finally(() => { if (alive) setLoading(false); });
+    setError(undefined);
+    void (async () => {
+      let rows: Record<string, unknown>[] = [];
+      let partialMessage = '';
+      let loadFailureMessage = '';
+      try {
+        const manifest = await api.getCalculationStageChunks(project.id, latest.id);
+        const count = Math.max(0, Number(manifest.chunkCount ?? 0));
+        const loadCount = Math.min(count, MAX_VIEWER_CHUNKS);
+        for (let chunkIndex = 0; chunkIndex < loadCount; chunkIndex += 1) {
+          const chunk = await api.getCalculationStageChunk(project.id, latest.id, chunkIndex);
+          rows.push(...chunk);
+        }
+        if (count > MAX_VIEWER_CHUNKS) partialMessage = `计算结果共 ${count} 个分片，当前云图按内存上限载入前 ${MAX_VIEWER_CHUNKS} 个分片。`;
+        if (!rows.length) rows = await hydrateFromLatestEvidence() as unknown as Record<string, unknown>[];
+      } catch (reason) {
+        try {
+          rows = await hydrateFromLatestEvidence() as unknown as Record<string, unknown>[];
+        } catch {
+          const message = reason instanceof Error ? reason.message : String(reason);
+          loadFailureMessage = `云图数据未能按需载入：${message}。当前页面仍保留已有计算摘要，可重新展开或重新计算后重试。`;
+        }
+      }
+      if (!alive) return;
+      if (rows.length) {
+        setHydrated({ ...latest, stageResults: rows as any[] });
+        if (partialMessage) setError(partialMessage);
+      } else {
+        const declared = Number((latest.stageResultSummary as Record<string, unknown> | undefined)?.actualCount ?? 0);
+        setError(loadFailureMessage || (declared > 0
+          ? '计算记录声明存在施工阶段结果，但当前成果分片尚未发布或已缺失。请重新运行当前方案计算以重建云图数据。'
+          : '当前计算结果没有施工阶段云图数据。请先运行完整计算。'));
+      }
+    })().finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [open, project.id, latest.id, hydrated.stageResults.length, loading]);
   return <details className="focusDetails" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>查看控制云图与内力包络（按需加载）</summary>
     {open ? <>
-      {loading ? <div className="infoBox">正在读取首个计算结果分片…</div> : null}
+      {loading ? <div className="infoBox">正在按需读取计算结果分片…</div> : null}
       {error ? <div className="warning">结果分片读取失败：{error}</div> : null}
       {children ? children(hydrated) : <><InternalForceVisualization latest={hydrated} highlightLocator={highlightLocator} /><WallCloud3DViewer project={project} latest={hydrated} highlightLocator={highlightLocator} /></>}
     </> : null}
@@ -422,7 +451,7 @@ function ExpertDesignPanel({ project, runStep }: { project: Project; runStep?: (
   </section>;
 }
 
-function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full' | 'candidate_comparison', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
+function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: string, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
   const [mode, setMode] = useState('balanced');
   const [data, setData] = useState<Record<string, any> | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -510,7 +539,7 @@ function statusText(status: unknown) {
   if (value === 'pass' || value === 'completed') return '通过';
   if (value === 'warning' || value === 'completed_with_review' || value === 'completed_with_engineering_review' || value === 'completed_with_delivery_review') return '警告';
   if (value === 'manual_review') return '人工复核';
-  if (value === 'not_applicable' || value === 'skipped') return '不适用';
+  if (value === 'not_applicable' || value === 'not_required' || value === 'skipped') return '不适用';
   if (value === 'completed_with_blocks' || value === 'completed_with_delivery_blocks') return '计算完成，交付阻断';
   if (value === 'engineering_failed' || value === 'completed_with_engineering_blocks') return '计算完成，工程条件阻断';
   if (value === 'fail') return '阻断';
@@ -570,15 +599,45 @@ function CalculationHealthPanel({ latest, compact = false }: { latest: Calculati
   </section>;
 }
 
-function CheckSummaryPills({ summary }: { summary?: Record<string, unknown> }) {
+function CheckSummaryPills({ summary, gateSummary }: { summary?: Record<string, unknown>; gateSummary?: Record<string, unknown> }) {
   const pass = Number(summary?.pass ?? 0);
   const fail = Number(summary?.fail ?? 0);
   const warning = Number(summary?.warning ?? 0);
-  const manual = Number(summary?.manualReview ?? summary?.manual_review ?? 0);
-  return <div className="checkSummary"><span className="checkTag pass">合规 {pass}</span><span className="checkTag fail">不合规 {fail}</span><span className="checkTag warning">预警 {warning}</span><span className="checkTag manual_review">复核 {manual}</span></div>;
+  const calculationManual = Number(summary?.manualReview ?? summary?.manual_review ?? 0);
+  const formalManual = Number(gateSummary?.totalReviewActionCount ?? 0);
+  return <div className="checkSummary"><span className="checkTag pass">合规 {pass}</span><span className="checkTag fail">不合规 {fail}</span><span className="checkTag warning">预警 {warning}</span><span className="checkTag manual_review">计算复核 {calculationManual}</span><span className="checkTag manual_review">正式化待确认 {formalManual}</span></div>;
 }
 
-export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional', coreMode = false }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: 'export_wall_length_redundancy' | 'calculation_full' | 'candidate_comparison', payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional'; coreMode?: boolean }) {
+function FormalizationResolutionPanel({ project, latest, runTask }: { project: Project; latest: CalculationResult; runTask?: (title: string, operationName: string, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
+  const gate = latest.formalReportGate;
+  const [expanded, setExpanded] = useState(false);
+  if (!gate) return null;
+  const plan = ((gate.summary ?? {}).resolutionPlan ?? {}) as Record<string, any>;
+  const resolutionRows = (plan.items ?? []) as Record<string, any>[];
+  const fallbackRows = [
+    ...(gate.blockingItems ?? []).map((item) => ({ ...item, title: item.category, source: 'blocking', automatic: false, actionLabel: item.recommendation })),
+    ...(gate.missingItems ?? []).map((item) => ({ ...item, title: item.category, source: 'missing', automatic: false, actionLabel: item.recommendation })),
+    ...(gate.warningItems ?? []).map((item) => ({ ...item, title: item.category, source: 'warning', automatic: false, actionLabel: item.recommendation })),
+  ];
+  const rows = resolutionRows.length ? resolutionRows : fallbackRows;
+  const visible = expanded ? rows : rows.slice(0, 6);
+  const automaticCount = Number(plan.automaticCount ?? rows.filter((item) => item.automatic).length);
+  const manualCount = Number(plan.manualCount ?? rows.filter((item) => !item.automatic).length);
+  return <section className="formalizationResolutionPanel" id="formalization-resolution">
+    <div className="formalizationResolutionHeader">
+      <div><span className="sectionKicker">正式化阻断解决中心</span><h4>{gate.allowedForOfficialIssue ? '正式化闸门已闭合' : '先自动恢复软件证据，再处理真实人工事项'}</h4><p>自动任务会重建当前计算合同、质量保证包、IFC自检和验证矩阵；勘察来源、外部软件证书、专业签署与专项设计结论不会被系统代填。</p></div>
+      <div className="formalizationResolutionActions">
+        {runTask && !gate.allowedForOfficialIssue ? <button type="button" onClick={() => runTask('一键修复正式化阻断', 'formalization_closure', { forceRecalculate: false })}>一键修复正式化阻断</button> : null}
+        <a className="buttonLink secondary" href="/docs#formalization">查看处理说明</a>
+      </div>
+    </div>
+    <div className="formalizationCounts"><span>自动动作 {automaticCount}</span><span>人工确认 {manualCount}</span><span>阻断 {gate.blockingItems?.length ?? 0}</span><span>缺项 {gate.missingItems?.length ?? 0}</span></div>
+    {visible.length ? <div className="formalizationIssueList">{visible.map((item, index) => <article key={String(item.issueId ?? item.id ?? `${item.category}-${index}`)} className={item.automatic ? 'automatic' : 'manual'}><div><strong>{String(item.title ?? item.category ?? '正式化事项')}</strong><span>{String(item.message ?? '')}</span><small>{String(item.actionLabel ?? item.recommendation ?? '查看专业复核要求')}</small></div><em>{item.automatic ? '可自动处理' : '需责任人确认'}</em>{item.targetPanel ? <b>{String(item.targetPanel)}</b> : null}</article>)}</div> : <div className="infoBox">当前没有待处理的正式化事项。</div>}
+    {rows.length > 6 ? <button type="button" className="secondary compactButton" onClick={() => setExpanded((value) => !value)}>{expanded ? '收起' : `展开全部（${rows.length}）`}</button> : null}
+  </section>;
+}
+
+export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional', coreMode = false }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: string, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional'; coreMode?: boolean }) {
   const calculationState = (project.advancedEngineering?.calculationState ?? {}) as Record<string, unknown>;
   const requiresRecalculation = Boolean(calculationState.requiresRecalculation);
   const latest = requiresRecalculation || !project.calculationResults.length
@@ -601,9 +660,10 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
         <div className={latest.governingValues.governingCheckStatus === 'fail' ? 'error' : 'warning'}>{conclusion(latest.governingValues.governingCheckStatus)}</div>
         <CalculationHealthPanel latest={latest} compact />
         <div className="compactDecisionGrid">
-          <section className="summaryPanel"><h4>校核数量</h4><CheckSummaryPills summary={latest.checkSummary} /></section>
+          <section className="summaryPanel"><h4>校核数量</h4><CheckSummaryPills summary={latest.checkSummary} gateSummary={latest.formalReportGate?.summary} /></section>
           <section className="summaryPanel"><h4>施工图闸门</h4><div className="metricLine"><span>状态</span><strong>{latest.formalReportGate?.status ?? '未评估'}</strong></div><div className="metricLine"><span>正式发行</span><strong>{latest.formalReportGate?.allowedForOfficialIssue ? '允许' : '暂不允许'}</strong></div><p className="small">{latest.formalReportGate?.headline ?? '完成计算后自动评估。'}</p></section>
         </div>
+        {latest.formalReportGate ? <FormalizationResolutionPanel project={project} latest={latest} runTask={runTask} /> : null}
         <OnDemandResultDetails project={project} latest={latest} highlightLocator={highlightLocator} />
       </>}
     </div>;
@@ -643,6 +703,7 @@ export default function ResultViewer({ project, runStep, runTask, highlightLocat
                 <div><strong>{latest.formalReportGate.missingItems?.length ?? 0}</strong><span>缺项</span></div>
               </div>
               <div className={latest.formalReportGate.status === 'fail' ? 'error' : 'warning'}>{latest.formalReportGate.headline}</div>
+              <FormalizationResolutionPanel project={project} latest={latest} runTask={runTask} />
               {latest.formalReportGate.checklistSections?.length ? <table className="table compactTable"><thead><tr><th>首页清单项</th><th>状态</th><th>Fail</th><th>Warning</th><th>人工复核</th><th>Pass</th></tr></thead><tbody>
                 {latest.formalReportGate.checklistSections.map((section, idx) => {
                   const counts = (section.counts ?? {}) as Record<string, number>;

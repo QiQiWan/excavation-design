@@ -40,5 +40,5 @@ def test_frontend_renders_one_primary_navigation_and_on_demand_assurance_drawer(
 
 
 def test_version_identifies_single_flow_patch() -> None:
-    assert SOFTWARE_VERSION == "3.87.11"
+    assert SOFTWARE_VERSION == "3.87.13"
     assert "single-primary-design-flow" in RESULT_PIPELINE_VERSION

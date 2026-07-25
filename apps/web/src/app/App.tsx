@@ -78,6 +78,7 @@ export default function App() {
   const [authRetryNonce, setAuthRetryNonce] = useState(0);
   const { route, navigate } = useBrowserRoute();
   const routedProjectId = useMemo(() => projectIdFromPath(route.pathname), [route.pathname]);
+  const isDocs = route.pathname === '/docs';
 
   const requestedReturnPath = useMemo(() => {
     if (route.pathname === LOGIN_PATH) return returnPathFromLoginSearch(route.search);
@@ -251,6 +252,8 @@ export default function App() {
     navigate(returnTo, true);
   }
 
+  if (isDocs) return <><GlobalRequestProgress /><Suspense fallback={<FullPageLoadingFallback label="正在加载文档中心" />}><DocsPage /></Suspense></>;
+
   if (authChecking) {
     return <><GlobalRequestProgress /><FullPageLoadingFallback label="正在验证登录状态" detail="超过 5 秒将进入可重试的离线登录页，不会无限等待。" /></>;
   }
@@ -271,10 +274,6 @@ export default function App() {
   const runtimeStatus = String(readiness?.status ?? (offline ? 'not_ready' : 'ready'));
   const runtimeReasons = [...(readiness?.blockingReasons ?? []), ...(readiness?.degradedReasons ?? [])];
   const missingModules = diagnostics?.missingModules ?? [];
-  const isDocs = route.pathname === '/docs';
-
-  if (isDocs) return <><GlobalRequestProgress /><Suspense fallback={<FullPageLoadingFallback label="正在加载文档中心" />}><DocsPage /></Suspense></>;
-
   if (routedProjectId && restoringProject && !selected) {
     return <><GlobalRequestProgress /><FullPageLoadingFallback label="正在恢复工程工作台" detail="保存设计基准后仍保持当前工程和当前步骤。" /></>;
   }

@@ -432,7 +432,7 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
             <VerificationSafetyPanel distribution={status?.verificationDistribution as any} />
             <AdverseScenarioPanel scenarios={adverseRows as any[]} />
             <StabilityDistributionVisual distribution={status?.stabilityDistribution as any} />
-            <PanelErrorBoundary title="计算结果可视化" resetKey={`${visualProject.id}-${visualProject.updatedAt}`}><ResultViewer project={visualProject} density="professional" coreMode /></PanelErrorBoundary>
+            <PanelErrorBoundary title="计算结果可视化" resetKey={`${visualProject.id}-${visualProject.updatedAt}`}><ResultViewer project={visualProject} density="professional" coreMode runTask={runTask} /></PanelErrorBoundary>
           </section>
         </Suspense> : <>
           <div className="coreVisualGrid"><CalculationEnvelopeVisual project={visualProject} /><SupportForceCloudVisual project={visualProject} /></div>

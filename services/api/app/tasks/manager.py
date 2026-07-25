@@ -237,7 +237,7 @@ class TaskManager:
         )
         self._heavy_operations = {
             "calculation_full", "calculation_recovery", "calculation_closure_action", "calculation_optimize_search", "calculation_auto_close", "candidate_comparison", "candidate_scheme_calculation", "support_layout_optimization",
-            "adopt_support_candidate", "core_design", "rebar_design", "formal_adverse_scenarios", "design_scenario_envelope", "p3_detailing_closure",
+            "adopt_support_candidate", "core_design", "rebar_design", "formalization_closure", "formal_adverse_scenarios", "design_scenario_envelope", "p3_detailing_closure",
             "full_delivery", "industrial_closure", "export_rebar_detailing",
             "export_ifc_detailed", "export_ifc_construction_visual", "export_coordinated_delivery",
             "storage_compaction",
@@ -912,6 +912,8 @@ class TaskManager:
             result = self._run_calculation_optimization_search(task, payload)
         elif task.operation == "rebar_design":
             result = self._run_rebar_design(task, payload)
+        elif task.operation == "formalization_closure":
+            result = self._run_formalization_closure(task, payload)
         elif task.operation == "formal_adverse_scenarios":
             result = self._run_formal_adverse_scenarios(task, payload)
         elif task.operation == "design_scenario_envelope":
@@ -2442,6 +2444,144 @@ class TaskManager:
             "refreshProject": True,
         }
 
+    def _run_formalization_closure(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        """Close software-generated formalization evidence and expose real manual actions.
+
+        The operation may rebuild the current calculation contract and software
+        evidence, but it never fabricates geotechnical provenance, external
+        benchmark certificates, professional signatures or specialist design
+        conclusions.
+        """
+        from app.quality.formal_gate import build_formal_report_gate
+        from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
+        from app.quality.support_layout_quality import evaluate_support_layout_quality
+        from app.services.analysis_assurance import build_analysis_assurance
+        from app.services.calculation_assurance import verify_current_calculation_contract
+        from app.services.formalization_resolution import build_formalization_resolution_plan
+        from app.calculation.nonlinear_geotechnical import build_nonlinear_geotechnical_assurance
+        from app.services.statutory_workflow import evaluate_statutory_workflow
+        from app.services.verification_matrix_v377 import runtime_verification_summary
+
+        repo = self._repo()
+        project = repo.require_with_latest_calculation(task.project_id)
+        latest = project.calculation_results[-1] if project.calculation_results else None
+        before_gate = getattr(latest, "formal_report_gate", None) if latest else None
+        if latest and before_gate is None:
+            before_gate = build_formal_report_gate(
+                project,
+                getattr(latest, "support_layout_quality", None),
+                getattr(latest, "ifc_compatibility", None),
+                latest_result=latest,
+            )
+        before_plan = build_formalization_resolution_plan(project, before_gate, latest=latest)
+        before_counts = {
+            "blocking": len(before_gate.blocking_items) if before_gate else 0,
+            "warning": len(before_gate.warning_items) if before_gate else 0,
+            "missing": len(before_gate.missing_items) if before_gate else 0,
+        }
+        self._stage(task, 8, "分析正式化阻断及可自动恢复证据")
+        automatic_codes = {str(item.get("actionCode")) for item in list(before_plan.get("automaticActions") or [])}
+        contract_current = bool(latest and verify_current_calculation_contract(project, latest).get("current"))
+        recalc_required = bool(
+            payload.get("forceRecalculate")
+            or not latest
+            or not contract_current
+            or automatic_codes.intersection({"recalculate_current_design", "auto_close_structural_checks"})
+        )
+        automatic_actions: list[dict[str, Any]] = []
+        recalc_error: str | None = None
+        if recalc_required:
+            self._stage(task, 18, "按当前设计快照重建计算合同、质量保证包和结果目录")
+            try:
+                calculation_payload = {
+                    "topN": 0,
+                    "forceClosure": "auto_close_structural_checks" in automatic_codes,
+                    "autoInterventions": "auto_close_structural_checks" in automatic_codes,
+                }
+                self._run_calculation_full(task, calculation_payload)
+                automatic_actions.append({"actionCode": "recalculate_current_design", "status": "completed"})
+            except ValueError as exc:
+                recalc_error = str(exc)
+                self._append_log(task, f"正式化自动复算转为人工处理：{recalc_error}")
+            project = repo.require_with_latest_calculation(task.project_id)
+            latest = project.calculation_results[-1] if project.calculation_results else None
+
+        if latest:
+            self._stage(task, 94, "刷新分析等级、参数来源、验证矩阵和正式化门禁")
+            latest.support_layout_quality = evaluate_support_layout_quality(project)
+            latest.ifc_compatibility = evaluate_ifc_model_compatibility(project)
+            latest.geotechnical_assurance = build_nonlinear_geotechnical_assurance(project, latest)
+            latest.statutory_workflow_assurance = evaluate_statutory_workflow(project)
+            latest.verification_matrix = runtime_verification_summary()
+            latest.analysis_assurance = build_analysis_assurance(project, latest)
+            latest.formal_report_gate = build_formal_report_gate(
+                project, latest.support_layout_quality, latest.ifc_compatibility, latest_result=latest
+            )
+            latest.report_diagram_data = dict(latest.report_diagram_data or {})
+            latest.report_diagram_data.update({
+                "analysisAssurance": latest.analysis_assurance,
+                "geotechnicalAssurance": latest.geotechnical_assurance,
+                "statutoryWorkflowAssurance": latest.statutory_workflow_assurance,
+                "verificationMatrix": latest.verification_matrix,
+                "formalReportGate": latest.formal_report_gate.model_dump(mode="json", by_alias=True),
+            })
+            if "refresh_support_quality" in automatic_codes:
+                automatic_actions.append({"actionCode": "refresh_support_quality", "status": "completed"})
+            if "refresh_ifc_compatibility" in automatic_codes:
+                automatic_actions.append({"actionCode": "refresh_ifc_compatibility", "status": "completed"})
+            if "refresh_analysis_assurance" in automatic_codes:
+                automatic_actions.append({"actionCode": "refresh_analysis_assurance", "status": "completed"})
+            if "refresh_verification_matrix" in automatic_codes:
+                automatic_actions.append({"actionCode": "refresh_verification_matrix", "status": "completed"})
+            final_gate = latest.formal_report_gate
+            final_plan = build_formalization_resolution_plan(project, final_gate, latest=latest)
+            closure_record = {
+                "schema": "pitguard-formalization-closure-v1",
+                "status": "closed" if final_gate.allowed_for_official_issue else "needs_manual_input" if final_plan.get("manualCount") else "completed_with_review",
+                "before": before_counts,
+                "after": {
+                    "blocking": len(final_gate.blocking_items),
+                    "warning": len(final_gate.warning_items),
+                    "missing": len(final_gate.missing_items),
+                },
+                "automaticActions": automatic_actions,
+                "remainingActions": final_plan.get("manualActions") or [],
+                "recalculationError": recalc_error,
+                "message": (
+                    "正式化闸门已经闭合，可进入成果冻结与正式发行。"
+                    if final_gate.allowed_for_official_issue
+                    else "可自动生成的软件证据已刷新；剩余事项需要责任人确认，系统未填充任何假定资料。"
+                ),
+            }
+            project.advanced_engineering = dict(project.advanced_engineering or {})
+            project.advanced_engineering["formalizationClosure"] = closure_record
+            latest.report_diagram_data["formalizationClosure"] = closure_record
+            repo.save(project, action="task.formalization_closure", summary=closure_record["message"])
+            self._stage(task, 98, "正式化阻断闭合评估完成")
+            return {
+                "projectId": project.id,
+                "calculationResultId": latest.id,
+                "status": closure_record["status"],
+                "message": closure_record["message"],
+                "before": closure_record["before"],
+                "after": closure_record["after"],
+                "automaticActions": automatic_actions,
+                "remainingActions": closure_record["remainingActions"],
+                "formalGate": final_gate.model_dump(mode="json", by_alias=True),
+                "refreshProject": True,
+            }
+
+        return {
+            "projectId": project.id,
+            "status": "needs_manual_input",
+            "message": recalc_error or "尚未形成可用计算结果，请先关闭计算入口阻断。",
+            "before": before_counts,
+            "after": before_counts,
+            "automaticActions": automatic_actions,
+            "remainingActions": before_plan.get("manualActions") or [],
+            "refreshProject": True,
+        }
+
     def _run_candidate_comparison(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         from app.calculation.engine import run_candidate_comparison_for_project
         from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
@@ -2785,6 +2925,7 @@ class TaskManager:
             "borehole_import": "解析并导入地质钻孔",
             "core_design": "核心设计：方案、计算与配筋",
             "rebar_design": "配筋深化与构造校核",
+            "formalization_closure": "一键修复正式化阻断",
             "formal_adverse_scenarios": "正式不利工况专项复算",
             "design_scenario_envelope": "设计允许域情景包络复算",
             "p3_detailing_closure": "企业节点与钢筋深化闭环",

@@ -78,7 +78,7 @@ def _attach_result(project: Project) -> None:
 
 
 def test_v387_version_manifest() -> None:
-    assert SOFTWARE_VERSION == "3.87.11"
+    assert SOFTWARE_VERSION == "3.87.13"
     manifest = version_manifest()
     assert manifest["exportSchemaVersion"] == "3.87"
     assert "single-primary-design-flow" in manifest["resultPipelineVersion"]

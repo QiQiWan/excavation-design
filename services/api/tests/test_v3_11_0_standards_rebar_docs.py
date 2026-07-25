@@ -49,7 +49,7 @@ def test_process_standard_matrix_covers_all_workflow_steps_and_mandatory_codes()
 
 def test_online_documentation_contains_formula_assumption_verification_and_file_guide() -> None:
     docs = build_online_documentation()
-    assert {chapter["id"] for chapter in docs["chapters"]} == {"workflow", "principles", "standards", "deliverables"}
+    assert {"workflow", "principles", "standards", "deliverables"}.issubset({chapter["id"] for chapter in docs["chapters"]})
     assert len(docs["calculationPrinciples"]) >= 6
     for item in docs["calculationPrinciples"]:
         assert item["inputs"] and item["method"] and item["outputs"]

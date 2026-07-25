@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import auth, boreholes, calculation, design, design_core, excavation, export, geology, projects, rebar, standards, tasks, statutory, workflow, intelligent_design
+from app.routers import artifacts, auth, boreholes, calculation, design, design_core, excavation, export, geology, projects, rebar, standards, tasks, statutory, workflow, intelligent_design
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
@@ -30,7 +30,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.87.11 stable engineering workflow with universal fullscreen WebGL viewers and runtime readiness monitoring.",
+    description="PitGuard V3.87.13 reliable calculation-cloud loading with core artifact routes, bounded dataset hydration and non-blocking viewer recovery.",
 )
 
 app.add_middleware(
@@ -106,18 +106,19 @@ for _router in (
     workflow.router,
     intelligent_design.router,
     design_core.router,
+    artifacts.router,
     export.router,
 ):
     app.include_router(_router)
 
 if PRODUCT_MODE == "full":
     from app.routers import (
-        advanced, artifacts, assurance, benchmarks, cad_template,
+        advanced, assurance, benchmarks, cad_template,
         drawing_rules, expert_design, industrial, issues, wall_optimization,
     )
 
     for _router in (
-        artifacts.router, benchmarks.router,
+        benchmarks.router,
         cad_template.router, drawing_rules.router, assurance.router,
         issues.router, wall_optimization.router, expert_design.router,
         advanced.router, industrial.router,

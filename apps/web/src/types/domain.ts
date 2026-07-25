@@ -1005,6 +1005,10 @@ export interface OnlineDocumentation {
   title: string;
   version: string;
   chapters: { id: string; title: string; summary: string }[];
+  quickStart?: { step: number; title: string; action: string; doneWhen: string }[];
+  formalizationGuide?: { definition: string; automaticBoundary: string[]; manualBoundary: string[]; statusMeaning: { status: string; meaning: string; action: string }[] };
+  troubleshooting?: { code: string; symptom: string; cause: string; action: string }[];
+  deploymentGuide?: { build: string[]; health: string[]; logs: string[]; backup: string };
   calculationPrinciples: { name: string; inputs: string; method: string; equations?: string[]; assumptions?: string[]; outputs: string; verification?: string; standards: string[] }[];
   analysisLevels: { level: string; name: string; use: string }[];
   complianceSemantics: { type: string; label: string; formalUse: boolean; description: string }[];

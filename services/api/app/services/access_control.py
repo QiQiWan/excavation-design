@@ -258,6 +258,7 @@ def public_access_allowed(path: str) -> bool:
     return normalized in {
         "/health", "/health/live", "/health/ready",
         "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/auth/bootstrap",
+        "/api/documentation",
     }
 
 

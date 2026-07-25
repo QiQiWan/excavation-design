@@ -7,6 +7,7 @@ from app.services.concave_transfer_delivery import evaluate_concave_transfer_del
 from app.schemas.domain import FormalReportGate, IfcCompatibilityCheckResult, Project, QualityGateIssue, SupportLayoutQualitySummary
 from app.version import ALGORITHM_VERSION, RULE_SET_VERSION
 from app.services.calculation_assurance import verify_current_calculation_contract
+from app.services.formalization_resolution import build_formalization_resolution_plan
 
 
 def _issue(category: str, severity: str, message: str, object_id: str | None = None, object_type: str | None = None, recommendation: str | None = None) -> QualityGateIssue:
@@ -100,7 +101,7 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
                 blocking.append(_issue(
                     "analysis_fidelity", "fail",
                     "控制分析域、参数来源或代理/回退模型未达到正式发行的分析等级。",
-                    recommendation="关闭 analysisAssurance.strictBlocks 后重新计算；正式模式不得使用未确认默认参数或代理模型。",
+                    recommendation="按 analysisAssurance.strictBlocks 补齐参数来源、提高控制分析域等级并移除未确认代理/回退模型后重新计算。",
                 ))
         else:
             missing.append(_issue("analysis_fidelity", "manual_review", "缺少分析等级与参数来源保证包。", recommendation="按 V3.73+ 重新计算。"))
@@ -214,6 +215,16 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
     status = "fail" if blocking else "warning" if warnings or missing else "pass"
     allowed = status == "pass"
     headline = "正式出图闸门通过。" if allowed else ("存在阻断项，当前成果不得作为正式施工图输出。" if blocking else "未发现硬性 fail，但存在需完善/复核项，暂不建议正式出图。")
+    provisional_gate = FormalReportGate(
+        status=status,
+        allowed_for_official_issue=allowed,
+        headline=headline,
+        blocking_items=blocking,
+        warning_items=warnings,
+        missing_items=missing,
+        checklist_sections=checklist_sections,
+    )
+    resolution_plan = build_formalization_resolution_plan(project, provisional_gate, latest=latest)
     return FormalReportGate(
         status=status,
         allowed_for_official_issue=allowed,
@@ -256,5 +267,7 @@ def build_formal_report_gate(project: Project, support_quality: SupportLayoutQua
             "blockingCount": len(blocking),
             "warningCount": len(warnings),
             "missingCount": len(missing),
+            "resolutionPlan": resolution_plan,
+            "totalReviewActionCount": int(resolution_plan.get("manualCount") or 0),
         },
     )

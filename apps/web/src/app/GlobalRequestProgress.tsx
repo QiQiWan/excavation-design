@@ -117,7 +117,7 @@ export function GlobalRequestProgress() {
       setItems((current) => current[detail.id]
         ? { ...current, [detail.id]: { ...current[detail.id], ...detail, progress: detail.progress ?? 100, finishedAt: Date.now() } }
         : current);
-      const delay = detail.ok === false ? 5200 : 850;
+      const delay = detail.ok === false ? (detail.blocking === false ? 2600 : 5200) : 850;
       const timer = window.setTimeout(() => {
         setItems((current) => {
           const next = { ...current };
@@ -174,7 +174,7 @@ export function GlobalRequestProgress() {
     });
   }
 
-  return <div className={`globalRequestOverlay ${blocking ? 'blocking' : 'passive'} ${failed ? 'failed' : current.finishedAt ? 'done' : ''}`} role="presentation">
+  return <div className={`globalRequestOverlay ${blocking ? 'blocking' : 'passive'} ${failed ? 'failed' : current.finishedAt ? 'done' : ''} ${failed && !current.blocking ? 'nonblockingFailure' : ''}`} role="presentation">
     <div className="globalRequestBackdrop" aria-hidden="true" />
     <section className="globalRequestProgress" role="status" aria-live="polite" aria-busy={activeItems.length > 0}>
       <div className="globalRequestHeader">

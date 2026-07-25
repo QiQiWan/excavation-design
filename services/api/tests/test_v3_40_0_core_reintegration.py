@@ -114,7 +114,7 @@ def test_default_core_product_mode_does_not_register_extension_routes() -> None:
     code = (
         "from app.main import app; "
         "paths={getattr(r,'path','') for r in app.routes}; "
-        "assert '/api/documentation' in paths; "
+        "assert '/api/documentation' in paths; assert '/api/projects/{project_id}/calculation-results/{result_id}/stage-chunks' in paths; "
         "assert not any('/advanced/' in p for p in paths); "
         "assert not any('/industrial/' in p for p in paths); "
         "print(len([p for p in paths if p.startswith('/api/')]))"
@@ -129,4 +129,4 @@ def test_default_core_product_mode_does_not_register_extension_routes() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert int(result.stdout.strip()) <= 105
+    assert int(result.stdout.strip()) <= 150

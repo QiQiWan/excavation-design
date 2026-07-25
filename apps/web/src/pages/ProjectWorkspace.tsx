@@ -45,7 +45,7 @@ interface OperationPhase { label: string; detail?: string; status: OperationPhas
 interface ActiveOperation { title: string; detail?: string; progress: number; phases: OperationPhase[]; logs?: string[] }
 
 interface WorkflowAction { label: string; detail?: string; action: () => Promise<unknown> }
-type BackendTaskOperation = 'storage_compaction' | 'support_layout_optimization' | 'adopt_support_candidate' | 'industrial_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
+type BackendTaskOperation = 'storage_compaction' | 'support_layout_optimization' | 'adopt_support_candidate' | 'industrial_closure' | 'formalization_closure' | 'calculation_full' | 'candidate_comparison' | 'export_ifc_light' | 'export_ifc_analysis' | 'export_ifc_construction_visual' | 'export_ifc_detailed' | 'export_report' | 'export_drawings_cad' | 'export_drawings_svg' | 'export_formal_drawings' | 'export_coordinated_delivery' | 'export_json' | 'export_trace' | 'export_issue_report' | 'export_rebar_detailing' | 'export_benchmark_cases' | 'export_wall_length_redundancy' | 'export_design_scheme_ledger' | 'full_delivery';
 
 function SystemReliabilityStrip({ project }: { project: Project }) {
   const [snapshot, setSnapshot] = useState<{ readiness?: Record<string, any>; metrics?: Record<string, any>; error?: string }>({});
