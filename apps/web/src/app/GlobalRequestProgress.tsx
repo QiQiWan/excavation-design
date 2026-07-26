@@ -145,7 +145,7 @@ export function GlobalRequestProgress() {
   }, [items]);
 
   const visible = useMemo(() => Object.values(items)
-    .filter((item) => item.finishedAt || clock - item.startedAt >= 180)
+    .filter((item) => item.finishedAt || clock - item.startedAt >= (item.blocking ? 180 : 900))
     .sort((a, b) => {
       if (Boolean(a.finishedAt) !== Boolean(b.finishedAt)) return a.finishedAt ? 1 : -1;
       return b.startedAt - a.startedAt;
@@ -174,6 +174,16 @@ export function GlobalRequestProgress() {
     });
   }
 
+  function hidePassiveReads() {
+    setItems((existing) => {
+      const next = { ...existing };
+      Object.values(existing).forEach((item) => {
+        if (!item.blocking) delete next[item.id];
+      });
+      return next;
+    });
+  }
+
   return <div className={`globalRequestOverlay ${blocking ? 'blocking' : 'passive'} ${failed ? 'failed' : current.finishedAt ? 'done' : ''} ${failed && !current.blocking ? 'nonblockingFailure' : ''}`} role="presentation">
     <div className="globalRequestBackdrop" aria-hidden="true" />
     <section className="globalRequestProgress" role="status" aria-live="polite" aria-busy={activeItems.length > 0}>
@@ -194,8 +204,8 @@ export function GlobalRequestProgress() {
         </div>)}
       </div> : null}
       <div className="globalRequestFooter">
-        <span>{blocking ? '当前操作会修改工程数据，完成前已暂停重复交互。' : '当前为读取操作，后台完成后页面将自动恢复。'}</span>
-        {failed ? <button type="button" className="secondary" onClick={dismissFinished}>关闭</button> : null}
+        <span>{blocking ? '当前操作会修改工程数据，完成前已暂停重复交互。' : '读取任务在后台进行，当前页面可以继续操作。'}</span>
+        {failed ? <button type="button" className="secondary" onClick={dismissFinished}>关闭</button> : !blocking ? <button type="button" className="secondary" onClick={hidePassiveReads}>隐藏</button> : null}
       </div>
     </section>
   </div>;

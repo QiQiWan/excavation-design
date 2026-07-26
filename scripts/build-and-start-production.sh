@@ -364,6 +364,16 @@ server {
     ssl_prefer_server_ciphers off;
 
     client_max_body_size 512m;
+
+    # Cloud access: compress JSON/JS/CSS and let Nginx buffer ordinary API
+    # responses. Large immutable artifacts continue to use X-Accel-Redirect.
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types application/json application/problem+json text/plain text/css application/javascript application/xml image/svg+xml;
+
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -425,7 +435,11 @@ server {
         proxy_connect_timeout 10s;
         proxy_send_timeout 600s;
         proxy_read_timeout 600s;
-        proxy_buffering off;
+        proxy_buffering on;
+        proxy_buffer_size 64k;
+        proxy_buffers 16 128k;
+        proxy_busy_buffers_size 256k;
+        proxy_max_temp_file_size 64m;
     }
 
     location = /backend-docs {

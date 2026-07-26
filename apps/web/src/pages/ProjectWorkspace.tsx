@@ -1035,24 +1035,25 @@ function RetainingStep({ project, runStep, runTask, onRefresh, selectedLocator, 
   }, [project.retainingSystem, project.excavation]);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     if (!project.excavation) {
       setDesignBootstrap(null);
       setShapeDiagnostics(null);
       setBootstrapError(undefined);
-      return () => { active = false; };
+      return () => { active = false; controller.abort(); };
     }
     setBootstrapError(undefined);
-    api.getDesignWorkspaceBootstrap(project.id, bootstrapRefreshToken > 0)
+    api.getDesignWorkspaceBootstrap(project.id, bootstrapRefreshToken > 0, controller.signal)
       .then((value) => {
-        if (!active) return;
+        if (!active || controller.signal.aborted) return;
         setDesignBootstrap(value);
         setShapeDiagnostics((value.shapeDiagnostics ?? null) as Record<string, any> | null);
       })
       .catch((error) => {
-        if (!active) return;
+        if (!active || controller.signal.aborted) return;
         setBootstrapError(error instanceof Error ? error.message : String(error));
       });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [project.id, project.updatedAt, project.excavation?.id, project.excavation?.outline?.points?.length, bootstrapRefreshToken]);
 
   useEffect(() => {

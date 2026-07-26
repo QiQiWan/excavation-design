@@ -46,12 +46,12 @@ def list_projects(repo: ProjectRepository = Depends(get_repository)) -> list[Pro
 @router.get("/{project_id}")
 def get_project(
     project_id: str,
-    profile: Literal["workspace", "full"] = Query(default="workspace"),
+    profile: Literal["shell", "workspace", "full"] = Query(default="shell"),
     result_history_limit: int = 1,
     repo: ProjectRepository = Depends(get_repository),
 ) -> Response:
-    if profile == "workspace":
-        stored = repo.store.get_workspace_json(project_id)
+    if profile in {"shell", "workspace"}:
+        stored = repo.store.get_workspace_shell_json(project_id) if profile == "shell" else repo.store.get_workspace_json(project_id)
         if stored is None:
             raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
         payload, metadata = stored
@@ -60,10 +60,11 @@ def get_project(
             media_type="application/json",
             headers={
                 "Cache-Control": "no-store",
-                "X-PitGuard-Project-Profile": "workspace",
+                "X-PitGuard-Project-Profile": profile,
                 "X-PitGuard-Project-Revision": str(metadata.get("revision", 0)),
                 "X-PitGuard-Full-Payload-Bytes": str(metadata.get("payloadBytes", 0)),
                 "X-PitGuard-Workspace-Payload-Bytes": str(metadata.get("workspaceBytes", 0)),
+                "X-PitGuard-Response-Uncompressed-Bytes": str(metadata.get("shellBytes", len(payload.encode("utf-8")))),
             },
         )
     project = repo.require(project_id)

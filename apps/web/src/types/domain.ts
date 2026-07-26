@@ -910,6 +910,8 @@ export interface RebarDesignScheme {
   beamNodeSchemes: Record<string, unknown>[]; checks: Record<string, unknown>[];
   summary: Record<string, unknown>; drawingIndex: Record<string, string>;
   limitations: string[]; diagnostics?: RebarDesignDiagnostics; requiresRecalculation?: boolean;
+  readProfile?: 'summary' | 'full' | string;
+  listSummary?: Record<string, { total?: number; returned?: number; truncated?: boolean }>;
 }
 export interface DrawingRuleCondition { path?: string; op?: string; value?: unknown; all?: DrawingRuleCondition[]; any?: DrawingRuleCondition[]; not?: DrawingRuleCondition }
 export interface DrawingSheetRule { id: string; enabled: boolean; module?: string; sheetNo: string; title: string; category: string; scope: 'general' | 'rebar' | 'details'; renderer: string; file: string; fixedScale?: string; scalePolicy?: Record<string, unknown>; trigger?: DrawingRuleCondition; expansion?: string; modelBinding?: string[]; priority?: number; required?: boolean; legacy?: boolean }

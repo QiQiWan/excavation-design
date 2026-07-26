@@ -32,13 +32,14 @@ export default function ProjectDataWorkspacePanel({ project }: { project: Projec
 
   useEffect(() => {
     let alive = true;
+    const controller = new AbortController();
     setManifest(undefined);
     setManifestError(undefined);
     setHealthError(undefined);
-    api.getProjectStorageHealth(project.id)
-      .then((nextHealth) => { if (alive) setHealth(nextHealth); })
-      .catch((err) => { if (alive) setHealthError(err instanceof Error ? err.message : String(err)); });
-    return () => { alive = false; };
+    api.getProjectStorageHealth(project.id, controller.signal)
+      .then((nextHealth) => { if (alive && !controller.signal.aborted) setHealth(nextHealth); })
+      .catch((err) => { if (alive && !controller.signal.aborted) setHealthError(err instanceof Error ? err.message : String(err)); });
+    return () => { alive = false; controller.abort(); };
   }, [project.id, project.updatedAt]);
 
   useEffect(() => {

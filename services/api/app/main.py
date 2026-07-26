@@ -12,6 +12,7 @@ import sys
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routers import artifacts, auth, boreholes, calculation, design, design_core, excavation, export, geology, projects, rebar, standards, tasks, statutory, workflow, intelligent_design
@@ -19,6 +20,7 @@ from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
 from app.services.runtime_observability import runtime_observability
+from app.services.runtime_diagnostics import append_event
 from app.services.runtime_resource_policy import adaptive_resource_policy, mb
 from app.services.access_control import AccessIdentity, public_access_allowed, required_role, resolve_identity, role_allows, security_status
 from app.storage.database import DEFAULT_DB_PATH
@@ -30,7 +32,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.87.13 reliable calculation-cloud loading with core artifact routes, bounded dataset hydration and non-blocking viewer recovery.",
+    description="PitGuard V3.87.14 cloud-safe workspace hydration with stage-bounded status payloads, streaming response progress and resilient non-blocking reads.",
 )
 
 app.add_middleware(
@@ -39,6 +41,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Compress JSON workspace/status payloads before they traverse a cloud link.
+# Nginx may also advertise gzip; it will not recompress an already encoded
+# response.  A moderate level keeps API CPU bounded while reducing multi-MB
+# engineering payloads substantially.
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=max(512, int(os.getenv("PITGUARD_GZIP_MIN_BYTES", "1024"))),
+    compresslevel=max(1, min(9, int(os.getenv("PITGUARD_GZIP_LEVEL", "5")))),
 )
 
 
@@ -72,8 +84,23 @@ async def observe_http_requests(request: Request, call_next):
         response.headers["X-PitGuard-Request-Id"] = request_id
         response.headers["X-PitGuard-Duration-Ms"] = f"{elapsed_ms:.1f}"
         response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
-        if elapsed_ms >= float(os.getenv("PITGUARD_SLOW_REQUEST_MS", "1200")):
+        slow_threshold_ms = float(os.getenv("PITGUARD_SLOW_REQUEST_MS", "1200"))
+        if elapsed_ms >= slow_threshold_ms:
             logger.warning("slow request id=%s method=%s path=%s status=%s duration_ms=%.1f", request_id, request.method, request.url.path, status_code, elapsed_ms)
+        if elapsed_ms >= slow_threshold_ms or any(token in request.url.path for token in ("/design/core-status", "/rebar/design-scheme", "/api/projects/")):
+            append_event(
+                "http-performance",
+                "request-complete",
+                requestId=request_id,
+                method=request.method,
+                path=request.url.path,
+                query=str(request.url.query),
+                status=status_code,
+                durationMs=round(elapsed_ms, 2),
+                responseContentLength=response.headers.get("content-length"),
+                responseContentEncoding=response.headers.get("content-encoding"),
+                clientRequestId=request.headers.get("X-PitGuard-Client-Request-Id"),
+            )
         return response
     finally:
         runtime_observability.record(

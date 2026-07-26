@@ -23,7 +23,31 @@ def _stage(key: str, title: str, ready: bool, active: bool, message: str) -> dic
     }
 
 
-def build_core_workspace_status(project: Project, storage_info: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_core_workspace_status(
+    project: Project,
+    storage_info: dict[str, Any] | None = None,
+    *,
+    detail: str = "summary",
+    active_stage: str | None = None,
+) -> dict[str, Any]:
+    """Build a bounded workspace status payload.
+
+    ``summary`` is intentionally small and is used during project restore.
+    ``stage`` hydrates only the data required by ``active_stage``.  ``full`` is
+    retained for diagnostics and tests.  Earlier releases always constructed
+    the complete verification programme, wall-by-wall records, construction
+    stages and enterprise catalogues even when the user was editing another
+    stage.  Over a cloud connection that produced multi-megabyte JSON bodies
+    and long main-thread JSON parsing stalls.
+    """
+    detail = str(detail or "summary").strip().lower()
+    if detail not in {"summary", "stage", "full"}:
+        detail = "summary"
+    active_stage = str(active_stage or "").strip().lower() or None
+    valid_stages = {"basis", "input", "scheme", "calculation", "reinforcement", "deliverables"}
+    if active_stage not in valid_stages:
+        active_stage = None
+
     ensure_design_basis_defaults(project)
     design_basis = build_design_basis(project)
     basis_ready = bool(design_basis.get("confirmed"))
@@ -44,8 +68,7 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
     )
     latest = project.calculation_results[-1] if project.calculation_results else None
     calculation_gate = calculation_readiness(project)
-    construction_stages = build_construction_stage_workspace(project)
-    calculation_ready = bool(calculation_gate.get("valid") and basis_ready)
+    calculation_ready = bool(calculation_gate.get("valid") and basis_ready and not requires_recalculation)
     fail_count = int((latest.check_summary or {}).get("fail", 0) or 0) if latest else 0
     warning_count = int((latest.check_summary or {}).get("warning", 0) or 0) if latest else 0
     max_displacement = getattr(latest.governing_values, "max_displacement", None) if latest else None
@@ -65,30 +88,12 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
     deliverable_ready = bool(deepening_readiness.get("canIssueConstructionDrawings"))
 
     stages = [
-        _stage(
-            "basis", "设计基准", basis_ready, True,
-            "等级、规范和荷载组合已确认" if basis_ready else "确认工程等级、场地标准和荷载组合",
-        ),
-        _stage(
-            "input", "工程输入", input_ready, basis_ready,
-            f"钻孔 {len(project.boreholes)}，地层 {len(project.strata)}，轮廓点 {len(project.excavation.outline.points) if project.excavation else 0}",
-        ),
-        _stage(
-            "scheme", "围护方案", scheme_ready, input_ready,
-            f"围护墙 {wall_count}，支撑 {support_count}，候选 {candidate_count}",
-        ),
-        _stage(
-            "calculation", "计算验算", calculation_ready, scheme_ready,
-            "计算合同、阶段结果与当前设计快照一致" if calculation_ready else str((calculation_gate.get("messages") or ["等待当前方案完整计算"])[0]),
-        ),
-        _stage(
-            "reinforcement", "配筋深化", bool(deepening_readiness.get("canEnterDetailing")), calculation_ready,
-            str(deepening_readiness.get("headline")) if rebar_ready else "等待计算内力包络",
-        ),
-        _stage(
-            "deliverables", "成果交付", deliverable_ready, rebar_ready,
-            "可生成审查成果" if deliverable_ready else "完成前述步骤后生成成果",
-        ),
+        _stage("basis", "设计基准", basis_ready, True, "等级、规范和荷载组合已确认" if basis_ready else "确认工程等级、场地标准和荷载组合"),
+        _stage("input", "工程输入", input_ready, basis_ready, f"钻孔 {len(project.boreholes)}，地层 {len(project.strata)}，轮廓点 {len(project.excavation.outline.points) if project.excavation else 0}"),
+        _stage("scheme", "围护方案", scheme_ready, input_ready, f"围护墙 {wall_count}，支撑 {support_count}，候选 {candidate_count}"),
+        _stage("calculation", "计算验算", calculation_ready, scheme_ready, "计算合同、阶段结果与当前设计快照一致" if calculation_ready else str((calculation_gate.get("messages") or ["等待当前方案完整计算"])[0])),
+        _stage("reinforcement", "配筋深化", bool(deepening_readiness.get("canEnterDetailing")), calculation_ready, str(deepening_readiness.get("headline")) if rebar_ready else "等待计算内力包络"),
+        _stage("deliverables", "成果交付", deliverable_ready, rebar_ready, "可生成审查成果" if deliverable_ready else "完成前述步骤后生成成果"),
     ]
     next_stage = next((item for item in stages if item["status"] != "done"), stages[-1])
     blockers: list[str] = []
@@ -106,28 +111,10 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
             blockers.append(message)
 
     info = storage_info or {}
-    standard_guidance = build_core_standard_guidance()
-    stability_distribution = build_stability_distribution(project)
-    verification_distribution = build_verification_distribution(project)
-    scheme_comparison = build_scheme_comparison(project)
-    latest_report = dict(getattr(latest, "report_diagram_data", None) or {}) if latest else {}
-    adverse_bundle = latest_report.get("adverseScenarioScreening") or latest_report.get("adverseScenarios") or {}
-    adverse_scenarios = list((adverse_bundle.get("scenarios") if isinstance(adverse_bundle, dict) else adverse_bundle) or [])
-    formal_adverse = dict(project.advanced_engineering.get("formalAdverseScenarioSuite") or {})
-    p3_detailing = dict(project.advanced_engineering.get("p3DetailingClosure") or {})
-    enterprise_validation = validate_enterprise_library(project)
-    section_catalog = load_steel_support_catalog()
-    append_event(
-        "verification-coverage",
-        "core_workspace_status",
-        projectId=project.id,
-        calculatedCoverage=(verification_distribution.get("summary") or {}).get("evidenceCoverage"),
-        verificationRecordCount=len(verification_distribution.get("records") or []),
-        adverseScenarioCount=len(adverse_scenarios),
-        calculationCurrent=calculation_ready,
-    )
-
-    return {
+    result: dict[str, Any] = {
+        "schema": "pitguard-core-workspace-status-v38714",
+        "profile": detail,
+        "activeStage": active_stage,
         "projectId": project.id,
         "mode": "core",
         "stages": stages,
@@ -155,30 +142,64 @@ def build_core_workspace_status(project: Project, storage_info: dict[str, Any] |
             "deepeningBlockerCount": int(deepening_readiness.get("blockerCount") or 0),
             "deepeningWarningCount": int(deepening_readiness.get("warningCount") or 0),
         },
-        "standards": standard_guidance,
+        "standards": build_core_standard_guidance(),
         "designBasis": design_basis,
-        "stabilityDistribution": stability_distribution,
-        "verificationDistribution": verification_distribution,
-        "schemeComparison": scheme_comparison,
-        "adverseScenarios": adverse_scenarios,
-        "formalAdverseScenarioSuite": formal_adverse,
-        "adverseScenarioCatalog": scenario_catalog(project),
-        "enterpriseLibraries": list_enterprise_libraries(),
-        "enterpriseLibraryValidation": enterprise_validation,
-        "p3DetailingClosure": p3_detailing,
         "calculationReadiness": calculation_gate,
-        "constructionStages": construction_stages,
         "deepeningReadiness": deepening_readiness,
-        "sectionCatalog": {
-            "version": section_catalog.get("catalogVersion"),
-            "profileCount": len(section_catalog.get("profiles") or []),
-            "boundary": section_catalog.get("boundary"),
-        },
         "storage": {
             "payloadBytes": int(info.get("payloadBytes") or 0),
             "workspaceBytes": int(info.get("workspaceBytes") or 0),
             "externalBytes": int(info.get("externalBytes") or 0),
             "artifactCount": int(info.get("artifactCount") or 0),
             "storageStatus": info.get("storageStatus") or "normal",
+            "revision": int(info.get("revision") or 0),
         },
     }
+
+    all_details = detail == "full"
+    need_scheme = all_details or (detail == "stage" and active_stage == "scheme")
+    need_calculation = all_details or (detail == "stage" and active_stage == "calculation")
+    need_reinforcement = all_details or (detail == "stage" and active_stage in {"reinforcement", "deliverables"})
+
+    if need_scheme:
+        result["schemeComparison"] = build_scheme_comparison(project)
+
+    if need_calculation:
+        stability_distribution = build_stability_distribution(project)
+        verification_distribution = build_verification_distribution(project)
+        latest_report = dict(getattr(latest, "report_diagram_data", None) or {}) if latest else {}
+        adverse_bundle = latest_report.get("adverseScenarioScreening") or latest_report.get("adverseScenarios") or {}
+        adverse_scenarios = list((adverse_bundle.get("scenarios") if isinstance(adverse_bundle, dict) else adverse_bundle) or [])
+        result.update({
+            "stabilityDistribution": stability_distribution,
+            "verificationDistribution": verification_distribution,
+            "adverseScenarios": adverse_scenarios,
+            "formalAdverseScenarioSuite": dict(project.advanced_engineering.get("formalAdverseScenarioSuite") or {}),
+            "adverseScenarioCatalog": scenario_catalog(project),
+            "constructionStages": build_construction_stage_workspace(project),
+        })
+        append_event(
+            "verification-coverage",
+            "core_workspace_status",
+            projectId=project.id,
+            calculatedCoverage=(verification_distribution.get("summary") or {}).get("evidenceCoverage"),
+            verificationRecordCount=len(verification_distribution.get("records") or []),
+            adverseScenarioCount=len(adverse_scenarios),
+            calculationCurrent=calculation_ready,
+            payloadProfile=detail,
+        )
+
+    if need_reinforcement:
+        section_catalog = load_steel_support_catalog()
+        result.update({
+            "enterpriseLibraries": list_enterprise_libraries(),
+            "enterpriseLibraryValidation": validate_enterprise_library(project),
+            "p3DetailingClosure": dict(project.advanced_engineering.get("p3DetailingClosure") or {}),
+            "sectionCatalog": {
+                "version": section_catalog.get("catalogVersion"),
+                "profileCount": len(section_catalog.get("profiles") or []),
+                "boundary": section_catalog.get("boundary"),
+            },
+        })
+
+    return result

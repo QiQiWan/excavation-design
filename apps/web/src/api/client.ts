@@ -19,6 +19,7 @@ type RequestOptions = RequestInit & {
   timeoutMs?: number;
   timeoutMessage?: string;
   retryCount?: number;
+  responseIdleTimeoutMs?: number;
   activity?: RequestActivityOptions;
 };
 
@@ -32,7 +33,7 @@ function requestLabel(path: string, method: string): string {
   if (path.includes('/auth/bootstrap') || path.includes('/auth/status') || path.includes('/auth/me')) return '正在验证登录状态';
   if (path === '/api/projects' && method === 'GET') return '正在刷新项目列表';
   if (path === '/api/projects' && method === 'POST') return '正在创建项目';
-  if (/\/api\/projects\/[^/]+\?profile=workspace/.test(path)) return '正在打开项目工作区';
+  if (/\/api\/projects\/[^/]+\?profile=(shell|workspace)/.test(path)) return '正在打开项目工作区';
   if (/\/api\/projects\/[^/]+/.test(path) && ['PUT', 'PATCH'].includes(method)) return '正在保存项目修改';
   if (/\/api\/projects\/[^/]+/.test(path) && method === 'DELETE') return '正在删除项目';
   if (path.includes('/tasks') && method === 'POST') return '正在提交后台任务';
@@ -46,7 +47,7 @@ function expectedDuration(path: string, method: string): number {
   if (path.includes('/auth/')) return 1600;
   if (path === '/api/projects' && method === 'GET') return 900;
   if (path === '/api/projects' && method === 'POST') return 1600;
-  if (path.includes('?profile=workspace')) return 1800;
+  if (path.includes('?profile=shell') || path.includes('?profile=workspace')) return 1800;
   if (['PUT', 'PATCH', 'DELETE'].includes(method)) return 2200;
   if (path.includes('/tasks/')) return 700;
   return method === 'GET' ? 1200 : 2500;
@@ -96,14 +97,84 @@ function dispatchActivity(name: string, detail: Record<string, unknown>) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
+function formatTransferBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1048576) return `${(value / 1024).toFixed(0)} KB`;
+  return `${(value / 1048576).toFixed(value >= 10485760 ? 1 : 2)} MB`;
+}
+
+async function readResponsePayload<T>(
+  response: Response,
+  controller: AbortController,
+  activityId: string,
+  idleTimeoutMs: number,
+): Promise<T> {
+  if (response.status === 204) return undefined as T;
+  const contentType = String(response.headers.get('Content-Type') ?? '').toLowerCase();
+  if (!response.body) {
+    dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在解析返回数据', progress: 96 });
+    return (contentType.includes('json') ? response.json() : response.text()) as Promise<T>;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const textParts: string[] = [];
+  const explicitLength = Math.max(0, Number(response.headers.get('X-PitGuard-Response-Uncompressed-Bytes') ?? 0));
+  const contentEncoding = String(response.headers.get('Content-Encoding') ?? '').toLowerCase();
+  const declaredLength = explicitLength || (contentEncoding ? 0 : Math.max(0, Number(response.headers.get('Content-Length') ?? 0)));
+  let received = 0;
+  let idleTimer = 0;
+  const resetIdleTimer = () => {
+    window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(() => controller.abort(), idleTimeoutMs);
+  };
+
+  try {
+    resetIdleTimer();
+    while (true) {
+      const { done, value } = await reader.read();
+      resetIdleTimer();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      textParts.push(decoder.decode(value, { stream: true }));
+      received += value.byteLength;
+      const ratio = declaredLength > 0 ? Math.min(1, received / declaredLength) : 0;
+      const progress = declaredLength > 0 ? 42 + ratio * 52 : Math.min(94, 42 + Math.log2(Math.max(2, received / 65536 + 1)) * 8);
+      const sizeText = declaredLength > 0
+        ? `${formatTransferBytes(received)} / ${formatTransferBytes(declaredLength)}`
+        : formatTransferBytes(received);
+      dispatchActivity(requestActivityEvents.phase, {
+        id: activityId,
+        phase: `正在接收数据 ${sizeText}`,
+        progress: Math.min(96, progress),
+      });
+    }
+  } finally {
+    window.clearTimeout(idleTimer);
+    reader.releaseLock();
+  }
+
+  dispatchActivity(requestActivityEvents.phase, {
+    id: activityId,
+    phase: `正在解析数据 ${formatTransferBytes(received)}`,
+    progress: 97,
+  });
+  textParts.push(decoder.decode());
+  const text = textParts.join('');
+  if (!contentType.includes('json')) return text as T;
+  return JSON.parse(text) as T;
+}
+
 async function executeRequest<T>(path: string, init: RequestOptions, activityId: string, activity: Required<Pick<RequestActivityOptions, 'label' | 'expectedMs' | 'blocking' | 'quiet'>>): Promise<T> {
   const method = String(init.method ?? 'GET').toUpperCase();
   const timeoutMs = Math.max(1000, init.timeoutMs ?? 30000);
+  const idleTimeoutMs = Math.max(4000, init.responseIdleTimeoutMs ?? Math.min(timeoutMs, 20000));
   const retryCount = Math.max(0, Math.min(init.retryCount ?? (method === 'GET' ? 1 : 0), 3));
   const externalSignal = init.signal;
-  const { timeoutMs: _timeoutMs, timeoutMessage, retryCount: _retryCount, activity: _activity, signal: _signal, ...fetchInit } = init;
+  const { timeoutMs: _timeoutMs, timeoutMessage, retryCount: _retryCount, responseIdleTimeoutMs: _idleTimeoutMs, activity: _activity, signal: _signal, ...fetchInit } = init;
   const headers = new Headers(fetchInit.headers);
   headers.set('X-PitGuard-Client-Request-Id', activityId);
+  headers.set('Accept', headers.get('Accept') || 'application/json');
   const transientStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
 
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
@@ -115,11 +186,15 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
       if (externalSignal.aborted) controller.abort();
       else externalSignal.addEventListener('abort', abortFromExternal, { once: true });
     }
-    let response: Response;
     try {
-      dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: attempt ? `服务器暂时繁忙，正在第 ${attempt} 次自动重试` : '正在连接服务器' });
-      response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, headers, signal: controller.signal });
+      dispatchActivity(requestActivityEvents.phase, {
+        id: activityId,
+        phase: attempt ? `服务器暂时繁忙，正在第 ${attempt} 次自动重试` : '正在连接服务器',
+        progress: attempt ? 10 : 6,
+      });
+      const response = await fetch(`${API_BASE}${path}`, { credentials: 'include', ...fetchInit, headers, signal: controller.signal });
       if (transientStatuses.has(response.status) && attempt < retryCount) {
+        await response.body?.cancel().catch(() => undefined);
         window.clearTimeout(timeout);
         externalSignal?.removeEventListener('abort', abortFromExternal);
         const retryAfter = Number(response.headers.get('Retry-After') ?? 0);
@@ -127,12 +202,29 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
         await new Promise((resolve) => window.setTimeout(resolve, backoff));
         continue;
       }
-      dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在接收并整理数据' });
+      dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '服务器已响应，正在接收数据', progress: 38 });
+      const payload = await readResponsePayload<unknown>(response, controller, activityId, idleTimeoutMs);
+      if (!response.ok) {
+        if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/bootstrap' && path !== '/api/auth/status') {
+          window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
+        }
+        let message = `${response.status} ${response.statusText}`;
+        if (payload && typeof payload === 'object') message = formatStructuredApiError(response.status, response.statusText, payload);
+        else if (typeof payload === 'string' && payload.trim()) message = payload.trim().slice(0, 1000);
+        const serverRequestId = response.headers.get('X-PitGuard-Request-Id');
+        const httpError = new Error(serverRequestId ? `${message}（请求追踪号：${serverRequestId}）` : message) as Error & { nonRetryable?: boolean };
+        httpError.nonRetryable = true;
+        throw httpError;
+      }
+      dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '数据已就绪', progress: 99 });
+      return payload as T;
     } catch (error) {
-      window.clearTimeout(timeout);
-      externalSignal?.removeEventListener('abort', abortFromExternal);
       if (externalSignal?.aborted && !timedOut) throw new Error('请求已取消。');
-      if (timedOut) throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，后端可能正在恢复或不可用。`);
+      if (timedOut) throw new Error(timeoutMessage ?? `请求超过 ${Math.round(timeoutMs / 1000)} 秒，已停止等待；页面其他功能仍可继续使用。`);
+      if ((error as Error & { nonRetryable?: boolean })?.nonRetryable) throw error;
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error(`数据流连续 ${Math.round(idleTimeoutMs / 1000)} 秒没有进展，已中止本次读取。`);
+      }
       if (attempt < retryCount) {
         const backoff = Math.min(2400, 300 * (2 ** attempt) + Math.random() * 180);
         await new Promise((resolve) => window.setTimeout(resolve, backoff));
@@ -143,22 +235,6 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
       window.clearTimeout(timeout);
       externalSignal?.removeEventListener('abort', abortFromExternal);
     }
-    if (!response.ok) {
-      if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/bootstrap' && path !== '/api/auth/status') {
-        window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
-      }
-      let message = `${response.status} ${response.statusText}`;
-      try {
-        const data = await response.json();
-        message = formatStructuredApiError(response.status, response.statusText, data);
-      } catch {
-        // Keep the HTTP status when the proxy returned HTML/plain text.
-      }
-      const serverRequestId = response.headers.get('X-PitGuard-Request-Id');
-      throw new Error(serverRequestId ? `${message}（请求追踪号：${serverRequestId}）` : message);
-    }
-    if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
   }
   throw new Error('请求重试次数已耗尽。');
 }
@@ -248,9 +324,9 @@ export const api = {
   createProject: (payload: { name: string; location?: string }) => request<Project>('/api/projects', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在创建项目', expectedMs: 1200 }
   }).then((project) => { invalidateApiCache('GET:/api/projects'); return project; }),
-  getProject: (id: string) => request<Project>(`/api/projects/${id}?profile=workspace`, { timeoutMs: 20000, timeoutMessage: '项目工作区 20 秒内未加载完成。后端已阻止全量大对象进入 API；请检查项目存储健康状态。' }),
-  getProjectStorageHealth: (id: string) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { timeoutMs: 15000, retryCount: 0 }),
-  getCoreDesignStatus: (id: string) => request<Record<string, any>>(`/api/projects/${id}/design/core-status`, { timeoutMs: 15000, retryCount: 0 }),
+  getProject: (id: string, signal?: AbortSignal) => request<Project>(`/api/projects/${id}?profile=shell`, { signal, timeoutMs: 45000, responseIdleTimeoutMs: 15000, timeoutMessage: '项目工作区 45 秒内未加载完成。页面已停止等待，请检查云端带宽、项目工作区大小和后端慢请求日志。', activity: { quiet: true, cacheTtlMs: 0, deduplicate: true } }),
+  getProjectStorageHealth: (id: string, signal?: AbortSignal) => request<Record<string, unknown>>(`/api/projects/${id}/storage-health`, { signal, timeoutMs: 15000, retryCount: 0, activity: { quiet: true, cacheTtlMs: 5000, deduplicate: true } }),
+  getCoreDesignStatus: (id: string, stage?: 'basis' | 'input' | 'scheme' | 'calculation' | 'reinforcement' | 'deliverables', detail: 'summary' | 'stage' | 'full' = stage ? 'stage' : 'summary', signal?: AbortSignal) => { const query = new URLSearchParams({ detail }); if (stage) query.set('stage', stage); return request<Record<string, any>>(`/api/projects/${id}/design/core-status?${query.toString()}`, { signal, timeoutMs: detail === 'full' || stage === 'calculation' ? 60000 : 30000, responseIdleTimeoutMs: 18000, retryCount: 0, activity: { quiet: true, cacheTtlMs: 5000, deduplicate: true } }); },
   listProjectArtifacts: (id: string, kind?: string) => request<{ projectId: string; artifactCount: number; storedBytes: number; logicalBytes: number; artifacts: { artifactId: string; kind: string; logicalBytes?: number; storedBytes?: number; itemCount?: number; available?: boolean; metadata?: Record<string, unknown> }[] }>(`/api/projects/${id}/artifacts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`, { timeoutMs: 30000, retryCount: 0 }),
   projectArtifactDownloadUrl: (id: string, artifactId: string) => `${API_BASE}/api/projects/${id}/artifacts/${artifactId}/download`,
   getCalculationStageChunks: (id: string, resultId: string) => request<Record<string, unknown>>(`/api/projects/${id}/calculation-results/${resultId}/stage-chunks`, { timeoutMs: 15000, retryCount: 0, activity: { quiet: true, cacheTtlMs: 0, deduplicate: true } }),
@@ -317,7 +393,7 @@ export const api = {
     request<ExcavationModel>(`/api/projects/${projectId}/excavation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
   autoWall: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-diaphragm-wall`, { method: 'POST' }),
   autoSupports: (projectId: string) => request<RetainingSystem>(`/api/projects/${projectId}/design/auto-supports`, { method: 'POST' }),
-  getDesignWorkspaceBootstrap: (projectId: string, refresh = false) => request<Record<string, any>>(`/api/projects/${projectId}/design/workspace-bootstrap${refresh ? '?refresh=true' : ''}`, { timeoutMs: 30000, retryCount: 0, activity: { label: '正在装配围护设计工作区', expectedMs: 2500, cacheTtlMs: refresh ? 0 : 15000, deduplicate: true } }),
+  getDesignWorkspaceBootstrap: (projectId: string, refresh = false, signal?: AbortSignal) => request<Record<string, any>>(`/api/projects/${projectId}/design/workspace-bootstrap${refresh ? '?refresh=true' : ''}`, { signal, timeoutMs: 30000, responseIdleTimeoutMs: 15000, retryCount: 0, activity: { label: '正在装配围护设计工作区', expectedMs: 2500, quiet: true, cacheTtlMs: refresh ? 0 : 15000, deduplicate: true } }),
   getDesignQualification: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/qualification`, { timeoutMs: 30000, retryCount: 0 }),
   getProgressiveDesign: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { timeoutMs: 30000, retryCount: 0 }),
   updateProgressiveDesign: (projectId: string, payload: Record<string, unknown>) => request<Record<string, any>>(`/api/projects/${projectId}/design/progressive`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), activity: { label: '正在保存渐进式设计配置', expectedMs: 1000 } }),
@@ -400,10 +476,11 @@ export const api = {
   getIfcCheck: (projectId: string) => request<unknown>(`/api/projects/${projectId}/export/ifc-check`, { method: 'POST' }),
   getRebarIfcVisualization: (projectId: string, maxBars = 2400, focusHostId?: string) => request<RebarIfcVisualization>(`/api/projects/${projectId}/export/ifc-rebar-visualization?max_bars=${maxBars}${focusHostId ? `&focus_host_id=${encodeURIComponent(focusHostId)}` : ''}`),
   getRebarDetailing: (projectId: string, mode = 'balanced') => request<RebarDetailingResult>(`/api/projects/${projectId}/rebar/detailing?mode=${mode}`),
-  getDeepDetailing: (projectId: string, mode = 'balanced') => request<Record<string, any>>(`/api/projects/${projectId}/rebar/deep-detailing?mode=${mode}`),
-  getRebarDesignScheme: (projectId: string, mode = 'balanced') => request<RebarDesignScheme>(`/api/projects/${projectId}/rebar/design-scheme?mode=${mode}`),
+  getDeepDetailing: (projectId: string, mode = 'balanced', signal?: AbortSignal) => request<Record<string, any>>(`/api/projects/${projectId}/rebar/deep-detailing?mode=${mode}`, { signal, timeoutMs: 45000, responseIdleTimeoutMs: 15000, retryCount: 0, activity: { quiet: true, cacheTtlMs: 5000, deduplicate: true } }),
+  getRebarDesignScheme: (projectId: string, mode = 'balanced', detail: 'summary' | 'full' = 'summary', signal?: AbortSignal) => request<RebarDesignScheme>(`/api/projects/${projectId}/rebar/design-scheme?mode=${mode}&detail=${detail}&checkLimit=${detail === 'full' ? 500 : 60}`, { signal, timeoutMs: detail === 'full' ? 90000 : 45000, responseIdleTimeoutMs: 18000, retryCount: 0, activity: { quiet: true, cacheTtlMs: detail === 'full' ? 0 : 5000, deduplicate: true } }),
+  getRebarDesignChecks: (projectId: string, mode = 'balanced', offset = 0, limit = 5000, signal?: AbortSignal) => request<{ projectId: string; mode: string; offset: number; limit: number; total: number; returned: number; hasMore: boolean; rows: Record<string, unknown>[] }>(`/api/projects/${projectId}/rebar/design-scheme/checks?mode=${mode}&offset=${offset}&limit=${limit}`, { signal, timeoutMs: 90000, responseIdleTimeoutMs: 18000, retryCount: 0, activity: { label: '正在加载完整配筋复核列表', blocking: false, quiet: false, cacheTtlMs: 0, deduplicate: true } }),
   applyRebarDesignScheme: (projectId: string, mode = 'balanced', recalculate = true) => request<{ projectId: string; mode: string; scheme: RebarDesignScheme; retainingSystem: RetainingSystem; recalculated?: boolean; recalculationQueued?: boolean; calculationTask?: PitTask }>(`/api/projects/${projectId}/rebar/apply-design-scheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, recalculate }) }),
-  getDrawingSetManifest: (projectId: string) => request<DrawingSetManifest>(`/api/projects/${projectId}/export/drawings-manifest`),
+  getDrawingSetManifest: (projectId: string, signal?: AbortSignal) => request<DrawingSetManifest>(`/api/projects/${projectId}/export/drawings-manifest`, { signal, timeoutMs: 45000, responseIdleTimeoutMs: 15000, retryCount: 0, activity: { quiet: true, cacheTtlMs: 5000, deduplicate: true } }),
   listDrawingRulePresets: () => request<{ schemaVersion: string; presets: { id: string; name: string; description?: string; parameters: Record<string, any>; objectiveWeights: Record<string, number>; ruleCount: number }[] }>(`/api/drawing-rules/presets`),
   getDrawingRules: (projectId: string) => request<{ ruleSet: DrawingRuleSet; validation: DrawingRuleValidation }>(`/api/projects/${projectId}/drawing-rules`),
   getDrawingIntelligence: (projectId: string) => request<Record<string, any>>(`/api/projects/${projectId}/drawing-rules/intelligence`),

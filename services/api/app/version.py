@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-SOFTWARE_VERSION = "3.87.13"
+SOFTWARE_VERSION = "3.87.14"
 ALGORITHM_VERSION = "3.87.10-canonical-wall-path-rebar-cage-geometry"
 RULE_SET_VERSION = "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence"
 EXPORT_SCHEMA_VERSION = "3.87"
 STRUCTURAL_KERNEL_VERSION = "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel"
-RESULT_PIPELINE_VERSION = "3.87.13-single-primary-design-flow-cloud-viewer-artifact-route-recovery"
+RESULT_PIPELINE_VERSION = "3.87.14-cloud-streaming-stage-bounded-workspace"
 
 
 def version_manifest() -> dict[str, str]:

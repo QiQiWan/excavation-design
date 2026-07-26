@@ -200,19 +200,20 @@ export default function App() {
     if (!identity || !routedProjectId) return;
     if (selected?.id === routedProjectId) return;
     let cancelled = false;
+    const controller = new AbortController();
     setRestoringProject(true);
     setProjectRestoreError(undefined);
-    api.getProject(routedProjectId)
+    api.getProject(routedProjectId, controller.signal)
       .then((project) => {
-        if (!cancelled && project?.id) setSelected(project);
+        if (!cancelled && !controller.signal.aborted && project?.id) setSelected(project);
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (cancelled || controller.signal.aborted) return;
         setSelected(undefined);
         setProjectRestoreError(error instanceof Error ? error.message : String(error));
       })
-      .finally(() => { if (!cancelled) setRestoringProject(false); });
-    return () => { cancelled = true; };
+      .finally(() => { if (!cancelled && !controller.signal.aborted) setRestoringProject(false); });
+    return () => { cancelled = true; controller.abort(); };
   }, [identity, routedProjectId, selected?.id]);
 
   const openProject = useCallback((project: Project) => {

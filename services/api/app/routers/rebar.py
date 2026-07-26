@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,18 +44,99 @@ def get_deep_detailing(
     }
 
 
-@router.get("/design-scheme")
-def get_rebar_design_scheme(
-    project_id: str,
-    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
-    repo: ProjectRepository = Depends(get_repository),
-) -> dict:
+def _prioritize_rebar_checks(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    priority = {"fail": 0, "warning": 1, "manual_review": 1, "preliminary": 2, "pass": 3}
+    return sorted(rows, key=lambda row: (priority.get(str(row.get("status") or "manual_review"), 2), str(row.get("hostCode") or row.get("hostId") or "")))
+
+
+def _compact_rebar_scheme_for_read(scheme: dict[str, Any], *, detail: str, check_limit: int) -> dict[str, Any]:
+    if detail == "full":
+        result = dict(scheme)
+        result["readProfile"] = "full"
+        result["listSummary"] = {
+            "checks": {"total": len(list(scheme.get("checks") or [])), "returned": len(list(scheme.get("checks") or [])), "truncated": False},
+            "wallZones": {"total": len(list(scheme.get("wallZones") or [])), "returned": len(list(scheme.get("wallZones") or [])), "truncated": False},
+            "supportSchemes": {"total": len(list(scheme.get("supportSchemes") or [])), "returned": len(list(scheme.get("supportSchemes") or [])), "truncated": False},
+            "beamNodeSchemes": {"total": len(list(scheme.get("beamNodeSchemes") or [])), "returned": len(list(scheme.get("beamNodeSchemes") or [])), "truncated": False},
+        }
+        return result
+
+    result = dict(scheme)
+    all_checks = [dict(row) for row in list(scheme.get("checks") or []) if isinstance(row, dict)]
+    prioritized = _prioritize_rebar_checks(all_checks)
+    limit = max(0, min(int(check_limit), 500))
+    selected = prioritized[:limit]
+    constructability = result.get("constructability")
+    if isinstance(constructability, dict):
+        compact_constructability = dict(constructability)
+        constructability_checks = [dict(row) for row in list(constructability.get("checks") or []) if isinstance(row, dict)]
+        compact_constructability["checks"] = _prioritize_rebar_checks(constructability_checks)[: min(24, limit)]
+        compact_constructability["checksTruncated"] = len(constructability_checks) > len(compact_constructability["checks"])
+        compact_constructability["checkCount"] = len(constructability_checks)
+        result["constructability"] = compact_constructability
+    result["checks"] = selected
+    result["readProfile"] = "summary"
+    result["listSummary"] = {
+        "checks": {"total": len(all_checks), "returned": len(selected), "truncated": len(selected) < len(all_checks)},
+        "wallZones": {"total": len(list(scheme.get("wallZones") or [])), "returned": len(list(scheme.get("wallZones") or [])), "truncated": False},
+        "supportSchemes": {"total": len(list(scheme.get("supportSchemes") or [])), "returned": len(list(scheme.get("supportSchemes") or [])), "truncated": False},
+        "beamNodeSchemes": {"total": len(list(scheme.get("beamNodeSchemes") or [])), "returned": len(list(scheme.get("beamNodeSchemes") or [])), "truncated": False},
+    }
+    return result
+
+
+def _resolve_rebar_scheme(project_id: str, mode: str, repo: ProjectRepository) -> dict[str, Any]:
     from app.services.rebar_scheme_optimizer import build_rebar_design_scheme, rebar_scheme_is_current
     project = repo.require_workspace_with_latest_calculation(project_id)
     stored = project.retaining_system.rebar_design_scheme if project.retaining_system and isinstance(project.retaining_system.rebar_design_scheme, dict) else {}
     if rebar_scheme_is_current(project, stored, mode):
-        return stored
-    return build_rebar_design_scheme(project, mode=mode)
+        return dict(stored)
+    return dict(build_rebar_design_scheme(project, mode=mode))
+
+
+@router.get("/design-scheme")
+def get_rebar_design_scheme(
+    project_id: str,
+    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
+    detail: Literal["summary", "full"] = Query("summary"),
+    check_limit: int = Query(60, alias="checkLimit", ge=0, le=500),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    scheme = _resolve_rebar_scheme(project_id, mode, repo)
+    return _compact_rebar_scheme_for_read(scheme, detail=detail, check_limit=check_limit)
+
+
+@router.get("/design-scheme/checks")
+def get_rebar_design_checks(
+    project_id: str,
+    mode: str = Query("balanced", pattern="^(conservative|balanced|economic)$"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=5000),
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    repo: ProjectRepository = Depends(get_repository),
+) -> dict:
+    scheme = _resolve_rebar_scheme(project_id, mode, repo)
+    rows = [dict(row) for row in list(scheme.get("checks") or []) if isinstance(row, dict)]
+    if status:
+        accepted = {item.strip() for item in status.split(",") if item.strip()}
+        rows = [row for row in rows if str(row.get("status") or "") in accepted]
+    query = str(q or "").strip().lower()
+    if query:
+        rows = [row for row in rows if query in str(row).lower()]
+    rows = _prioritize_rebar_checks(rows)
+    total = len(rows)
+    page = rows[offset: offset + limit]
+    return {
+        "projectId": project_id,
+        "mode": mode,
+        "offset": offset,
+        "limit": limit,
+        "total": total,
+        "returned": len(page),
+        "hasMore": offset + len(page) < total,
+        "rows": page,
+    }
 
 
 @router.post("/apply-design-scheme")

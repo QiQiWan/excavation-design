@@ -500,6 +500,7 @@ def build_online_documentation() -> dict[str, Any]:
             {"code": "WORKER_RESTARTED", "symptom": "后台配筋或计算任务提示Worker重启。", "cause": "任务进程退出、超时、内存保护或服务重启。", "action": "查看pitguard-worker日志；确认runtime目录权限、内存和心跳后重试。"},
             {"code": "WEBGL_CONTEXT", "symptom": "三维模型空白或Error creating WebGL context。", "cause": "浏览器GPU上下文耗尽、驱动限制或多个不可见模型同时渲染。", "action": "点击重建三维视图；关闭多余标签页，必要时启用硬件加速。"},
             {"code": "CLOUD_RESULT_DATASET_NOT_FOUND", "symptom": "打开变形云图时进度到100%后显示Not Found。", "cause": "生产环境使用core模式时未注册计算成果分片路由，或历史计算分片已缺失。", "action": "升级到V3.87.13；系统会在core模式注册成果分片路由并静默回退到最新权威计算证据。若仍提示缺失，重新运行完整计算重建分片。"},
+            {"code": "CLOUD_WORKSPACE_LOADING_STALLED", "symptom": "云端访问在任务结束后长期停留在90%～93%，并显示多个正在加载数据。", "cause": "工程workspace、核心状态和配筋复核数据同时回读；旧版进度为时间估算，且未压缩的多MB JSON在远程链路上竞争。", "action": "升级到V3.87.14；使用shell投影、分阶段状态和按需配筋列表。检查diagnostics/http-performance.jsonl、响应字节数、Nginx gzip和代理缓冲。"},
             {"code": "HTTP_500_CORE_STATUS_TASKS", "symptom": "远程部署页面加载到100%后仍显示500。", "cause": "runtime目录权限、Worker心跳、任务数据库或前后端版本不一致。", "action": "检查systemd状态、journalctl、PITGUARD_RUNTIME_DIR和数据库权限。"},
             {"code": "BOREHOLE_IMPORT_TIMEOUT", "symptom": "钻孔解析长时间无响应。", "cause": "工作簿过大、合并单元格异常、资源不足或Worker未运行。", "action": "使用后台导入任务，检查行列上限和Worker日志；不要在浏览器主线程同步解析。"},
         ],

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.domain import RetainingSystem, SupportLayoutRepairSummary
@@ -120,11 +120,18 @@ def _require_excavation_workspace(project_id: str, repo: ProjectRepository):
 @router.get("/core-status")
 def get_core_design_status(
     project_id: str,
+    detail: Literal["summary", "stage", "full"] = Query(default="summary"),
+    stage: Literal["basis", "input", "scheme", "calculation", "reinforcement", "deliverables"] | None = Query(default=None),
     repo: ProjectRepository = Depends(get_repository),
 ) -> dict:
     from app.services.core_workspace import build_core_workspace_status
     project = repo.require_workspace_with_latest_calculation(project_id)
-    return build_core_workspace_status(project, repo.store.get_payload_info(project_id))
+    return build_core_workspace_status(
+        project,
+        repo.store.get_payload_info(project_id),
+        detail=detail,
+        active_stage=stage,
+    )
 
 
 @router.get("/workspace-bootstrap")

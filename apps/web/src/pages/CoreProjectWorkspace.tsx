@@ -23,6 +23,9 @@ const SchemeComparisonPanel = lazy(() => import('../components/SchemeComparisonP
 
 type CoreStageKey = 'basis' | 'input' | 'scheme' | 'calculation' | 'reinforcement' | 'deliverables';
 type CoreStatus = {
+  projectId?: string;
+  profile?: 'summary' | 'stage' | 'full';
+  activeStage?: CoreStageKey;
   stages?: { key: CoreStageKey; title: string; status: 'done' | 'active' | 'pending'; message: string }[];
   nextStage?: CoreStageKey;
   nextAction?: string;
@@ -116,6 +119,10 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   const taskSubmissionRef = useRef(false);
   const initialStageAppliedRef = useRef(false);
   const refreshGenerationRef = useRef(0);
+  const refreshAbortRef = useRef<AbortController | undefined>(undefined);
+  const summaryAbortRef = useRef<AbortController | undefined>(undefined);
+  const stageAbortRef = useRef<AbortController | undefined>(undefined);
+  const loadedStageKeyRef = useRef('');
 
   useEffect(() => { setCurrent(project); }, [project]);
 
@@ -134,8 +141,15 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   async function refresh() {
     const generation = ++refreshGenerationRef.current;
     const projectId = current.id;
-    const [updated, core] = await Promise.all([api.getProject(projectId), api.getCoreDesignStatus(projectId)]);
-    if (generation !== refreshGenerationRef.current || updated.id !== projectId) return core as CoreStatus;
+    refreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
+    const [updated, core] = await Promise.all([
+      api.getProject(projectId, controller.signal),
+      api.getCoreDesignStatus(projectId, active, 'stage', controller.signal),
+    ]);
+    if (generation !== refreshGenerationRef.current || updated.id !== projectId || controller.signal.aborted) return core as CoreStatus;
+    loadedStageKeyRef.current = `${updated.id}:${updated.updatedAt}:${active}`;
     setCurrent(updated);
     setStatus(core as CoreStatus);
     onProjectChange(updated);
@@ -143,10 +157,13 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   }
 
   useEffect(() => {
-    let cancelled = false;
-    api.getCoreDesignStatus(current.id)
+    summaryAbortRef.current?.abort();
+    const controller = new AbortController();
+    summaryAbortRef.current = controller;
+    setError(undefined);
+    api.getCoreDesignStatus(current.id, undefined, 'summary', controller.signal)
       .then((value) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         const core = value as CoreStatus;
         setStatus(core);
         if (!initialStageAppliedRef.current && core.nextStage) {
@@ -154,9 +171,30 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
           initialStageAppliedRef.current = true;
         }
       })
-      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)); });
-    return () => { cancelled = true; };
-  }, [current.id, current.updatedAt]);
+      .catch((reason) => {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => controller.abort();
+  }, [current.id]);
+
+  useEffect(() => {
+    if (!status?.projectId) return undefined;
+    const key = `${current.id}:${current.updatedAt}:${active}`;
+    if (loadedStageKeyRef.current === key) return undefined;
+    stageAbortRef.current?.abort();
+    const controller = new AbortController();
+    stageAbortRef.current = controller;
+    api.getCoreDesignStatus(current.id, active, 'stage', controller.signal)
+      .then((value) => {
+        if (controller.signal.aborted) return;
+        loadedStageKeyRef.current = key;
+        setStatus(value as CoreStatus);
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => controller.abort();
+  }, [active, current.id, current.updatedAt, status?.projectId]);
 
   useEffect(() => {
     let cancelled = false;

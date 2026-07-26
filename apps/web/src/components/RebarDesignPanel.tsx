@@ -61,6 +61,8 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
   const [manifest, setManifest] = useState<DrawingSetManifest>();
   const [deepDetailing, setDeepDetailing] = useState<Record<string, any>>();
   const [loading, setLoading] = useState(false);
+  const [loadingFullChecks, setLoadingFullChecks] = useState(false);
+  const [fullChecksLoaded, setFullChecksLoaded] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -71,12 +73,31 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
 
   useEffect(() => {
     let alive = true;
-    setLoading(true); setError(undefined); setNotice(undefined);
-    Promise.all([api.getRebarDesignScheme(project.id, mode), api.getDrawingSetManifest(project.id), api.getDeepDetailing(project.id, mode)])
-      .then(([schemeData, manifestData, deepData]) => { if (alive) { setScheme(schemeData); setManifest(manifestData); setDeepDetailing(record(deepData.deepDetailing)); } })
-      .catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
+    const controller = new AbortController();
+    setLoading(true); setLoadingFullChecks(false); setFullChecksLoaded(false); setError(undefined); setNotice(undefined);
+    // Render the reinforcement summary first. Drawing/deep-detailing payloads are
+    // secondary and are hydrated quietly after the main panel is interactive.
+    api.getRebarDesignScheme(project.id, mode, 'summary', controller.signal)
+      .then((schemeData) => {
+        if (!alive || controller.signal.aborted) return;
+        setScheme(schemeData);
+        setLoading(false);
+        void Promise.allSettled([
+          api.getDrawingSetManifest(project.id, controller.signal),
+          api.getDeepDetailing(project.id, mode, controller.signal),
+        ]).then((results) => {
+          if (!alive || controller.signal.aborted) return;
+          const [manifestResult, deepResult] = results;
+          if (manifestResult.status === 'fulfilled') setManifest(manifestResult.value);
+          if (deepResult.status === 'fulfilled') setDeepDetailing(record(deepResult.value.deepDetailing));
+        });
+      })
+      .catch((err) => {
+        if (!alive || controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
+    return () => { alive = false; controller.abort(); };
   }, [project.id, project.updatedAt, project.calculationResults.length, mode]);
 
   useEffect(() => { setExpandedGroups({}); }, [project.id, mode, activeGroup, statusFilter, query]);
@@ -97,8 +118,33 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
   const allSupportRows = useMemo(() => (scheme?.supportSchemes ?? []).map(record).filter((row) => !q || searchable(row).includes(q)), [scheme, q]);
   const beamRows = useMemo(() => filterRows(scheme?.beamNodeSchemes), [scheme, statusFilter, q]);
   const issueRows = useMemo(() => filterRows(scheme?.checks), [scheme, statusFilter, q]);
+  const issueTotal = Number(scheme?.listSummary?.checks?.total ?? scheme?.summary?.checkCount ?? scheme?.checks?.length ?? 0);
+  const issueListTruncated = Boolean(scheme?.listSummary?.checks?.truncated) && !fullChecksLoaded;
   const visibleRows = <T,>(rows: T[], group: ExpandGroup): T[] => expandedGroups[group] ? rows : rows.slice(0, DEFAULT_VISIBLE_ROWS);
   const expandControl = (rows: unknown[], group: ExpandGroup) => rows.length > DEFAULT_VISIBLE_ROWS ? <div className="progressiveListFooter"><button type="button" className="secondary expandRowsButton" onClick={() => setExpandedGroups((current) => ({ ...current, [group]: !current[group] }))}>{expandedGroups[group] ? '收起' : `展开全部（${rows.length}）`}</button><span>默认显示前 {DEFAULT_VISIBLE_ROWS} 项</span></div> : null;
+
+  async function loadFullChecks() {
+    if (loadingFullChecks || fullChecksLoaded) return;
+    try {
+      setLoadingFullChecks(true); setError(undefined);
+      const page = await api.getRebarDesignChecks(project.id, mode, 0, Math.max(500, issueTotal || 500));
+      setScheme((current) => current ? {
+        ...current,
+        checks: page.rows,
+        readProfile: 'full',
+        listSummary: { ...(current.listSummary ?? {}), checks: { total: page.total, returned: page.returned, truncated: page.hasMore } },
+      } : current);
+      setFullChecksLoaded(!page.hasMore);
+      setExpandedGroups((current) => ({ ...current, issues: true }));
+      if (page.hasMore) setNotice(`已加载前 ${page.returned} / ${page.total} 条复核记录；请使用筛选缩小范围。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingFullChecks(false);
+    }
+  }
+
+  const issueExpandControl = issueListTruncated ? <div className="progressiveListFooter"><button type="button" className="secondary expandRowsButton" disabled={loadingFullChecks} onClick={() => void loadFullChecks()}>{loadingFullChecks ? '正在加载完整列表…' : `加载完整复核列表（${issueTotal}）`}</button><span>首屏仅加载高优先级问题，避免云端一次传输数千条记录。</span></div> : expandControl(issueRows, 'issues');
   const issueMode: 'review' | 'construction' = diagnostics?.canIssueConstructionDrawings ? 'construction' : 'review';
   const primaryDownloadText = issueMode === 'construction' ? '下载施工图包' : '下载审查版图纸';
   const canAutoClose = Boolean(project.designSettings.designBasisConfirmed && project.retainingSystem);
@@ -125,7 +171,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       // reinforcement contract in separate bounded writes.  Poll the
       // authoritative scheme until the transient CALCULATION_NOT_CURRENT gate
       // disappears, instead of rendering the pre-save diagnosis indefinitely.
-      let next = await api.getRebarDesignScheme(project.id, mode);
+      let next = await api.getRebarDesignScheme(project.id, mode, 'summary');
       for (let attempt = 0; attempt < 6; attempt += 1) {
         const blockers = (Array.isArray(record(next.diagnostics?.deepeningGate).blockers)
           ? record(next.diagnostics?.deepeningGate).blockers
@@ -133,7 +179,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
         const transientCalculationBlocker = blockers.some((row: Record<string, unknown>) => String(row.reasonCode ?? '') === 'CALCULATION_NOT_CURRENT');
         if (!transientCalculationBlocker) break;
         await sleep(350 * (attempt + 1));
-        next = await api.getRebarDesignScheme(project.id, mode);
+        next = await api.getRebarDesignScheme(project.id, mode, 'summary');
       }
       setScheme(next);
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
@@ -228,7 +274,7 @@ export default function RebarDesignPanel({ project, onApplied }: { project: Proj
       {activeGroup === 'issues' ? <div className="issueReasonGrid">
         {failureReasonRows.length ? visibleRows(failureReasonRows, 'failureReasons').map(([code, item]) => <article key={code} className="issueReasonCard"><strong>{reasonText[code] ?? code}</strong><span>{item.count} 项：{item.objects?.slice(0, expandedGroups.failureReasons ? item.objects?.length : 8).join('、') || '-'}{!expandedGroups.failureReasons && (item.objects?.length ?? 0) > 8 ? ` 等 ${item.objects?.length} 项` : ''}</span><p>{item.recommendedAction ?? '按构件详情处理后重新计算。'}</p></article>) : <div className="emptyState">没有阻断原因。可继续检查复核项和施工构造。</div>}
         {expandControl(failureReasonRows, 'failureReasons')}
-        {issueRows.length ? <table className="table compactTable"><thead><tr><th>对象</th><th>类别</th><th>状态</th><th>说明</th><th>建议操作</th></tr></thead><tbody>{visibleRows(issueRows, 'issues').map((row, index) => <tr key={String(row.checkId ?? index)}><td>{String(row.hostCode ?? row.hostId ?? '-')}</td><td>{categoryText[String(row.category)] ?? String(row.category ?? '-')}</td><td><span className={`inlineStatus ${statusTone(row.status)}`}>{localizedStatus(row.status)}</span></td><td>{String(row.message ?? row.failureReasonCode ?? '-')}</td><td>{String(row.recommendedAction ?? '-')}</td></tr>)}</tbody></table> : null}{expandControl(issueRows, 'issues')}
+        {issueRows.length ? <table className="table compactTable"><thead><tr><th>对象</th><th>类别</th><th>状态</th><th>说明</th><th>建议操作</th></tr></thead><tbody>{visibleRows(issueRows, 'issues').map((row, index) => <tr key={String(row.checkId ?? index)}><td>{String(row.hostCode ?? row.hostId ?? '-')}</td><td>{categoryText[String(row.category)] ?? String(row.category ?? '-')}</td><td><span className={`inlineStatus ${statusTone(row.status)}`}>{localizedStatus(row.status)}</span></td><td>{String(row.message ?? row.failureReasonCode ?? '-')}</td><td>{String(row.recommendedAction ?? '-')}</td></tr>)}</tbody></table> : null}{issueExpandControl}
       </div> : null}
 
       {activeGroup === 'walls' ? <><WallZoneElevationPreview zones={visibleRows(wallRows, 'walls')} /><table className="table compactTable"><thead><tr><th>区段</th><th>墙段</th><th>类型</th><th>标高</th><th>坑内侧</th><th>坑外侧</th><th>布置</th><th>状态</th><th>图号</th></tr></thead><tbody>{visibleRows(wallRows, 'walls').map((row) => { const faces = (row.faces ?? []) as Record<string, any>[]; const inner = record(faces.find((item) => item.face === 'inner')); const outer = record(faces.find((item) => item.face === 'outer')); return <tr key={String(row.zoneId)}><td>{String(row.zoneId)}</td><td>{String(row.hostCode)}</td><td>{zoneTypeText[String(row.zoneType)] ?? '墙体设计区'}</td><td>{n(row.topElevation)}～{n(row.bottomElevation)}</td><td>{String(inner.token ?? '-')}</td><td>{String(outer.token ?? '-')}</td><td>{String(inner.arrangementType ?? outer.arrangementType ?? '单层')}</td><td>{localizedStatus(row.status)}</td><td>{(row.drawingRefs ?? []).join(' / ')}</td></tr>; })}</tbody></table>{expandControl(wallRows, 'walls')}</> : null}

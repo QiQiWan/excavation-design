@@ -2877,3 +2877,33 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .globalRequestOverlay.nonblockingFailure .globalRequestProgress { width: min(680px, calc(100vw - 28px)); padding: 14px 16px 12px; border-radius: 12px; box-shadow: 0 12px 34px rgba(15,23,42,.18); }
 .globalRequestOverlay.nonblockingFailure .globalRequestTrack { height: 7px; margin-top: 10px; }
 .globalRequestOverlay.nonblockingFailure .globalRequestFooter { margin-top: 8px; }
+
+/* V3.87.14 cloud reads: passive GET requests never cover or blur the workspace. */
+.globalRequestOverlay.passive {
+  inset: 76px 18px auto auto;
+  display: block;
+  width: min(520px, calc(100vw - 36px));
+  padding: 0;
+  pointer-events: none;
+}
+.globalRequestOverlay.passive .globalRequestBackdrop { display: none; }
+.globalRequestOverlay.passive .globalRequestProgress {
+  width: 100%;
+  max-height: min(46vh, 420px);
+  padding: 14px 16px 12px;
+  border-radius: 13px;
+  pointer-events: auto;
+  box-shadow: 0 14px 42px rgba(15, 23, 42, .18), 0 2px 10px rgba(37, 99, 235, .08);
+}
+.globalRequestOverlay.passive .globalRequestHeader { gap: 10px; }
+.globalRequestOverlay.passive .globalRequestHeader strong { font-size: 14px; }
+.globalRequestOverlay.passive .globalRequestHeader small { font-size: 11px; }
+.globalRequestOverlay.passive .globalRequestHeader > b { font-size: 14px; }
+.globalRequestOverlay.passive .globalRequestSpinner { width: 16px; height: 16px; border-width: 2px; }
+.globalRequestOverlay.passive .globalRequestTrack { height: 7px; margin-top: 10px; }
+.globalRequestOverlay.passive .globalRequestQueue { gap: 5px; margin-top: 9px; }
+.globalRequestOverlay.passive .globalRequestQueue > div { grid-template-columns: minmax(110px, 1fr) minmax(90px, 1.2fr) 40px; gap: 7px; font-size: 11px; }
+.globalRequestOverlay.passive .globalRequestFooter { margin-top: 8px; font-size: 11px; }
+@media (max-width: 640px) {
+  .globalRequestOverlay.passive { inset: 64px 10px auto 10px; width: auto; }
+}

@@ -1623,6 +1623,47 @@ class SQLiteProjectStore:
         }
         return payload, metadata
 
+    def get_workspace_shell_json(self, project_id: str) -> tuple[str, dict[str, Any]] | None:
+        """Return the interactive project shell without multi-thousand-row review arrays.
+
+        The authoritative workspace projection remains unchanged in SQLite.  The
+        shell is produced by JSON1 inside SQLite, so the API does not parse and
+        duplicate a 5-20 MB project document merely to remove lists that have
+        dedicated lazy endpoints.
+        """
+        with self._connect() as conn:
+            try:
+                row = conn.execute(
+                    """
+                    SELECT json_set(
+                        json_remove(
+                            workspace_data,
+                            '$.retainingSystem.rebarDesignScheme.checks',
+                            '$.retainingSystem.rebarDesignScheme.constructability.checks'
+                        ),
+                        '$.retainingSystem.rebarDesignScheme.checks', json('[]'),
+                        '$.retainingSystem.rebarDesignScheme.constructability.checks', json('[]'),
+                        '$.advancedEngineering.workspaceStorage.shellProfile', json('true')
+                    ) AS shell_data,
+                    payload_bytes, workspace_bytes, revision, updated_at
+                    FROM projects WHERE id = ?
+                    """,
+                    (project_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                row = None
+        if row is None:
+            return self.get_workspace_json(project_id)
+        payload = str(row["shell_data"] or "{}")
+        metadata = {
+            "revision": int(row["revision"] or 0),
+            "updatedAt": row["updated_at"],
+            "payloadBytes": int(row["payload_bytes"] or 0),
+            "workspaceBytes": int(row["workspace_bytes"] or 0),
+            "shellBytes": len(payload.encode("utf-8")),
+        }
+        return payload, metadata
+
     def get_workspace(self, project_id: str) -> dict[str, Any] | None:
         result = self.get_workspace_json(project_id)
         return json.loads(result[0]) if result else None
