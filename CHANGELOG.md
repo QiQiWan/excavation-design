@@ -1,3 +1,10 @@
+## V3.87.14 Hotfix 2 - ResultViewer 严格类型构建修复
+
+- 将 ResultViewer 的后台任务回调从任意字符串收紧为实际使用的任务操作联合类型，兼容 ProjectWorkspace 的 BackendTaskOperation。
+- 为正式化阻断列表增加统一 FormalizationIssue 类型，补齐 issueId、targetPanel 等可选字段。
+- 修复 TypeScript strict/noImplicitAny 构建中的 TS2322 与 TS2339 共 4 项错误。
+- 本热修复不改变结构计算算法、结果管线、数据库结构或工程数据。
+
 ## V3.87.14 - 云端加载流式化与分阶段工作区
 
 - 项目首屏改用 shell 投影，移除数千条配筋检查的大 JSON 传输。

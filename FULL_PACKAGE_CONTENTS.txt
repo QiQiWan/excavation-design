@@ -154,6 +154,8 @@ docs/releases/V3_87_12_VALIDATION.json
 docs/releases/V3_87_13_CLOUD_VIEWER_RECOVERY.md
 docs/releases/V3_87_13_VALIDATION.json
 docs/releases/V3_87_14_CLOUD_LOADING_STREAMING_STABILITY.md
+docs/releases/V3_87_14_FRONTEND_TYPE_HOTFIX2.md
+docs/releases/V3_87_14_FRONTEND_TYPE_HOTFIX2_VALIDATION.json
 docs/releases/V3_87_14_VALIDATION.json
 docs/releases/V3_87_1_COMPLETE_FIX_REPORT.md
 docs/releases/V3_87_1_RELEASE_VALIDATION.json

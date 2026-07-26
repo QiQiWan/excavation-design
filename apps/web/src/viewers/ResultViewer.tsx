@@ -5,6 +5,32 @@ import WallCloud3DViewer from './WallCloud3DViewer';
 import { formatEngineeringValue, withUnitLabel } from '../utils/units';
 import { sanitizeCandidatePlanGeometry } from '../drawing/candidateGeometry';
 
+type ResultViewerTaskOperation =
+  | 'calculation_full'
+  | 'export_wall_length_redundancy'
+  | 'formalization_closure'
+  | 'candidate_comparison';
+
+type ResultViewerRunTask = (
+  title: string,
+  operationName: ResultViewerTaskOperation,
+  payload?: Record<string, unknown>,
+  autoDownload?: boolean,
+) => Promise<void>;
+
+type FormalizationIssue = Record<string, unknown> & {
+  issueId?: string;
+  id?: string;
+  category?: string;
+  title?: string;
+  source?: string;
+  automatic?: boolean;
+  actionLabel?: string;
+  recommendation?: string;
+  message?: string;
+  targetPanel?: string;
+};
+
 function conclusion(status?: string) {
   if (status === 'fail') return '存在 fail 项，自动方案不得进入施工图或正式报审。';
   if (status === 'warning' || status === 'manual_review') return '未形成施工图级结论，需按规范原文和项目条件复核。';
@@ -451,7 +477,7 @@ function ExpertDesignPanel({ project, runStep }: { project: Project; runStep?: (
   </section>;
 }
 
-function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: string, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
+function WallLengthRedundancyPanel({ project, runStep, runTask }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: ResultViewerRunTask }) {
   const [mode, setMode] = useState('balanced');
   const [data, setData] = useState<Record<string, any> | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -608,13 +634,13 @@ function CheckSummaryPills({ summary, gateSummary }: { summary?: Record<string, 
   return <div className="checkSummary"><span className="checkTag pass">合规 {pass}</span><span className="checkTag fail">不合规 {fail}</span><span className="checkTag warning">预警 {warning}</span><span className="checkTag manual_review">计算复核 {calculationManual}</span><span className="checkTag manual_review">正式化待确认 {formalManual}</span></div>;
 }
 
-function FormalizationResolutionPanel({ project, latest, runTask }: { project: Project; latest: CalculationResult; runTask?: (title: string, operationName: string, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void> }) {
+function FormalizationResolutionPanel({ project, latest, runTask }: { project: Project; latest: CalculationResult; runTask?: ResultViewerRunTask }) {
   const gate = latest.formalReportGate;
   const [expanded, setExpanded] = useState(false);
   if (!gate) return null;
   const plan = ((gate.summary ?? {}).resolutionPlan ?? {}) as Record<string, any>;
-  const resolutionRows = (plan.items ?? []) as Record<string, any>[];
-  const fallbackRows = [
+  const resolutionRows = (plan.items ?? []) as FormalizationIssue[];
+  const fallbackRows: FormalizationIssue[] = [
     ...(gate.blockingItems ?? []).map((item) => ({ ...item, title: item.category, source: 'blocking', automatic: false, actionLabel: item.recommendation })),
     ...(gate.missingItems ?? []).map((item) => ({ ...item, title: item.category, source: 'missing', automatic: false, actionLabel: item.recommendation })),
     ...(gate.warningItems ?? []).map((item) => ({ ...item, title: item.category, source: 'warning', automatic: false, actionLabel: item.recommendation })),
@@ -637,7 +663,7 @@ function FormalizationResolutionPanel({ project, latest, runTask }: { project: P
   </section>;
 }
 
-export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional', coreMode = false }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: (title: string, operationName: string, payload?: Record<string, unknown>, autoDownload?: boolean) => Promise<void>; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional'; coreMode?: boolean }) {
+export default function ResultViewer({ project, runStep, runTask, highlightLocator, density = 'professional', coreMode = false }: { project: Project; runStep?: (label: string, step: () => Promise<unknown>) => Promise<void>; runTask?: ResultViewerRunTask; highlightLocator?: Record<string, unknown>; density?: 'compact' | 'professional'; coreMode?: boolean }) {
   const calculationState = (project.advancedEngineering?.calculationState ?? {}) as Record<string, unknown>;
   const requiresRecalculation = Boolean(calculationState.requiresRecalculation);
   const latest = requiresRecalculation || !project.calculationResults.length
