@@ -29,6 +29,8 @@ fi
 
 mkdir -p "$RUNTIME_DIR" "$API_DIR/exports" "$API_DIR/runtime_cache"
 
+"$PYTHON_BIN" "$ROOT_DIR/scripts/verify-release-consistency.py"
+
 echo "[PitGuard] Application root : $ROOT_DIR"
 echo "[PitGuard] Python          : $PYTHON_BIN"
 echo "[PitGuard] Installing backend dependencies into the current Python environment..."
@@ -50,10 +52,7 @@ echo "[PitGuard] Building production frontend with same-origin /api access..."
   VITE_API_BASE_URL="" npm run build
 )
 
-if grep -R "http://127.0.0.1:8002" "$WEB_DIR/dist" >/dev/null 2>&1; then
-  echo "[PitGuard] Production build still contains the local API address." >&2
-  exit 1
-fi
+node "$ROOT_DIR/scripts/verify-production-build.mjs" "$WEB_DIR/dist"
 
 "$PYTHON_BIN" -m compileall -q "$API_DIR/app"
 

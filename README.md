@@ -1,4 +1,6 @@
-# PitGuard V3.87.14 云端加载流式化与分阶段工作区稳定性版
+# PitGuard V3.87.15
+
+Production-safe release with same-origin API verification and synchronized frontend/backend package versions.
 
 V3.87.14 根据云端诊断包修复任务完成后页面长期停留在 92% 的问题。后台计算与配筋本身均正常结束，主要瓶颈来自约 9.3 MB 工作区、完整配筋检查和核心状态的并行回读。新版增加工程 shell 投影、配筋复核按需读取、分阶段核心状态、真实字节进度、非阻断读取卡片、JSON 压缩和慢请求诊断。结构算法版本保持 V3.87.10。
 

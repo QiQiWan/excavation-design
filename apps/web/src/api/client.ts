@@ -1,10 +1,23 @@
 import { requestActivityEvents } from '../app/GlobalRequestProgress';
 import type { ExcavationModel, GeologicalModel, ImportResult, Project, ProjectSummary, RetainingSystem, CalculationResult, CalculationCase, ConstructionStageWorkspace, VtuMesh, CheckResult, AssuranceResult, ConstructionObstacle, RebarIfcVisualization, PitTask, IssueCenterResult, CalculationTraceResult, RebarDetailingResult, RebarDesignScheme, DrawingSetManifest, BenchmarkCaseSpec, BenchmarkRunResult, CadTemplateConfig, AdvancedEngineeringSuite, MonitoringRecord, DrawingRevision, DrawingRuleSet, DrawingRuleValidation, DrawingRuleOptimization, StandardsProcessMatrix, OnlineDocumentation, IndustrialReadinessResult, MonitoringControlResult, BusinessWorkflowOverview, DesignControlStage, DesignScenario, ConstructionPlanStage, FieldExecutionSnapshot, DeviationEvent, DesignCoreOverview, ParameterGovernance, ExternalCollaborationRecord, DesignReviewRequestRecord } from '../types/domain';
 
-const CONFIGURED_API_BASE = import.meta.env.VITE_API_BASE_URL;
-const API_BASE = CONFIGURED_API_BASE !== undefined
-  ? CONFIGURED_API_BASE
-  : (import.meta.env.DEV ? 'http://127.0.0.1:8002' : '');
+function normalizeApiBase(rawValue: unknown): string {
+  let value = String(rawValue ?? '').trim().replace(/\/+$/, '');
+  // Every request path already begins with /api. Treat /api as same-origin
+  // to avoid accidentally generating /api/api/... URLs.
+  if (value === '/api') value = '';
+  if (/^https?:\/\/[^/]+\/api$/i.test(value)) value = value.slice(0, -4);
+  if (value && !value.startsWith('/') && !/^https?:\/\//i.test(value)) {
+    throw new Error(`Invalid VITE_API_BASE_URL: ${value}`);
+  }
+  const loopback = /^https?:\/\/(?:localhost|0\.0\.0\.0|127(?:\.\d{1,3}){3}|\[::1\])(?::|\/|$)/i;
+  if (import.meta.env.PROD && loopback.test(value)) {
+    throw new Error('Production frontend cannot use a loopback API address. Leave VITE_API_BASE_URL empty for same-origin /api access.');
+  }
+  return value;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 
 type RequestActivityOptions = {
   label?: string;

@@ -1,3 +1,13 @@
+# V3.87.15
+
+- Fixed the false deployment failure caused by bundled documentation text containing a loopback health-check URL.
+- Moved the development API origin to `.env.development`; production now defaults to same-origin requests.
+- Normalized `/api` configuration to prevent duplicate `/api/api/...` request paths.
+- Added production bundle verification with exact file and context diagnostics.
+- Added release-version consistency checks before dependency installation and build.
+- Synchronized frontend package, lockfile, backend package and runtime version to 3.87.15.
+- Added `scripts/diagnose-production-api.sh` for server-side diagnosis.
+
 ## V3.87.14 Hotfix 2 - ResultViewer 严格类型构建修复
 
 - 将 ResultViewer 的后台任务回调从任意字符串收紧为实际使用的任务操作联合类型，兼容 ProjectWorkspace 的 BackendTaskOperation。

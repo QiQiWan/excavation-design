@@ -32,7 +32,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.87.14 cloud-safe workspace hydration with stage-bounded status payloads, streaming response progress and resilient non-blocking reads.",
+    description="PitGuard V3.87.15 production-safe same-origin API deployment with release consistency verification.",
 )
 
 app.add_middleware(
