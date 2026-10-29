@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from app.rules.gb50010.detailing_rules import crack_width_limit_mm, estimate_crack_width_mm
@@ -61,23 +62,24 @@ def evaluate_long_term_serviceability(project: Project, mode: str = "balanced") 
                 "recommendedAction": "减小钢筋间距、提高配筋率或增加局部抗裂钢筋" if status != "pass" else "保持当前构造并结合监测复核",
             })
     latest = project.calculation_results[-1] if project.calculation_results else None
-    max_short_displacement = float(latest.governing_values.max_displacement or 0.0) if latest else 0.0
-    long_displacement = max_short_displacement * displacement_factor
+    raw_displacement = latest.governing_values.max_displacement if latest else None
+    max_short_displacement = float(raw_displacement) if raw_displacement is not None and math.isfinite(float(raw_displacement)) else None
+    long_displacement = max_short_displacement * displacement_factor if max_short_displacement is not None else None
     displacement_limit = (project.excavation.depth / max(settings.displacement_limit_ratio or 500.0, 1.0) * 1000.0) if project.excavation else None
     displacement_status = "manual_review"
-    if displacement_limit is not None:
+    if displacement_limit is not None and long_displacement is not None:
         displacement_status = "pass" if long_displacement <= displacement_limit else "warning" if long_displacement <= 1.2 * displacement_limit else "fail"
-        counts[displacement_status] += 1
+    counts[displacement_status] += 1
     overall = "fail" if counts["fail"] else "warning" if counts["warning"] or counts["manual_review"] else "pass"
     return {
         "status": overall,
         "summary": {
-            "checkCount": len(rows) + (1 if displacement_limit is not None else 0),
+            "checkCount": len(rows) + 1,
             "counts": counts,
             "maxEstimatedCrackWidthMm": max((r["estimatedCrackWidthMm"] for r in rows), default=0.0),
             "crackWidthLimitMm": limit,
-            "shortTermDisplacementMm": round(max_short_displacement, 3),
-            "longTermDisplacementMm": round(long_displacement, 3),
+            "shortTermDisplacementMm": round(max_short_displacement, 3) if max_short_displacement is not None else None,
+            "longTermDisplacementMm": round(long_displacement, 3) if long_displacement is not None else None,
             "displacementLimitMm": round(displacement_limit, 3) if displacement_limit is not None else None,
             "displacementStatus": displacement_status,
             "creepCoefficient": creep,

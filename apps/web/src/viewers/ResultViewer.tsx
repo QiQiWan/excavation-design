@@ -573,6 +573,8 @@ function statusText(status: unknown) {
 }
 
 function CalculationHealthPanel({ latest, compact = false }: { latest: CalculationResult; compact?: boolean }) {
+  const numberText = (value: unknown, format: (number: number) => string = String) =>
+    typeof value === 'number' && Number.isFinite(value) ? format(value) : '未计算';
   const execution = (latest.calculationExecution ?? latest.reportDiagramData?.calculationExecution ?? {}) as Record<string, any>;
   const numerical = (latest.numericalHealth ?? latest.reportDiagramData?.numericalHealth ?? {}) as Record<string, any>;
   const completeness = (latest.resultCompleteness ?? latest.reportDiagramData?.resultCompleteness ?? {}) as Record<string, any>;
@@ -585,41 +587,42 @@ function CalculationHealthPanel({ latest, compact = false }: { latest: Calculati
     <div className="calculationHealthHeader">
       <div><span className="sectionKicker">计算流程与结果可信度</span><h4>流程、数值稳定性和结果完整性</h4></div>
       <div className="calculationHealthScores">
-        <span><strong>{String(completeness.engineeringCompletenessPercent ?? '-')}%</strong>计算结果完整度</span>
-        <span><strong>{String(completeness.engineeringReadinessPercent ?? completeness.engineeringCompletenessPercent ?? '-')}%</strong>工程就绪度</span>
-        <span><strong>{String(completeness.formalIssueReadinessPercent ?? '-')}%</strong>正式交付就绪度</span>
+        <span><strong>{numberText(completeness.engineeringCompletenessPercent, (number) => `${number}%`)}</strong>计算结果完整度</span>
+        <span><strong>{numberText(completeness.engineeringReadinessPercent ?? completeness.engineeringCompletenessPercent, (number) => `${number}%`)}</strong>工程就绪度</span>
+        <span><strong>{numberText(completeness.formalIssueReadinessPercent, (number) => `${number}%`)}</strong>正式交付就绪度</span>
         <span><strong>{statusText(execution.engineeringStatus ?? execution.status)}</strong>工程计算</span>
         <span><strong>{statusText(execution.deliveryStatus)}</strong>交付门禁</span>
         <span><strong>{statusText(numerical.status)}</strong>数值健康</span>
       </div>
     </div>
-    {execution.bottleneckPhase ? <p className="calculationBottleneck">耗时控制阶段：<strong>{String(execution.bottleneckPhase.label ?? execution.bottleneckPhase.phaseId ?? '-')}</strong>，{Number(execution.bottleneckPhase.durationSeconds ?? 0).toFixed(2)} s，占总耗时 {String(execution.bottleneckPhase.durationSharePercent ?? '-')}%。</p> : null}
+    {execution.bottleneckPhase ? <p className="calculationBottleneck">耗时控制阶段：<strong>{String(execution.bottleneckPhase.label ?? execution.bottleneckPhase.phaseId ?? '-')}</strong>，{numberText(execution.bottleneckPhase.durationSeconds, (number) => number.toFixed(2))} s，占总耗时 {numberText(execution.bottleneckPhase.durationSharePercent, (number) => `${number}%`)}。</p> : null}
     {Array.isArray(completeness.criticalBlockingDomains) && completeness.criticalBlockingDomains.length ? <p className="calculationBottleneck warningText">工程就绪度受关键结果域限制：<strong>{completeness.criticalBlockingDomains.join('、')}</strong>。完整度不会抵消关键阻断。</p> : null}
     <div className="calculationPhaseStrip">
       {phases.map((phase, index) => <div key={String(phase.phaseId ?? index)} className={`calculationPhase ${String(phase.status ?? 'missing')}`} title={String(phase.message ?? '')}>
-        <span>{index + 1}</span><strong>{String(phase.label ?? phase.phaseId ?? '-')}</strong><em>{statusText(phase.status)} · {Number(phase.durationSeconds ?? 0).toFixed(2)}s</em>
+        <span>{index + 1}</span><strong>{String(phase.label ?? phase.phaseId ?? '-')}</strong><em>{statusText(phase.status)} · {numberText(phase.durationSeconds, (number) => number.toFixed(2))}s</em>
       </div>)}
     </div>
     <div className="calculationHealthGrid">
       <div className="calculationHealthCard">
-        <strong>数值稳定性</strong>
-        <div className="metricLine"><span>最大尺度化条件数</span><b>{toNumber(numerical.maximumScaledConditionNumber).toExponential(3)}</b></div>
-        <div className="metricLine"><span>最大平衡残差</span><b>{toNumber(numerical.maximumRelativeResidual).toExponential(3)}</b></div>
-        <div className="metricLine"><span>回退 / 阻断矩阵</span><b>{String(numerical.fallbackCount ?? 0)} / {String(numerical.blockedSystemCount ?? 0)}</b></div>
-        <div className="metricLine"><span>反力迭代</span><b>{statusText(numerical.reactionIteration?.status)} · {String(numerical.reactionIteration?.iterationCount ?? 0)}轮</b></div>
-        <div className="metricLine"><span>阻断根因 / 预警根因</span><b>{String((catalog.blockingCheckLedger ?? []).length)} / {String((catalog.warningCheckLedger ?? []).length)}</b></div>
+        <strong>{numerical.summaryBasis === 'standard' ? '数值稳定性（标准作用摘要）' : '数值稳定性'}</strong>
+        {numerical.summaryBasis === 'standard' ? <p className="small">状态包含标准与设计作用求解。</p> : null}
+        <div className="metricLine"><span>最大尺度化条件数</span><b>{numberText(numerical.maximumScaledConditionNumber, (number) => number.toExponential(3))}</b></div>
+        <div className="metricLine"><span>最大平衡残差</span><b>{numberText(numerical.maximumRelativeResidual, (number) => number.toExponential(3))}</b></div>
+        <div className="metricLine"><span>回退 / 阻断矩阵</span><b>{numberText(numerical.fallbackCount)} / {numberText(numerical.blockedSystemCount)}</b></div>
+        <div className="metricLine"><span>反力迭代</span><b>{statusText(numerical.reactionIteration?.status)} · {numberText(numerical.reactionIteration?.iterationCount)}轮</b></div>
+        <div className="metricLine"><span>阻断根因 / 预警根因</span><b>{numberText(Array.isArray(catalog.blockingCheckLedger) ? catalog.blockingCheckLedger.length : undefined)} / {numberText(Array.isArray(catalog.warningCheckLedger) ? catalog.warningCheckLedger.length : undefined)}</b></div>
         {numerical.reactionIteration?.oscillationDetected ? <p className="small warningText">检测到两周期振荡，已启用自适应松弛。</p> : null}
       </div>
       <div className="calculationHealthCard">
         <strong>结果域完整度</strong>
         <div className="resultDomainList">{domains.slice(0, compact ? 5 : 11).map((domain, index) => <div key={String(domain.domainId ?? index)} className={`resultDomain ${String(domain.status ?? 'missing')}`}>
-          <span>{String(domain.label ?? domain.domainId ?? '-')}</span><div><em style={{ width: `${Math.max(0, Math.min(100, toNumber(domain.coveragePercent)))}%` }} /></div><b>{statusText(domain.status)}</b>
+          <span>{String(domain.label ?? domain.domainId ?? '-')}</span><div><em style={typeof domain.coveragePercent === 'number' && Number.isFinite(domain.coveragePercent) ? { width: `${Math.max(0, Math.min(100, domain.coveragePercent))}%` } : undefined} /></div><b>{statusText(domain.status)}</b>
         </div>)}</div>
       </div>
     </div>
     {!compact && criticalStages.length ? <DeferredResultDetails summary="查看关键施工阶段排序与控制指标" className="engineeringDetails calculationCriticalDetails">
       <table className="table compactTable"><thead><tr><th>阶段</th><th>类型</th><th>关键度</th><th>状态</th><th>墙位移</th><th>墙弯矩</th><th>支撑轴力</th><th>最小稳定指标</th><th>控制原因</th></tr></thead><tbody>
-        {criticalStages.map((stage, index) => <tr key={String(stage.stageId ?? index)}><td>{String(stage.stageName ?? stage.stageId ?? '-')}</td><td>{String(stage.stageType ?? '-')}</td><td>{String(stage.criticalityScore ?? '-')}</td><td>{statusText(stage.status)}</td><td>{String(stage.metrics?.maximumWallDisplacementMm ?? '-')}</td><td>{String(stage.metrics?.maximumWallMomentKnmPerM ?? '-')}</td><td>{String(stage.metrics?.maximumSupportForceKn ?? '-')}</td><td>{String(stage.metrics?.minimumStabilityFactor ?? '-')}</td><td>{(stage.reasons ?? []).join('；') || '-'}</td></tr>)}
+        {criticalStages.map((stage, index) => <tr key={String(stage.stageId ?? index)}><td>{String(stage.stageName ?? stage.stageId ?? '-')}</td><td>{String(stage.stageType ?? '-')}</td><td>{numberText(stage.criticalityScore)}</td><td>{statusText(stage.status)}</td><td>{numberText(stage.metrics?.maximumWallDisplacementMm)}</td><td>{numberText(stage.metrics?.maximumWallMomentKnmPerM)}</td><td>{numberText(stage.metrics?.maximumSupportForceKn)}</td><td>{numberText(stage.metrics?.minimumStabilityFactor)}</td><td>{(stage.reasons ?? []).join('；') || '-'}</td></tr>)}
       </tbody></table>
     </DeferredResultDetails> : null}
   </section>;

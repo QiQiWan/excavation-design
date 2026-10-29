@@ -1,0 +1,2932 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> pitguard-web@3.87.15 test
+> npm run generate:units && vitest run
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> pitguard-web@3.87.15 generate:units
+> node ../../scripts/generate-unit-registry.mjs
+
+[PitGuard] generated apps/web/src/generated/engineeringUnits.ts
+
+ RUN  v4.1.9 /workspace/scratch/fd5d8a28c64e/work/foundation_design/apps/web
+
+ ❯ src/components/DrawingRuleSetPanel.test.tsx (1 test | 1 failed) 1039ms
+     × shows configurable drawing rules and optimization candidates 1036ms
+stderr | src/components/ProgressiveDesignPanel.test.tsx > groups progressive decisions by engineering meaning and exposes configuration traceability
+An error occurred in the <ProgressiveDesignPanel> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+ ❯ src/components/ProgressiveDesignPanel.test.tsx (2 tests | 1 failed) 1074ms
+   × groups progressive decisions by engineering meaning and exposes configuration traceability 1040ms
+stderr | src/app/AuthRouting.test.tsx > application login routing > redirects an unauthenticated protected URL to /login and returns after login
+An error occurred in the <DocsPage> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+ ❯ src/components/SchemeComparisonPanel.test.tsx (6 tests | 1 failed) 1645ms
+     × loads missing candidate geometry through the lightweight preview endpoint 1055ms
+ ❯ src/app/AuthRouting.test.tsx (3 tests | 1 failed) 1682ms
+     × redirects an unauthenticated protected URL to /login and returns after login 1052ms
+ ❯ src/components/RebarDesignPanel.test.tsx (2 tests | 2 failed) 2226ms
+     × renders guided diagnosis and review-only CAD gate 1160ms
+     × supports problem-first filtering and drawing scope downloads 1057ms
+stderr | src/components/DesignQualificationPanel.test.tsx > shows storage, coordinate and system-level decisions without pretending diagnostic cards are designs
+An error occurred in the <DesignQualificationPanel> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+ ❯ src/components/DesignQualificationPanel.test.tsx (1 test | 1 failed) 1037ms
+   × shows storage, coordinate and system-level decisions without pretending diagnostic cards are designs 1034ms
+ ❯ src/pages/LoginPage.test.tsx (2 tests | 1 failed) 1293ms
+     × uses the independent application form and returns the authenticated identity 1245ms
+ ❯ src/components/ProjectDataWorkspacePanel.test.tsx (1 test | 1 failed) 1188ms
+   × loads only storage health initially and defers the artifact manifest until expanded 1185ms
+stderr | src/pages/ProjectsPage.test.tsx > ProjectsPage delete > deletes a project after explicit confirmation
+An error occurred in the <ProjectsPage> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+ ❯ src/pages/ProjectsPage.test.tsx (1 test | 1 failed) 1035ms
+     × deletes a project after explicit confirmation 1033ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/app/AuthRouting.test.tsx > application login routing > redirects an unauthenticated protected URL to /login and returns after login
+TestingLibraryElementError: Unable to find role="heading" and name "登录系统"
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/app/AuthRouting.test.tsx:34:25
+     32|     render(<App />);
+     33|
+     34|     expect(await screen.findByRole('heading', { name: '登录系统' })).toBeI…
+       |                         ^
+     35|     expect(window.location.pathname).toBe('/login');
+     36|     expect(new URLSearchParams(window.location.search).get('redirect')…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  src/components/DesignQualificationPanel.test.tsx > shows storage, coordinate and system-level decisions without pretending diagnostic cards are designs
+TestingLibraryElementError: Unable to find an element with the text: 诊断与体系选择模式. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div />[39m
+  [36m</body>[39m
+[36m</html>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/DesignQualificationPanel.test.tsx:32:9
+     30| it('shows storage, coordinate and system-level decisions without prete…
+     31|   render(<DesignQualificationPanel project={project} runTask={vi.fn(as…
+     32|   await waitFor(() => expect(screen.getByText('诊断与体系选择模式')).toBeInTheD…
+       |         ^
+     33|   expect(screen.getByText('无需压缩')).toBeInTheDocument();
+     34|   expect(screen.getByText('坐标关系需要确认')).toBeInTheDocument();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  src/components/DrawingRuleSetPanel.test.tsx > DrawingRuleSetPanel > shows configurable drawing rules and optimization candidates
+TestingLibraryElementError: Unable to find an element with the text: 规则有效. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33mclass[39m=[32m"summaryPanel"[39m
+    [36m>[39m
+      [36m<h3>[39m
+        [0m出图规则集[0m
+      [36m</h3>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"small"[39m
+      [36m>[39m
+        [0m正在加载图纸触发、拆图、比例和发行规则。[0m
+      [36m</p>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33mclass[39m=[32m"summaryPanel"[39m
+    [36m>[39m
+      [36m<h3>[39m
+        [0m出图规则集[0m
+      [36m</h3>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"small"[39m
+      [36m>[39m
+        [0m正在加载图纸触发、拆图、比例和发行规则。[0m
+      [36m</p>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/DrawingRuleSetPanel.test.tsx:30:25
+     28|   it('shows configurable drawing rules and optimization candidates', a…
+     29|     render(<DrawingRuleSetPanel project={project} />);
+     30|     expect(await screen.findByText('规则有效')).toBeInTheDocument();
+       |                         ^
+     31|     expect(screen.getByRole('heading', { name: '出图规则集' })).toBeInTheDo…
+     32|     expect(screen.getByText('总平面图')).toBeInTheDocument();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  src/components/ProgressiveDesignPanel.test.tsx > groups progressive decisions by engineering meaning and exposes configuration traceability
+TestingLibraryElementError: Unable to find an element with the text: 先确认设计意图，再逐级增加模型复杂度. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div />[39m
+  [36m</body>[39m
+[36m</html>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/ProgressiveDesignPanel.test.tsx:43:9
+     41| it('groups progressive decisions by engineering meaning and exposes co…
+     42|   render(<ProgressiveDesignPanel project={project} runTask={vi.fn(asyn…
+     43|   await waitFor(() => expect(screen.getByText('先确认设计意图，再逐级增加模型复杂度')).t…
+       |         ^
+     44|   expect(screen.getByText('坐标处理')).toBeInTheDocument();
+     45|   expect(screen.getByText('地质覆盖策略')).toBeInTheDocument();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  src/components/ProjectDataWorkspacePanel.test.tsx > loads only storage health initially and defers the artifact manifest until expanded
+TestingLibraryElementError: Unable to find an element with the text: calculation-stage-results. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"项目冷热数据工作集"[39m
+      [33mclass[39m=[32m"dataWorkspacePanel card"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"dataWorkspaceSummary"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<strong>[39m
+            [0m数据工作集[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m核心设计常驻 · 大型结果按需加载 · 文件由 Nginx 直传[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"dataWorkspaceMetrics"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m工作区 [0m
+            [36m<b>[39m
+              [0m0.00 MB[0m
+            [36m</b>[39m
+            [0m / 动态预算 [0m
+            [0m0.00 MB[0m
+          [36m</span>[39m
+          [36m<span>[39m
+            [0m主快照 [0m
+            [36m<b>[39m
+              [0m0.00 MB[0m
+            [36m</b>[39m
+            [0m / API动态预算 [0m
+            [0m0.00 MB[0m
+          [36m</span>[39m
+          [36m<span>[39m
+            [0m外部对象 [0m
+            [36m<b>[39m
+              [0m0.00 MB[0m
+            [36m</b>[39m
+          [36m</span>[39m
+          [36m<span>[39m
+            [0m运行模式 [0m
+            [36m<b>[39m
+              [0m标准[0m
+            [36m</b>[39m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"secondary tiny"[39m
+        [36m>[39m
+          [0m收起数据索引[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"dataWorkspacePolicy"[39m
+      [36m>[39m
+        [36m<span>[39m
+          [0m有效可用内存 [0m
+          [36m<b>[39m
+            [0m0.00 MB[0m
+          [36m</b>[39m
+        [36m</span>[39m
+        [36m<span>[39m
+          [0m系统保留 [0m
+          [36m<b>[39m
+            [0m0.00 MB[0m
+          [36m</b>[39m
+        [36m</span>[39m
+        [36m<span>[39m
+          [0mworker 软/硬预算 [0m
+          [36m<b>[39m
+            [0m0.00 MB[0m
+            [0m / [0m
+            [0m0.00 MB[0m
+          [36m</b>[39m
+        [36m</span>[39m
+        [36m<span>[39m
+          [0m重型任务并发 [0m
+          [36m<b>[39m
+            [0m—[0m
+          [36m</b>[39m
+        [36m</span>[39m
+        [36m<p>[39m
+          [0m网页使用轻量工作区，重型对象由后台任务按需读取。[0m
+        [36m</p>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"dataWorkspaceGroups"[39m
+      [36m>[39m
+        [36m<p>[39m
+          [0m当前项目尚无外部大型数据对象；后续计算、地质和配筋结果会自动分片保存。[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"项目冷热数据工作集"[39m
+        [33mclass[39m=[32m"dataWorkspacePanel card"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"dataWorkspaceSummary"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<strong>[39m
+              [0m数据工作集[0m
+            [36m</strong>[39m
+            [36m<span>[39m
+              [0m核心设计常驻 · 大型结果按需加载 · 文件由 Nginx 直传[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"dataWorkspaceMetrics"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m工作区 [0m
+              [36m<b>[39m
+                [0m0.00 MB[0m
+              [36m</b>[39m
+              [0m / 动态预算 [0m
+              [0m0.00 MB[0m
+            [36m</span>[39m
+            [36m<span>[39m
+              [0m主快照 [0m
+              [36m<b>[39m
+                [0m0.00 MB[0m
+              [36m</b>[39m
+              [0m / API动态预算 [0m
+              [0m0.00 MB[0m
+            [36m</span>[39m
+            [36m<span>[39m
+              [0m外部对象 [0m
+              [36m<b>[39m
+                [0m0.00 MB[0m
+              [36m</b>[39m
+            [36m</span>[39m
+            [36m<span>[39m
+              [0m运行模式 [0m
+              [36m<b>[39m
+                [0m标准[0m
+              [36m</b>[39m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"secondary tiny"[39m
+          [36m>[39m
+            [0m收起数据索引[0m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"dataWorkspacePolicy"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m有效可用内存 [0m
+            [36m<b>[39m
+              [0m0.00 MB[0m
+            [36m</b>[39m
+          [36m</span>[39m
+          [36m<span>[39m
+            [0m系统保留 [0m
+            [36m<b>[39m
+              [0m0.00 MB[0m
+            [36m</b>[39m
+          [36m</span>[39m
+          [36m<span>[39m
+            [0mworker 软/硬预算 [0m
+            [36m<b>[39m
+              [0m0.00 MB[0m
+              [0m / [0m
+              [0m0.00 MB[0m
+            [36m</b>[39m
+          [36m</span>[39m
+          [36m<span>[39m
+            [0m重型任务并发 [0m
+            [36m<b>[39m
+              [0m—[0m
+            [36m</b>[39m
+          [36m</span>[39m
+          [36m<p>[39m
+            [0m网页使用轻量工作区，重型对象由后台任务按需读取。[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"dataWorkspaceGroups"[39m
+        [36m>[39m
+          [36m<p>[39m
+            [0m当前项目尚无外部大型数据对象；后续计算、地质和配筋结果会自动分片保存。[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/ProjectDataWorkspacePanel.test.tsx:24:9
+     22|   expect(fetchMock.mock.calls.some(([input]) => String(input).includes…
+     23|   fireEvent.click(screen.getByRole('button', { name: '查看数据索引' }));
+     24|   await waitFor(() => expect(screen.getByText('calculation-stage-resul…
+       |         ^
+     25|   expect(fetchMock.mock.calls.some(([input]) => String(input).includes…
+     26| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  src/components/RebarDesignPanel.test.tsx > RebarDesignPanel > renders guided diagnosis and review-only CAD gate
+TestingLibraryElementError: Unable to find an element with the text: 仍有复核项，当前输出审查版图纸。. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33mclass[39m=[32m"rebarDesignPanel summaryPanel"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"panelTitleRow"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h3>[39m
+            [0m配筋设计与施工图[0m
+          [36m</h3>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"small"[39m
+          [36m>[39m
+            [0m构件配筋、节点构造与出图资格。[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"statusPill warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m未计算[0m
+          [36m</strong>[39m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarHeadline fail"[39m
+      [36m>[39m
+        [36m<strong>[39m
+          [0m正在生成设计诊断…[0m
+        [36m</strong>[39m
+        [36m<span>[39m
+          [0m将自动检查支撑拓扑、配筋承载力和节点承压。[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarWorkflowSteps"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m1 校验计算[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m需要先重新计算[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m2 选择策略[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m承载与施工性平衡[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m3 处理问题[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m0 个阻断，0 个复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m4 应用与出图[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m当前仅输出审查版[0m
+          [36m</span>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarPrimaryBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m配筋策略[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"conservative"[39m
+            [36m>[39m
+              [0m保守[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"balanced"[39m
+            [36m>[39m
+              [0m均衡[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"economic"[39m
+            [36m>[39m
+              [0m经济[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<button[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m一键修复并闭合配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"secondary"[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m仅更新配筋[0m
+        [36m</button>[39m
+        [36m<a[39m
+          [33mclass[39m=[32m"buttonLink secondary"[39m
+          [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=full&rebar_mode=balanced&issue_mode=review"[39m
+        [36m>[39m
+          [0m下载审查版图纸[0m
+        [36m</a>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage fail"[39m
+      [36m>[39m
+        [0m当前不能启动配筋闭合：[0m
+        [0m请先确认设计基准并生成围护方案。[0m
+        [0m [0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage warn"[39m
+      [36m>[39m
+        [0m图纸包将带“审查版”标识；消除阻断项后才能切换为施工图复核包。[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33maria-label[39m=[32m"深化设计摘要"[39m
+        [33mclass[39m=[32m"deepDetailingSummary"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"panelTitleRow"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<h4>[39m
+              [0m深化设计闭环[0m
+            [36m</h4>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"small"[39m
+            [36m>[39m
+              [0m节点钢构件、钢筋笼吊装、机械连接、预埋件碰撞和施工顺序。[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"statusPill warn"[39m
+          [36m>[39m
+            [0m需复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard pass"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m空间深化阻断[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m仅指节点、吊装或预埋件碰撞[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m节点硬件[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m承压板/加劲板/焊缝/锚筋[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m吊装工况[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m分节、吊点、索力与临时加强[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m机械连接[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m套筒、丝头、错开组和抽检[0m
+            [36m</em>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m计算有效性[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m等待检查[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m支撑传力体系[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m正交次对撑 [0m
+            [0m0[0m
+            [0m 根；角撑最大分担 [0m
+            [0m-[0m
+            [0m m[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m深化入口总阻断[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m计算、方案、构件与配筋的统一口径[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m复核项[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m锚固、裂缝、拥挤和施工偏差[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard review"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m出图状态[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m审查版[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m0[0m
+            [0m 张计划图纸[0m
+          [36m</em>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarFilterBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m显示[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"problems"[39m
+            [36m>[39m
+              [0m仅问题项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"fail"[39m
+            [36m>[39m
+              [0m仅阻断项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"warning"[39m
+            [36m>[39m
+              [0m仅复核项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"pass"[39m
+            [36m>[39m
+              [0m仅通过项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"all"[39m
+            [36m>[39m
+              [0m全部[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<label>[39m
+          [0m搜索[0m
+          [36m<input[39m
+            [33mplaceholder[39m=[32m"构件编号、原因或图号"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</label>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"small"[39m
+        [36m>[39m
+          [0m当前 [0m
+          [0m0[0m
+          [0m 项[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tabBar compactTabs"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"active"[39m
+        [36m>[39m
+          [0m问题中心[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m墙体分区[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m支撑配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m围檩与节点[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m图纸目录[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"issueReasonGrid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"emptyState"[39m
+        [36m>[39m
+          [0m没有阻断原因。可继续检查复核项和施工构造。[0m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"small boundaryNote"[39m
+      [36m/>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33mclass[39m=[32m"rebarDesignPanel summaryPanel"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"panelTitleRow"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h3>[39m
+            [0m配筋设计与施工图[0m
+          [36m</h3>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"small"[39m
+          [36m>[39m
+            [0m构件配筋、节点构造与出图资格。[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"statusPill warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m未计算[0m
+          [36m</strong>[39m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarHeadline fail"[39m
+      [36m>[39m
+        [36m<strong>[39m
+          [0m正在生成设计诊断…[0m
+        [36m</strong>[39m
+        [36m<span>[39m
+          [0m将自动检查支撑拓扑、配筋承载力和节点承压。[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarWorkflowSteps"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m1 校验计算[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m需要先重新计算[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m2 选择策略[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m承载与施工性平衡[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m3 处理问题[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m0 个阻断，0 个复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m4 应用与出图[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m当前仅输出审查版[0m
+          [36m</span>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarPrimaryBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m配筋策略[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"conservative"[39m
+            [36m>[39m
+              [0m保守[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"balanced"[39m
+            [36m>[39m
+              [0m均衡[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"economic"[39m
+            [36m>[39m
+              [0m经济[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<button[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m一键修复并闭合配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"secondary"[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m仅更新配筋[0m
+        [36m</button>[39m
+        [36m<a[39m
+          [33mclass[39m=[32m"buttonLink secondary"[39m
+          [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=full&rebar_mode=balanced&issue_mode=review"[39m
+        [36m>[39m
+          [0m下载审查版图纸[0m
+        [36m</a>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage fail"[39m
+      [36m>[39m
+        [0m当前不能启动配筋闭合：[0m
+        [0m请先确认设计基准并生成围护方案。[0m
+        [0m [0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage warn"[39m
+      [36m>[39m
+        [0m图纸包将带“审查版”标识；消除阻断项后才能切换为施工图复核包。[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33maria-label[39m=[32m"深化设计摘要"[39m
+        [33mclass[39m=[32m"deepDetailingSummary"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"panelTitleRow"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<h4>[39m
+              [0m深化设计闭环[0m
+            [36m</h4>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"small"[39m
+            [36m>[39m
+              [0m节点钢构件、钢筋笼吊装、机械连接、预埋件碰撞和施工顺序。[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"statusPill warn"[39m
+          [36m>[39m
+            [0m需复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard pass"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m空间深化阻断[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m仅指节点、吊装或预埋件碰撞[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m节点硬件[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m承压板/加劲板/焊缝/锚筋[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m吊装工况[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m分节、吊点、索力与临时加强[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m机械连接[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m套筒、丝头、错开组和抽检[0m
+            [36m</em>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m计算有效性[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m等待检查[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m支撑传力体系[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m正交次对撑 [0m
+            [0m0[0m
+            [0m 根；角撑最大分担 [0m
+            [0m-[0m
+            [0m m[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m深化入口总阻断[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m计算、方案、构件与配筋的统一口径[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m复核项[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m锚固、裂缝、拥挤和施工偏差[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard review"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m出图状态[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m审查版[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m0[0m
+            [0m 张计划图纸[0m
+          [36m</em>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarFilterBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m显示[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"problems"[39m
+            [36m>[39m
+              [0m仅问题项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"fail"[39m
+            [36m>[39m
+              [0m仅阻断项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"warning"[39m
+            [36m>[39m
+              [0m仅复核项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"pass"[39m
+            [36m>[39m
+              [0m仅通过项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"all"[39m
+            [36m>[39m
+              [0m全部[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<label>[39m
+          [0m搜索[0m
+          [36m<input[39m
+            [33mplaceholder[39m=[32m"构件编号、原因或图号"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</label>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"small"[39m
+        [36m>[39m
+          [0m当前 [0m
+          [0m0[0m
+          [0m 项[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tabBar compactTabs"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"active"[39m
+        [36m>[39m
+          [0m问题中心[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m墙体分区[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m支撑配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m围檩与节点[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m图纸目录[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"issueReasonGrid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"emptyState"[39m
+        [36m>[39m
+          [0m没有阻断原因。可继续检查复核项和施工构造。[0m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"small boundaryNote"[39m
+      [36m/>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/RebarDesignPanel.test.tsx:52:25
+     50|     render(<RebarDesignPanel project={project} onApplied={() => undefi…
+     51|     expect(await screen.findByText('配筋设计与施工图')).toBeInTheDocument();
+     52|     expect(await screen.findByText('仍有复核项，当前输出审查版图纸。')).toBeInTheDocum…
+       |                         ^
+     53|     expect(screen.getByText('下载审查版图纸')).toHaveAttribute('href', expect…
+     54|     expect(screen.getByText('1 当前计算合同')).toBeInTheDocument();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  src/components/RebarDesignPanel.test.tsx > RebarDesignPanel > supports problem-first filtering and drawing scope downloads
+TestingLibraryElementError: Unable to find an element with the text: 地下连续墙分区配筋立面图. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33mclass[39m=[32m"rebarDesignPanel summaryPanel"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"panelTitleRow"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h3>[39m
+            [0m配筋设计与施工图[0m
+          [36m</h3>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"small"[39m
+          [36m>[39m
+            [0m构件配筋、节点构造与出图资格。[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"statusPill warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m未计算[0m
+          [36m</strong>[39m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarHeadline fail"[39m
+      [36m>[39m
+        [36m<strong>[39m
+          [0m正在生成设计诊断…[0m
+        [36m</strong>[39m
+        [36m<span>[39m
+          [0m将自动检查支撑拓扑、配筋承载力和节点承压。[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarWorkflowSteps"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m1 校验计算[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m需要先重新计算[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m2 选择策略[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m承载与施工性平衡[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m3 处理问题[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m0 个阻断，0 个复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m4 应用与出图[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m当前仅输出审查版[0m
+          [36m</span>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarPrimaryBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m配筋策略[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"conservative"[39m
+            [36m>[39m
+              [0m保守[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"balanced"[39m
+            [36m>[39m
+              [0m均衡[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"economic"[39m
+            [36m>[39m
+              [0m经济[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<button[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m一键修复并闭合配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"secondary"[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m仅更新配筋[0m
+        [36m</button>[39m
+        [36m<a[39m
+          [33mclass[39m=[32m"buttonLink secondary"[39m
+          [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=full&rebar_mode=balanced&issue_mode=review"[39m
+        [36m>[39m
+          [0m下载审查版图纸[0m
+        [36m</a>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage fail"[39m
+      [36m>[39m
+        [0m当前不能启动配筋闭合：[0m
+        [0m请先确认设计基准并生成围护方案。[0m
+        [0m [0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage warn"[39m
+      [36m>[39m
+        [0m图纸包将带“审查版”标识；消除阻断项后才能切换为施工图复核包。[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33maria-label[39m=[32m"深化设计摘要"[39m
+        [33mclass[39m=[32m"deepDetailingSummary"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"panelTitleRow"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<h4>[39m
+              [0m深化设计闭环[0m
+            [36m</h4>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"small"[39m
+            [36m>[39m
+              [0m节点钢构件、钢筋笼吊装、机械连接、预埋件碰撞和施工顺序。[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"statusPill warn"[39m
+          [36m>[39m
+            [0m需复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard pass"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m空间深化阻断[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m仅指节点、吊装或预埋件碰撞[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m节点硬件[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m承压板/加劲板/焊缝/锚筋[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m吊装工况[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m分节、吊点、索力与临时加强[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m机械连接[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m套筒、丝头、错开组和抽检[0m
+            [36m</em>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m计算有效性[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m等待检查[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m支撑传力体系[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m正交次对撑 [0m
+            [0m0[0m
+            [0m 根；角撑最大分担 [0m
+            [0m-[0m
+            [0m m[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m深化入口总阻断[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m计算、方案、构件与配筋的统一口径[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m复核项[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m锚固、裂缝、拥挤和施工偏差[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard review"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m出图状态[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m审查版[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m0[0m
+            [0m 张计划图纸[0m
+          [36m</em>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarFilterBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m显示[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"problems"[39m
+            [36m>[39m
+              [0m仅问题项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"fail"[39m
+            [36m>[39m
+              [0m仅阻断项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"warning"[39m
+            [36m>[39m
+              [0m仅复核项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"pass"[39m
+            [36m>[39m
+              [0m仅通过项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"all"[39m
+            [36m>[39m
+              [0m全部[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<label>[39m
+          [0m搜索[0m
+          [36m<input[39m
+            [33mplaceholder[39m=[32m"构件编号、原因或图号"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</label>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"small"[39m
+        [36m>[39m
+          [0m当前 [0m
+          [0m0[0m
+          [0m 项[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tabBar compactTabs"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m问题中心[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m墙体分区[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m支撑配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m围檩与节点[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"active"[39m
+        [36m>[39m
+          [0m图纸目录[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<table[39m
+        [33mclass[39m=[32m"table compactTable"[39m
+      [36m>[39m
+        [36m<thead>[39m
+          [36m<tr>[39m
+            [36m<th>[39m
+              [0m图号[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m图名[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m类别[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m比例[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m文件[0m
+            [36m</th>[39m
+          [36m</tr>[39m
+        [36m</thead>[39m
+        [36m<tbody />[39m
+      [36m</table>[39m
+      [36m<details[39m
+        [33mclass[39m=[32m"secondaryDownloads"[39m
+      [36m>[39m
+        [36m<summary>[39m
+          [0m分专业下载[0m
+        [36m</summary>[39m
+        [36m<div>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"buttonLink secondary"[39m
+            [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=general&rebar_mode=balanced&issue_mode=review"[39m
+          [36m>[39m
+            [0m总图与剖面[0m
+          [36m</a>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"buttonLink secondary"[39m
+            [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=rebar&rebar_mode=balanced&issue_mode=review"[39m
+          [36m>[39m
+            [0m配筋图[0m
+          [36m</a>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"buttonLink secondary"[39m
+            [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=details&rebar_mode=balanced&issue_mode=review"[39m
+          [36m>[39m
+            [0m节点大样[0m
+          [36m</a>[39m
+        [36m</div>[39m
+      [36m</details>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"small boundaryNote"[39m
+      [36m/>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33mclass[39m=[32m"rebarDesignPanel summaryPanel"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"panelTitleRow"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<h3>[39m
+            [0m配筋设计与施工图[0m
+          [36m</h3>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"small"[39m
+          [36m>[39m
+            [0m构件配筋、节点构造与出图资格。[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"statusPill warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m未计算[0m
+          [36m</strong>[39m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarHeadline fail"[39m
+      [36m>[39m
+        [36m<strong>[39m
+          [0m正在生成设计诊断…[0m
+        [36m</strong>[39m
+        [36m<span>[39m
+          [0m将自动检查支撑拓扑、配筋承载力和节点承压。[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarWorkflowSteps"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m1 校验计算[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m需要先重新计算[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m2 选择策略[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m承载与施工性平衡[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep pass"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m3 处理问题[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m0 个阻断，0 个复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"workflowStep warn"[39m
+        [36m>[39m
+          [36m<strong>[39m
+            [0m4 应用与出图[0m
+          [36m</strong>[39m
+          [36m<span>[39m
+            [0m当前仅输出审查版[0m
+          [36m</span>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarPrimaryBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m配筋策略[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"conservative"[39m
+            [36m>[39m
+              [0m保守[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"balanced"[39m
+            [36m>[39m
+              [0m均衡[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"economic"[39m
+            [36m>[39m
+              [0m经济[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<button[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m一键修复并闭合配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"secondary"[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0m仅更新配筋[0m
+        [36m</button>[39m
+        [36m<a[39m
+          [33mclass[39m=[32m"buttonLink secondary"[39m
+          [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=full&rebar_mode=balanced&issue_mode=review"[39m
+        [36m>[39m
+          [0m下载审查版图纸[0m
+        [36m</a>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage fail"[39m
+      [36m>[39m
+        [0m当前不能启动配筋闭合：[0m
+        [0m请先确认设计基准并生成围护方案。[0m
+        [0m [0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarGateMessage warn"[39m
+      [36m>[39m
+        [0m图纸包将带“审查版”标识；消除阻断项后才能切换为施工图复核包。[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33maria-label[39m=[32m"深化设计摘要"[39m
+        [33mclass[39m=[32m"deepDetailingSummary"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"panelTitleRow"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<h4>[39m
+              [0m深化设计闭环[0m
+            [36m</h4>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"small"[39m
+            [36m>[39m
+              [0m节点钢构件、钢筋笼吊装、机械连接、预埋件碰撞和施工顺序。[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"statusPill warn"[39m
+          [36m>[39m
+            [0m需复核[0m
+          [36m</span>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard pass"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m空间深化阻断[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m仅指节点、吊装或预埋件碰撞[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m节点硬件[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m承压板/加劲板/焊缝/锚筋[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m吊装工况[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m分节、吊点、索力与临时加强[0m
+            [36m</em>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"statusCard"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0m机械连接[0m
+            [36m</span>[39m
+            [36m<strong>[39m
+              [0m0[0m
+            [36m</strong>[39m
+            [36m<em>[39m
+              [0m套筒、丝头、错开组和抽检[0m
+            [36m</em>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"maturityGrid rebarSummaryGrid"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m计算有效性[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m等待检查[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard warn"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m支撑传力体系[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m需复核[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m正交次对撑 [0m
+            [0m0[0m
+            [0m 根；角撑最大分担 [0m
+            [0m-[0m
+            [0m m[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m深化入口总阻断[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m计算、方案、构件与配筋的统一口径[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard pass"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m复核项[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m0[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m锚固、裂缝、拥挤和施工偏差[0m
+          [36m</em>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"statusCard review"[39m
+        [36m>[39m
+          [36m<span>[39m
+            [0m出图状态[0m
+          [36m</span>[39m
+          [36m<strong>[39m
+            [0m审查版[0m
+          [36m</strong>[39m
+          [36m<em>[39m
+            [0m0[0m
+            [0m 张计划图纸[0m
+          [36m</em>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"rebarFilterBar"[39m
+      [36m>[39m
+        [36m<label>[39m
+          [0m显示[0m
+          [36m<select>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"problems"[39m
+            [36m>[39m
+              [0m仅问题项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"fail"[39m
+            [36m>[39m
+              [0m仅阻断项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"warning"[39m
+            [36m>[39m
+              [0m仅复核项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"pass"[39m
+            [36m>[39m
+              [0m仅通过项[0m
+            [36m</option>[39m
+            [36m<option[39m
+              [33mvalue[39m=[32m"all"[39m
+            [36m>[39m
+              [0m全部[0m
+            [36m</option>[39m
+          [36m</select>[39m
+        [36m</label>[39m
+        [36m<label>[39m
+          [0m搜索[0m
+          [36m<input[39m
+            [33mplaceholder[39m=[32m"构件编号、原因或图号"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</label>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"small"[39m
+        [36m>[39m
+          [0m当前 [0m
+          [0m0[0m
+          [0m 项[0m
+        [36m</span>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tabBar compactTabs"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m问题中心[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m墙体分区[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m支撑配筋[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m""[39m
+        [36m>[39m
+          [0m围檩与节点[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"active"[39m
+        [36m>[39m
+          [0m图纸目录[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<table[39m
+        [33mclass[39m=[32m"table compactTable"[39m
+      [36m>[39m
+        [36m<thead>[39m
+          [36m<tr>[39m
+            [36m<th>[39m
+              [0m图号[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m图名[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m类别[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m比例[0m
+            [36m</th>[39m
+            [36m<th>[39m
+              [0m文件[0m
+            [36m</th>[39m
+          [36m</tr>[39m
+        [36m</thead>[39m
+        [36m<tbody />[39m
+      [36m</table>[39m
+      [36m<details[39m
+        [33mclass[39m=[32m"secondaryDownloads"[39m
+      [36m>[39m
+        [36m<summary>[39m
+          [0m分专业下载[0m
+        [36m</summary>[39m
+        [36m<div>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"buttonLink secondary"[39m
+            [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=general&rebar_mode=balanced&issue_mode=review"[39m
+          [36m>[39m
+            [0m总图与剖面[0m
+          [36m</a>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"buttonLink secondary"[39m
+            [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=rebar&rebar_mode=balanced&issue_mode=review"[39m
+          [36m>[39m
+            [0m配筋图[0m
+          [36m</a>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"buttonLink secondary"[39m
+            [33mhref[39m=[32m"/api/projects/project-rebar-test/export/drawings-cad?scope=details&rebar_mode=balanced&issue_mode=review"[39m
+          [36m>[39m
+            [0m节点大样[0m
+          [36m</a>[39m
+        [36m</div>[39m
+      [36m</details>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"small boundaryNote"[39m
+      [36m/>[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/RebarDesignPanel.test.tsx:65:25
+     63|     await screen.findByText('配筋设计与施工图');
+     64|     fireEvent.click(screen.getByText('图纸目录'));
+     65|     expect(await screen.findByText('地下连续墙分区配筋立面图')).toBeInTheDocument(…
+       |                         ^
+     66|     fireEvent.click(screen.getByText('分专业下载'));
+     67|     expect(screen.getByText('节点大样')).toHaveAttribute('href', expect.st…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+ FAIL  src/components/SchemeComparisonPanel.test.tsx > SchemeComparisonPanel > loads missing candidate geometry through the lightweight preview endpoint
+AssertionError: expected 0 to be greater than or equal to 3
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<section[39m
+        [33mclass[39m=[32m"schemeComparisonPanel compact"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"focusSectionHeader"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"sectionKicker"[39m
+            [36m>[39m
+              [0m整体方案决策[0m
+            [36m</span>[39m
+            [36m<h3>[39m
+              [0mA / B / C 支撑方案比选[0m
+            [36m</h3>[39m
+            [36m<p>[39m
+              [0m先比较体系与传力路径；完整计算后比较轴力、位移、围檩内力和安全系数。[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"schemeHeaderActions"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"schemeState pending"[39m
+            [36m>[39m
+              [0m待完整计算[0m
+            [36m</span>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"secondary"[39m
+              [33mdisabled[39m=[32m""[39m
+            [36m>[39m
+              [0m正式候选不足 2 个[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"schemeOverviewGrid count-3"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"schemeOverviewCard selected "[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeCardHeader"[39m
+            [36m>[39m
+              [36m<strong>[39m
+                [0m方案[0m
+                [0m [0m
+                [0mA[0m
+              [36m</strong>[39m
+              [36m<span>[39m
+                [0m斜撑 + 短对撑混合[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<svg[39m
+              [33maria-label[39m=[32m"方案 A 支撑平面预览"[39m
+              [33mclass[39m=[32m"schemeOverviewSvg"[39m
+              [33mpreserveAspectRatio[39m=[32m"xMidYMid meet"[39m
+              [33mrole[39m=[32m"img"[39m
+              [33mviewBox[39m=[32m"-2.875 -2 6.75 3"[39m
+            [36m>[39m
+              [36m<g[39m
+                [33mclass[39m=[32m"schemePreviewEmpty"[39m
+              [36m>[39m
+                [36m<rect[39m
+                  [33mheight[39m=[32m"3"[39m
+                  [33mwidth[39m=[32m"6.75"[39m
+                  [33mx[39m=[32m"-2.875"[39m
+                  [33my[39m=[32m"-2"[39m
+                [36m/>[39m
+                [36m<text[39m
+                  [33mfont-size[39m=[32m"0.54"[39m
+                  [33mx[39m=[32m"0.5"[39m
+                  [33my[39m=[32m"-0.5"[39m
+                [36m>[39m
+                  [0m方案几何尚未写入工作区[0m
+                [36m</text>[39m
+              [36m</g>[39m
+            [36m</svg>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeKeyMetrics"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m支撑 / 立柱 / 转接构件[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m12[0m
+                  [0m / [0m
+                  [0m4[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m拓扑族[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0mhybrid_diagonal[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m非法穿越 / 墙上汇交 / 内部汇交[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m角撑扇形异常 / 墙节点拥挤[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m最长跨度（m）[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m20 m[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m完整计算状态[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m待计算[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m几何拓扑评分[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m92[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeRiskLine"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"riskPass"[39m
+              [36m>[39m
+                [0m拓扑 Fail[0m
+                [0m [0m
+                [0m0[0m
+              [36m</span>[39m
+              [36m<span>[39m
+                [0m拓扑 Warning[0m
+                [0m [0m
+                [0m2[0m
+              [36m</span>[39m
+              [36m<span>[39m
+                [0m未生成设计内力[0m
+              [36m</span>[39m
+            [36m</div>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"schemeOverviewCard  "[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeCardHeader"[39m
+            [36m>[39m
+              [36m<strong>[39m
+                [0m方案[0m
+                [0m [0m
+                [0mB[0m
+              [36m</strong>[39m
+              [36m<span>[39m
+                [0m传统直对撑[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<svg[39m
+              [33maria-label[39m=[32m"方案 B 支撑平面预览"[39m
+              [33mclass[39m=[32m"schemeOverviewSvg"[39m
+              [33mpreserveAspectRatio[39m=[32m"xMidYMid meet"[39m
+              [33mrole[39m=[32m"img"[39m
+              [33mviewBox[39m=[32m"-2.875 -2 6.75 3"[39m
+            [36m>[39m
+              [36m<g[39m
+                [33mclass[39m=[32m"schemePreviewEmpty"[39m
+              [36m>[39m
+                [36m<rect[39m
+                  [33mheight[39m=[32m"3"[39m
+                  [33mwidth[39m=[32m"6.75"[39m
+                  [33mx[39m=[32m"-2.875"[39m
+                  [33my[39m=[32m"-2"[39m
+                [36m/>[39m
+                [36m<text[39m
+                  [33mfont-size[39m=[32m"0.54"[39m
+                  [33mx[39m=[32m"0.5"[39m
+                  [33my[39m=[32m"-0.5"[39m
+                [36m>[39m
+                  [0m方案几何尚未写入工作区[0m
+                [36m</text>[39m
+              [36m</g>[39m
+            [36m</svg>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeKeyMetrics"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m支撑 / 立柱 / 转接构件[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m14[0m
+                  [0m / [0m
+                  [0m6[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m拓扑族[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0mdirect_grid[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m非法穿越 / 墙上汇交 / 内部汇交[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m角撑扇形异常 / 墙节点拥挤[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m最长跨度（m）[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m22 m[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m完整计算状态[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m待计算[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m几何拓扑评分[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m88[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeRiskLine"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"riskPass"[39m
+              [36m>[39m
+                [0m拓扑 Fail[0m
+                [0m [0m
+                [0m0[0m
+              [36m</span>[39m
+              [36m<span>[39m
+                [0m拓扑 Warning[0m
+                [0m [0m
+                [0m3[0m
+              [36m</span>[39m
+              [36m<span>[39m
+                [0m未生成设计内力[0m
+              [36m</span>[39m
+            [36m</div>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"schemeOverviewCard  "[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeCardHeader"[39m
+            [36m>[39m
+              [36m<strong>[39m
+                [0m方案[0m
+                [0m [0m
+                [0mC[0m
+              [36m</strong>[39m
+              [36m<span>[39m
+                [0m双向支撑网格[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<svg[39m
+              [33maria-label[39m=[32m"方案 C 支撑平面预览"[39m
+              [33mclass[39m=[32m"schemeOverviewSvg"[39m
+              [33mpreserveAspectRatio[39m=[32m"xMidYMid meet"[39m
+              [33mrole[39m=[32m"img"[39m
+              [33mviewBox[39m=[32m"-2.875 -2 6.75 3"[39m
+            [36m>[39m
+              [36m<g[39m
+                [33mclass[39m=[32m"schemePreviewEmpty"[39m
+              [36m>[39m
+                [36m<rect[39m
+                  [33mheight[39m=[32m"3"[39m
+                  [33mwidth[39m=[32m"6.75"[39m
+                  [33mx[39m=[32m"-2.875"[39m
+                  [33my[39m=[32m"-2"[39m
+                [36m/>[39m
+                [36m<text[39m
+                  [33mfont-size[39m=[32m"0.54"[39m
+                  [33mx[39m=[32m"0.5"[39m
+                  [33my[39m=[32m"-0.5"[39m
+                [36m>[39m
+                  [0m方案几何尚未写入工作区[0m
+                [36m</text>[39m
+              [36m</g>[39m
+            [36m</svg>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeKeyMetrics"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m支撑 / 立柱 / 转接构件[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m16[0m
+                  [0m / [0m
+                  [0m5[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m拓扑族[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0mbidirectional_grid[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m非法穿越 / 墙上汇交 / 内部汇交[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m角撑扇形异常 / 墙节点拥挤[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m0[0m
+                  [0m / [0m
+                  [0m0[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m最长跨度（m）[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m18 m[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m完整计算状态[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m待计算[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+              [36m<span>[39m
+                [36m<small>[39m
+                  [0m几何拓扑评分[0m
+                [36m</small>[39m
+                [36m<strong>[39m
+                  [0m80[0m
+                [36m</strong>[39m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"schemeRiskLine"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"riskPass"[39m
+              [36m>[39m
+                [0m拓扑 Fail[0m
+                [0m [0m
+                [0m0[0m
+              [36m</span>[39m
+              [36m<span>[39m
+                [0m拓扑 Warning[0m
+                [0m [0m
+                [0m4[0m
+              [36m</span>[39m
+              [36m<span>[39m
+                [0m未生成设计内力[0m
+              [36m</span>[39m
+            [36m</div>[39m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"schemeInteractiveViewer"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"schemeViewerToolbar"[39m
+          [36m>[39m
+            [36m<strong>[39m
+              [0m方案 [0m
+              [0mA[0m
+              [0m · [0m
+              [0m斜撑 + 短对撑混合[0m
+            [36m</strong>[39m
+            [36m<div>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"放大方案预览"[39m
+                [33mclass[39m=[32m"secondary"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0m＋[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"缩小方案预览"[39m
+                [33mclass[39m=[32m"secondary"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0m－[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"secondary"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0m适应窗口[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"secondary"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0m显示编号[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<svg[39m
+            [33maria-label[39m=[32m"方案 A 可缩放平移支撑总平面"[39m
+            [33mclass[39m=[32m"schemeDetailSvg "[39m
+            [33mpreserveAspectRatio[39m=[32m"xMidYMid meet"[39m
+            [33mrole[39m=[32m"img"[39m
+            [33mviewBox[39m=[32m"-2.875 -2 6.75 3"[39m
+          [36m>[39m
+            [36m<g[39m
+              [33mclass[39m=[32m"schemePreviewEmpty"[39m
+            [36m>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"3"[39m
+                [33mwidth[39m=[32m"6.75"[39m
+                [33mx[39m=[32m"-2.875"[39m
+                [33my[39m=[32m"-2"[39m
+              [36m/>[39m
+              [36m<text[39m
+                [33mfont-size[39m=[32m"0.37125"[39m
+                [33mx[39m=[32m"0.5"[39m
+                [33my[39m=[32m"-0.5"[39m
+              [36m>[39m
+                [0m未取得方案几何，请刷新候选预览[0m
+              [36m</text>[39m
+            [36m</g>[39m
+          [36m</svg>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"schemeViewerHint"[39m
+          [36m>[39m
+            [0m滚轮缩放 · 拖动平移 · 自动居中[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"schemeDecisionBar"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<strong>[39m
+              [0m当前选择：[0m
+              [0m方案[0m
+              [0m [0m
+              [0mA[0m
+              [0m · [0m
+              [0m斜撑 + 短对撑混合[0m
+            [36m</strong>[39m
+            [36m<span>[39m
+              [0m选择后将整体替换支撑、立柱和节点，并要求重新计算。[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<button[39m
+            [33mdisabled[39m=[32m""[39m
+          [36m>[39m
+            [0m采用整套方案[0m
+          [36m</button>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+ ❯ src/components/SchemeComparisonPanel.test.tsx:96:82
+     94|     vi.stubGlobal('fetch', fetchMock);
+     95|     const { container } = render(<SchemeComparisonPanel project={light…
+     96|     await waitFor(() => expect(container.querySelectorAll('.schemeLine…
+       |                                                                                  ^
+     97|     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/d…
+     98|     expect(screen.queryByText('方案几何尚未写入工作区')).not.toBeInTheDocument();
+ ❯ runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:47:12
+ ❯ checkCallback node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ ❯ Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯
+
+ FAIL  src/pages/LoginPage.test.tsx > LoginPage > uses the independent application form and returns the authenticated identity
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…} ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   ObjectContaining {
+-     "authMode": "session",
+-     "role": "designer",
+-   },
++   undefined,
+  ]
+
+
+Number of calls: 1
+
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head>[39m
+    [36m<title>[39m
+      [0m登录 · PitGuard BIM Designer[0m
+    [36m</title>[39m
+  [36m</head>[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<main[39m
+        [33mclass[39m=[32m"loginPage"[39m
+      [36m>[39m
+        [36m<section[39m
+          [33maria-label[39m=[32m"PitGuard平台介绍"[39m
+          [33mclass[39m=[32m"loginBrandPanel"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"loginBrandLine"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"loginBrandMark"[39m
+            [36m>[39m
+              [0mPG[0m
+            [36m</div>[39m
+            [36m<div>[39m
+              [36m<strong>[39m
+                [0mPitGuard[0m
+              [36m</strong>[39m
+              [36m<span>[39m
+                [0mBIM Designer[0m
+              [36m</span>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"sectionKicker"[39m
+          [36m>[39m
+            [0mGEOTECHNICAL DESIGN CONTROL[0m
+          [36m</p>[39m
+          [36m<h1>[39m
+            [0m基坑围护结构智能设计与受控交付平台[0m
+          [36m</h1>[39m
+          [36m<p>[39m
+            [0m统一完成支撑拓扑、围护墙设计、分阶段计算、配筋深化、IFC建模和施工图交付，并保留计算合同与审计链。[0m
+          [36m</p>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"loginFeatureGrid"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [36m<b>[39m
+                [0m01[0m
+              [36m</b>[39m
+              [0m 洁净支撑拓扑[0m
+            [36m</span>[39m
+            [36m<span>[39m
+              [36m<b>[39m
+                [0m02[0m
+              [36m</b>[39m
+              [0m 工业计算合同[0m
+            [36m</span>[39m
+            [36m<span>[39m
+              [36m<b>[39m
+                [0m03[0m
+              [36m</b>[39m
+              [0m 钢筋笼与IFC[0m
+            [36m</span>[39m
+            [36m<span>[39m
+              [36m<b>[39m
+                [0m04[0m
+              [36m</b>[39m
+              [0m 受控发行闸门[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<small>[39m
+            [0m系统输出属于工程设计辅助成果，正式成果须由具备相应资格的岩土与结构专业人员复核、审核和批准。[0m
+          [36m</small>[39m
+        [36m</section>[39m
+        [36m<section[39m
+          [33mclass[39m=[32m"loginFormPanel"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"loginCard"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"loginCardHeader"[39m
+            [36m>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"sectionKicker"[39m
+              [36m>[39m
+                [0mSECURE ACCESS[0m
+              [36m</p>[39m
+              [36m<h2>[39m
+                [0m登录系统[0m
+              [36m</h2>[39m
+              [36m<p>[39m
+                [0m输入服务器部署时配置的工程账号。[0m
+              [36m</p>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"loginNotice"[39m
+              [33mrole[39m=[32m"status"[39m
+            [36m>[39m
+              [0m登录会话已过期，请重新登录后继续。[0m
+            [36m</div>[39m
+            [36m<form>[39m
+              [36m<label[39m
+                [33mfor[39m=[32m"pitguard-username"[39m
+              [36m>[39m
+                [0m用户名[0m
+              [36m</label>[39m
+              [36m<input[39m
+                [33mautocomplete[39m=[32m"username"[39m
+                [33mid[39m=[32m"pitguard-username"[39m
+                [33mplaceholder[39m=[32m"请输入用户名"[39m
+                [33mvalue[39m=[32m"engineer"[39m
+              [36m/>[39m
+              [36m<label[39m
+                [33mfor[39m=[32m"pitguard-password"[39m
+              [36m>[39m
+                [0m密码[0m
+              [36m</label>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"passwordField"[39m
+              [36m>[39m
+                [36m<input[39m
+                  [33mautocomplete[39m=[32m"current-password"[39m
+                  [33mid[39m=[32m"pitguard-password"[39m
+                  [33mplaceholder[39m=[32m"请输入密码"[39m
+                  [33mtype[39m=[32m"password"[39m
+                  [33mvalue[39m=[32m"secret"[39m
+                [36m/>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"显示密码"[39m
+                  [33mclass[39m=[32m"passwordToggle"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0m显示[0m
+                [36m</button>[39m
+              [36m</div>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"loginSubmit"[39m
+                [33mtype[39m=[32m"submit"[39m
+              [36m>[39m
+                [0m登录并进入工作台[0m
+              [36m</button>[39m
+            [36m</form>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"loginReturnHint"[39m
+            [36m>[39m
+              [0m验证成功后返回：[0m
+              [36m<code>[39m
+                [0m/docs[0m
+              [36m</code>[39m
+            [36m</p>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"loginSecurityLine"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33maria-hidden[39m=[32m"true"[39m
+              [36m>[39m
+                [0m●[0m
+              [36m</span>[39m
+              [0m HttpOnly 会话 · 角色权限控制 · 操作审计[0m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<footer[39m
+            [33mclass[39m=[32m"loginFooter"[39m
+          [36m>[39m
+            [0mPitGuard V3.62.0 · designer.eatrice.cn[0m
+          [36m</footer>[39m
+        [36m</section>[39m
+      [36m</main>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+ ❯ src/pages/LoginPage.test.tsx:29:49
+     27|     fireEvent.click(screen.getByRole('button', { name: '登录并进入工作台' }));
+     28|
+     29|     await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith(e…
+       |                                                 ^
+     30|     expect(fetch).toHaveBeenCalledWith(
+     31|       expect.stringContaining('/api/auth/login'),
+ ❯ runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:47:12
+ ❯ checkCallback node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ ❯ Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯
+
+ FAIL  src/pages/ProjectsPage.test.tsx > ProjectsPage delete > deletes a project after explicit confirmation
+TestingLibraryElementError: Unable to find an element with the text: 待删除项目. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div />[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/pages/ProjectsPage.test.tsx:41:25
+     39|   it('deletes a project after explicit confirmation', async () => {
+     40|     render(<ProjectsPage onOpen={vi.fn()} />);
+     41|     expect(await screen.findByText('待删除项目')).toBeInTheDocument();
+       |                         ^
+     42|     expect(screen.getByText(/工作区模式/)).toBeInTheDocument();
+     43|     fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 4 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+TypeError: Cannot read properties of undefined (reading 'find')
+ ❯ src/components/ProgressiveDesignPanel.tsx:103:20
+    101|
+    102|   const selected = useMemo(
+    103|     () => session?.stages.find((stage) => stage.code === selectedCode)…
+       |                    ^
+    104|     [session, selectedCode],
+    105|   );
+ ❯ updateMemo node_modules/react-dom/cjs/react-dom-client.development.js:8795:19
+ ❯ Object.useMemo node_modules/react-dom/cjs/react-dom-client.development.js:26484:18
+ ❯ process.env.NODE_ENV.exports.useMemo node_modules/react/cjs/react.development.js:1251:34
+ ❯ ProgressiveDesignPanel src/components/ProgressiveDesignPanel.tsx:102:20
+ ❯ Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:25904:20
+ ❯ renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:7662:22
+ ❯ updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:10166:19
+ ❯ beginWork node_modules/react-dom/cjs/react-dom-client.development.js:11778:18
+ ❯ runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+
+This error originated in "src/components/ProgressiveDesignPanel.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "groups progressive decisions by engineering meaning and exposes configuration traceability". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+TypeError: Cannot read properties of undefined (reading 'steps')
+ ❯ src/pages/DocsPage.tsx:71:25
+     69|
+     70|   const filteredSteps = useMemo(() => {
+     71|     const steps = data?.standardsMatrix.steps ?? [];
+       |                         ^
+     72|     const q = query.trim().toLowerCase();
+     73|     if (!q) return steps;
+ ❯ updateMemo node_modules/react-dom/cjs/react-dom-client.development.js:8795:19
+ ❯ Object.useMemo node_modules/react-dom/cjs/react-dom-client.development.js:26484:18
+ ❯ process.env.NODE_ENV.exports.useMemo node_modules/react/cjs/react.development.js:1251:34
+ ❯ DocsPage src/pages/DocsPage.tsx:70:25
+ ❯ Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:25904:20
+ ❯ renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:7662:22
+ ❯ updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:10166:19
+ ❯ beginWork node_modules/react-dom/cjs/react-dom-client.development.js:11778:18
+ ❯ runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+
+This error originated in "src/app/AuthRouting.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "redirects an unauthenticated protected URL to /login and returns after login". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+TypeError: Cannot read properties of undefined (reading 'find')
+ ❯ DesignQualificationPanel src/components/DesignQualificationPanel.tsx:110:37
+    108|
+    109|   const options = data.systemOptions?.options ?? [];
+    110|   const coordinateGate = data.gates.find((item) => item.code === 'Q-CO…
+       |                                     ^
+    111|   const coordinateEvidence = coordinateGate?.evidence?.coordinateAlign…
+    112|   const storageGate = data.gates.find((item) => item.code === 'Q-STORA…
+ ❯ Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:25904:20
+ ❯ renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:7662:22
+ ❯ updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:10166:19
+ ❯ beginWork node_modules/react-dom/cjs/react-dom-client.development.js:11778:18
+ ❯ runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+ ❯ performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:17641:22
+ ❯ workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:17469:41
+ ❯ renderRootSync node_modules/react-dom/cjs/react-dom-client.development.js:17450:11
+ ❯ performWorkOnRoot node_modules/react-dom/cjs/react-dom-client.development.js:16583:35
+
+This error originated in "src/components/DesignQualificationPanel.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "shows storage, coordinate and system-level decisions without pretending diagnostic cards are designs". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+TypeError: projects.map is not a function
+ ❯ ProjectsPage src/pages/ProjectsPage.tsx:156:23
+    154|           <thead><tr><th>名称</th><th>地点</th><th>存储</th><th>更新时间</th><th…
+    155|           <tbody>
+    156|             {projects.map((project) => (
+       |                       ^
+    157|               <tr key={project.id} className={project.optimistic ? 'op…
+    158|                 <td>{project.name}{project.optimistic ? <small classNa…
+ ❯ Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:25904:20
+ ❯ renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:7662:22
+ ❯ updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:10166:19
+ ❯ beginWork node_modules/react-dom/cjs/react-dom-client.development.js:11778:18
+ ❯ runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+ ❯ performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:17641:22
+ ❯ workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:17469:41
+ ❯ renderRootSync node_modules/react-dom/cjs/react-dom-client.development.js:17450:11
+ ❯ performWorkOnRoot node_modules/react-dom/cjs/react-dom-client.development.js:16583:35
+
+This error originated in "src/pages/ProjectsPage.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "deletes a project after explicit confirmation". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  9 failed | 12 passed (21)
+      Tests  10 failed | 30 passed (40)
+     Errors  4 errors
+   Start at  19:51:48
+   Duration  6.17s (transform 2.29s, setup 1.13s, import 4.31s, tests 15.73s, environment 14.37s)
+

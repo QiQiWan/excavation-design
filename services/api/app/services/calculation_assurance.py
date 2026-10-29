@@ -163,9 +163,29 @@ def calculation_input_payload(project: Project, case: CalculationCase) -> dict[s
         "geologicalModel": project.geological_model.model_dump(mode="json", by_alias=True) if project.geological_model else None,
         "excavation": project.excavation.model_dump(mode="json", by_alias=True) if project.excavation else None,
         "retainingSystem": _strip_derived_retaining(project.retaining_system.model_dump(mode="json", by_alias=True)) if project.retaining_system else None,
+        # layoutSummary also contains derived diagnostics, but this consumed
+        # control flag changes the actual solver graph and must be frozen.
+        "analysisTopology": {"transferSystemRequired": bool((project.retaining_system.layout_summary.get("transferSystem") or {}).get("required"))}
+            if project.retaining_system else None,
         "calculationCase": case.model_dump(mode="json", by_alias=True),
+        "designControlStages": [row.model_dump(mode="json", by_alias=True) for row in project.design_control_stages],
+        # These are engineering inputs in verify mode. They cannot disappear
+        # from identity merely because earlier versions overwrote them as outputs.
+        "reinforcementInputs": reinforcement_input_payload(project),
         "calibrationFactors": calibration,
     }
+
+
+def reinforcement_input_payload(project: Project) -> dict[str, Any]:
+    if not project.retaining_system:
+        return {}
+    retaining = project.retaining_system
+    members = [*retaining.diaphragm_walls, *retaining.supports, *retaining.wale_beams,
+        *retaining.crown_beams, *retaining.ring_beams, *retaining.support_nodes]
+    physical_fields = {"bar_type", "diameter", "spacing", "count", "grade", "location_description",
+        "zone_type", "zone_start_m", "zone_end_m", "zone_length_m", "stirrup_legs"}
+    return {row.id: [group.model_dump(mode="json", by_alias=True, include=physical_fields)
+        for group in row.reinforcement] for row in members}
 
 
 def build_calculation_contract(project: Project, case: CalculationCase) -> dict[str, Any]:
@@ -434,25 +454,60 @@ def assess_calculation_result(
     support_reconciliation_warning = 0
     support_reconciliation_manual = 0
     wall_cross_checks: list[dict[str, Any]] = []
+    unavailable_wall_cross_checks: list[dict[str, Any]] = []
+    missing_load_basis_evidence: list[dict[str, Any]] = []
     for row in result.stage_results:
+        wall_solvers = (row.coupled_system_result.get("solveEvidence") or {}).get("wallSolvers") or {}
+        for basis in ("standard", "design"):
+            wall_evidence = wall_solvers.get(basis)
+            if not wall_evidence:
+                missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id,
+                    "loadBasis": basis, "model": "wall_fd", "reason": "missing wall solve evidence"})
+            elif wall_evidence.get("status") != "solved":
+                fallback_rows.append({"stageId": row.stage_id, "segmentId": row.segment_id,
+                    "loadBasis": basis, "model": "wall_fd", "reason": wall_evidence.get("method")})
+        # Design actions are a separate solve. Standard-load convergence
+        # cannot certify design-force or reinforcement demands.
+        design_coupled = row.design_global_coupled_result
+        if design_coupled is None:
+            missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "design", "reason": "missing solve"})
+        else:
+            design_condition = design_coupled.scaled_condition_number if design_coupled.scaled_condition_number is not None else design_coupled.condition_number
+            design_residual = design_coupled.equilibrium_diagnostics.get("relativeResidual")
+            if design_condition is not None and math.isfinite(float(design_condition)):
+                condition_values.append(float(design_condition))
+            else:
+                missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "design", "reason": "missing condition"})
+            if isinstance(design_residual, (int, float)) and math.isfinite(design_residual):
+                residual_values.append(float(design_residual))
+            else:
+                missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "design", "reason": "missing residual"})
+            if design_coupled.fallback or design_coupled.ill_conditioned_blocked:
+                fallback_rows.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "design", "reason": design_coupled.reason})
         coupled = row.global_coupled_result
         if coupled:
-            if coupled.condition_number is not None:
-                condition_values.append(float(coupled.condition_number))
+            condition = coupled.scaled_condition_number if coupled.scaled_condition_number is not None else coupled.condition_number
+            if condition is not None and math.isfinite(float(condition)):
+                condition_values.append(float(condition))
+            else:
+                missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "standard", "reason": "missing condition"})
             numerical = dict(coupled.equilibrium_diagnostics or {})
             residual = numerical.get("relativeResidual")
             original = numerical.get("originalRelativeResidual")
-            if isinstance(residual, (int, float)):
+            if isinstance(residual, (int, float)) and math.isfinite(residual):
                 residual_values.append(float(residual))
+            else:
+                missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "standard", "reason": "missing residual"})
             if isinstance(original, (int, float)):
                 original_residual_values.append(float(original))
             if coupled.fallback:
-                fallback_rows.append({"stageId": row.stage_id, "segmentId": row.segment_id, "reason": coupled.reason})
+                fallback_rows.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "standard", "reason": coupled.reason})
             if row.wall_internal_force:
                 # Global matrix translations are stored in metres, while the
                 # wall-on-elastic-foundation solver reports millimetres.
-                global_displacement_mm = float(coupled.max_wall_displacement or 0.0) * 1000.0
-                wall_displacement_mm = float(row.wall_internal_force.max_displacement or 0.0)
+                global_value, wall_value = coupled.max_wall_displacement, row.wall_internal_force.max_displacement
+                global_displacement_mm = float(global_value) * 1000.0 if global_value is not None and math.isfinite(float(global_value)) else None
+                wall_displacement_mm = float(wall_value) if wall_value is not None and math.isfinite(float(wall_value)) else None
                 difference = _relative_difference(global_displacement_mm, wall_displacement_mm)
                 if difference is not None:
                     wall_cross_checks.append({
@@ -462,6 +517,14 @@ def assess_calculation_result(
                         "wallSolverDisplacementMm": wall_displacement_mm,
                         "relativeDifference": difference,
                     })
+                else:
+                    unavailable_wall_cross_checks.append({"stageId": row.stage_id, "segmentId": row.segment_id,
+                        "globalDisplacementMm": global_displacement_mm, "wallSolverDisplacementMm": wall_displacement_mm})
+            else:
+                unavailable_wall_cross_checks.append({"stageId": row.stage_id, "segmentId": row.segment_id, "reason": "wall solution missing"})
+        else:
+            unavailable_wall_cross_checks.append({"stageId": row.stage_id, "segmentId": row.segment_id, "reason": "global solution missing"})
+            missing_load_basis_evidence.append({"stageId": row.stage_id, "segmentId": row.segment_id, "loadBasis": "standard", "reason": "missing solve"})
         for force in row.support_forces:
             status = str(force.force_reconciliation_status or "")
             support_reconciliation_warning += int(status == "warning")
@@ -488,8 +551,8 @@ def assess_calculation_result(
         numerical_status = "fail"
     elif max_residual is not None and max_residual > residual_warning_limit and numerical_status == "pass":
         numerical_status = "warning"
-    if fallback_rows and numerical_status == "pass":
-        numerical_status = "manual_review"
+    if fallback_rows or missing_load_basis_evidence:
+        numerical_status = "fail"
     issues.append(_issue(
         "RESULT-NUMERICAL-QUALITY",
         "数值收敛与病态控制",
@@ -501,6 +564,7 @@ def assess_calculation_result(
             "maxOriginalRelativeResidual": max_original_residual,
             "fallbackCount": len(fallback_rows),
             "fallbackRows": fallback_rows[:20],
+            "missingLoadBasisEvidence": missing_load_basis_evidence,
             "conditionWarningLimit": condition_warning_limit,
             "conditionReviewLimit": condition_review_limit,
             "conditionFailLimit": condition_fail_limit,
@@ -511,13 +575,29 @@ def assess_calculation_result(
         object_id=result.id,
     ))
 
-    finite_governing = _finite_numbers(result.governing_values.model_dump().values())
+    required_governing = [result.governing_values.max_wall_moment, result.governing_values.max_wall_shear,
+        result.governing_values.max_displacement]
+    finite_governing = all(value is not None for value in required_governing) and _finite_numbers(result.governing_values.model_dump().values())
     finite_stages = all(
+        row.wall_internal_force is not None
+        and row.wall_internal_force.max_displacement is not None
+        and row.global_coupled_result is not None
+        and row.global_coupled_result.max_wall_displacement is not None
+        and row.design_global_coupled_result is not None
+        and row.design_global_coupled_result.max_wall_displacement is not None
+        and row.wall_internal_force.max_moment_design is not None
+        and row.wall_internal_force.max_shear_design is not None
+        and bool(row.pressure_profile.points)
+        and
         _finite_numbers([
-            row.pressure_profile.points[0].total_pressure if row.pressure_profile.points else 0.0,
-            row.wall_internal_force.max_moment if row.wall_internal_force else 0.0,
-            row.wall_internal_force.max_shear if row.wall_internal_force else 0.0,
-            row.wall_internal_force.max_displacement if row.wall_internal_force else 0.0,
+            *[point.total_pressure for point in row.pressure_profile.points],
+            row.wall_internal_force.max_moment,
+            row.wall_internal_force.max_shear,
+            row.wall_internal_force.max_displacement,
+            row.global_coupled_result.max_wall_displacement,
+            row.design_global_coupled_result.max_wall_displacement,
+            row.wall_internal_force.max_moment_design,
+            row.wall_internal_force.max_shear_design,
         ])
         for row in result.stage_results
     ) if result.stage_results else False
@@ -531,7 +611,7 @@ def assess_calculation_result(
         object_id=result.id,
     ))
 
-    max_wall_difference = max((row["relativeDifference"] for row in wall_cross_checks), default=0.0)
+    max_wall_difference = max((row["relativeDifference"] for row in wall_cross_checks), default=None)
     warning_ratio = float(getattr(project.design_settings, "independent_check_warning_ratio", 0.25) or 0.25)
     fail_ratio = float(getattr(project.design_settings, "independent_check_fail_ratio", 0.50) or 0.50)
     assurance_level = str(getattr(project.design_settings, "calculation_assurance_level", "engineering") or "engineering")
@@ -539,12 +619,12 @@ def assess_calculation_result(
     cross_status = "pass"
     if bool(getattr(project.design_settings, "require_independent_calculation_check", True)) and not has_reference_path:
         cross_status = "fail"
-    elif max_wall_difference > fail_ratio:
+    elif max_wall_difference is not None and max_wall_difference > fail_ratio:
         # At engineering level a large difference is an explicit independent
         # review item.  It becomes a hard failure only when the project declares
         # that this run is intended for official issue.
         cross_status = "fail" if assurance_level == "official_issue" else "manual_review"
-    elif max_wall_difference > warning_ratio or support_reconciliation_warning or support_reconciliation_manual:
+    elif (max_wall_difference is not None and max_wall_difference > warning_ratio) or support_reconciliation_warning or support_reconciliation_manual or unavailable_wall_cross_checks:
         cross_status = "manual_review"
     issues.append(_issue(
         "RESULT-INDEPENDENT-CHECK",
@@ -552,8 +632,9 @@ def assess_calculation_result(
         cross_status,
         "全局耦合解与墙体弹性地基梁、连续围檩参考解进行了差异对账。",
         evidence={
-            "maxWallDisplacementRelativeDifference": round(max_wall_difference, 6),
+            "maxWallDisplacementRelativeDifference": round(max_wall_difference, 6) if max_wall_difference is not None else None,
             "wallCrossChecks": sorted(wall_cross_checks, key=lambda item: item["relativeDifference"], reverse=True)[:20],
+            "unavailableWallCrossChecks": unavailable_wall_cross_checks,
             "supportReconciliationWarningCount": support_reconciliation_warning,
             "supportReconciliationManualReviewCount": support_reconciliation_manual,
             "warningRatio": warning_ratio,
@@ -591,10 +672,15 @@ def assess_calculation_result(
     for issue in issues:
         if status_order.get(issue["status"], 2) > status_order.get(overall, 0):
             overall = issue["status"]
-    if input_fail:
+    engineering_failures = [check for check in result.checks if check.get("status") == "fail"]
+    engineering_reviews = [check for check in result.checks if check.get("status") in {"warning", "manual_review"}
+        and check.get("applicability") not in {"not_applicable", "not_required"}]
+    if input_fail or engineering_failures:
         overall = "fail"
     elif input_audit.get("status") == "warning" and overall == "pass":
         overall = "warning"
+    elif engineering_reviews and overall == "pass":
+        overall = "manual_review"
 
     result_core = result.model_dump(
         mode="json",
@@ -615,11 +701,11 @@ def assess_calculation_result(
                 nested.pop(derived_key, None)
     stable_contract = {key: value for key, value in contract.items() if key not in {"createdAt", "adoptedAt"}}
     result_hash = _canonical_hash({"contract": stable_contract, "result": result_core})
-    fail_count = sum(row["status"] == "fail" for row in issues) + input_fail
+    fail_count = sum(row["status"] == "fail" for row in issues) + input_fail + len(engineering_failures)
     warning_count = sum(row["status"] in {"warning", "manual_review"} for row in issues) + int(input_audit.get("warningCount") or 0)
     return {
         "status": overall,
-        "eligibleForEngineeringUse": overall not in {"fail"},
+        "eligibleForEngineeringUse": overall == "pass",
         "eligibleForOfficialIssue": overall == "pass" and not input_fail,
         "contract": contract,
         "inputAudit": input_audit,
@@ -631,6 +717,8 @@ def assess_calculation_result(
         "failCount": fail_count,
         "warningCount": warning_count,
         "issues": issues,
+        "engineeringChecks": {"failCount": len(engineering_failures), "reviewCount": len(engineering_reviews),
+            "blockingRuleIds": sorted({str(check.get("ruleId")) for check in engineering_failures})},
         "assessedAt": _now(),
         "boundary": "该质量包证明输入冻结、阶段覆盖、数值质量和内部独立复核流程已执行；仍不能替代第三方软件对标、真实工程反演和注册工程师签审。",
     }

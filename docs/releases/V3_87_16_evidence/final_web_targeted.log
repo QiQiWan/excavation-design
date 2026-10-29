@@ -1,0 +1,20 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> pitguard-web@3.87.16 test
+> npm run generate:units && vitest run src/pages/CoreProjectWorkspace.test.tsx src/viewers/RetainingSystemViewer.test.tsx src/viewers/ResultViewer.test.tsx
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> pitguard-web@3.87.16 generate:units
+> node ../../scripts/generate-unit-registry.mjs
+
+[PitGuard] generated apps/web/src/generated/engineeringUnits.ts
+
+ RUN  v4.1.9 /workspace/scratch/fd5d8a28c64e/work/foundation_design/apps/web
+
+
+ Test Files  3 passed (3)
+      Tests  19 passed (19)
+   Start at  20:21:54
+   Duration  2.03s (transform 1.02s, setup 143ms, import 1.29s, tests 974ms, environment 1.79s)
+

@@ -19,6 +19,19 @@ def _finite(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _optional_finite(value: Any) -> float | None:
+    number = _finite(value, math.nan)
+    return number if math.isfinite(number) else None
+
+
+def _complete_max(values: list[Any], *, absolute: bool = False) -> float | None:
+    """An envelope is unknown if any required contributing result is unknown."""
+    numbers = [_optional_finite(value) for value in values]
+    if not numbers or any(value is None for value in numbers):
+        return None
+    return max(abs(value) if absolute else value for value in numbers)
+
+
 def _status_worst(values: list[str], default: str = "pass") -> str:
     clean = [str(item or default) for item in values]
     return max(clean, key=lambda item: _STATUS_RANK.get(item, 2), default=default)
@@ -32,6 +45,51 @@ def _check_counts(checks: list[dict[str, Any]]) -> dict[str, int]:
             status = "manual_review"
         counts[status] += 1
     return counts
+
+
+def _basis_availability(rows: list[StageCalculationResult]) -> dict[str, dict[str, Any]]:
+    """Availability of both load bases; legacy numeric summaries remain standard-basis."""
+    summaries: dict[str, dict[str, Any]] = {}
+    for basis, field in (("standard", "global_coupled_result"), ("design", "design_global_coupled_result")):
+        statuses: list[str] = []
+        counts = {"globalSystemCount": 0, "unavailableGlobalSystemCount": 0,
+                  "fallbackGlobalSystemCount": 0, "blockedGlobalSystemCount": 0,
+                  "unavailableWallSolverCount": 0}
+        for row in rows:
+            coupled = getattr(row, field)
+            if coupled is None:
+                counts["unavailableGlobalSystemCount"] += 1
+                statuses.append("manual_review")
+            else:
+                counts["globalSystemCount"] += 1
+                available = all(_optional_finite(value) is not None for value in (
+                    coupled.max_wall_displacement,
+                    coupled.scaled_condition_number if coupled.scaled_condition_number is not None else coupled.condition_number,
+                    (coupled.equilibrium_diagnostics or {}).get("relativeResidual"),
+                ))
+                blocked = bool(coupled.ill_conditioned_blocked or (coupled.numerical_gate or {}).get("blocked"))
+                counts["unavailableGlobalSystemCount"] += int(not available)
+                counts["fallbackGlobalSystemCount"] += int(bool(coupled.fallback))
+                counts["blockedGlobalSystemCount"] += int(blocked)
+                statuses.append("fail" if blocked else "manual_review" if not available or coupled.fallback else "pass")
+                statuses.append(str((coupled.condition_grade or {}).get("status") or "pass"))
+                statuses.append(str((coupled.numerical_gate or {}).get("status") or "pass"))
+            wall_evidence = ((row.coupled_system_result.get("solveEvidence") or {}).get("wallSolvers") or {}).get(basis) or {}
+            wall_available = (wall_evidence.get("status") == "solved"
+                              and not wall_evidence.get("fallback")
+                              and _optional_finite(wall_evidence.get("maximumDisplacementMm")) is not None)
+            if basis == "standard":
+                wall_available = wall_available and row.wall_internal_force is not None and _optional_finite(row.wall_internal_force.max_displacement) is not None
+            else:
+                wall_available = wall_available and row.wall_internal_force is not None and all(
+                    _optional_finite(value) is not None for value in
+                    (row.wall_internal_force.max_moment_design, row.wall_internal_force.max_shear_design)
+                )
+            counts["unavailableWallSolverCount"] += int(not wall_available)
+            statuses.append("pass" if wall_available else "manual_review")
+        summaries[basis] = {"basis": basis, "expectedStageSegmentCount": len(rows),
+                            **counts, "status": _status_worst(statuses, default="manual_review")}
+    return summaries
 
 
 def _stage_rows(case: CalculationCase, stage_results: list[StageCalculationResult]) -> list[dict[str, Any]]:
@@ -49,9 +107,12 @@ def _stage_rows(case: CalculationCase, stage_results: list[StageCalculationResul
         for segment in segments:
             global_result = segment.global_coupled_result
             if global_result:
-                conditions.append(_finite(global_result.scaled_condition_number or global_result.condition_number))
-                residuals.append(_finite((global_result.equilibrium_diagnostics or {}).get("relativeResidual")))
+                conditions.append(_optional_finite(global_result.scaled_condition_number if global_result.scaled_condition_number is not None else global_result.condition_number))
+                residuals.append(_optional_finite((global_result.equilibrium_diagnostics or {}).get("relativeResidual")))
                 fallbacks += int(bool(global_result.fallback))
+            else:
+                conditions.append(None)
+                residuals.append(None)
         support_forces = [force for segment in segments for force in segment.support_forces]
         wale_results = [wale for segment in segments for wale in (segment.wale_beam_results or [])]
         wall_results = [segment.wall_internal_force for segment in segments if segment.wall_internal_force]
@@ -66,20 +127,20 @@ def _stage_rows(case: CalculationCase, stage_results: list[StageCalculationResul
             "stageId": stage_id,
             "stageName": str(getattr(stage, "name", stage_id)),
             "stageType": str(getattr(stage, "stage_type", "unknown")),
-            "excavationElevationM": _finite(getattr(stage, "excavation_elevation", None), math.nan),
+            "excavationElevationM": _optional_finite(getattr(stage, "excavation_elevation", None)),
             "activeSupportCount": len(set(getattr(stage, "active_support_ids", []) or [])),
             "transferredSupportLevelCount": len(set(getattr(stage, "transferred_support_levels", []) or [])),
             "segmentCount": len(segments),
             "maximumPressureKpa": max(pressures, default=0.0),
             "maximumWallMomentKnmPerM": max((abs(_finite(item.max_moment)) for item in wall_results), default=0.0),
             "maximumWallShearKnPerM": max((abs(_finite(item.max_shear)) for item in wall_results), default=0.0),
-            "maximumWallDisplacementMm": max((abs(_finite(item.max_displacement)) for item in wall_results), default=0.0),
+            "maximumWallDisplacementMm": _complete_max([segment.wall_internal_force.max_displacement if segment.wall_internal_force else None for segment in segments], absolute=True),
             "maximumSupportForceKn": max((abs(_finite(item.axial_force_design or item.axial_force)) for item in support_forces), default=0.0),
             "maximumWaleMomentKnm": max((abs(_finite(item.max_moment_design or item.max_moment)) for item in wale_results), default=0.0),
             "maximumWaleShearKn": max((abs(_finite(item.max_shear_design or item.max_shear)) for item in wale_results), default=0.0),
             "maximumWaleDeflectionM": max((abs(_finite(item.max_deflection)) for item in wale_results), default=0.0),
-            "maximumScaledConditionNumber": max(conditions, default=0.0),
-            "maximumRelativeResidual": max(residuals, default=0.0),
+            "maximumScaledConditionNumber": _complete_max(conditions),
+            "maximumRelativeResidual": _complete_max(residuals),
             "fallbackCount": fallbacks,
             "minimumStabilityFactor": (safety_control or {}).get("value"),
             "controllingSafetyMode": (safety_control or {}).get("metricId"),
@@ -89,6 +150,16 @@ def _stage_rows(case: CalculationCase, stage_results: list[StageCalculationResul
             "checkCounts": counts,
             "status": "fail" if counts["fail"] else "manual_review" if counts["manual_review"] else "warning" if counts["warning"] else "pass",
         }
+        if row["maximumWallDisplacementMm"] is None or fallbacks or len(conditions) != len(segments):
+            row["status"] = _status_worst([row["status"], "manual_review"])
+        basis_availability = _basis_availability(segments)
+        row["summaryBasis"] = "standard"
+        row["basisAvailability"] = basis_availability
+        row["status"] = _status_worst([row["status"], *[item["status"] for item in basis_availability.values()]])
+        row["unknownWallDisplacementCount"] = sum(
+            segment.wall_internal_force is None or _optional_finite(segment.wall_internal_force.max_displacement) is None
+            for segment in segments
+        )
         rows.append(row)
     order = {str(stage.id): index for index, stage in enumerate(case.stages)}
     rows.sort(key=lambda item: order.get(str(item["stageId"]), 10**9))
@@ -108,13 +179,14 @@ def _critical_stages(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     scored: list[dict[str, Any]] = []
     for row in rows:
         counts = dict(row.get("checkCounts") or {})
+        unknown_outputs = row.get("maximumWallDisplacementMm") is None or row.get("maximumScaledConditionNumber") is None
         components = {
             "wallDisplacement": _finite(row.get("maximumWallDisplacementMm")) / maxima["maximumWallDisplacementMm"],
             "wallMoment": _finite(row.get("maximumWallMomentKnmPerM")) / maxima["maximumWallMomentKnmPerM"],
             "supportForce": _finite(row.get("maximumSupportForceKn")) / maxima["maximumSupportForceKn"],
             "waleMoment": _finite(row.get("maximumWaleMomentKnm")) / maxima["maximumWaleMomentKnm"],
             "numericalCondition": math.log10(max(_finite(row.get("maximumScaledConditionNumber")), 1.0)) / max(math.log10(max(maxima["maximumScaledConditionNumber"], 10.0)), 1.0),
-            "checkPenalty": min(1.0, 0.4 * int(counts.get("fail", 0)) + 0.08 * int(counts.get("warning", 0)) + 0.12 * int(counts.get("manual_review", 0))),
+            "checkPenalty": min(1.0, float(unknown_outputs) + 0.4 * int(counts.get("fail", 0)) + 0.08 * int(counts.get("warning", 0)) + 0.12 * int(counts.get("manual_review", 0))),
         }
         score = (
             0.24 * components["wallDisplacement"] + 0.18 * components["wallMoment"]
@@ -122,6 +194,8 @@ def _critical_stages(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             + 0.10 * components["numericalCondition"] + 0.18 * components["checkPenalty"]
         )
         reasons = [key for key, value in sorted(components.items(), key=lambda item: item[1], reverse=True) if value >= 0.70][:3]
+        if unknown_outputs:
+            reasons.insert(0, "unknown_outputs")
         scored.append({
             "stageId": row["stageId"],
             "stageName": row["stageName"],
@@ -170,27 +244,31 @@ def _support_envelopes(project: Project, rows: list[StageCalculationResult]) -> 
 def _wall_envelopes(project: Project, rows: list[StageCalculationResult]) -> list[dict[str, Any]]:
     grouped: dict[str, list[StageCalculationResult]] = defaultdict(list)
     for stage in rows:
-        if stage.wall_internal_force:
-            grouped[str(stage.segment_id)].append(stage)
+        grouped[str(stage.segment_id)].append(stage)
     segments = {str(item.id): item for item in project.excavation.segments}
     output: list[dict[str, Any]] = []
     for segment_id, values in grouped.items():
-        moment = max(values, key=lambda item: abs(_finite(item.wall_internal_force.max_moment)))
-        shear = max(values, key=lambda item: abs(_finite(item.wall_internal_force.max_shear)))
-        displacement = max(values, key=lambda item: abs(_finite(item.wall_internal_force.max_displacement)))
+        available_walls = [item for item in values if item.wall_internal_force is not None]
+        moment = max(available_walls, key=lambda item: abs(_finite(item.wall_internal_force.max_moment))) if available_walls else None
+        shear = max(available_walls, key=lambda item: abs(_finite(item.wall_internal_force.max_shear))) if available_walls else None
+        known_displacements = [item for item in available_walls if _optional_finite(item.wall_internal_force.max_displacement) is not None]
+        displacement = max(known_displacements, key=lambda item: abs(item.wall_internal_force.max_displacement)) if known_displacements else None
+        displacement_complete = len(known_displacements) == len(values)
         segment = segments.get(segment_id)
         output.append({
             "segmentId": segment_id,
             "segmentName": str(getattr(segment, "name", segment_id)),
-            "maximumMomentKnmPerM": abs(_finite(moment.wall_internal_force.max_moment)),
-            "momentStageId": str(moment.stage_id),
-            "maximumShearKnPerM": abs(_finite(shear.wall_internal_force.max_shear)),
-            "shearStageId": str(shear.stage_id),
-            "maximumDisplacementMm": abs(_finite(displacement.wall_internal_force.max_displacement)),
-            "displacementStageId": str(displacement.stage_id),
+            "maximumMomentKnmPerM": abs(_finite(moment.wall_internal_force.max_moment)) if moment else None,
+            "momentStageId": str(moment.stage_id) if moment else None,
+            "maximumShearKnPerM": abs(_finite(shear.wall_internal_force.max_shear)) if shear else None,
+            "shearStageId": str(shear.stage_id) if shear else None,
+            "maximumDisplacementMm": abs(displacement.wall_internal_force.max_displacement) if displacement_complete and displacement else None,
+            "maximumKnownDisplacementMm": abs(displacement.wall_internal_force.max_displacement) if displacement else None,
+            "displacementStatus": "complete" if displacement_complete else "partial" if known_displacements else "unavailable",
+            "displacementStageId": str(displacement.stage_id) if displacement_complete and displacement else None,
             "stageCount": len(values),
         })
-    output.sort(key=lambda item: item["maximumDisplacementMm"], reverse=True)
+    output.sort(key=lambda item: (item["maximumDisplacementMm"] is None, _finite(item.get("maximumKnownDisplacementMm"))), reverse=True)
     return output
 
 
@@ -323,9 +401,9 @@ def _stability_modes(result: CalculationResult) -> list[dict[str, Any]]:
             "label": label,
             "metricType": metric_type,
             "direction": direction,
-            "value": value,
-            "factor": value if metric_type == "safety_factor" else None,
-            "limit": limit,
+            "value": value if available else None,
+            "factor": value if available and metric_type == "safety_factor" else None,
+            "limit": limit if math.isfinite(limit) else None,
             "utilization": utilization,
             "reserveRatio": reserve,
             "available": available,
@@ -418,23 +496,36 @@ def _numerical_health(project: Project, rows: list[StageCalculationResult]) -> d
     for item in systems:
         grade = str((item.condition_grade or {}).get("grade") or (item.numerical_gate or {}).get("conditionGrade", {}).get("grade") or "unknown")
         grades[grade] += 1
-    residuals = [_finite((item.equilibrium_diagnostics or {}).get("relativeResidual")) for item in systems]
+    residuals = [_optional_finite((item.equilibrium_diagnostics or {}).get("relativeResidual")) for item in systems]
     reaction = dict((project.advanced_engineering or {}).get("wallWaleTransferReactionIteration") or {})
     transfer = dict((project.advanced_engineering or {}).get("concaveTransferFrameAnalysis") or {})
     spatial = dict((project.advanced_engineering or {}).get("concaveTransferSpatialAnalysis") or {})
     fail_count = sum(bool(item.ill_conditioned_blocked) for item in systems)
     warning_count = sum(str((item.condition_grade or {}).get("status")) == "warning" for item in systems)
     status = "fail" if fail_count or reaction.get("status") == "fail" or transfer.get("status") == "fail" or spatial.get("status") == "fail" else "warning" if warning_count or reaction.get("status") == "warning" or transfer.get("status") == "warning" or spatial.get("status") == "warning" else "pass"
+    unknown_count = sum(
+        _optional_finite(item.max_wall_displacement) is None
+        or _optional_finite(item.scaled_condition_number if item.scaled_condition_number is not None else item.condition_number) is None
+        or _optional_finite((item.equilibrium_diagnostics or {}).get("relativeResidual")) is None
+        for item in systems
+    )
+    if not systems or len(systems) != len(rows) or unknown_count or any(item.fallback for item in systems):
+        status = _status_worst([status, "manual_review"])
+    basis_availability = _basis_availability(rows)
+    status = _status_worst([status, *[item["status"] for item in basis_availability.values()]])
     return {
         "schema": "pitguard-numerical-health-v1",
+        "summaryBasis": "standard",
+        "basisAvailability": basis_availability,
         "status": status,
         "globalSystemCount": len(systems),
         "conditionGradeCounts": dict(grades),
-        "maximumRawConditionNumber": max((_finite(item.raw_condition_number or item.condition_number) for item in systems), default=0.0),
-        "maximumScaledConditionNumber": max((_finite(item.scaled_condition_number or item.condition_number) for item in systems), default=0.0),
-        "maximumRelativeResidual": max(residuals, default=0.0),
+        "maximumRawConditionNumber": _complete_max([item.raw_condition_number if item.raw_condition_number is not None else item.condition_number for item in systems]),
+        "maximumScaledConditionNumber": _complete_max([item.scaled_condition_number if item.scaled_condition_number is not None else item.condition_number for item in systems]),
+        "maximumRelativeResidual": _complete_max(residuals),
         "fallbackCount": sum(bool(item.fallback) for item in systems),
         "blockedSystemCount": fail_count,
+        "unknownSystemCount": unknown_count + max(0, len(rows) - len(systems)),
         "reactionIteration": {
             "status": reaction.get("status") or "not_required",
             "converged": reaction.get("converged"),
@@ -475,7 +566,14 @@ def _domain(domain_id: str, label: str, status: str, coverage: float, message: s
 def _completeness(project: Project, case: CalculationCase, result: CalculationResult, numerical: dict[str, Any]) -> dict[str, Any]:
     expected_stage_segments = max(1, len(case.stages) * len(project.excavation.segments))
     actual_stage_segments = len(result.stage_results)
-    wall_count = sum(bool(item.wall_internal_force) for item in result.stage_results)
+    wall_count = sum(
+        item.wall_internal_force is not None
+        and all(_optional_finite(value) is not None for value in (
+            item.wall_internal_force.max_moment, item.wall_internal_force.max_shear,
+            item.wall_internal_force.max_displacement,
+        ))
+        for item in result.stage_results
+    )
     transfer_required = bool(((project.retaining_system.layout_summary or {}).get("transferSystem") or {}).get("required"))
     transfer = dict((project.advanced_engineering or {}).get("concaveTransferFrameAnalysis") or {})
     detailing = dict((project.advanced_engineering or {}).get("concaveTransferAutoDetailing") or {})

@@ -108,7 +108,9 @@ def test_frontend_and_task_manager_expose_persistent_action_and_one_click_search
     manager = (ROOT / "services/api/app/tasks/manager.py").read_text(encoding="utf-8")
 
     assert "calculation_auto_close" in workspace
-    assert "一键计算、优化并闭合" in workspace
+    assert "仅复算当前方案" in workspace
+    assert "优化并采用方案" in workspace
+    assert "mode: 'verify', topN: 0" in workspace
     assert "修复阻断并复算" not in workspace
     assert "一键优化并复算" not in workspace
     assert "按当前值递增并复算" not in workspace

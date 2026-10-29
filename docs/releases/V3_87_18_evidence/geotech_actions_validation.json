@@ -1,0 +1,133 @@
+{
+  "purpose": "Explicit method verification, not FRWS9.0 equivalence",
+  "rectangle_kernel_checks": [
+    {
+      "geometry_m": [
+        4.3,
+        16.3,
+        -32.5,
+        32.5,
+        4.9
+      ],
+      "closed_form_kpa": 3.224448523277923,
+      "independent_integral_kpa": 3.224448523277924,
+      "absolute_error_kpa": 8.881784197001252e-16
+    },
+    {
+      "geometry_m": [
+        0,
+        2,
+        0,
+        3,
+        2
+      ],
+      "closed_form_kpa": 5.809301583478553,
+      "independent_integral_kpa": 5.80930158347855,
+      "absolute_error_kpa": 2.6645352591003757e-15
+    },
+    {
+      "geometry_m": [
+        1,
+        2,
+        3,
+        4,
+        0.2
+      ],
+      "closed_form_kpa": 0.00015282055091547786,
+      "independent_integral_kpa": 0.00015282055091727604,
+      "absolute_error_kpa": 1.7981764081215212e-15
+    },
+    {
+      "geometry_m": [
+        0,
+        2,
+        -1,
+        3,
+        1
+      ],
+      "closed_form_kpa": 13.132835070357405,
+      "independent_integral_kpa": 13.1328350703574,
+      "absolute_error_kpa": 5.329070518200751e-15
+    }
+  ],
+  "original_dimensions_centered_assumption": {
+    "rectangle_vertical_kpa": 3.224448523277923,
+    "infinite_strip_vertical_kpa": 3.2318455940550974,
+    "section_along_wall_position": "assumed center; not established in original report"
+  },
+  "flat_wedge": {
+    "active_resultant_kn_per_m": 108.00000000000001,
+    "critical_angle_deg": 59.99999976265765,
+    "contact_x_m": 3.464101648276998,
+    "wedge_area_m2": 10.392304944830995,
+    "wedge_weight_kn_per_m": 187.0614890069579,
+    "surcharge_force_kn_per_m": 0.0,
+    "total_vertical_force_kn_per_m": 187.0614890069579,
+    "method_id": "coulomb_active_broken_backfill_dry_homogeneous_v1",
+    "coupling_status": "standalone_resultant_only",
+    "surface_vertices_m": [
+      [
+        0.0,
+        0.0
+      ]
+    ],
+    "height_m": 6,
+    "gamma_kn_m3": 18,
+    "phi_deg": 30,
+    "uniform_surcharge_kpa": 0.0,
+    "strip_loads": [],
+    "search_interval_count": 1,
+    "search_tolerance_rad": 1e-12,
+    "limitations": [
+      "dry homogeneous cohesionless soil",
+      "smooth vertical wall",
+      "two-dimensional infinite-along-wall loading",
+      "no at-rest/passive/distributed/staged wall coupling"
+    ]
+  },
+  "berm_wedge_method_fixture": {
+    "active_resultant_kn_per_m": 146.5450540766689,
+    "critical_angle_deg": 50.784004052654616,
+    "contact_x_m": 5.957129159536588,
+    "wedge_area_m2": 18.688521432308548,
+    "wedge_weight_kn_per_m": 336.3933857815539,
+    "surcharge_force_kn_per_m": 49.713874786097634,
+    "total_vertical_force_kn_per_m": 386.1072605676515,
+    "method_id": "coulomb_active_broken_backfill_dry_homogeneous_v1",
+    "coupling_status": "standalone_resultant_only",
+    "surface_vertices_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1.7,
+        0.0
+      ],
+      [
+        3.0,
+        1.3
+      ]
+    ],
+    "height_m": 6,
+    "gamma_kn_m3": 18,
+    "phi_deg": 30,
+    "uniform_surcharge_kpa": 0.0,
+    "strip_loads": [
+      {
+        "q_kpa": 30.0,
+        "near_m": 4.3,
+        "far_m": 16.3
+      }
+    ],
+    "search_interval_count": 4,
+    "search_tolerance_rad": 1e-12,
+    "limitations": [
+      "dry homogeneous cohesionless soil",
+      "smooth vertical wall",
+      "two-dimensional infinite-along-wall loading",
+      "no at-rest/passive/distributed/staged wall coupling"
+    ]
+  },
+  "targeted_tests": "18 passed in 0.15s"
+}

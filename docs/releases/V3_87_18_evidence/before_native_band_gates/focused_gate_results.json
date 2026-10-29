@@ -1,0 +1,119 @@
+{
+  "softwareVersion": "3.87.18",
+  "status": "passed",
+  "scope": "New section tests plus preserved V3.87.16 focused regression gate; not the entire application suite.",
+  "independentRequired": true,
+  "frontendSkipped": false,
+  "pythonVersion": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "steps": [
+    {
+      "step": "release_metadata",
+      "command": [
+        "/workspace/scratch/fd5d8a28c64e/work/.venv/bin/python",
+        "scripts/verify-release-consistency.py"
+      ],
+      "cwd": "/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation",
+      "exitCode": 0,
+      "durationSeconds": 0.068,
+      "log": "release_metadata.log"
+    },
+    {
+      "step": "python_compilation",
+      "command": [
+        "/workspace/scratch/fd5d8a28c64e/work/.venv/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "services/api/app"
+      ],
+      "cwd": "/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation",
+      "exitCode": 0,
+      "durationSeconds": 0.037,
+      "log": "python_compilation.log"
+    },
+    {
+      "step": "focused_backend",
+      "command": [
+        "/workspace/scratch/fd5d8a28c64e/work/.venv/bin/python",
+        "-m",
+        "pytest",
+        "services/api/tests/test_section_snapshot.py",
+        "services/api/tests/test_section_preprocess.py",
+        "services/api/tests/test_section_solver.py",
+        "services/api/tests/test_section_independent.py",
+        "services/api/tests/test_section_reinforcement.py",
+        "services/api/tests/test_section_service.py",
+        "services/api/tests/test_section_benchmarks.py",
+        "services/api/tests/test_section_api.py",
+        "services/api/tests/test_section_export.py",
+        "services/api/tests/test_section_v2.py",
+        "services/api/tests/test_section_history_options.py",
+        "services/api/tests/test_section_geotech_actions.py",
+        "services/api/tests/test_section_engineering_rebar.py",
+        "services/api/tests/test_section_reference.py",
+        "services/api/tests/test_section_reference_curves.py",
+        "services/api/tests/test_section_reference_workflow.py",
+        "services/api/tests/test_section_v2_export.py",
+        "services/api/tests/test_section_docx_fonts.py",
+        "services/api/tests/test_calculation_pipeline_reliability.py",
+        "services/api/tests/test_stage_solver_consistency.py",
+        "services/api/tests/test_stage_load_contract.py",
+        "services/api/tests/test_calculation_mechanics_reliability.py",
+        "services/api/tests/test_unknown_calculation_outputs.py",
+        "services/api/tests/test_engineering_state_truth.py",
+        "services/api/tests/test_verify_api_contract.py",
+        "services/api/tests/test_v3_55_0_intelligent_design_closure.py",
+        "services/api/tests/test_v3_87_5_optimization_search.py",
+        "services/api/tests/test_v3_87_6_unified_auto_closure.py",
+        "-q",
+        "--tb=short",
+        "--junitxml=/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation/docs/releases/V3_87_18_evidence/final_gates/focused_backend.xml"
+      ],
+      "cwd": "/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation",
+      "exitCode": 0,
+      "durationSeconds": 78.676,
+      "log": "focused_backend.log"
+    },
+    {
+      "step": "focused_frontend",
+      "command": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/npm",
+        "test",
+        "--",
+        "src/components/FrozenSectionPanel.test.tsx",
+        "src/api/client.section.test.ts",
+        "src/pages/CoreProjectWorkspace.test.tsx",
+        "src/viewers/RetainingSystemViewer.test.tsx",
+        "src/viewers/ResultViewer.test.tsx"
+      ],
+      "cwd": "/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation/apps/web",
+      "exitCode": 0,
+      "durationSeconds": 4.551,
+      "log": "focused_frontend.log"
+    },
+    {
+      "step": "frontend_build",
+      "command": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/npm",
+        "run",
+        "build"
+      ],
+      "cwd": "/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation/apps/web",
+      "exitCode": 0,
+      "durationSeconds": 8.647,
+      "log": "frontend_build.log"
+    },
+    {
+      "step": "production_bundle",
+      "command": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+        "scripts/verify-production-build.mjs",
+        "apps/web/dist"
+      ],
+      "cwd": "/workspace/scratch/fd5d8a28c64e/work/foundation_section_validation",
+      "exitCode": 0,
+      "durationSeconds": 0.037,
+      "log": "production_bundle.log"
+    }
+  ]
+}

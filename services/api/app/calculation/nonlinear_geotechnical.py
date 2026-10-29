@@ -124,14 +124,25 @@ def build_nonlinear_geotechnical_assurance(project: Project, result: Calculation
     fallback_sources: set[str] = set()
     max_mobilized = 0.0
     min_tangent = 1.0
+    unknown_displacement_count = 0
+    known_displacement_count = 0
     for stage in result.stage_results or []:
         force = stage.wall_internal_force
         if force is None or not force.points:
+            unknown_displacement_count += 1
             continue
         points: list[dict[str, Any]] = []
         for point in force.points:
             elevation = _finite(getattr(point, "elevation", None))
-            displacement_m = abs(_finite(getattr(point, "displacement", None))) / 1000.0
+            raw_displacement = _finite(getattr(point, "displacement", None), math.nan)
+            if not math.isfinite(raw_displacement):
+                unknown_displacement_count += 1
+                points.append({"elevationM": round(elevation, 3), "displacementMm": None,
+                               "mobilizedResistanceRatio": None, "tangentStiffnessRatio": None,
+                               "u50Mm": None, "stratumCode": None, "status": "unavailable"})
+                continue
+            known_displacement_count += 1
+            displacement_m = abs(raw_displacement) / 1000.0
             layer = _layer_at_elevation(project, elevation)
             mobility = _mobilization(displacement_m, layer)
             max_mobilized = max(max_mobilized, mobility["mobilizedRatio"])
@@ -154,13 +165,14 @@ def build_nonlinear_geotechnical_assurance(project: Project, result: Calculation
             "segmentId": stage.segment_id,
             "soilSpringSource": source,
             "soilSpringKnM2": coupled_data.get("soilSpringKnM2"),
-            "maximumMobilizedResistanceRatio": max((row["mobilizedResistanceRatio"] for row in points), default=0.0),
-            "minimumTangentStiffnessRatio": min((row["tangentStiffnessRatio"] for row in points), default=1.0),
+            "maximumMobilizedResistanceRatio": max(row["mobilizedResistanceRatio"] for row in points) if points and all(row["mobilizedResistanceRatio"] is not None for row in points) else None,
+            "minimumTangentStiffnessRatio": min(row["tangentStiffnessRatio"] for row in points) if points and all(row["tangentStiffnessRatio"] is not None for row in points) else None,
             "points": points[::max(1, len(points) // 20)] if len(points) > 24 else points,
         })
 
     gv = result.governing_values
-    base_disp = abs(_finite(gv.max_displacement))
+    raw_base_disp = _finite(gv.max_displacement, math.nan)
+    base_disp = abs(raw_base_disp) if math.isfinite(raw_base_disp) else None
     base_force = abs(_finite(gv.max_support_axial_force))
     groundwater = float(project.design_settings.groundwater_level)
     uncertainty_cases = [
@@ -170,7 +182,7 @@ def build_nonlinear_geotechnical_assurance(project: Project, result: Calculation
         {"case": "water_level_rise_1p0m", "soilStiffnessFactor": 1.0, "waterRiseM": 1.0, "displacementFactor": 1.16, "supportForceFactor": 1.12},
     ]
     for row in uncertainty_cases:
-        row["projectedMaxDisplacementMm"] = round(base_disp * row["displacementFactor"], 3)
+        row["projectedMaxDisplacementMm"] = round(base_disp * row["displacementFactor"], 3) if base_disp is not None else None
         row["projectedMaxSupportForceKn"] = round(base_force * row["supportForceFactor"], 3)
         row["groundwaterElevationM"] = round(groundwater + row["waterRiseM"], 3)
         row["method"] = "bounded local sensitivity projection; requires rerun for formal use"
@@ -190,14 +202,19 @@ def build_nonlinear_geotechnical_assurance(project: Project, result: Calculation
         status = "warning"
     else:
         status = "pass"
+    displacement_complete = known_displacement_count > 0 and unknown_displacement_count == 0 and base_disp is not None
+    if not displacement_complete and status != "fail":
+        status = "manual_review"
     return {
         "schema": "pitguard-nonlinear-geotechnical-assurance-v1",
         "analysisMode": "displacement-mobilized nonlinear spring diagnostic with groundwater sensitivity",
         "requestedLevel": project.design_settings.geotechnical_analysis_level,
         "status": status,
         "stageSegmentCount": len(stage_rows),
-        "maximumMobilizedResistanceRatio": round(max_mobilized, 4),
-        "minimumTangentStiffnessRatio": round(min_tangent, 4),
+        "maximumMobilizedResistanceRatio": round(max_mobilized, 4) if displacement_complete else None,
+        "minimumTangentStiffnessRatio": round(min_tangent, 4) if displacement_complete else None,
+        "unknownDisplacementCount": unknown_displacement_count,
+        "displacementEvidenceComplete": displacement_complete,
         "fallbackSources": sorted(fallback_sources),
         "missingCriticalParameters": missing_parameters[:100],
         "uncertaintyCases": uncertainty_cases,

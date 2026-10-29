@@ -92,6 +92,36 @@ export const UNIT_REGISTRY = {
     "quantity": "数量",
     "decimals": 0
   },
+  "soil_stress": {
+    "symbol": "kPa",
+    "quantity": "土压力/孔隙水压力/岩土强度指标",
+    "decimals": 2
+  },
+  "unit_weight": {
+    "symbol": "kN/m³",
+    "quantity": "土体和水的重度",
+    "decimals": 2
+  },
+  "soil_m_coefficient": {
+    "symbol": "kN/m⁴",
+    "quantity": "m法比例系数",
+    "decimals": 1
+  },
+  "soil_horizontal_reaction": {
+    "symbol": "kN/m³",
+    "quantity": "地基水平反力系数ks",
+    "decimals": 1
+  },
+  "pile_flexural_rigidity": {
+    "symbol": "kN·m²",
+    "quantity": "桩的抗弯刚度EI",
+    "decimals": 1
+  },
+  "pile_reaction_width": {
+    "symbol": "m",
+    "quantity": "单桩土反力计算宽度b0",
+    "decimals": 3
+  },
   "lineForce": {
     "symbol": "kN/m",
     "quantity": "线荷载/剪力",
@@ -114,6 +144,30 @@ export const UNIT_REGISTRY = {
   }
 } as const;
 export const UNIT_FIELD_RULES = [
+  {
+    "pattern": "(soilM|mCoefficient|soil_m|soilMK|soilMKnPerM4)",
+    "unitKey": "soil_m_coefficient"
+  },
+  {
+    "pattern": "(soilKh|reactionModulus|soil_horizontal_reaction|khKnPerM3)",
+    "unitKey": "soil_horizontal_reaction"
+  },
+  {
+    "pattern": "(unitWeight|soilGamma|waterGamma|土重度|水重度)",
+    "unitKey": "unit_weight"
+  },
+  {
+    "pattern": "(soilPressure|porePressure|soilStress|cohesion|土压力|孔压|黏聚力)",
+    "unitKey": "soil_stress"
+  },
+  {
+    "pattern": "(flexuralRigidity|pileEI|eiKnM2|抗弯刚度)",
+    "unitKey": "pile_flexural_rigidity"
+  },
+  {
+    "pattern": "(reactionWidth|soilEffectiveWidth|土反力宽度)",
+    "unitKey": "pile_reaction_width"
+  },
   {
     "pattern": "(elevation|level|标高)$",
     "unitKey": "elevation"
@@ -171,4 +225,4 @@ export const UNIT_FIELD_RULES = [
     "unitKey": "count"
   }
 ] as const;
-export type GeneratedUnitKey = "length" | "elevation" | "displacement" | "force" | "line_force" | "moment" | "wall_moment" | "pressure" | "stress" | "stiffness" | "rotational_stiffness" | "rotation" | "temperature" | "weight" | "ground_pressure" | "ratio" | "count" | "lineForce" | "wallMoment" | "rotationalStiffness" | "groundPressure";
+export type GeneratedUnitKey = "length" | "elevation" | "displacement" | "force" | "line_force" | "moment" | "wall_moment" | "pressure" | "stress" | "stiffness" | "rotational_stiffness" | "rotation" | "temperature" | "weight" | "ground_pressure" | "ratio" | "count" | "soil_stress" | "unit_weight" | "soil_m_coefficient" | "soil_horizontal_reaction" | "pile_flexural_rigidity" | "pile_reaction_width" | "lineForce" | "wallMoment" | "rotationalStiffness" | "groundPressure";

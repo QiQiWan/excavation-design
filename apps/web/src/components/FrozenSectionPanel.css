@@ -1,0 +1,67 @@
+.frozenSectionPanel { border: 1px solid #b8cbdc; border-radius: 12px; padding: 20px; background: #fff; color: #182b3b; margin: 12px 0 20px; min-width: 0; }
+.frozenSectionHeading, .frozenSectionInputTitle { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.frozenSectionPanel h3 { margin: 0 0 6px; font-size: 19px; }
+.frozenSectionPanel h4 { margin: 12px 0; font-size: 15px; }
+.frozenSectionPanel h5 { margin: 0 0 10px; font-size: 13px; }
+.frozenSectionPanel p { line-height: 1.6; }
+.frozenSectionHeading p { margin: 0; color: #536779; font-size: 13px; }
+.frozenSectionBadge { display: inline-block; white-space: nowrap; font-size: 12px; color: #24577b; background: #eaf2f8; border: 1px solid #d0e1ee; border-radius: 6px; padding: 5px 9px; }
+.frozenSectionScope { margin: 14px 0; padding: 9px 12px; border-left: 3px solid #a0b7c9; background: #f4f7fa; font-size: 13px; }
+.frozenSectionActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.frozenSectionActions button { font-size: 13px; }
+.frozenSectionImport { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #3d5365; }
+.frozenSectionImport input { max-width: 220px; padding: 4px; font-size: 12px; background: #fff; }
+.frozenSectionNotice { margin: 12px 0; font-size: 13px; color: #526777; min-height: 20px; }
+.frozenSectionError { background: #fff0ee; border: 1px solid #e9aaa2; color: #9a2820; padding: 12px; border-radius: 6px; margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.frozenSectionParameters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 18px; margin: 10px 0; padding: 12px 14px; background: #f6f9fb; border: 1px solid #e1e8ee; border-radius: 8px; }
+.frozenSectionParameters dt { font-size: 12px; color: #637788; margin-bottom: 4px; }
+.frozenSectionParameters dd { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.frozenSectionFine { font-size: 12px; color: #526777; margin: 10px 0; }
+.frozenSectionTableScroll { overflow-x: auto; border: 1px solid #dce5ec; border-radius: 8px; margin: 12px 0; }
+.frozenSectionPanel table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.frozenSectionPanel th, .frozenSectionPanel td { border-bottom: 1px solid #e2e8ee; padding: 10px 12px; text-align: left; vertical-align: top; line-height: 1.5; }
+.frozenSectionPanel thead th { background: #f3f7fa; font-weight: 600; color: #40586b; white-space: nowrap; }
+.frozenSectionPanel tbody th { font-weight: 500; max-width: 190px; }
+.frozenSectionPanel tbody tr:last-child th, .frozenSectionPanel tbody tr:last-child td { border-bottom: 0; }
+.frozenSectionPanel summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 8px 0; }
+.frozenSectionJson { margin: 14px 0; }
+.frozenSectionJson p, .frozenSectionTrace p { margin: 4px 0 10px; font-size: 12px; color: #637788; }
+.frozenSectionJson textarea { box-sizing: border-box; width: 100%; min-height: 280px; resize: vertical; border: 1px solid #bdcddb; border-radius: 6px; padding: 12px; background: #f9fbfd; color: #243f54; font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+.frozenSectionRunActions { padding: 12px 0; border-top: 1px solid #dce5ec; }
+.frozenSectionReview { margin: 14px 0; padding: 12px 14px; border: 1px solid #e4cf9c; background: #fffbf0; border-radius: 8px; color: #78551b; font-size: 13px; }
+.frozenSectionReview p { margin: 4px 0 0; font-size: 12px; }
+.frozenSectionMetrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.frozenSectionMetrics article { border: 1px solid #d6e2ec; border-radius: 8px; padding: 14px; background: #f8fbfd; }
+.frozenSectionMetrics span, .frozenSectionMetrics small { display: block; font-size: 12px; color: #587084; }
+.frozenSectionMetrics strong { display: block; font-size: 24px; margin: 7px 0; font-variant-numeric: tabular-nums; }
+.frozenSectionFailureReason { display: block; color: #a0382d; max-width: 220px; margin-top: 4px; overflow-wrap: anywhere; }
+.frozenSectionComparisons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.frozenComparison { border: 1px solid #dbe3e9; border-top: 3px solid #a1adb7; border-radius: 6px; padding: 12px; }
+.frozenComparison.compared { border-top-color: #648b80; }
+.frozenComparison.failed { border-top-color: #b65d4d; }
+.frozenComparison > strong { font-size: 14px; }
+.frozenComparison p { margin: 8px 0; font-size: 12px; color: #5a6b79; }
+.frozenComparison > small { color: #6c7d8b; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.frozenComparison ul { margin: 2px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+.frozenSectionTrace { margin-top: 16px; border-top: 1px solid #dce5ec; }
+.frozenSectionTrace dl { display: grid; grid-template-columns: 145px minmax(0, 1fr); gap: 6px 14px; margin: 8px 0 12px; font-size: 12px; }
+.frozenSectionTrace dt { color: #627789; }
+.frozenSectionTrace dd { margin: 0; overflow-wrap: anywhere; }
+.frozenSectionPanel :is(button, input, summary, textarea):focus-visible { outline: 2px solid #377dba; outline-offset: 3px; }
+@media (max-width: 1000px) { .frozenSectionComparisons { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 650px) {
+  .frozenSectionPanel { padding: 14px; }
+  .frozenSectionHeading, .frozenSectionInputTitle { flex-direction: column; gap: 8px; }
+  .frozenSectionParameters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .frozenSectionMetrics, .frozenSectionComparisons { grid-template-columns: 1fr; }
+  .frozenSectionImport { flex-wrap: wrap; }
+  .frozenSectionTrace dl { grid-template-columns: 1fr; }
+}
+.frozenSectionMethodReview, .frozenSectionReference { border-top: 1px solid #dce5ec; margin-top: 14px; padding-top: 8px; }
+.frozenSectionReference .frozenSectionActions { margin: 12px 0; }
+.frozenSectionReference code { overflow-wrap: anywhere; }
+.frozenSectionReference small { display: block; color: #647789; margin-top: 5px; font-weight: normal; }
+.frozenSectionPanel pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid #dce5ec; border-radius: 6px; font-size: 11px; background: #f7fafc; }
+.frozenCheckStatus { display: inline-block; border-radius: 4px; padding: 3px 6px; background: #eef2f5; white-space: nowrap; }
+.frozenCheckStatus.failed { background: #fff0ee; color: #982d24; }
+.frozenReferenceComparison { padding: 12px 14px; background: #f5f8fb; border: 1px solid #ccdce8; border-radius: 8px; margin-top: 14px; }

@@ -69,17 +69,23 @@ def total_vertical_stress_at_depth(
     step: float = 0.1,
 ) -> float:
     """Integrate total vertical stress through a stratified one-dimensional section."""
+    # Integrate exactly between layer/water boundaries. Include ponded water
+    # weight at the soil surface so submerged effective stress stays coherent.
+    stress = surcharge + water_pressure_at(top_elevation, groundwater_level)
     if depth <= 0:
-        return max(0.0, surcharge)
-    n = max(1, int(math.ceil(depth / step)))
-    dz = depth / n
-    stress = max(0.0, surcharge)
-    for i in range(n):
-        mid_depth = (i + 0.5) * dz
+        return stress
+    boundaries = {0.0, depth}
+    for layer in layers:
+        boundaries.update(d for d in (top_elevation-layer.top_elevation, top_elevation-layer.bottom_elevation) if 0 < d < depth)
+    if groundwater_level is not None and 0 < top_elevation-groundwater_level < depth:
+        boundaries.add(top_elevation-groundwater_level)
+    depths = sorted(boundaries)
+    for start, end in zip(depths, depths[1:]):
+        mid_depth = (start + end) / 2
         elevation = top_elevation - mid_depth
         layer = _layer_at_depth(layers, top_elevation, mid_depth)
         below_gw = groundwater_level is not None and elevation < groundwater_level
-        stress += _unit_weight(layer.parameters if layer else None, below_gw) * dz
+        stress += _unit_weight(layer.parameters if layer else None, below_gw) * (end-start)
     return stress
 
 
@@ -92,16 +98,15 @@ def active_pressure_jgj120(
 ) -> tuple[float, float]:
     """Return active total lateral pressure and Ka.
 
-    separate_water_soil=True uses effective vertical stress for soil pressure plus hydrostatic water:
-    pa = Ka*(sigma_total-u) - 2c*sqrt(Ka) + u.  The combined option uses total stress only and is
-    retained for compatibility with earlier settings; projects must confirm its applicability.
+    Soil tension is cut off before adding water: max(Ka*sigma'-2c*sqrt(Ka), 0)+u.
+    Total-stress strength/drainage parameters are not represented in this schema.
     """
     ka = rankine_active_coefficient(phi_deg)
     if separate_water_soil:
         sigma_eff = max(0.0, sigma_total - water_pressure)
-        pressure = ka * sigma_eff - 2.0 * cohesion * math.sqrt(max(ka, 0.0)) + water_pressure
+        pressure = max(0.0, ka * sigma_eff - 2.0 * cohesion * math.sqrt(max(ka, 0.0))) + water_pressure
     else:
-        pressure = ka * sigma_total - 2.0 * cohesion * math.sqrt(max(ka, 0.0))
+        raise ValueError("Unsupported total-stress method: independently verified total-stress parameters required")
     return max(0.0, pressure), ka
 
 
@@ -118,7 +123,7 @@ def passive_pressure_jgj120(
         sigma_eff = max(0.0, sigma_total - water_pressure)
         pressure = kp * sigma_eff + 2.0 * cohesion * math.sqrt(max(kp, 0.0)) + water_pressure
     else:
-        pressure = kp * sigma_total + 2.0 * cohesion * math.sqrt(max(kp, 0.0))
+        raise ValueError("Unsupported total-stress method: independently verified total-stress parameters required")
     return max(0.0, pressure), kp
 
 
@@ -139,12 +144,37 @@ def calculate_jgj120_pressure_profile(
     integration, Rankine active/passive coefficients, effective-stress water-soil split and hydrostatic
     water-pressure difference.  It does not replace finite-wedge or project-specific code calculations.
     """
-    if excavation_depth <= 0:
-        raise ValueError("excavation_depth must be positive")
-    if step <= 0:
-        raise ValueError("step must be positive")
-    calc_depth = max(calculation_depth or excavation_depth, excavation_depth)
-    inside_gw = groundwater_level_inside if groundwater_level_inside is not None else min(groundwater_level_outside if groundwater_level_outside is not None else top_elevation, top_elevation - excavation_depth)
+    values = dict(excavation_depth=excavation_depth, step=step, surcharge=surcharge, top_elevation=top_elevation,
+                  calculation_depth=calculation_depth, groundwater_level_outside=groundwater_level_outside,
+                  groundwater_level_inside=groundwater_level_inside)
+    for name, value in values.items():
+        if value is not None and not math.isfinite(value):
+            raise ValueError(f"{name} must be finite")
+    if excavation_depth < 0 or surcharge < 0 or step <= 0:
+        raise ValueError("excavation_depth and surcharge must be nonnegative; step must be positive")
+    calc_depth = excavation_depth if calculation_depth is None else calculation_depth
+    if calc_depth <= 0 or calc_depth < excavation_depth:
+        raise ValueError("calculation_depth must be positive and at least excavation_depth")
+    for layer in soil_profile:
+        if not all(math.isfinite(v) for v in (layer.top_elevation, layer.bottom_elevation, layer.thickness)):
+            raise ValueError("soil layer geometry must be finite")
+        if layer.top_elevation <= layer.bottom_elevation or layer.thickness <= 0:
+            raise ValueError("soil layer must have positive thickness")
+        for name, value in layer.parameters.model_dump().items():
+            if value is not None and not math.isfinite(value):
+                raise ValueError(f"soil parameter {name} must be finite")
+        params = layer.parameters
+        if params.cohesion is not None and params.cohesion < 0:
+            raise ValueError("cohesion must be nonnegative")
+        if params.friction_angle is not None and not 0 <= params.friction_angle < 89:
+            raise ValueError("friction_angle must be in [0, 89) degrees")
+        if params.k0 is not None and params.k0 <= 0:
+            raise ValueError("k0 must be positive")
+        if any(v is not None and v <= 0 for v in (params.unit_weight, params.saturated_unit_weight)):
+            raise ValueError("unit weights must be positive")
+    inside_gw = groundwater_level_inside
+    if inside_gw is None and groundwater_level_outside is not None:
+        inside_gw = min(groundwater_level_outside, top_elevation - excavation_depth)
     point_count = max(1, int(math.ceil(calc_depth / step))) + 1
     points: list[PressurePoint] = []
     for i in range(point_count):
@@ -161,26 +191,29 @@ def calculate_jgj120_pressure_profile(
             active_total = max(0.0, ka * max(0.0, sigma_out - u_out) + u_out)
         else:
             active_total, ka = active_pressure_jgj120(sigma_out, u_out, cohesion, phi, separate_water_soil=True)
+        u_in = water_pressure_at(elevation, inside_gw)
         if depth > excavation_depth:
             inside_depth = depth - excavation_depth
             inside_top = top_elevation - excavation_depth
             sigma_in = total_vertical_stress_at_depth(soil_profile, inside_top, inside_depth, inside_gw, 0.0)
-            u_in = water_pressure_at(elevation, inside_gw)
             passive_total, kp = passive_pressure_jgj120(sigma_in, u_in, cohesion, phi, separate_water_soil=True)
+            passive_soil = passive_total - u_in
         else:
-            u_in = water_pressure_at(elevation, inside_gw) if depth >= excavation_depth else 0.0
-            passive_total = 0.0
+            passive_soil = 0.0
             kp = rankine_passive_coefficient(phi)
-        net_pressure = max(0.0, active_total - passive_total)
+        active_soil = active_total - u_out
+        net_soil = active_soil - passive_soil
+        water_difference = u_out - u_in
+        net_pressure = max(0.0, net_soil + water_difference)
         points.append(
             PressurePoint(
                 depth=round(depth, 6),
                 elevation=round(elevation, 6),
-                earth_pressure=round(active_total, 6),
-                water_pressure=round(max(0.0, u_out - u_in), 6),
+                earth_pressure=round(net_soil, 6),
+                water_pressure=round(water_difference, 6),
                 total_pressure=round(net_pressure, 6),
-                active_earth_pressure=round(active_total, 6),
-                passive_earth_pressure=round(passive_total, 6),
+                active_earth_pressure=round(active_soil, 6),
+                passive_earth_pressure=round(passive_soil, 6),
                 outside_water_pressure=round(u_out, 6),
                 inside_water_pressure=round(u_in, 6),
                 vertical_stress_total=round(sigma_out, 6),
@@ -191,7 +224,7 @@ def calculate_jgj120_pressure_profile(
                 cohesion=cohesion,
                 friction_angle=phi,
                 stratum_code=layer.stratum_code if layer else None,
-                method="JGJ120-2012 3.4 Rankine/effective-stress subset + hydrostatic water",
+                method=("at-rest outside / Rankine passive inside" if use_at_rest else "Rankine active/passive") + " effective-stress soil + hydrostatic water difference",
             )
         )
     warnings: list[str] = []
@@ -199,7 +232,10 @@ def calculate_jgj120_pressure_profile(
         warnings.append("部分土层缺少 c 或 phi，已采用 c=0kPa、phi=30deg 的默认值；正式设计应采用勘察/试验参数。")
     if any((layer.parameters.saturated_unit_weight is None and groundwater_level_outside is not None) for layer in soil_profile):
         warnings.append("部分土层缺少饱和重度，地下水以下竖向应力使用天然重度近似。")
-    return PressureProfile(points=points, warnings=warnings, method="JGJ120-2012 Rankine lateral pressure subset")
+    if not soil_profile:
+        warnings.append("No soil layers supplied; assumed gamma=18kN/m3, c=0kPa, phi=30deg.")
+    warnings.append("Bounded pressure model: fully mobilized passive resistance and nonnegative net lateral load; reverse loading is not solved.")
+    return PressureProfile(points=points, warnings=warnings, method=("At-rest" if use_at_rest else "Rankine active") + " effective-stress outside / Rankine passive inside + hydrostatic difference")
 
 
 def calculate_jgj120_lateral_pressure_profile(
@@ -219,6 +255,12 @@ def calculate_jgj120_lateral_pressure_profile(
     **_: object,
 ) -> PressureProfile:
     """Compatibility facade for modules that need active, passive or at-rest profiles."""
+    if mode not in {"active", "passive", "at_rest"}:
+        raise ValueError(f"Unsupported pressure mode: {mode}")
+    if not separated_water:
+        raise ValueError("Unsupported total-stress method: independently verified total-stress parameters required")
+    if not math.isfinite(passive_reduction) or passive_reduction < 0:
+        raise ValueError("passive_reduction must be finite and nonnegative")
     gw_out = groundwater_level_outside if groundwater_level_outside is not None else groundwater_level
     calc_depth = calculation_depth
     if calc_depth is None and wall_bottom_elevation is not None:
@@ -246,11 +288,12 @@ def calculate_jgj120_lateral_pressure_profile(
         passive_points.append(
             p.model_copy(
                 update={
-                    "earth_pressure": round(passive + water, 6),
+                    "earth_pressure": round(passive, 6),
                     "water_pressure": round(water, 6),
                     "total_pressure": round(passive + water, 6),
                     "active_earth_pressure": None,
-                    "passive_earth_pressure": round(passive + water, 6),
+                    "passive_earth_pressure": round(passive, 6),
+                    "inside_water_pressure": 0.0,
                     "method": "JGJ120-2012 Rankine passive pressure profile",
                 }
             )

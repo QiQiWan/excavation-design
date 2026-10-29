@@ -1,0 +1,18 @@
+{
+ "schemaVersion":"pitguard.engineering-assurance-catalog/1",
+ "designIssuePolicy":"No automatic official construction issue, even with completed numerical calculations",
+ "canonicalUnits":{"length":"m","waterHead":"m","stress":"kPa","force":"kN","moment":"kN.m","permeability":"m/s","reinforcementCover":"mm","crackWidth":"mm"},
+ "methods":[
+  {"id":"water.appC.confined","basis":"JGJ 120-2012 C.0.1","status":"implemented_limited_formula","methodKind":"analytical","scope":"confirmed confined aquifer and overburden"},
+  {"id":"water.appC.homogeneous","basis":"JGJ 120-2012 C.0.2","status":"implemented_limited_formula","methodKind":"analytical","scope":"homogeneous seepage conditions with supported boundary"},
+  {"id":"water.heterogeneous_fvm","basis":"JGJ 120-2012 4.2.6, Chapter 7, Appendix C","status":"numerical_screening_independent_BVP_test","methodKind":"finite_volume","scope":"specified 2D equal-width steady state domain; site applicability unverified"},
+  {"id":"water.piping_internal_erosion","basis":"JGJ 120-2012 Chapter 7/Appendix C + project hydrogeology","status":"separate_criterion_required","methodKind":"site_assessment","scope":"layer-specific deformation and internal erosion criteria"},
+  {"id":"concrete.circular_bending","basis":"JGJ 120-2012 Appendix B and 4.3.2","status":"implemented_limited_method","methodKind":"section_analysis","scope":"uniform longitudinal bar arrangement, explicit material law"},
+  {"id":"concrete.circular_shear_N0","basis":"JGJ 120-2012 4.3.2","status":"implemented_limited_method","methodKind":"equivalent_rectangular_section","scope":"N=0, nonprestressed and nonseismic conditions"},
+  {"id":"concrete.circular_axial_shear","basis":"JGJ 120-2012 4.3.2 and GB/T 50010-2010 (2024 amendment)","status":"method_qualification_required","methodKind":"section_analysis","scope":"matched N-M-V and justified axial-dependent shear"},
+  {"id":"concrete.circular_crack_width","basis":"GB/T 50010-2010 (2024 amendment) Chapter 7","status":"method_qualification_required","methodKind":"serviceability","scope":"circular section, applicable grade, sustained actions and shrinkage/restraint"},
+  {"id":"luoyu.five_stage","basis":"Source project Luoyu 3-3, PDF physical pp. 32-36","status":"conditional_research_only","methodKind":"staged_analysis","scope":"site datum, crown/toe/other wall stiffness and native numerical curves must be reviewed"}
+ ],
+ "reviewStates":["fail_or_numerical_invalid","incomplete_site_evidence","site_engineering_review_required","failed_check","evidence_incomplete","axial_shear_method_review_required","missing_reference_curves","missing_project_conditions","model_method_not_independently_qualified"],
+ "sourcePriority":"mandatory applicable GB 55003-2021; then applicable JGJ 120-2012 and GB/T 50010-2010 (2024 amendment); local project and geotechnical investigation evidence"
+}

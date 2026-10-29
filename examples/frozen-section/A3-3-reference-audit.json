@@ -1,0 +1,6280 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "PROJECT_A_SECTION_4_5_3_3_LONG_PILE",
+  "audit_status": "source_audited_candidate_not_complete_for_same_condition_reproduction",
+  "source_registry": [
+    {
+      "id": "A_PDF",
+      "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+      "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+      "size_bytes": 9983896,
+      "physical_pages": 86,
+      "type": "published_design_report_pdf"
+    },
+    {
+      "id": "A_DWG",
+      "file": "/workspace/scratch/fd5d8a28c64e/upload/202000603螺屿村新民之家基坑围护设计(图审修改版-改).dwg",
+      "sha256": "1c060631e3a7f4f4140d6510155b6749b93ead931315ebcac48b5c842deaddaf",
+      "size_bytes": 2333295,
+      "type": "cad_drawing_not_solver_native_model"
+    },
+    {
+      "id": "PITGUARD_ZIP",
+      "file": "/workspace/scratch/fd5d8a28c64e/upload/foundation_design.zip",
+      "sha256": "72b15eebb750b70cb21c35ca8ccf48a5da01e032e3ff6f6cbea6ef6219a305b9",
+      "size_bytes": 23677740,
+      "type": "PitGuard_source_application_package_not_identified_as_FRWS_model"
+    }
+  ],
+  "evidence_contract": {
+    "original_fact": "PDF文字或图示直接打印，已核源图；字段仍可带语义待确认说明",
+    "derived_interpretation": "为重建而作的明确推导，不是原软件已打印输入",
+    "missing": "value=null；原文未提供或原单元格空白，不得自动补默认值",
+    "page_convention": "one_based_physical_pdf_page；正文印刷页通常=物理页-3",
+    "source_hash_scope": "SHA256覆盖原始PDF全部字节；逐字段source均重复保存文件、哈希和页码"
+  },
+  "verification": {
+    "fresh_extraction": "PyMuPDF从原PDF重新提取全86页；p32-p37与旧提取去空白后逐页一致",
+    "visual_review": {
+      "physical_pages": [
+        1,
+        7,
+        8,
+        9,
+        15,
+        21,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37
+      ],
+      "render_paths": [
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-01.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-07.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-08.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-09.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-15.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-21.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-32.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-33.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-34.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-35.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-36.png",
+        "/workspace/scratch/fd5d8a28c64e/tmp/pdfs/a3_3_reference/source-37.png"
+      ],
+      "method": "p32-p37: pdftoppm PNG 125dpi；辅助页: PyMuPDF 1.5x"
+    },
+    "scope_boundary": "p32上部是前一剖面沉降图；p37左下开始4.6短桩复核。两者未混入4.5 A3-3基线。",
+    "not_modified": "work/foundation_design product source code"
+  },
+  "identity": {
+    "project_name": {
+      "value": "温岭市GY060207地块（螺屿村新民之家）项目",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原工程名称",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          1
+        ],
+        "printed_pages": [
+          null
+        ],
+        "locator": "封面"
+      }
+    },
+    "report_title": {
+      "value": "基坑支护设计方案",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原文件标题",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          1
+        ],
+        "printed_pages": [
+          null
+        ],
+        "locator": "封面"
+      }
+    },
+    "author": {
+      "value": "浙江浙峰工程咨询有限公司",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原设计单位",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          1
+        ],
+        "printed_pages": [
+          null
+        ],
+        "locator": "封面"
+      }
+    },
+    "cover_date": {
+      "value": "2020-05-21",
+      "unit": "ISO_date",
+      "status": "original_fact",
+      "identity": "报告标注日期，不使用PDF元数据创建日期代替",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          1
+        ],
+        "printed_pages": [
+          null
+        ],
+        "locator": "封面"
+      }
+    },
+    "section": {
+      "value": "4.5 3-3 剖面",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "A3-3为本审计别名；排除4.6较短桩复核",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "左栏节标题"
+      }
+    },
+    "safety_grade": {
+      "value": "三级",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原报告基坑安全等级",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "工程概况"
+      }
+    },
+    "importance_factor": {
+      "value": 1.0,
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原报告γ0",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          8
+        ],
+        "printed_pages": [
+          "5"
+        ],
+        "locator": "1.5基坑安全等级"
+      }
+    },
+    "software": {
+      "value": "同济启明星软件FRWS9.0",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "报告自述原计算软件；未取得原生项目文件",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21
+        ],
+        "printed_pages": [
+          "18"
+        ],
+        "locator": "2 计算方法及软件说明第(4)条"
+      }
+    },
+    "design_standard": {
+      "value": "DB33/T1096-2014",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "历史计算采用规程，未认定其当前效力",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33
+        ],
+        "printed_pages": [
+          "30"
+        ],
+        "locator": "计算条件"
+      }
+    },
+    "earth_pressure_theory": {
+      "value": "朗肯土压力理论，按土层分布分层进行计算",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "报告所述侧压力方法",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21
+        ],
+        "printed_pages": [
+          "18"
+        ],
+        "locator": "2第(1)条"
+      }
+    },
+    "global_stability_method": {
+      "value": "瑞典圆弧条分法",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原报告整体稳定方法",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21
+        ],
+        "printed_pages": [
+          "18"
+        ],
+        "locator": "2第(3)条"
+      }
+    }
+  },
+  "datums": {
+    "building_zero_1985_elevation": {
+      "value": 5.0,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "建筑±0.000对应85国家高程",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          7
+        ],
+        "printed_pages": [
+          "4"
+        ],
+        "locator": "1.4基坑开挖深度"
+      }
+    },
+    "site_ground_building_elevation": {
+      "value": -1.0,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "平整后基坑地坪，建筑相对标高",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          7
+        ],
+        "printed_pages": [
+          "4"
+        ],
+        "locator": "1.4基坑开挖深度"
+      }
+    },
+    "site_ground_1985_elevation": {
+      "value": 4.0,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "平整后基坑地坪，85国家高程",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          7
+        ],
+        "printed_pages": [
+          "4"
+        ],
+        "locator": "1.4基坑开挖深度"
+      }
+    },
+    "excavation_base_building_elevation": {
+      "value": -5.9,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "计算至底板垫层底，建筑相对标高",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          8
+        ],
+        "printed_pages": [
+          "5"
+        ],
+        "locator": "1.4续文"
+      }
+    },
+    "candidate_solver_axis": {
+      "value": "z=0 at model original ground; positive downward",
+      "unit": null,
+      "status": "derived_interpretation",
+      "identity": "重建用模型轴约定",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          7,
+          8,
+          32,
+          33
+        ],
+        "printed_pages": [
+          "4",
+          "5",
+          "29",
+          "30"
+        ],
+        "locator": "剖面尺寸与阶段深度"
+      },
+      "derivation": "原H=4.9，桩顶图示深1.3，与阶段位置配合；原报告未给坐标变换公式",
+      "requires_confirmation_for_original_software_equivalence": true
+    },
+    "building_elevation_transform": {
+      "value": "building_relative_elevation_m = -1.0 - z_depth_m",
+      "unit": null,
+      "status": "derived_interpretation",
+      "identity": "拟采用坐标换算",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          7,
+          8,
+          32
+        ],
+        "printed_pages": [
+          "4",
+          "5",
+          "29"
+        ],
+        "locator": "地坪基准和剖面图"
+      },
+      "derivation": "建筑地坪=-1.0；z为距平整后地坪向下深度",
+      "requires_confirmation_for_original_software_equivalence": true
+    }
+  },
+  "geometry": {
+    "final_excavation_depth": {
+      "value": 4.9,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "自模型地表向下的最终开挖深度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "工程概况"
+      }
+    },
+    "wall_type": {
+      "value": "灌注桩",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原挡墙类型",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数"
+      }
+    },
+    "pile_top_elevation_as_printed": {
+      "value": -1.3,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "原标签顶标高；其基准应与剖面模型地表核对，不能直接当建筑相对标高",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数：顶标高"
+      }
+    },
+    "pile_length": {
+      "value": 6.6,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "计算桩长，不是从地表起算的桩端深度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数：桩长"
+      }
+    },
+    "pile_diameter": {
+      "value": 0.7,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "单桩圆形截面直径",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数：桩径"
+      }
+    },
+    "pile_spacing": {
+      "value": 0.9,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "桩中心间距候选；原字样桩间距",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数：桩间距"
+      }
+    },
+    "pile_top_depth_candidate": {
+      "value": 1.3,
+      "unit": "m",
+      "status": "derived_interpretation",
+      "identity": "距模型地表向下深度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表"
+      },
+      "derivation": "剖面图标1.3，顶标高-1.3",
+      "requires_confirmation_for_original_software_equivalence": false
+    },
+    "pile_toe_depth_candidate": {
+      "value": 7.9,
+      "unit": "m",
+      "status": "derived_interpretation",
+      "identity": "距模型地表向下深度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表"
+      },
+      "derivation": "1.3+6.6=7.9",
+      "requires_confirmation_for_original_software_equivalence": false
+    },
+    "embedment_below_final_excavation": {
+      "value": 3.0,
+      "unit": "m",
+      "status": "derived_interpretation",
+      "identity": "最终坑底以下嵌固长度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表"
+      },
+      "derivation": "1.3+6.6-4.9=3.0，与剖面尺寸3一致",
+      "requires_confirmation_for_original_software_equivalence": false
+    },
+    "pile_geometric_second_moment_candidate": {
+      "value": 0.011785881189482955,
+      "unit": "m4",
+      "status": "derived_interpretation",
+      "identity": "实心圆毛截面几何I；不是已知有效EI",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表"
+      },
+      "derivation": "I=πD^4/64；未用作替代未知E/刚度折减",
+      "requires_confirmation_for_original_software_equivalence": false
+    },
+    "slope_height": {
+      "value": 1.3,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "模型地表至平台高差",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "放坡表"
+      }
+    },
+    "slope_width": {
+      "value": 1.3,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "坡体水平投影宽度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "放坡表"
+      }
+    },
+    "platform_width": {
+      "value": 1.7,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "台宽；不能忽略后改为平地竖直挡土",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "放坡表"
+      }
+    },
+    "cutoff_curtain_embedment": {
+      "value": 2.1,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "原截水帷幕嵌入深度；起算面未文字定义",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数"
+      }
+    },
+    "cutoff_curtain_diameter": {
+      "value": 0.7,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "原截水帷幕桩径",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数"
+      }
+    },
+    "cutoff_curtain_overlap": {
+      "value": 0.2,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "原搭接长度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数"
+      }
+    },
+    "cutoff_curtain_rows": {
+      "value": 1,
+      "unit": "count",
+      "status": "original_fact",
+      "identity": "原排数",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数"
+      }
+    }
+  },
+  "materials": {
+    "pile_concrete_grade": {
+      "value": "C30",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原灌注桩混凝土等级",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "挡土墙参数"
+      }
+    },
+    "pile_concrete_E": {
+      "value": null,
+      "unit": "MPa",
+      "status": "missing",
+      "identity": "桩混凝土弹性模量数值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21,
+          32,
+          33
+        ],
+        "printed_pages": [
+          "18",
+          "29",
+          "30"
+        ],
+        "locator": "软件说明、挡土墙与支撑参数"
+      },
+      "note": "原文只给C30；不能把自行查取的30000MPa写成已提取事实"
+    },
+    "support_concrete_E": {
+      "value": null,
+      "unit": "MPa",
+      "status": "missing",
+      "identity": "支撑混凝土弹性模量数值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33
+        ],
+        "printed_pages": [
+          "30"
+        ],
+        "locator": "支撑参数表"
+      },
+      "note": "原文仅C30；已给等效K不等于明确打印E"
+    },
+    "wale_concrete_E": {
+      "value": null,
+      "unit": "MPa",
+      "status": "missing",
+      "identity": "围檩混凝土弹性模量数值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33
+        ],
+        "printed_pages": [
+          "30"
+        ],
+        "locator": "支撑参数表"
+      },
+      "note": "原文仅C30"
+    },
+    "pile_EI_reduction": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "开裂/徐变/刚度折减因子",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "本剖面参数与计算条件"
+      },
+      "note": "未打印，不得默认为1并声称原软件同条件"
+    }
+  },
+  "soil": {
+    "layers": [
+      {
+        "layer_code": {
+          "value": "①-0",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原土层编号",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "name": {
+          "value": "填土",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "本计算剖面土/岩层名称",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "thickness": {
+          "value": 1.1,
+          "unit": "m",
+          "status": "original_fact",
+          "identity": "计算模型层厚；不是钻探揭露厚度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "unit_weight": {
+          "value": 18,
+          "unit": "kN/m3",
+          "status": "original_fact",
+          "identity": "原表重度；未单列饱和/浮重度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "cohesion_c": {
+          "value": 10,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "friction_angle_phi": {
+          "value": 15,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "water_soil_pressure_mode": {
+          "value": "分算",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原表水土分算/合算",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "effective_cohesion_c_prime": {
+          "value": 10,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "effective_friction_phi_prime": {
+          "value": 15,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "m": {
+          "value": 4,
+          "unit": "MPa/m2",
+          "status": "original_fact",
+          "identity": "原表m列；不是常数弹簧K或土压值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          }
+        },
+        "m_in_kN_m4": {
+          "value": 4000,
+          "unit": "kN/m4",
+          "status": "derived_interpretation",
+          "identity": "m的单位换算候选",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "derivation": "1 MPa/m2 = 1000 kN/m4",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "top_depth": {
+          "value": 0.0,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "bottom_depth": {
+          "value": 1.1,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "Cu": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Cu",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "K0": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "本剖面续表K0",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Pc": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Pc",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Es": {
+          "value": null,
+          "unit": "MPa",
+          "status": "missing",
+          "identity": "本剖面续表Es",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "qs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表qs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fp": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fp",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①-0行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        }
+      },
+      {
+        "layer_code": {
+          "value": "①",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原土层编号",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "name": {
+          "value": "粘土",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "本计算剖面土/岩层名称",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "thickness": {
+          "value": 0.7,
+          "unit": "m",
+          "status": "original_fact",
+          "identity": "计算模型层厚；不是钻探揭露厚度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "unit_weight": {
+          "value": 18,
+          "unit": "kN/m3",
+          "status": "original_fact",
+          "identity": "原表重度；未单列饱和/浮重度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "cohesion_c": {
+          "value": 14.85,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "friction_angle_phi": {
+          "value": 8.39,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "water_soil_pressure_mode": {
+          "value": "合算",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原表水土分算/合算",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "effective_cohesion_c_prime": {
+          "value": 14.85,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "effective_friction_phi_prime": {
+          "value": 8.39,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "m": {
+          "value": 2.05,
+          "unit": "MPa/m2",
+          "status": "original_fact",
+          "identity": "原表m列；不是常数弹簧K或土压值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          }
+        },
+        "m_in_kN_m4": {
+          "value": 2050.0,
+          "unit": "kN/m4",
+          "status": "derived_interpretation",
+          "identity": "m的单位换算候选",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "derivation": "1 MPa/m2 = 1000 kN/m4",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "top_depth": {
+          "value": 1.1,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "bottom_depth": {
+          "value": 1.8,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "Cu": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Cu",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "K0": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "本剖面续表K0",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Pc": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Pc",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Es": {
+          "value": null,
+          "unit": "MPa",
+          "status": "missing",
+          "identity": "本剖面续表Es",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "qs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表qs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fp": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fp",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，①行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        }
+      },
+      {
+        "layer_code": {
+          "value": "②",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原土层编号",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "name": {
+          "value": "淤泥",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "本计算剖面土/岩层名称",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "thickness": {
+          "value": 5.2,
+          "unit": "m",
+          "status": "original_fact",
+          "identity": "计算模型层厚；不是钻探揭露厚度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "unit_weight": {
+          "value": 16.22,
+          "unit": "kN/m3",
+          "status": "original_fact",
+          "identity": "原表重度；未单列饱和/浮重度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "cohesion_c": {
+          "value": 5.55,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "friction_angle_phi": {
+          "value": 6.36,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "water_soil_pressure_mode": {
+          "value": "合算",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原表水土分算/合算",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "effective_cohesion_c_prime": {
+          "value": 5.55,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "effective_friction_phi_prime": {
+          "value": 6.36,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "m": {
+          "value": 0.73,
+          "unit": "MPa/m2",
+          "status": "original_fact",
+          "identity": "原表m列；不是常数弹簧K或土压值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          }
+        },
+        "m_in_kN_m4": {
+          "value": 730.0,
+          "unit": "kN/m4",
+          "status": "derived_interpretation",
+          "identity": "m的单位换算候选",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "derivation": "1 MPa/m2 = 1000 kN/m4",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "top_depth": {
+          "value": 1.8,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "bottom_depth": {
+          "value": 7.0,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "Cu": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Cu",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "K0": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "本剖面续表K0",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Pc": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Pc",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Es": {
+          "value": null,
+          "unit": "MPa",
+          "status": "missing",
+          "identity": "本剖面续表Es",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "qs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表qs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fp": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fp",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，②行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        }
+      },
+      {
+        "layer_code": {
+          "value": "⑩-2",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原土层编号",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "name": {
+          "value": "岩石(强风化)",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "本计算剖面土/岩层名称",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "thickness": {
+          "value": 0.6,
+          "unit": "m",
+          "status": "original_fact",
+          "identity": "计算模型层厚；不是钻探揭露厚度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "unit_weight": {
+          "value": 21,
+          "unit": "kN/m3",
+          "status": "original_fact",
+          "identity": "原表重度；未单列饱和/浮重度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "cohesion_c": {
+          "value": 30,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "friction_angle_phi": {
+          "value": 30,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "water_soil_pressure_mode": {
+          "value": "合算",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原表水土分算/合算",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "effective_cohesion_c_prime": {
+          "value": 30,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "effective_friction_phi_prime": {
+          "value": 30,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "m": {
+          "value": 18,
+          "unit": "MPa/m2",
+          "status": "original_fact",
+          "identity": "原表m列；不是常数弹簧K或土压值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          }
+        },
+        "m_in_kN_m4": {
+          "value": 18000,
+          "unit": "kN/m4",
+          "status": "derived_interpretation",
+          "identity": "m的单位换算候选",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "derivation": "1 MPa/m2 = 1000 kN/m4",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "top_depth": {
+          "value": 7.0,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "bottom_depth": {
+          "value": 7.6,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "Cu": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Cu",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "K0": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "本剖面续表K0",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Pc": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Pc",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Es": {
+          "value": null,
+          "unit": "MPa",
+          "status": "missing",
+          "identity": "本剖面续表Es",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "qs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表qs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fp": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fp",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-2行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        }
+      },
+      {
+        "layer_code": {
+          "value": "⑩-3",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原土层编号",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "name": {
+          "value": "岩石(中风化)",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "本计算剖面土/岩层名称",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "thickness": {
+          "value": 50,
+          "unit": "m",
+          "status": "original_fact",
+          "identity": "计算模型层厚；不是钻探揭露厚度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "unit_weight": {
+          "value": 22,
+          "unit": "kN/m3",
+          "status": "original_fact",
+          "identity": "原表重度；未单列饱和/浮重度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "cohesion_c": {
+          "value": 50,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "friction_angle_phi": {
+          "value": 30,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ计算采用值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "water_soil_pressure_mode": {
+          "value": "合算",
+          "unit": null,
+          "status": "original_fact",
+          "identity": "原表水土分算/合算",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "effective_cohesion_c_prime": {
+          "value": 50,
+          "unit": "kPa",
+          "status": "original_fact",
+          "identity": "原表c′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "effective_friction_phi_prime": {
+          "value": 30,
+          "unit": "deg",
+          "status": "original_fact",
+          "identity": "原表φ′列，保留原标签",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "m": {
+          "value": 20,
+          "unit": "MPa/m2",
+          "status": "original_fact",
+          "identity": "原表m列；不是常数弹簧K或土压值",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          }
+        },
+        "m_in_kN_m4": {
+          "value": 20000,
+          "unit": "kN/m4",
+          "status": "derived_interpretation",
+          "identity": "m的单位换算候选",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "derivation": "1 MPa/m2 = 1000 kN/m4",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "top_depth": {
+          "value": 7.6,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "bottom_depth": {
+          "value": 57.6,
+          "unit": "m",
+          "status": "derived_interpretation",
+          "identity": "从模型地表向下累计深度",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "derivation": "按本表层厚从0累加",
+          "requires_confirmation_for_original_software_equivalence": false
+        },
+        "Cu": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Cu",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "K0": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "本剖面续表K0",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Pc": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表Pc",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "Es": {
+          "value": null,
+          "unit": "MPa",
+          "status": "missing",
+          "identity": "本剖面续表Es",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "qs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表qs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fs": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fs",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        },
+        "fp": {
+          "value": null,
+          "unit": "kPa",
+          "status": "missing",
+          "identity": "本剖面续表fp",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              32
+            ],
+            "printed_pages": [
+              "29"
+            ],
+            "locator": "4.5 3-3剖面，工程概况/剖面简图/参数表，土层参数及续表，⑩-3行"
+          },
+          "note": "原单元格空白；不得将空白转为0或从项目建议表自动填入"
+        }
+      }
+    ],
+    "parameter_origin": {
+      "value": "括号内数值为计算时综合采用经验值和地质报告提供固快值的折减值",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "项目建议值与计算采用值的关系",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          9
+        ],
+        "printed_pages": [
+          "6"
+        ],
+        "locator": "基坑支护、排水设计参数建议值表下注2"
+      }
+    },
+    "reaction_method_name": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "土抗力/土弹簧算法正式名称",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21,
+          32,
+          33
+        ],
+        "printed_pages": [
+          "18",
+          "29",
+          "30"
+        ],
+        "locator": "方法说明和本剖面计算条件"
+      },
+      "note": "原文给m列，但未打印m法名称、具体反力公式或本构设置"
+    },
+    "reaction_method_candidate": {
+      "value": "m-based soil-reaction formulation is a candidate, not confirmed exact implementation",
+      "unit": null,
+      "status": "derived_interpretation",
+      "identity": "土抗力方法解释",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "土层参数续表m(MPa/m2)"
+      },
+      "derivation": "m系数的存在支持m相关土抗力候选；不能由列名推出k=m*z或原软件全部设置",
+      "requires_confirmation_for_original_software_equivalence": true
+    },
+    "reaction_formula": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "弹簧刚度随深度表达式、深度起点和分层拼接规则",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21,
+          32,
+          33
+        ],
+        "printed_pages": [
+          "18",
+          "29",
+          "30"
+        ],
+        "locator": "方法说明和本剖面参数"
+      },
+      "note": "未打印"
+    },
+    "effective_soil_reaction_width": {
+      "value": null,
+      "unit": "m",
+      "status": "missing",
+      "identity": "单桩计算宽度b0与桩间距映射",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "本剖面参数"
+      },
+      "note": "未打印"
+    },
+    "passive_limit_and_tension_cutoff": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "土弹簧被动极限、脱开/只受压规则",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "本剖面计算条件"
+      },
+      "note": "未打印"
+    },
+    "excavation_unloading_and_stress_history": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "移除土弹簧、应力/位移继承算法",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33
+        ],
+        "printed_pages": [
+          "30"
+        ],
+        "locator": "工况及计算条件"
+      },
+      "note": "仅有事件图与输出，未给数学处理"
+    }
+  },
+  "water": {
+    "initial_outside_groundwater_depth": {
+      "value": 0.5,
+      "unit": "m",
+      "status": "original_fact",
+      "identity": "本计算剖面采用地下水深；与勘察实测1.40-2.50m身份不同",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "土层参数后地下水位埋深"
+      }
+    },
+    "outside_water_during_stages": {
+      "value": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "unit": "m",
+      "status": "derived_interpretation",
+      "identity": "外侧水位不随阶段变化候选",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "地下水位埋深"
+      },
+      "derivation": "仅打印一个场外地下水位，阶段表列坑内潜水位；需原软件确认外侧保持",
+      "requires_confirmation_for_original_software_equivalence": true
+    },
+    "water_unit_weight": {
+      "value": null,
+      "unit": "kN/m3",
+      "status": "missing",
+      "identity": "水重度",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "水位和工况参数"
+      },
+      "note": "未打印"
+    },
+    "pressure_combination": {
+      "value": [
+        "分算",
+        "合算",
+        "合算",
+        "合算",
+        "合算"
+      ],
+      "unit": null,
+      "status": "original_fact",
+      "identity": "按原五层顺序；不可全模型统一成一种水土压力模式",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32
+        ],
+        "printed_pages": [
+          "29"
+        ],
+        "locator": "土层参数分算合算列"
+      }
+    }
+  },
+  "loads": {
+    "work_surcharge": {
+      "location": {
+        "value": "地面",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "原荷载位置",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "工作荷载表第1行"
+        }
+      },
+      "pressure": {
+        "value": 0,
+        "unit": "kPa",
+        "status": "original_fact",
+        "identity": "全地面工作荷载打印值",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "工作荷载表第1行"
+        }
+      },
+      "start_stage": {
+        "value": null,
+        "unit": "stage_index",
+        "status": "missing",
+        "identity": "起始工况",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "工作荷载表第1行"
+        },
+        "note": "单元格空白"
+      },
+      "end_stage": {
+        "value": null,
+        "unit": "stage_index",
+        "status": "missing",
+        "identity": "终止工况",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "工作荷载表第1行"
+        },
+        "note": "单元格空白"
+      }
+    },
+    "adjacent_surcharge": {
+      "pressure": {
+        "value": 30,
+        "unit": "kPa",
+        "status": "original_fact",
+        "identity": "有限邻近荷载，不能改成全地面30kPa",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "邻近荷载表"
+        }
+      },
+      "depth": {
+        "value": 0,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "原荷载埋深",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "邻近荷载表"
+        }
+      },
+      "edge_distance": {
+        "value": 4.3,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "原边距，定义须结合原软件；不能与坡顶边距合并",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "邻近荷载表"
+        }
+      },
+      "slope_top_edge_distance": {
+        "value": 1.3,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "原坡顶边距",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "邻近荷载表"
+        }
+      },
+      "width": {
+        "value": 12,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "原有限荷载宽度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "邻近荷载表"
+        }
+      },
+      "length": {
+        "value": 65,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "原有限荷载长度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "邻近荷载表"
+        }
+      },
+      "lateral_pressure_distribution": {
+        "value": null,
+        "unit": null,
+        "status": "missing",
+        "identity": "有限矩形荷载到侧压力分布的精确公式/角点位置",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            21,
+            32,
+            33
+          ],
+          "printed_pages": [
+            "18",
+            "29",
+            "30"
+          ],
+          "locator": "朗肯说明和荷载表"
+        },
+        "note": "原文没有给出；仅用Ka*q全深度会改变条件"
+      }
+    }
+  },
+  "supports": {
+    "S1": {
+      "type": {
+        "value": "内支撑",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "旧水平支撑的剖面等效支点",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "支撑和锚杆表第1行"
+        }
+      },
+      "depth": {
+        "value": 1.625,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "模型地表向下",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "支撑和锚杆表"
+        }
+      },
+      "equivalent_stiffness": {
+        "value": 32.3,
+        "unit": "MN/m2",
+        "status": "original_fact",
+        "identity": "原等效线支撑刚度，非实体杆EA/L(kN/m)",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "支撑和锚杆表K"
+        }
+      },
+      "equivalent_stiffness_kN_m2": {
+        "value": 32300,
+        "unit": "kN/m2",
+        "status": "derived_interpretation",
+        "identity": "原等效线支撑刚度单位换算",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "支撑和锚杆表K"
+        },
+        "derivation": "1 MN/m2 = 1000 kN/m2",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "preload": {
+        "value": null,
+        "unit": "kN/m",
+        "status": "missing",
+        "identity": "原预加轴力输入",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            32
+          ],
+          "printed_pages": [
+            "29"
+          ],
+          "locator": "支撑和锚杆表预加轴力"
+        },
+        "note": "空白；工况2反力为0是结果，不等于输入表已明确0"
+      },
+      "horizontal_spacing": {
+        "value": 10,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "水平支撑间距",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "length": {
+        "value": 14,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "支撑长度；不得未经说明改为垂直于围檩投影长",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "angle_to_wale": {
+        "value": 45,
+        "unit": "deg",
+        "status": "original_fact",
+        "identity": "与围檩夹角",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "fixed_point_adjustment_factor": {
+        "value": 0.5,
+        "unit": null,
+        "status": "original_fact",
+        "identity": "不动点调整系数",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "material": {
+        "value": "混凝土",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "支撑类型",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "concrete_grade": {
+        "value": "C30",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "支撑混凝土",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "width": {
+        "value": 800,
+        "unit": "mm",
+        "status": "original_fact",
+        "identity": "支撑截面宽度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "height": {
+        "value": 650,
+        "unit": "mm",
+        "status": "original_fact",
+        "identity": "支撑截面高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      }
+    },
+    "wale": {
+      "point_position_coefficient": {
+        "value": 0.5,
+        "unit": null,
+        "status": "original_fact",
+        "identity": "围檩计算点位置系数",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "concrete_grade": {
+        "value": "C30",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "围檩混凝土",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "width": {
+        "value": 900,
+        "unit": "mm",
+        "status": "original_fact",
+        "identity": "围檩截面宽度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "height": {
+        "value": 650,
+        "unit": "mm",
+        "status": "original_fact",
+        "identity": "围檩截面高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表"
+        }
+      },
+      "boundary_condition": {
+        "value": "刚接",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "围檩详细参数中的边界条件；不得自动解释为桩底固定",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "支撑详细参数表末行"
+        }
+      }
+    },
+    "crown_beam_equivalent_support": {
+      "stiffness": {
+        "value": 22.7,
+        "unit": "MN/m2",
+        "status": "original_fact",
+        "identity": "独立打印的冠梁等效线支撑刚度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "页首计算时考虑冠梁等效支撑刚度"
+        }
+      },
+      "stiffness_kN_m2": {
+        "value": 22700,
+        "unit": "kN/m2",
+        "status": "derived_interpretation",
+        "identity": "单位换算",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "页首冠梁等效刚度"
+        },
+        "derivation": "1 MN/m2 = 1000 kN/m2",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "application_location_and_combination": {
+        "value": null,
+        "unit": null,
+        "status": "missing",
+        "identity": "作用位置、与S1串/并联或单独支点的实现",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "冠梁等效刚度句"
+        },
+        "note": "未打印；不能直接将22.7与32.3相加"
+      }
+    },
+    "T1": {
+      "depth": {
+        "value": 4.6,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "换撑点模型深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "换撑参数表"
+        }
+      },
+      "axial_stiffness_as_printed": {
+        "value": "固定",
+        "unit": "MN/m2 column",
+        "status": "original_fact",
+        "identity": "原软件约束型输入，非有限数值刚度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "换撑参数表轴向刚度"
+        }
+      },
+      "rotational_stiffness": {
+        "value": 0,
+        "unit": "MN*m/m",
+        "status": "original_fact",
+        "identity": "原打印转动刚度，不等于完整固结端",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "换撑参数表转动刚度"
+        }
+      },
+      "candidate_boundary": {
+        "value": "constrain lateral translation at installed offset; rotation unrestrained",
+        "unit": null,
+        "status": "derived_interpretation",
+        "identity": "候选解释，不能代替原生求解器设定",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33,
+            34
+          ],
+          "printed_pages": [
+            "30",
+            "31"
+          ],
+          "locator": "换撑表与工况4/5反力图"
+        },
+        "derivation": "轴向固定、转动刚度0；工况4新点反力0且曲线未变，支持按安装时位移设参照的解释",
+        "requires_confirmation_for_original_software_equivalence": true
+      },
+      "finite_equivalent_stiffness": {
+        "value": null,
+        "unit": "MN/m2",
+        "status": "missing",
+        "identity": "用于有限弹簧模型的换撑刚度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "换撑参数表"
+        },
+        "note": "原文写固定，不得以任意大数字冒充原输入"
+      },
+      "release_condition": {
+        "value": "底板和传力带的砼达到100%设计强度后，才能拆除水平钢筋砼支撑梁",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "施工放行条件；不是额外计算荷载系数",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            15
+          ],
+          "printed_pages": [
+            "12"
+          ],
+          "locator": "5.3支撑拆除第2条"
+        }
+      }
+    }
+  },
+  "boundary_and_solver_missing": {
+    "pile_head_rotation": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "桩顶转角约束/冠梁作用",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "围护桩参数"
+      },
+      "note": "未明确打印"
+    },
+    "pile_toe_translation_and_rotation": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "桩端位移/转角边界",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "围护桩参数"
+      },
+      "note": "未明确打印，不能以岩层名称推出固定"
+    },
+    "mesh_integration_tolerance": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "离散网格、单元、积分、收敛公差",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          21,
+          32,
+          33
+        ],
+        "printed_pages": [
+          "18",
+          "29",
+          "30"
+        ],
+        "locator": "计算软件及条件"
+      },
+      "note": "未打印"
+    },
+    "output_force_basis": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "M/V是单桩、每延米还是其他等效宽度的完整定义",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33,
+          34,
+          36
+        ],
+        "printed_pages": [
+          "30",
+          "31",
+          "33"
+        ],
+        "locator": "M/V曲线和配筋表"
+      },
+      "note": "曲线标kNm和kN，反力标kN/m，原文没有同页解释转换"
+    },
+    "support_force_recovery": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "线反力到实体斜撑轴力N的映射",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33,
+          34
+        ],
+        "printed_pages": [
+          "29",
+          "30",
+          "31"
+        ],
+        "locator": "支撑参数和反力图"
+      },
+      "note": "需间距、夹角、分配规则与原软件约定；不得仅重命名字段"
+    }
+  },
+  "stages": [
+    {
+      "sequence": 1,
+      "event": {
+        "value": "开挖",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "原事件类型；换撑与拆撑分列",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第1行"
+        }
+      },
+      "event_depth": {
+        "value": 2.05,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "表格深度随事件表示开挖面或支点深度，不能全部当开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第1行深度"
+        }
+      },
+      "inside_phreatic_depth": {
+        "value": 2.55,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "模型地表向下；不是水头高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第1行潜水位"
+        }
+      },
+      "confined_water": {
+        "value": null,
+        "unit": "m",
+        "status": "missing",
+        "identity": "原表承压水栏",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第1行承压水"
+        },
+        "note": "空白，不能断言物理上无承压水"
+      },
+      "effective_excavation_depth": {
+        "value": 2.05,
+        "unit": "m",
+        "status": "derived_interpretation",
+        "identity": "模型地表向下的当前开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表和示意图，工况1"
+        },
+        "derivation": "开挖事件更新深度，支撑事件保持前一开挖深度",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "active_supports": {
+        "value": [],
+        "unit": null,
+        "status": "derived_interpretation",
+        "identity": "按事件顺序解释的活动支点",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33,
+            33
+          ],
+          "printed_pages": [
+            "30",
+            "30"
+          ],
+          "locator": "4.5节，各工况变形内力，工况1"
+        },
+        "derivation": "4.6m新支点在工况4安装，1.625m旧支撑到工况5才拆除",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "outputs": {
+        "wall_displacement_range": {
+          "value": [
+            0.6,
+            2.6
+          ],
+          "unit": "mm",
+          "status": "original_fact",
+          "identity": "原图整根桩位移极值区间；未提供逐点表",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况1，位移图图例"
+          }
+        },
+        "bending_moment_range": {
+          "value": [
+            0,
+            87.7
+          ],
+          "unit": "kN*m",
+          "status": "original_fact",
+          "identity": "原图M；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况1，弯矩图图例"
+          }
+        },
+        "shear_force_range": {
+          "value": [
+            -43,
+            49.9
+          ],
+          "unit": "kN",
+          "status": "original_fact",
+          "identity": "原图V；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况1，剪力图图例"
+          }
+        },
+        "pile_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "本剖面逐阶段桩轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况1"
+          },
+          "note": "本页无桩N曲线或逐阶段N表；配筋表相应Nd=0不能代替"
+        },
+        "physical_support_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "实体支撑杆轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况1"
+          },
+          "note": "仅有反力kN/m；间距/角度换算关系未由原文定义"
+        },
+        "support_reactions": [],
+        "reaction_diagram_other_labels": {
+          "Ep": {
+            "value": 666.4,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ep；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                33
+              ],
+              "printed_pages": [
+                "30"
+              ],
+              "locator": "4.5节，各工况变形内力，工况1，反力图Ep标值"
+            }
+          },
+          "Ps": {
+            "value": 263.7,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ps；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                33
+              ],
+              "printed_pages": [
+                "30"
+              ],
+              "locator": "4.5节，各工况变形内力，工况1，反力图Ps标值"
+            }
+          },
+          "P": {
+            "value": 77.6,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号P；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                33
+              ],
+              "printed_pages": [
+                "30"
+              ],
+              "locator": "4.5节，各工况变形内力，工况1，反力图P标值"
+            }
+          }
+        },
+        "numeric_depthwise_arrays": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "原始节点/采样点z-y-M-V-N数组",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况1"
+          },
+          "note": "仅曲线和极值标注，未给数值节点表；本次没有把图像数字化值冒充原始结果"
+        }
+      }
+    },
+    {
+      "sequence": 2,
+      "event": {
+        "value": "加撑",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "原事件类型；换撑与拆撑分列",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第2行"
+        }
+      },
+      "event_depth": {
+        "value": 1.625,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "表格深度随事件表示开挖面或支点深度，不能全部当开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第2行深度"
+        }
+      },
+      "inside_phreatic_depth": {
+        "value": 2.55,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "模型地表向下；不是水头高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第2行潜水位"
+        }
+      },
+      "confined_water": {
+        "value": null,
+        "unit": "m",
+        "status": "missing",
+        "identity": "原表承压水栏",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第2行承压水"
+        },
+        "note": "空白，不能断言物理上无承压水"
+      },
+      "effective_excavation_depth": {
+        "value": 2.05,
+        "unit": "m",
+        "status": "derived_interpretation",
+        "identity": "模型地表向下的当前开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表和示意图，工况2"
+        },
+        "derivation": "开挖事件更新深度，支撑事件保持前一开挖深度",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "active_supports": {
+        "value": [
+          "S1"
+        ],
+        "unit": null,
+        "status": "derived_interpretation",
+        "identity": "按事件顺序解释的活动支点",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33,
+            33
+          ],
+          "printed_pages": [
+            "30",
+            "30"
+          ],
+          "locator": "4.5节，各工况变形内力，工况2"
+        },
+        "derivation": "4.6m新支点在工况4安装，1.625m旧支撑到工况5才拆除",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "outputs": {
+        "wall_displacement_range": {
+          "value": [
+            0.6,
+            2.6
+          ],
+          "unit": "mm",
+          "status": "original_fact",
+          "identity": "原图整根桩位移极值区间；未提供逐点表",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况2，位移图图例"
+          }
+        },
+        "bending_moment_range": {
+          "value": [
+            0,
+            87.7
+          ],
+          "unit": "kN*m",
+          "status": "original_fact",
+          "identity": "原图M；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况2，弯矩图图例"
+          }
+        },
+        "shear_force_range": {
+          "value": [
+            -43,
+            49.9
+          ],
+          "unit": "kN",
+          "status": "original_fact",
+          "identity": "原图V；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况2，剪力图图例"
+          }
+        },
+        "pile_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "本剖面逐阶段桩轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况2"
+          },
+          "note": "本页无桩N曲线或逐阶段N表；配筋表相应Nd=0不能代替"
+        },
+        "physical_support_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "实体支撑杆轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况2"
+          },
+          "note": "仅有反力kN/m；间距/角度换算关系未由原文定义"
+        },
+        "support_reactions": [
+          {
+            "support_id": "S1",
+            "depth": {
+              "value": 1.625,
+              "unit": "m",
+              "status": "derived_interpretation",
+              "identity": "图示反力对应支点深度",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  33,
+                  33
+                ],
+                "printed_pages": [
+                  "30",
+                  "30"
+                ],
+                "locator": "4.5节，各工况变形内力，工况2"
+              },
+              "derivation": "工况示意图和反力图对应；S1为旧内支撑，T1为换撑点",
+              "requires_confirmation_for_original_software_equivalence": false
+            },
+            "reaction": {
+              "value": 0,
+              "unit": "kN/m",
+              "status": "original_fact",
+              "identity": "沿围护每延米图示反力；不是实体斜撑轴力N",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  33
+                ],
+                "printed_pages": [
+                  "30"
+                ],
+                "locator": "4.5节，各工况变形内力，工况2，反力图支点标值"
+              }
+            }
+          }
+        ],
+        "reaction_diagram_other_labels": {
+          "Ep": {
+            "value": 666.4,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ep；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                33
+              ],
+              "printed_pages": [
+                "30"
+              ],
+              "locator": "4.5节，各工况变形内力，工况2，反力图Ep标值"
+            }
+          },
+          "Ps": {
+            "value": 263.7,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ps；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                33
+              ],
+              "printed_pages": [
+                "30"
+              ],
+              "locator": "4.5节，各工况变形内力，工况2，反力图Ps标值"
+            }
+          },
+          "P": {
+            "value": 77.6,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号P；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                33
+              ],
+              "printed_pages": [
+                "30"
+              ],
+              "locator": "4.5节，各工况变形内力，工况2，反力图P标值"
+            }
+          }
+        },
+        "numeric_depthwise_arrays": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "原始节点/采样点z-y-M-V-N数组",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              33
+            ],
+            "printed_pages": [
+              "30"
+            ],
+            "locator": "4.5节，各工况变形内力，工况2"
+          },
+          "note": "仅曲线和极值标注，未给数值节点表；本次没有把图像数字化值冒充原始结果"
+        }
+      }
+    },
+    {
+      "sequence": 3,
+      "event": {
+        "value": "开挖",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "原事件类型；换撑与拆撑分列",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第3行"
+        }
+      },
+      "event_depth": {
+        "value": 4.9,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "表格深度随事件表示开挖面或支点深度，不能全部当开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第3行深度"
+        }
+      },
+      "inside_phreatic_depth": {
+        "value": 5.4,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "模型地表向下；不是水头高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第3行潜水位"
+        }
+      },
+      "confined_water": {
+        "value": null,
+        "unit": "m",
+        "status": "missing",
+        "identity": "原表承压水栏",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第3行承压水"
+        },
+        "note": "空白，不能断言物理上无承压水"
+      },
+      "effective_excavation_depth": {
+        "value": 4.9,
+        "unit": "m",
+        "status": "derived_interpretation",
+        "identity": "模型地表向下的当前开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表和示意图，工况3"
+        },
+        "derivation": "开挖事件更新深度，支撑事件保持前一开挖深度",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "active_supports": {
+        "value": [
+          "S1"
+        ],
+        "unit": null,
+        "status": "derived_interpretation",
+        "identity": "按事件顺序解释的活动支点",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33,
+            34
+          ],
+          "printed_pages": [
+            "30",
+            "31"
+          ],
+          "locator": "4.5节，各工况变形内力，工况3"
+        },
+        "derivation": "4.6m新支点在工况4安装，1.625m旧支撑到工况5才拆除",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "outputs": {
+        "wall_displacement_range": {
+          "value": [
+            2.9,
+            6.0
+          ],
+          "unit": "mm",
+          "status": "original_fact",
+          "identity": "原图整根桩位移极值区间；未提供逐点表",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况3，位移图图例"
+          }
+        },
+        "bending_moment_range": {
+          "value": [
+            0,
+            206.7
+          ],
+          "unit": "kN*m",
+          "status": "original_fact",
+          "identity": "原图M；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况3，弯矩图图例"
+          }
+        },
+        "shear_force_range": {
+          "value": [
+            -91.8,
+            120.6
+          ],
+          "unit": "kN",
+          "status": "original_fact",
+          "identity": "原图V；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况3，剪力图图例"
+          }
+        },
+        "pile_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "本剖面逐阶段桩轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况3"
+          },
+          "note": "本页无桩N曲线或逐阶段N表；配筋表相应Nd=0不能代替"
+        },
+        "physical_support_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "实体支撑杆轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况3"
+          },
+          "note": "仅有反力kN/m；间距/角度换算关系未由原文定义"
+        },
+        "support_reactions": [
+          {
+            "support_id": "S1",
+            "depth": {
+              "value": 1.625,
+              "unit": "m",
+              "status": "derived_interpretation",
+              "identity": "图示反力对应支点深度",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  33,
+                  34
+                ],
+                "printed_pages": [
+                  "30",
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况3"
+              },
+              "derivation": "工况示意图和反力图对应；S1为旧内支撑，T1为换撑点",
+              "requires_confirmation_for_original_software_equivalence": false
+            },
+            "reaction": {
+              "value": 37.2,
+              "unit": "kN/m",
+              "status": "original_fact",
+              "identity": "沿围护每延米图示反力；不是实体斜撑轴力N",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  34
+                ],
+                "printed_pages": [
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况3，反力图支点标值"
+              }
+            }
+          }
+        ],
+        "reaction_diagram_other_labels": {
+          "Ep": {
+            "value": 302.7,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ep；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况3，反力图Ep标值"
+            }
+          },
+          "Ps": {
+            "value": 194,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ps；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况3，反力图Ps标值"
+            }
+          },
+          "P": {
+            "value": 152.3,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号P；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况3，反力图P标值"
+            }
+          }
+        },
+        "numeric_depthwise_arrays": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "原始节点/采样点z-y-M-V-N数组",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况3"
+          },
+          "note": "仅曲线和极值标注，未给数值节点表；本次没有把图像数字化值冒充原始结果"
+        }
+      }
+    },
+    {
+      "sequence": 4,
+      "event": {
+        "value": "换撑",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "原事件类型；换撑与拆撑分列",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第4行"
+        }
+      },
+      "event_depth": {
+        "value": 4.6,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "表格深度随事件表示开挖面或支点深度，不能全部当开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第4行深度"
+        }
+      },
+      "inside_phreatic_depth": {
+        "value": 5.4,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "模型地表向下；不是水头高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第4行潜水位"
+        }
+      },
+      "confined_water": {
+        "value": null,
+        "unit": "m",
+        "status": "missing",
+        "identity": "原表承压水栏",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第4行承压水"
+        },
+        "note": "空白，不能断言物理上无承压水"
+      },
+      "effective_excavation_depth": {
+        "value": 4.9,
+        "unit": "m",
+        "status": "derived_interpretation",
+        "identity": "模型地表向下的当前开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表和示意图，工况4"
+        },
+        "derivation": "开挖事件更新深度，支撑事件保持前一开挖深度",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "active_supports": {
+        "value": [
+          "S1",
+          "T1"
+        ],
+        "unit": null,
+        "status": "derived_interpretation",
+        "identity": "按事件顺序解释的活动支点",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33,
+            34
+          ],
+          "printed_pages": [
+            "30",
+            "31"
+          ],
+          "locator": "4.5节，各工况变形内力，工况4"
+        },
+        "derivation": "4.6m新支点在工况4安装，1.625m旧支撑到工况5才拆除",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "outputs": {
+        "wall_displacement_range": {
+          "value": [
+            2.9,
+            6.0
+          ],
+          "unit": "mm",
+          "status": "original_fact",
+          "identity": "原图整根桩位移极值区间；未提供逐点表",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况4，位移图图例"
+          }
+        },
+        "bending_moment_range": {
+          "value": [
+            0,
+            206.7
+          ],
+          "unit": "kN*m",
+          "status": "original_fact",
+          "identity": "原图M；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况4，弯矩图图例"
+          }
+        },
+        "shear_force_range": {
+          "value": [
+            -91.8,
+            120.6
+          ],
+          "unit": "kN",
+          "status": "original_fact",
+          "identity": "原图V；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况4，剪力图图例"
+          }
+        },
+        "pile_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "本剖面逐阶段桩轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况4"
+          },
+          "note": "本页无桩N曲线或逐阶段N表；配筋表相应Nd=0不能代替"
+        },
+        "physical_support_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "实体支撑杆轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况4"
+          },
+          "note": "仅有反力kN/m；间距/角度换算关系未由原文定义"
+        },
+        "support_reactions": [
+          {
+            "support_id": "S1",
+            "depth": {
+              "value": 1.625,
+              "unit": "m",
+              "status": "derived_interpretation",
+              "identity": "图示反力对应支点深度",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  33,
+                  34
+                ],
+                "printed_pages": [
+                  "30",
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况4"
+              },
+              "derivation": "工况示意图和反力图对应；S1为旧内支撑，T1为换撑点",
+              "requires_confirmation_for_original_software_equivalence": false
+            },
+            "reaction": {
+              "value": 37.2,
+              "unit": "kN/m",
+              "status": "original_fact",
+              "identity": "沿围护每延米图示反力；不是实体斜撑轴力N",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  34
+                ],
+                "printed_pages": [
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况4，反力图支点标值"
+              }
+            }
+          },
+          {
+            "support_id": "T1",
+            "depth": {
+              "value": 4.6,
+              "unit": "m",
+              "status": "derived_interpretation",
+              "identity": "图示反力对应支点深度",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  33,
+                  34
+                ],
+                "printed_pages": [
+                  "30",
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况4"
+              },
+              "derivation": "工况示意图和反力图对应；S1为旧内支撑，T1为换撑点",
+              "requires_confirmation_for_original_software_equivalence": false
+            },
+            "reaction": {
+              "value": 0,
+              "unit": "kN/m",
+              "status": "original_fact",
+              "identity": "沿围护每延米图示反力；不是实体斜撑轴力N",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  34
+                ],
+                "printed_pages": [
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况4，反力图支点标值"
+              }
+            }
+          }
+        ],
+        "reaction_diagram_other_labels": {
+          "Ep": {
+            "value": 302.7,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ep；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况4，反力图Ep标值"
+            }
+          },
+          "Ps": {
+            "value": 194,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ps；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况4，反力图Ps标值"
+            }
+          },
+          "P": {
+            "value": 152.3,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号P；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况4，反力图P标值"
+            }
+          }
+        },
+        "numeric_depthwise_arrays": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "原始节点/采样点z-y-M-V-N数组",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况4"
+          },
+          "note": "仅曲线和极值标注，未给数值节点表；本次没有把图像数字化值冒充原始结果"
+        }
+      }
+    },
+    {
+      "sequence": 5,
+      "event": {
+        "value": "拆撑",
+        "unit": null,
+        "status": "original_fact",
+        "identity": "原事件类型；换撑与拆撑分列",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第5行"
+        }
+      },
+      "event_depth": {
+        "value": 1.625,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "表格深度随事件表示开挖面或支点深度，不能全部当开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第5行深度"
+        }
+      },
+      "inside_phreatic_depth": {
+        "value": 5.4,
+        "unit": "m",
+        "status": "original_fact",
+        "identity": "模型地表向下；不是水头高度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第5行潜水位"
+        }
+      },
+      "confined_water": {
+        "value": null,
+        "unit": "m",
+        "status": "missing",
+        "identity": "原表承压水栏",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表第5行承压水"
+        },
+        "note": "空白，不能断言物理上无承压水"
+      },
+      "effective_excavation_depth": {
+        "value": 4.9,
+        "unit": "m",
+        "status": "derived_interpretation",
+        "identity": "模型地表向下的当前开挖深度",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33
+          ],
+          "printed_pages": [
+            "30"
+          ],
+          "locator": "工况信息表和示意图，工况5"
+        },
+        "derivation": "开挖事件更新深度，支撑事件保持前一开挖深度",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "active_supports": {
+        "value": [
+          "T1"
+        ],
+        "unit": null,
+        "status": "derived_interpretation",
+        "identity": "按事件顺序解释的活动支点",
+        "source": {
+          "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+          "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+          "physical_pdf_pages_1_based": [
+            33,
+            34
+          ],
+          "printed_pages": [
+            "30",
+            "31"
+          ],
+          "locator": "4.5节，各工况变形内力，工况5"
+        },
+        "derivation": "4.6m新支点在工况4安装，1.625m旧支撑到工况5才拆除",
+        "requires_confirmation_for_original_software_equivalence": false
+      },
+      "outputs": {
+        "wall_displacement_range": {
+          "value": [
+            3.6,
+            6.0
+          ],
+          "unit": "mm",
+          "status": "original_fact",
+          "identity": "原图整根桩位移极值区间；未提供逐点表",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况5，位移图图例"
+          }
+        },
+        "bending_moment_range": {
+          "value": [
+            0,
+            176.9
+          ],
+          "unit": "kN*m",
+          "status": "original_fact",
+          "identity": "原图M；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况5，弯矩图图例"
+          }
+        },
+        "shear_force_range": {
+          "value": [
+            -80.2,
+            109.6
+          ],
+          "unit": "kN",
+          "status": "original_fact",
+          "identity": "原图V；图轴不含/m，单桩/等效宽度身份未明文打印",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况5，剪力图图例"
+          }
+        },
+        "pile_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "本剖面逐阶段桩轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况5"
+          },
+          "note": "本页无桩N曲线或逐阶段N表；配筋表相应Nd=0不能代替"
+        },
+        "physical_support_axial_force_N": {
+          "value": null,
+          "unit": "kN",
+          "status": "missing",
+          "identity": "实体支撑杆轴力N",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况5"
+          },
+          "note": "仅有反力kN/m；间距/角度换算关系未由原文定义"
+        },
+        "support_reactions": [
+          {
+            "support_id": "T1",
+            "depth": {
+              "value": 4.6,
+              "unit": "m",
+              "status": "derived_interpretation",
+              "identity": "图示反力对应支点深度",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  33,
+                  34
+                ],
+                "printed_pages": [
+                  "30",
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况5"
+              },
+              "derivation": "工况示意图和反力图对应；S1为旧内支撑，T1为换撑点",
+              "requires_confirmation_for_original_software_equivalence": false
+            },
+            "reaction": {
+              "value": 27,
+              "unit": "kN/m",
+              "status": "original_fact",
+              "identity": "沿围护每延米图示反力；不是实体斜撑轴力N",
+              "source": {
+                "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+                "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+                "physical_pdf_pages_1_based": [
+                  34
+                ],
+                "printed_pages": [
+                  "31"
+                ],
+                "locator": "4.5节，各工况变形内力，工况5，反力图支点标值"
+              }
+            }
+          }
+        ],
+        "reaction_diagram_other_labels": {
+          "Ep": {
+            "value": 302.7,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ep；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况5，反力图Ep标值"
+            }
+          },
+          "Ps": {
+            "value": 181.5,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号Ps；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况5，反力图Ps标值"
+            }
+          },
+          "P": {
+            "value": 139.8,
+            "unit": "kN/m (panel label)",
+            "status": "original_fact",
+            "identity": "原图符号P；物理定义/与净合力关系未由报告解释",
+            "source": {
+              "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+              "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+              "physical_pdf_pages_1_based": [
+                34
+              ],
+              "printed_pages": [
+                "31"
+              ],
+              "locator": "4.5节，各工况变形内力，工况5，反力图P标值"
+            }
+          }
+        },
+        "numeric_depthwise_arrays": {
+          "value": null,
+          "unit": null,
+          "status": "missing",
+          "identity": "原始节点/采样点z-y-M-V-N数组",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              34
+            ],
+            "printed_pages": [
+              "31"
+            ],
+            "locator": "4.5节，各工况变形内力，工况5"
+          },
+          "note": "仅曲线和极值标注，未给数值节点表；本次没有把图像数字化值冒充原始结果"
+        }
+      }
+    }
+  ],
+  "envelope": {
+    "wall_displacement_range": {
+      "value": [
+        0,
+        6.0
+      ],
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "原图包络包含0基线；不同于已打印阶段最小值0.6",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          34
+        ],
+        "printed_pages": [
+          "31"
+        ],
+        "locator": "变形内力包络图"
+      }
+    },
+    "bending_moment_range": {
+      "value": [
+        0,
+        206.7
+      ],
+      "unit": "kN*m",
+      "status": "original_fact",
+      "identity": "原图M包络，结果身份仍待确认",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          34
+        ],
+        "printed_pages": [
+          "31"
+        ],
+        "locator": "变形内力包络图"
+      }
+    },
+    "shear_force_range": {
+      "value": [
+        -91.8,
+        120.6
+      ],
+      "unit": "kN",
+      "status": "original_fact",
+      "identity": "原图V包络，结果身份仍待确认",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          34
+        ],
+        "printed_pages": [
+          "31"
+        ],
+        "locator": "变形内力包络图"
+      }
+    },
+    "support_reaction_range": {
+      "value": [
+        0,
+        37.2
+      ],
+      "unit": "kN/m",
+      "status": "original_fact",
+      "identity": "打印支撑反力范围；不可视为实体支撑N包络",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          34
+        ],
+        "printed_pages": [
+          "31"
+        ],
+        "locator": "变形内力包络图反力支点标注"
+      }
+    },
+    "governing_stage_from_rounded_extrema": {
+      "value": {
+        "y_max": [
+          3,
+          4,
+          5
+        ],
+        "M_max": [
+          3,
+          4
+        ],
+        "V_positive_max": [
+          3,
+          4
+        ],
+        "V_negative_min": [
+          3,
+          4
+        ]
+      },
+      "unit": null,
+      "status": "derived_interpretation",
+      "identity": "以报告舍入值推得控制工况",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33,
+          34
+        ],
+        "printed_pages": [
+          "30",
+          "31"
+        ],
+        "locator": "逐阶段图例"
+      },
+      "derivation": "按打印极值比较；真实未舍入结果可能区分并列",
+      "requires_confirmation_for_original_software_equivalence": false
+    },
+    "pile_N_envelope": {
+      "value": null,
+      "unit": "kN",
+      "status": "missing",
+      "identity": "桩轴力N包络",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          34
+        ],
+        "printed_pages": [
+          "31"
+        ],
+        "locator": "包络图"
+      },
+      "note": "无此图/表"
+    }
+  },
+  "reinforcement": {
+    "design_scope": {
+      "value": "灌注桩0~6.6m",
+      "unit": "m along pile",
+      "status": "original_fact",
+      "identity": "沿桩身长度；不是模型地表深度0至6.6m",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋标题"
+      }
+    },
+    "moment_factor": {
+      "value": 1.25,
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原弯矩设计系数第一因子",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "M=1.25×1×Mk"
+      }
+    },
+    "importance_factor": {
+      "value": 1,
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原乘数第二因子",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "M=1.25×1×Mk，V=1.25×1×Vk"
+      }
+    },
+    "shear_factor": {
+      "value": 1.25,
+      "unit": null,
+      "status": "original_fact",
+      "identity": "原剪力设计系数第一因子",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "V=1.25×1×Vk"
+      }
+    },
+    "Mk": {
+      "value": 206.7,
+      "unit": "kN*m",
+      "status": "original_fact",
+      "identity": "配筋采用弯矩标准值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋表弯矩标准值"
+      }
+    },
+    "Md": {
+      "value": 258.4,
+      "unit": "kN*m",
+      "status": "original_fact",
+      "identity": "配筋采用弯矩设计值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋表弯矩设计值"
+      }
+    },
+    "outside_Mk": {
+      "value": 0,
+      "unit": "kN*m",
+      "status": "original_fact",
+      "identity": "原配筋表坑外侧值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "坑外侧弯矩标准值"
+      }
+    },
+    "outside_Md": {
+      "value": 0,
+      "unit": "kN*m",
+      "status": "original_fact",
+      "identity": "原配筋表坑外侧值",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "坑外侧弯矩设计值"
+      }
+    },
+    "longitudinal_steel_grade": {
+      "value": "HRB400",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "纵向受力钢筋",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "钢筋等级"
+      }
+    },
+    "longitudinal_bar_diameter": {
+      "value": 18,
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "纵筋直径",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "钢筋直径"
+      }
+    },
+    "bar_center_to_concrete_edge": {
+      "value": 59,
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "中心距，不是净保护层",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "钢筋中心至边距"
+      }
+    },
+    "required_As": {
+      "value": 2587.7,
+      "unit": "mm2",
+      "status": "original_fact",
+      "identity": "计算所需面积；与实配面积不同",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋面积As"
+      }
+    },
+    "computed_bar_count": {
+      "value": 11,
+      "unit": "count",
+      "status": "original_fact",
+      "identity": "计算表给定根数",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "钢筋根数"
+      }
+    },
+    "computed_bar_spacing": {
+      "value": 166,
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "计算表给定间距；不将其用于16根实配而不重算",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "钢筋间距"
+      }
+    },
+    "provided_bar_count": {
+      "value": 16,
+      "unit": "count",
+      "status": "original_fact",
+      "identity": "实际选用纵筋根数",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "实配根数"
+      }
+    },
+    "provided_As_candidate": {
+      "value": 4071.5040790523717,
+      "unit": "mm2",
+      "status": "derived_interpretation",
+      "identity": "由16φ18计算的几何面积",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "实配根数、钢筋直径"
+      },
+      "derivation": "16×π×18²/4；非原表打印As",
+      "requires_confirmation_for_original_software_equivalence": false
+    },
+    "shear_design_row_raw": {
+      "value": {
+        "label": "剪力设计值Md(kNm)",
+        "value": 150.7
+      },
+      "unit": "as printed: kNm",
+      "status": "original_fact",
+      "identity": "原标签/量纲明显不一致，保留而不静默修复",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋表实配根数下一行"
+      }
+    },
+    "Vd_candidate_interpretation": {
+      "value": 150.7,
+      "unit": "kN",
+      "status": "derived_interpretation",
+      "identity": "疑似Vd的解释候选",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "剪力设计值Md(kNm)行与V=1.25×1×Vk"
+      },
+      "derivation": "行名为剪力，120.6×1.25约150.75；具体符号/单位需设计方或原模型确认",
+      "requires_confirmation_for_original_software_equivalence": true
+    },
+    "associated_Nd": {
+      "value": 0,
+      "unit": "kN",
+      "status": "original_fact",
+      "identity": "配筋截面所配套设计轴力；不是每阶段桩N实测/求解曲线",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "相应轴力Nd"
+      }
+    },
+    "stirrup_grade": {
+      "value": "HPB300",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "箍筋钢种",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "箍筋等级"
+      }
+    },
+    "stirrup_diameter": {
+      "value": 8,
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "箍筋直径",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "箍筋直径"
+      }
+    },
+    "required_stirrup_area_per_m": {
+      "value": 783,
+      "unit": "mm2/m",
+      "status": "original_fact",
+      "identity": "原计算需求",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "箍筋面积计算值As"
+      }
+    },
+    "computed_stirrup_spacing_two_legs": {
+      "value": 128,
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "双肢计算间距，非最终实配箍筋表",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "箍筋间距计算值(mm)(双肢)"
+      }
+    },
+    "maximum_stirrup_spacing": {
+      "value": 350,
+      "unit": "mm",
+      "status": "original_fact",
+      "identity": "原报告最大间距",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "箍筋最大允许间距"
+      }
+    },
+    "provided_stirrup_spacing": {
+      "value": null,
+      "unit": "mm",
+      "status": "missing",
+      "identity": "最终实配箍筋间距/加密段",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋表"
+      },
+      "note": "本表未列；不得将计算128mm直接声称施工实配"
+    },
+    "support_rebar_schedule": {
+      "value": null,
+      "unit": null,
+      "status": "missing",
+      "identity": "此A3-3剖面对应实体支撑配筋表",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33,
+          34,
+          35,
+          36,
+          37
+        ],
+        "printed_pages": [
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34"
+        ],
+        "locator": "本节范围"
+      },
+      "note": "本节只有围护桩配筋；全项目另有支撑平面结果，未建立剖面构件映射，不能挪用"
+    }
+  },
+  "native_model_audit": {
+    "upload_inventory": [
+      "1-文本，2-计算书.pdf",
+      "2020.03.01温岭市城市新区芷胜庄村棚户区改造工程基坑围护设计论证修改版文本.pdf",
+      "202000603螺屿村新民之家基坑围护设计(图审修改版-改).dwg",
+      "20200304温岭市城市新区芷胜庄村棚户区改造工程基坑围护设计—双排桩+坑中坑双轴加固 - 论证修改版（标高修改） - 更新图框.dwg",
+      "foundation_design.zip"
+    ],
+    "source_pdf_embedded_file_count": 0,
+    "pitguard_zip_entry_count": 1293,
+    "pitguard_zip_name_matches_for_FRWS_or_reference_project": [],
+    "original_FRWS_project_identified": false,
+    "original_executable_model_path": null,
+    "claim_scope": "在本轮检查的upload、audit/reference_notes和现有CAD/源代码包文件清单内，未识别A3-3原生FRWS模型；不是证明模型在世界上不存在。",
+    "why_DWG_is_not_native_model": "DWG是绘图资料；未携带可确认的FRWS土层、工况、算法开关和求解状态。"
+  },
+  "comparability": {
+    "published_scalar_reference_available": true,
+    "original_program_rerun_possible_with_supplied_materials": false,
+    "same_condition_comparison_ready": false,
+    "may_claim_same_condition_pass": false,
+    "may_build_explicit_reconstruction_with_declared_assumptions": true,
+    "supported_now": [
+      "有来源的几何/土层/荷载/阶段输入核对",
+      "逐阶段已打印极值与包络的待归一化参考表",
+      "支点启用顺序和零增量安装结果的行为核验",
+      "原配筋字段及错误标签审计"
+    ],
+    "hard_blockers": [
+      "缺失桩/支撑/围檩E及有效EI取法",
+      "m土抗力公式、计算宽度、深度起点、塑性/脱开规则未明确",
+      "冠梁等效K的施加位置和与主撑关系未明确",
+      "有限邻近荷载与坡台进入土压力的方法未明确",
+      "桩端边界及分阶段状态继承未明确",
+      "M/V输出是单桩还是等效宽度未明确",
+      "原生FRWS模型与原运行配置缺失"
+    ],
+    "additional_limits": [
+      "没有逐深度原始数值数组，只能核对报告舍入极值，暂不能认定全曲线误差",
+      "无逐阶段桩N和实体支撑N；反力kN/m不能作为N(kN)",
+      "换撑轴向固定不是已知有限K；其装配参照位移只能由图示推断",
+      "配筋表剪力行符号/单位需确认"
+    ],
+    "required_completion_evidence": [
+      "原FRWS9.0可打开项目、参数/选项导出或设计人对缺项逐项签认",
+      "确认所采用E、EI、m公式、计算宽度、边界和压力映射",
+      "明确每延米/单桩/实体杆的输出转换，并记录换撑的事件与位移参照",
+      "按同一输入复算原模型，导出逐阶段z/y/M/V/N和支点力，不仅抄录PDF极值"
+    ]
+  },
+  "conflicts_and_identity_notes": [
+    {
+      "id": "C01",
+      "status": "original_label_conflict",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "配筋表剪力设计值行"
+      },
+      "issue": "文字为剪力设计值，符号却写Md、单位kNm；原样保留150.7。"
+    },
+    {
+      "id": "C02",
+      "status": "scope_boundary_not_physical_conflict",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          37
+        ],
+        "printed_pages": [
+          "29",
+          "34"
+        ],
+        "locator": "4.5与4.6分界"
+      },
+      "issue": "p37下半开始较短桩复核且岩面/土层变了；不能把其m或层厚拼到4.5。"
+    },
+    {
+      "id": "C03",
+      "status": "datum_identity_requires_explicit_transform",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          7,
+          8,
+          32
+        ],
+        "printed_pages": [
+          "4",
+          "5",
+          "29"
+        ],
+        "locator": "地坪标高和模型顶标高"
+      },
+      "issue": "建筑地坪-1.0与计算模型桩顶-1.3属于不同基准，不能直接对接。"
+    },
+    {
+      "id": "C04",
+      "status": "different_identity_not_overwrite",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          8,
+          9,
+          32
+        ],
+        "printed_pages": [
+          "5",
+          "6",
+          "29"
+        ],
+        "locator": "勘察潜水与计算水位"
+      },
+      "issue": "勘察埋深1.40-2.50m与计算采用0.5m不同；本重建保留0.5m，未改为实测。"
+    },
+    {
+      "id": "C05",
+      "status": "reference_output_convention_unresolved",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          33,
+          34
+        ],
+        "printed_pages": [
+          "30",
+          "31"
+        ],
+        "locator": "逐阶段和包络位移图"
+      },
+      "issue": "阶段打印最小位移最低0.6mm，但包络打印0~6mm；可能包含初始零线，不能无说明强行把0.6当原包络下限。"
+    },
+    {
+      "id": "C06",
+      "status": "load_scope_distinction",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          15,
+          21,
+          32
+        ],
+        "printed_pages": [
+          "12",
+          "18",
+          "29"
+        ],
+        "locator": "施工限载、一般计算说明和A3-3荷载表"
+      },
+      "issue": "施工限载20kPa、项目说明30/20/35kPa与本剖面有限邻载30kPa职责不同。本基线采用本剖面表，不能把通用限载替换计算输入。"
+    },
+    {
+      "id": "C07",
+      "status": "blank_is_not_zero",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          32,
+          33
+        ],
+        "printed_pages": [
+          "29",
+          "30"
+        ],
+        "locator": "土参数/预加轴力/承压水/起止工况空格"
+      },
+      "issue": "空白不是0；JSON均保存null并说明搜索范围。"
+    }
+  ],
+  "settlement_reference": {
+    "method": {
+      "value": "同济抛物线模式",
+      "unit": null,
+      "status": "original_fact",
+      "identity": "报告所述沉降估算方法",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "地表沉降"
+      }
+    },
+    "stages": [
+      {
+        "sequence": 1,
+        "points": {
+          "value": [
+            [
+              0,
+              1.4
+            ],
+            [
+              2.78,
+              2.9
+            ],
+            [
+              6.58,
+              0
+            ]
+          ],
+          "unit": "x:m; S:mm",
+          "status": "original_fact",
+          "identity": "原图三点标注；不是连续数值函数",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              36
+            ],
+            "printed_pages": [
+              "33"
+            ],
+            "locator": "各工况地表沉降，工况1"
+          }
+        }
+      },
+      {
+        "sequence": 2,
+        "points": {
+          "value": [
+            [
+              0,
+              1.4
+            ],
+            [
+              2.78,
+              2.9
+            ],
+            [
+              6.58,
+              0
+            ]
+          ],
+          "unit": "x:m; S:mm",
+          "status": "original_fact",
+          "identity": "原图三点标注；不是连续数值函数",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              36
+            ],
+            "printed_pages": [
+              "33"
+            ],
+            "locator": "各工况地表沉降，工况2"
+          }
+        }
+      },
+      {
+        "sequence": 3,
+        "points": {
+          "value": [
+            [
+              0,
+              3.4
+            ],
+            [
+              2.76,
+              7.2
+            ],
+            [
+              6.58,
+              0
+            ]
+          ],
+          "unit": "x:m; S:mm",
+          "status": "original_fact",
+          "identity": "原图三点标注；不是连续数值函数",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              37
+            ],
+            "printed_pages": [
+              "34"
+            ],
+            "locator": "各工况地表沉降，工况3"
+          }
+        }
+      },
+      {
+        "sequence": 4,
+        "points": {
+          "value": [
+            [
+              0,
+              3.4
+            ],
+            [
+              2.76,
+              7.2
+            ],
+            [
+              6.58,
+              0
+            ]
+          ],
+          "unit": "x:m; S:mm",
+          "status": "original_fact",
+          "identity": "原图三点标注；不是连续数值函数",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              37
+            ],
+            "printed_pages": [
+              "34"
+            ],
+            "locator": "各工况地表沉降，工况4"
+          }
+        }
+      },
+      {
+        "sequence": 5,
+        "points": {
+          "value": [
+            [
+              0,
+              3.7
+            ],
+            [
+              2.71,
+              7.3
+            ],
+            [
+              6.58,
+              0
+            ]
+          ],
+          "unit": "x:m; S:mm",
+          "status": "original_fact",
+          "identity": "原图三点标注；不是连续数值函数",
+          "source": {
+            "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+            "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+            "physical_pdf_pages_1_based": [
+              37
+            ],
+            "printed_pages": [
+              "34"
+            ],
+            "locator": "各工况地表沉降，工况5"
+          }
+        }
+      }
+    ]
+  },
+  "stability_reference": {
+    "global": {
+      "value": [
+        {
+          "H_m": 1.3,
+          "K": 1.26,
+          "required_K": 1.25
+        },
+        {
+          "H_m": 2.05,
+          "K": 3.66,
+          "required_K": 1.25
+        },
+        {
+          "H_m": 4.9,
+          "K": 2.05,
+          "required_K": 1.25
+        }
+      ],
+      "unit": "K:dimensionless",
+      "status": "original_fact",
+      "identity": "仅原报告结果，未重算",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          35
+        ],
+        "printed_pages": [
+          "32"
+        ],
+        "locator": "整体稳定验算三图"
+      }
+    },
+    "overturning": {
+      "value": [
+        {
+          "H_m": 2.05,
+          "K": 1.25,
+          "required_K": 1.15
+        },
+        {
+          "H_m": 4.9,
+          "K": 1.66,
+          "required_K": 1.15
+        }
+      ],
+      "unit": "K:dimensionless",
+      "status": "original_fact",
+      "identity": "仅原报告结果，未重算",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          35
+        ],
+        "printed_pages": [
+          "32"
+        ],
+        "locator": "抗倾覆验算两图"
+      }
+    },
+    "toe_heave": {
+      "value": {
+        "K": 18.25,
+        "required_K": 1.4
+      },
+      "unit": "K:dimensionless",
+      "status": "original_fact",
+      "identity": "仅原报告结果，未重算",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          35,
+          36
+        ],
+        "printed_pages": [
+          "32",
+          "33"
+        ],
+        "locator": "墙底隆起验算"
+      }
+    },
+    "base_heave": {
+      "value": [
+        {
+          "H_m": 2.05,
+          "K": 5.32,
+          "required_K": 1.4
+        },
+        {
+          "H_m": 4.9,
+          "K": 2.28,
+          "required_K": 1.4
+        }
+      ],
+      "unit": "K:dimensionless",
+      "status": "original_fact",
+      "identity": "仅原报告结果，未重算",
+      "source": {
+        "file": "/workspace/scratch/fd5d8a28c64e/upload/1-文本，2-计算书.pdf",
+        "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+        "physical_pdf_pages_1_based": [
+          36
+        ],
+        "printed_pages": [
+          "33"
+        ],
+        "locator": "坑底隆起验算两图"
+      }
+    }
+  }
+}

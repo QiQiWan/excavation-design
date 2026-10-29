@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-SOFTWARE_VERSION = "3.87.15"
-ALGORITHM_VERSION = "3.87.10-canonical-wall-path-rebar-cage-geometry"
-RULE_SET_VERSION = "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence"
+SOFTWARE_VERSION = "3.87.26"
+SECTION_KERNEL_VERSION = "2.0.0-explicit-methods-history-engineering-review"
+ALGORITHM_VERSION = "3.87.16-immutable-stage-loads-final-envelopes"
+RULE_SET_VERSION = "2026.10-v3.87.16-effective-stress-passive-depth-unified-actions"
 EXPORT_SCHEMA_VERSION = "3.87"
-STRUCTURAL_KERNEL_VERSION = "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel"
-RESULT_PIPELINE_VERSION = "3.87.15-production-api-release-consistency"
+STRUCTURAL_KERNEL_VERSION = "3.87.16-shared-stage-final-stiffness-solver"
+RESULT_PIPELINE_VERSION = "3.87.16-immutable-verification-final-envelope-evidence"
 
 
 def version_manifest() -> dict[str, str]:
     return {
         "softwareVersion": SOFTWARE_VERSION,
+        "sectionKernelVersion": SECTION_KERNEL_VERSION,
         "algorithmVersion": ALGORITHM_VERSION,
         "ruleSetVersion": RULE_SET_VERSION,
         "exportSchemaVersion": EXPORT_SCHEMA_VERSION,

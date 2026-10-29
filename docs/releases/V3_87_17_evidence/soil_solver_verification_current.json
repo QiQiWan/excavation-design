@@ -1,0 +1,1982 @@
+{
+  "date": "2026-10-25",
+  "algorithmState": "current_direction_cone_and_extended_displacement_refinement",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "tests": {
+    "command": "PYTHONPATH=/tmp/pitguard-soil-opensees:. python -m pytest -q tests/test_section_independent.py tests/test_section_solver.py",
+    "exitCode": 0,
+    "output": "54 passed in 1.31s",
+    "primaryCount": 27,
+    "independentCount": 27
+  },
+  "tddRed": "10 failed, 6 passed, 37 deselected in 0.53s before fix; failures covered complementary lower/upper corners, three-station closed cone and public K0=Ka initial state.",
+  "acceptanceCriteriaUnchanged": {
+    "globalForceAndMomentRelative": 1e-06,
+    "independentRelative": 0.001,
+    "meshRelative": 0.02
+  },
+  "directionCone": {
+    "coordinate": "xi=(z-mid_depth)/beam_length",
+    "normalizedDirectionTolerance": 1e-12,
+    "pressureBoundaryRoundoffMultiplier": 64,
+    "machineEpsilon": 2.220446049250313e-16,
+    "strictOutsideBounds": "never promoted to a one-sided corner; adds no small-displacement restraint",
+    "pressureRoundoffSide": "inside interval only; near-interior corners treated conservatively as one-sided",
+    "noArtificialStiffness": true,
+    "noAveragedConstitutiveForces": true
+  },
+  "independentSearchFallback": {
+    "nativeCommand": [
+      "algorithm",
+      "ModifiedNewton",
+      "-initial"
+    ],
+    "scope": "search matrix only; unchanged native ElasticPP restoring forces and bounds; one full stage load step",
+    "failedTrialHandling": "wipe/rebuild independently from previous committed plastic and installation offsets",
+    "nativeInitialThenCurrentProbe": "OpenSees3.8.0 failed at iteration1 for complementary upper-bound model; not used",
+    "upperCornerSmallLoadProbe": "Existing4e-8kN residual criterion with1000kN/m aggregate stiffness gives4e-11m displacement-error allowance; new test uses5e-11m and actual error1.49e-11m."
+  },
+  "filesSha256": {
+    "app/section/solver.py": "5cf9f3820862259adb68c4c00736c0a75377187671f6020745eb2307580e35e1",
+    "app/section/independent.py": "ae66d24601a1bac63cfd813572722032e24ab1f1b745f47c7fa743e257c2bb7b",
+    "tests/test_section_solver.py": "e9ffc872b2f41fee2f9a0bb392db72aeb3882312276420fdee4217883756990d",
+    "tests/test_section_independent.py": "786ad4eb95c2c3a4eee21af1169919587a01d512ad86896191df28af76436d7c",
+    "app/section/preprocess.py": "b6e4e4dba0e26bfd879bf1475ce9f2b0d157636fbd91adb06485a69c28b7a861"
+  },
+  "runs": [
+    {
+      "name": "default_verification",
+      "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+      "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+      "primaryResultHash": "3a841e718671e0448bb46038240379bab00a1727f87515f7a8aa396a02ca7727",
+      "implementationHash": "25c56984b4d8854d3fb95a8ea172bd86a977cbf16abe4ce5406e93dad8653e38",
+      "nodeCount": 83,
+      "primaryStatus": "complete",
+      "independentStatus": "success",
+      "independentVersion": "3.8.0",
+      "seconds": {
+        "primary": 0.7196877070000482,
+        "independent": 0.5142940949999684,
+        "mesh": 1.2070503980003195
+      },
+      "stages": [
+        {
+          "id": "S0",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 0,
+          "independentIterations": 1,
+          "primaryResidualInfKn": 0.0,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 0,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          }
+        },
+        {
+          "id": "S1",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 4,
+          "independentIterations": 4,
+          "primaryResidualInfKn": 5.680152528886317e-13,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 0,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 3.949400106576668,
+          "maxAbsMomentKnM": 57.00597881657914,
+          "maxAbsShearKn": 21.386522948451614,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": -4.43162867513891e-13,
+            "momentResidualKnM": -2.5089878091799633e-12,
+            "relativeForceResidual": 9.951028666205629e-16,
+            "relativeMomentResidual": 5.633822561076303e-16
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": -2.1995252841300328e-13,
+            "momentResidualKnM": -3.0194579475617545e-12,
+            "relativeForceResidual": 4.235756935761773e-16,
+            "relativeMomentResidual": 5.8147501353613e-16
+          }
+        },
+        {
+          "id": "S2",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 0,
+          "independentIterations": 1,
+          "primaryResidualInfKn": 5.680152528886317e-13,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 0,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 3.949400106576668,
+          "maxAbsMomentKnM": 57.00597881657914,
+          "maxAbsShearKn": 21.386522948451614,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": -4.439244111198448e-13,
+            "momentResidualKnM": -2.502879847821049e-12,
+            "relativeForceResidual": 9.968128795320518e-16,
+            "relativeMomentResidual": 5.620107400572083e-16
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": -8.485363349464148e-10,
+            "momentResidualKnM": -6.850888294163138e-09,
+            "relativeForceResidual": 1.6340769946686724e-12,
+            "relativeMomentResidual": 1.319316391471185e-12
+          }
+        },
+        {
+          "id": "S3",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 4,
+          "independentIterations": 4,
+          "primaryResidualInfKn": 7.693668618857785e-12,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 0,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 5.329166465397299,
+          "maxAbsMomentKnM": 101.12503567805535,
+          "maxAbsShearKn": 65.67055255380988,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 9.768779535290761e-12,
+            "momentResidualKnM": 7.429516550583326e-11,
+            "relativeForceResidual": 2.0004739900991597e-14,
+            "relativeMomentResidual": 1.5214341325608385e-14
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": -1.2639989749319014e-11,
+            "momentResidualKnM": -8.984742290440995e-11,
+            "relativeForceResidual": 1.60560292714695e-14,
+            "relativeMomentResidual": 1.1412927389415215e-14
+          }
+        },
+        {
+          "id": "S4",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 0,
+          "independentIterations": 3,
+          "primaryResidualInfKn": 1.1320107134657476e-09,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 14,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 5.329166465397299,
+          "maxAbsMomentKnM": 101.12503567805535,
+          "maxAbsShearKn": 65.67055255380988,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 1.8036642006336034e-09,
+            "momentResidualKnM": 8.326223833662882e-09,
+            "relativeForceResidual": 3.693586601279686e-12,
+            "relativeMomentResidual": 1.7050639903186782e-12
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 8.844778347227855e-10,
+            "momentResidualKnM": 3.892119111378878e-09,
+            "relativeForceResidual": 1.1235137279302385e-12,
+            "relativeMomentResidual": 4.943989640785465e-13
+          }
+        },
+        {
+          "id": "S5",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 3,
+          "independentIterations": 5,
+          "primaryResidualInfKn": 7.175117271163156e-12,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 1,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 11.394221873648359,
+          "maxAbsMomentKnM": 119.36861438720531,
+          "maxAbsShearKn": 91.5412393941804,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 8.26775800599755e-12,
+            "momentResidualKnM": 7.90806153200263e-11,
+            "relativeForceResidual": 1.4824743145640562e-14,
+            "relativeMomentResidual": 1.4179778956618694e-14
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 1.4013026676529261e-09,
+            "momentResidualKnM": 6.419855409431352e-09,
+            "relativeForceResidual": 1.4540195275701473e-12,
+            "relativeMomentResidual": 6.661369699042075e-13
+          }
+        }
+      ],
+      "independentComparison": {
+        "status": "passed",
+        "solver": "OpenSees",
+        "solverVersion": "3.8.0",
+        "discreteInputHash": "4f035a9e6b3c69f8d9c867e4de076f9b860b7431df13b0382226eb1588880a3b",
+        "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+        "primaryImplementationHash": "25c56984b4d8854d3fb95a8ea172bd86a977cbf16abe4ce5406e93dad8653e38",
+        "independentSourceHash": "ae66d24601a1bac63cfd813572722032e24ab1f1b745f47c7fa743e257c2bb7b",
+        "toleranceRelative": 0.001,
+        "acceptanceRule": "逐值 |a−b| ≤ absoluteTolerance + relativeTolerance·max(|a|,|b|)",
+        "scope": "相同离散输入与构件本构的独立数值求解；不校准或证明土参数取值",
+        "stages": [
+          {
+            "stageId": "S0",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.1102230246251565e-16,
+                "maxNormalizedError": 1.1388392681777346e-13,
+                "count": 984,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 984,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S1",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.6020852139652106e-17,
+                "maxNormalizedError": 1.3609358416010129e-11,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 4.553649124439119e-18,
+                "maxNormalizedError": 9.629880554445983e-12,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.6354118059780376e-09,
+                "maxNormalizedError": 7.17079846974523e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 8.694822639654376e-11,
+                "maxNormalizedError": 5.089218742458915e-07,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.661338147750939e-15,
+                "maxNormalizedError": 4.9240524005050664e-12,
+                "count": 882,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.6020852139652106e-17,
+                "maxNormalizedError": 1.884974265163931e-11,
+                "count": 882,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S2",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 5.4975121677180994e-14,
+                "maxNormalizedError": 1.388470985437058e-08,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.932257301552221e-14,
+                "maxNormalizedError": 4.02106752207605e-08,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.503128784946966e-09,
+                "maxNormalizedError": 1.543045311528142e-05,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 5.037428252308018e-09,
+                "maxNormalizedError": 2.334943956095912e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.959322007560331e-12,
+                "maxNormalizedError": 2.5203379190504548e-08,
+                "count": 882,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.6020852139652106e-17,
+                "maxNormalizedError": 1.884974265163931e-11,
+                "count": 882,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 5.6141004930836125e-15,
+                "maxNormalizedError": 5.614100493083297e-11,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.8648277366750676e-17,
+                "maxNormalizedError": 6.678901029026432e-12,
+                "count": 1,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S3",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.0990154059319366e-16,
+                "maxNormalizedError": 1.3768471706899574e-09,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.472686969738461e-17,
+                "maxNormalizedError": 9.60586615967156e-10,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.7720120360518195e-09,
+                "maxNormalizedError": 2.697480307078447e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.8880541574617382e-10,
+                "maxNormalizedError": 4.410101599583979e-07,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.162714451969805e-13,
+                "maxNormalizedError": 1.3486001030149946e-10,
+                "count": 738,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.1033522146218786e-16,
+                "maxNormalizedError": 4.021573863957234e-09,
+                "count": 738,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.581135388230905e-12,
+                "maxNormalizedError": 4.873452162299821e-11,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.8648277366750676e-17,
+                "maxNormalizedError": 6.678901029026432e-12,
+                "count": 1,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S4",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 4.410534437671032e-16,
+                "maxNormalizedError": 7.451439703958003e-09,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.1731067506293158e-16,
+                "maxNormalizedError": 4.728579136952672e-09,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.143924232063e-09,
+                "maxNormalizedError": 1.7700295612813393e-05,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.0819612700506696e-10,
+                "maxNormalizedError": 1.2618120226251185e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.0578204978628492e-12,
+                "maxNormalizedError": 7.300830557685721e-10,
+                "count": 738,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.1033522146218786e-16,
+                "maxNormalizedError": 4.021573863957234e-09,
+                "count": 738,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 8.566032961079828e-10,
+                "maxNormalizedError": 8.566032807416525e-06,
+                "count": 2,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.7520707107365752e-16,
+                "maxNormalizedError": 3.7547857963141207e-11,
+                "count": 2,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S5",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.0816681711721685e-16,
+                "maxNormalizedError": 9.66963325732349e-10,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.3769367590565906e-17,
+                "maxNormalizedError": 1.6806370887494286e-11,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 5.427745364272596e-09,
+                "maxNormalizedError": 3.1828960021657244e-05,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.886917371824893e-10,
+                "maxNormalizedError": 2.2698414539822425e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.0331293032759277e-13,
+                "maxNormalizedError": 2.6826831264290137e-10,
+                "count": 738,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.1033522146218786e-16,
+                "maxNormalizedError": 6.113699297375514e-09,
+                "count": 738,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.4036913853487931e-09,
+                "maxNormalizedError": 7.772062163314532e-09,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.7520707107365752e-16,
+                "maxNormalizedError": 3.7547857963141207e-11,
+                "count": 1,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          }
+        ]
+      },
+      "meshComparison": {
+        "coarseSnapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+        "fineSnapshotHash": "eac05a696e0cbc4eac4d33e2c83374021ed59cd1b5c2435ccd584ec59e1087ae",
+        "coarseAnalysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+        "fineAnalysisHash": "68788af25a7248b7c26db81b94eb42e68a582dd16615d19589a5769fe390027e",
+        "coarseNodeCount": 83,
+        "fineNodeCount": 163,
+        "toleranceRelative": 0.02,
+        "scope": "网格最大长度减半，比较各阶段峰值与活动支点反力；不改变任何物理参数或阶段事件",
+        "status": "passed",
+        "stages": [
+          {
+            "stageId": "S0",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 0.0,
+                "fine": 0.0
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 0.0,
+                "fine": 0.0
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 0.0,
+                "fine": 0.0
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S1",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0019068301440667845,
+                "maxNormalizedError": 0.02412605391154431,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 3.949400106576668,
+                "fine": 3.951306936720735
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.018098660756265872,
+                "maxNormalizedError": 0.015867923484698374,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 57.00597881657914,
+                "fine": 57.0240774773354
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.01510841567128196,
+                "maxNormalizedError": 0.035289101340352354,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 21.386522948451614,
+                "fine": 21.401631364122895
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S2",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0019068301440667845,
+                "maxNormalizedError": 0.02412605391154431,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 3.949400106576668,
+                "fine": 3.951306936720735
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.018098660756265872,
+                "maxNormalizedError": 0.015867923484698374,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 57.00597881657914,
+                "fine": 57.0240774773354
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.01510841567128196,
+                "maxNormalizedError": 0.035289101340352354,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 21.386522948451614,
+                "fine": 21.401631364122895
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 5.6141004930836125e-15,
+                "maxNormalizedError": 5.6141004930773085e-11,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S3",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.001579006052864429,
+                "maxNormalizedError": 0.014808979077406092,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 5.329166465397299,
+                "fine": 5.330745471450164
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.044097570505400085,
+                "maxNormalizedError": 0.021792907480147544,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 101.12503567805535,
+                "fine": 101.16913324856075
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.2501715244356433,
+                "maxNormalizedError": 0.1897374112559774,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 65.67055255380988,
+                "fine": 65.92072407824553
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.01686331567506727,
+                "maxNormalizedError": 0.011486586529967232,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S4",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.001579006052864429,
+                "maxNormalizedError": 0.014808979077406092,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 5.329166465397299,
+                "fine": 5.330745471450164
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.044097570505400085,
+                "maxNormalizedError": 0.021792907480147544,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 101.12503567805535,
+                "fine": 101.16913324856075
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.2501715244356433,
+                "maxNormalizedError": 0.1897374112559774,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 65.67055255380988,
+                "fine": 65.92072407824553
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.01686331567506727,
+                "maxNormalizedError": 0.011486586529967232,
+                "count": 2,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S5",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0030104817064522393,
+                "maxNormalizedError": 0.013206494119147628,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 11.394221873648359,
+                "fine": 11.397232355354811
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 5.580602646659827e-11,
+                "maxNormalizedError": 2.3374523236582828e-11,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 119.36861438720531,
+                "fine": 119.36861438726112
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.9240429324095487,
+                "maxNormalizedError": 0.4996431876059272,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 91.5412393941804,
+                "fine": 92.46528232658994
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.06298525477623684,
+                "maxNormalizedError": 0.01744016206239468,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "k0_equals_ka_verification",
+      "snapshotHash": "37e09839b4f8b07b1cf9526fe96eed69c06efb7940040f68d6ac397449afe6aa",
+      "analysisHash": "ffd8f6fb6d227f4e07f28d547a8f7449ab84d69be027e9de8cff16c66c1c2128",
+      "primaryResultHash": "fa9e11f94499929759a4639be394e1760db0371d16264134a36e91900e3bc930",
+      "implementationHash": "25c56984b4d8854d3fb95a8ea172bd86a977cbf16abe4ce5406e93dad8653e38",
+      "nodeCount": 83,
+      "primaryStatus": "complete",
+      "independentStatus": "success",
+      "independentVersion": "3.8.0",
+      "seconds": {
+        "primary": 0.666209396999875,
+        "independent": 0.49107856000046013,
+        "mesh": 1.160806660000162
+      },
+      "stages": [
+        {
+          "id": "S0",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 0,
+          "independentIterations": 1,
+          "primaryResidualInfKn": 0.0,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 0,
+            "oneSidedConstraintCount": 166,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          }
+        },
+        {
+          "id": "S1",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 2,
+          "independentIterations": 2,
+          "primaryResidualInfKn": 2.6415066002594134e-09,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 0,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 4.272856748990824,
+          "maxAbsMomentKnM": 57.99884773319695,
+          "maxAbsShearKn": 22.000508698549485,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": -6.313890261316901e-09,
+            "momentResidualKnM": -2.41931688541204e-08,
+            "relativeForceResidual": 1.5459643908078196e-11,
+            "relativeMomentResidual": 5.923729428498176e-12
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 5.228343907121014e-09,
+            "momentResidualKnM": 9.221062470120452e-09,
+            "relativeForceResidual": 1.0839474212368937e-11,
+            "relativeMomentResidual": 1.9117233034227063e-12
+          }
+        },
+        {
+          "id": "S2",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 0,
+          "independentIterations": 1,
+          "primaryResidualInfKn": 2.6415066002594134e-09,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 1,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 4.272856748990824,
+          "maxAbsMomentKnM": 57.99884773319695,
+          "maxAbsShearKn": 22.000508698549485,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": -6.3138837456955255e-09,
+            "momentResidualKnM": -2.4193144451548423e-08,
+            "relativeForceResidual": 1.5459627954492984e-11,
+            "relativeMomentResidual": 5.923723453496115e-12
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 4.706236476914594e-10,
+            "momentResidualKnM": -2.574739258061863e-09,
+            "relativeForceResidual": 9.757033935510196e-13,
+            "relativeMomentResidual": 5.337984701625064e-13
+          }
+        },
+        {
+          "id": "S3",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 4,
+          "independentIterations": 4,
+          "primaryResidualInfKn": 8.350270128132387e-12,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 0,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 5.629725322491154,
+          "maxAbsMomentKnM": 100.95418200650639,
+          "maxAbsShearKn": 65.60521654174578,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 5.6494080247215805e-12,
+            "momentResidualKnM": 3.908621863668582e-11,
+            "relativeForceResidual": 1.1607604102147318e-14,
+            "relativeMomentResidual": 8.030883055344208e-15
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": -7.483170333388856e-12,
+            "momentResidualKnM": -6.430540995527867e-11,
+            "relativeForceResidual": 9.525991888749331e-15,
+            "relativeMomentResidual": 8.186006549970822e-15
+          }
+        },
+        {
+          "id": "S4",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 0,
+          "independentIterations": 3,
+          "primaryResidualInfKn": 1.0073221761927598e-09,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 14,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 5.629725322491154,
+          "maxAbsMomentKnM": 100.95418200650639,
+          "maxAbsShearKn": 65.60521654174578,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": -1.571282690765452e-09,
+            "momentResidualKnM": -7.214759296936268e-09,
+            "relativeForceResidual": 3.2284493042721936e-12,
+            "relativeMomentResidual": 1.4823866366998722e-12
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": 1.0992087899619474e-09,
+            "momentResidualKnM": 4.7999922214020385e-09,
+            "relativeForceResidual": 1.3992804587759605e-12,
+            "relativeMomentResidual": 6.110336251875315e-13
+          }
+        },
+        {
+          "id": "S5",
+          "primaryStatus": "success",
+          "independentStatus": "success",
+          "primaryFailureReason": null,
+          "independentFailureReason": null,
+          "primaryIterations": 3,
+          "independentIterations": 7,
+          "primaryResidualInfKn": 3.960846407802254e-12,
+          "independentStability": {
+            "criterion": "rigid_motion_direction_cone",
+            "bilateralRank": 2,
+            "oneSidedConstraintCount": 1,
+            "nonzeroZeroStiffnessDirection": false,
+            "coordinate": "xi=(z-mid_depth)/length",
+            "directionTolerance": 1e-12,
+            "boundRoundoffMultiplier": 64,
+            "strictlyPlasticBranchesPromoted": false
+          },
+          "independentAlgorithm": "NewtonLineSearch(Bisection)",
+          "discardedUncommittedAttempts": 0,
+          "maxAbsDisplacementMm": 11.691592422574265,
+          "maxAbsMomentKnM": 119.36861438720462,
+          "maxAbsShearKn": 91.23004895986048,
+          "primaryEquilibrium": {
+            "horizontalForceResidualKn": 5.206651082501068e-12,
+            "momentResidualKnM": 4.00995191912612e-11,
+            "relativeForceResidual": 9.34633308044224e-15,
+            "relativeMomentResidual": 7.198167436007291e-15
+          },
+          "independentEquilibrium": {
+            "horizontalForceResidualKn": -3.0802007125463327e-10,
+            "momentResidualKnM": -1.4168905649453167e-09,
+            "relativeForceResidual": 3.199169843701025e-13,
+            "relativeMomentResidual": 1.4716162971893936e-13
+          }
+        }
+      ],
+      "independentComparison": {
+        "status": "passed",
+        "solver": "OpenSees",
+        "solverVersion": "3.8.0",
+        "discreteInputHash": "6123d82675735c667152d26ed18e34c2d0364419b7fdfe53a97b9b7125f558dc",
+        "snapshotHash": "37e09839b4f8b07b1cf9526fe96eed69c06efb7940040f68d6ac397449afe6aa",
+        "primaryImplementationHash": "25c56984b4d8854d3fb95a8ea172bd86a977cbf16abe4ce5406e93dad8653e38",
+        "independentSourceHash": "ae66d24601a1bac63cfd813572722032e24ab1f1b745f47c7fa743e257c2bb7b",
+        "toleranceRelative": 0.001,
+        "acceptanceRule": "逐值 |a−b| ≤ absoluteTolerance + relativeTolerance·max(|a|,|b|)",
+        "scope": "相同离散输入与构件本构的独立数值求解；不校准或证明土参数取值",
+        "stages": [
+          {
+            "stageId": "S0",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 984,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 984,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S1",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 9.1909205940377e-13,
+                "maxNormalizedError": 4.75616463198228e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.8831659322204874e-13,
+                "maxNormalizedError": 2.466543337207323e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.0105683401206988e-08,
+                "maxNormalizedError": 9.210695920946537e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.3132357423728536e-08,
+                "maxNormalizedError": 3.0660651151393894e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.8809509505501865e-10,
+                "maxNormalizedError": 1.373980561093537e-07,
+                "count": 882,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 9.1909205940377e-13,
+                "maxNormalizedError": 4.75616463198228e-07,
+                "count": 882,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S2",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.628168929851853e-13,
+                "maxNormalizedError": 4.954337613650181e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.5626562543946676e-13,
+                "maxNormalizedError": 2.0467735793460816e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.647361854878909e-09,
+                "maxNormalizedError": 1.077626827914391e-05,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.010058525707791e-08,
+                "maxNormalizedError": 2.1783215874047234e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.614550715345331e-10,
+                "maxNormalizedError": 1.1793828526657054e-07,
+                "count": 882,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 9.1909205940377e-13,
+                "maxNormalizedError": 4.75616463198228e-07,
+                "count": 882,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.0397489993866378e-09,
+                "maxNormalizedError": 3.0397489069859007e-05,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.160484448958226e-13,
+                "maxNormalizedError": 2.0132980696698073e-07,
+                "count": 1,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S3",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.529601941946851e-13,
+                "maxNormalizedError": 4.5159326985268905e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.0094845152939375e-13,
+                "maxNormalizedError": 2.411906042266509e-06,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 4.934776143272757e-09,
+                "maxNormalizedError": 2.696936979667106e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 4.389635321899732e-09,
+                "maxNormalizedError": 4.106140749643876e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.2735690280152312e-10,
+                "maxNormalizedError": 1.5249491184860661e-07,
+                "count": 738,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.529601941946851e-13,
+                "maxNormalizedError": 5.984521139846891e-06,
+                "count": 738,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.884608521635528e-10,
+                "maxNormalizedError": 1.0739459416853723e-08,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.160484448958226e-13,
+                "maxNormalizedError": 2.0132980696698073e-07,
+                "count": 1,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S4",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.524744716214116e-13,
+                "maxNormalizedError": 4.542867378193841e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.0077212637482971e-13,
+                "maxNormalizedError": 2.407784034923417e-06,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.8200375368214736e-09,
+                "maxNormalizedError": 6.5851396426657834e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 4.473504233715175e-09,
+                "maxNormalizedError": 4.1471360058619675e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.2811651739497165e-10,
+                "maxNormalizedError": 1.5340446098101293e-07,
+                "count": 738,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 7.529601941946851e-13,
+                "maxNormalizedError": 5.984521139846891e-06,
+                "count": 738,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.74629371847801e-09,
+                "maxNormalizedError": 2.746293675169893e-05,
+                "count": 2,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.160484448958226e-13,
+                "maxNormalizedError": 2.0132980696698073e-07,
+                "count": 2,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          },
+          {
+            "stageId": "S5",
+            "identitiesMatch": true,
+            "passed": true,
+            "metrics": {
+              "nodalDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.879323499742185e-13,
+                "maxNormalizedError": 2.395053905282126e-07,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "nodalRotation": {
+                "passed": true,
+                "maxAbsoluteDifference": 8.471023361933394e-14,
+                "maxNormalizedError": 8.58229055584823e-08,
+                "count": 83,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "elementShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.844460997967872e-09,
+                "maxNormalizedError": 6.82079925348144e-06,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "elementMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 4.227430849823577e-09,
+                "maxNormalizedError": 9.474008031655088e-07,
+                "count": 164,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "pressureKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 1.3016365763007798e-10,
+                "maxNormalizedError": 1.1869675338723994e-07,
+                "count": 738,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "plasticDisplacementM": {
+                "passed": true,
+                "maxAbsoluteDifference": 6.879323499742185e-13,
+                "maxNormalizedError": 5.984521139846891e-06,
+                "count": 738,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              },
+              "supportReactionKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.2459971660282463e-09,
+                "maxNormalizedError": 1.2457267184638031e-08,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.001
+              },
+              "supportReferenceM": {
+                "passed": true,
+                "maxAbsoluteDifference": 2.983299371428494e-13,
+                "maxNormalizedError": 6.127822495353759e-08,
+                "count": 1,
+                "absoluteTolerance": 1e-08,
+                "relativeTolerance": 0.001
+              }
+            }
+          }
+        ]
+      },
+      "meshComparison": {
+        "coarseSnapshotHash": "37e09839b4f8b07b1cf9526fe96eed69c06efb7940040f68d6ac397449afe6aa",
+        "fineSnapshotHash": "93d4e9a766f84f272347d66b8a4b94863fce4c182fc1fe29e607b69d3313e580",
+        "coarseAnalysisHash": "ffd8f6fb6d227f4e07f28d547a8f7449ab84d69be027e9de8cff16c66c1c2128",
+        "fineAnalysisHash": "6a12a5772e3de67532109c32871b35b502585e5037461418a116fd8e1f20db09",
+        "coarseNodeCount": 83,
+        "fineNodeCount": 163,
+        "toleranceRelative": 0.02,
+        "scope": "网格最大长度减半，比较各阶段峰值与活动支点反力；不改变任何物理参数或阶段事件",
+        "status": "passed",
+        "stages": [
+          {
+            "stageId": "S0",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 0.0,
+                "fine": 0.0
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 0.0,
+                "fine": 0.0
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 0.0,
+                "fine": 0.0
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S1",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0020534820718074442,
+                "maxNormalizedError": 0.024015029679351516,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 4.272856748990824,
+                "fine": 4.2749102310626315
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.029853314975987644,
+                "maxNormalizedError": 0.025720671296844258,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 57.99884773319695,
+                "fine": 58.02870104817294
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.014795546937691029,
+                "maxNormalizedError": 0.03359523731540452,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 22.000508698549485,
+                "fine": 22.015304245487176
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0,
+                "maxNormalizedError": 0.0,
+                "count": 0,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S2",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0020534820718074442,
+                "maxNormalizedError": 0.024015029679351516,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 4.272856748990824,
+                "fine": 4.2749102310626315
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.029853314975987644,
+                "maxNormalizedError": 0.025720671296844258,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 57.99884773319695,
+                "fine": 58.02870104817294
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.014795546937691029,
+                "maxNormalizedError": 0.03359523731540452,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 22.000508698549485,
+                "fine": 22.015304245487176
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.1517757154153614e-15,
+                "maxNormalizedError": 3.151775715413375e-11,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S3",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0017156175688182174,
+                "maxNormalizedError": 0.015231139558078784,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 5.629725322491154,
+                "fine": 5.6314409400599725
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.04422405036979171,
+                "maxNormalizedError": 0.021892355959208264,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 100.95418200650639,
+                "fine": 100.99840605687618
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.25021989151929347,
+                "maxNormalizedError": 0.18996221788845552,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 65.60521654174578,
+                "fine": 65.85543643326507
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.016911682745188727,
+                "maxNormalizedError": 0.011529787032020932,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S4",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.0017156175688182174,
+                "maxNormalizedError": 0.015231139558078784,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 5.629725322491154,
+                "fine": 5.6314409400599725
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.04422405036979171,
+                "maxNormalizedError": 0.021892355959208264,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 100.95418200650639,
+                "fine": 100.99840605687618
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.25021989151929347,
+                "maxNormalizedError": 0.18996221788845552,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 65.60521654174578,
+                "fine": 65.85543643326507
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.016911682745188727,
+                "maxNormalizedError": 0.011529787032020932,
+                "count": 2,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          },
+          {
+            "stageId": "S5",
+            "passed": true,
+            "metrics": {
+              "maxAbsDisplacementMm": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.003088419640633333,
+                "maxNormalizedError": 0.013203813101740933,
+                "count": 1,
+                "absoluteTolerance": 1e-05,
+                "relativeTolerance": 0.02,
+                "coarse": 11.691592422574265,
+                "fine": 11.694680842214899
+              },
+              "maxAbsMomentKnM": {
+                "passed": true,
+                "maxAbsoluteDifference": 3.694822225952521e-12,
+                "maxNormalizedError": 1.5475874819236627e-12,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 119.36861438720462,
+                "fine": 119.36861438720831
+              },
+              "maxAbsShearKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.9270180710789617,
+                "maxNormalizedError": 0.5029282116511966,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02,
+                "coarse": 91.23004895986048,
+                "fine": 92.15706703093944
+              },
+              "supportReactionsKn": {
+                "passed": true,
+                "maxAbsoluteDifference": 0.06596039343318694,
+                "maxNormalizedError": 0.018295183631781547,
+                "count": 1,
+                "absoluteTolerance": 0.0001,
+                "relativeTolerance": 0.02
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "currentAlgorithm": true,
+  "mixedPrecisionRefinement": {
+    "matrixAndLinearSolve": "float64",
+    "accumulatedDisplacementAndBeamCurvature": "numpy.longdouble",
+    "publishedJsonNumbers": "float64",
+    "float64MantissaBits": 52,
+    "longdoubleMantissaBits": 63,
+    "redTest": "K0=Ka complete .0625m history: S5 failed at100iterations;1failed,1passed,25deselected in1.07s.",
+    "observedFloat64ResidualPlateauKn": 5.299112126877503e-08,
+    "unchangedResidualToleranceKn": 3.090867226753557e-08,
+    "explanation": "float64 total-displacement ULP prevented retaining the required small corrections; centered extended-precision curvature and accumulated corrections reduce the actual residual without changing the force criterion.",
+    "platformLimitation": "numpy.longdouble precision is platform dependent; this record states the actual tested mantissa width. Numerical failure remains explicit on a platform unable to reach the unchanged criterion."
+  },
+  "directionConeOracleEvidence": "soil_direction_cone_probe_result.json",
+  "canonicalEvidence": "soil_direction_cone_verification_current.json",
+  "historyEvidence": [
+    "soil_solver_verification_pre_direction_cone_history.json",
+    "soil_solver_pre_centering_failure_history.json",
+    "soil_direction_cone_float64_failure_history.json"
+  ]
+}

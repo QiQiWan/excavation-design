@@ -219,7 +219,8 @@ def _support_direction_cosines(support: SupportElement) -> tuple[float, float, f
 
 
 def _replacement_slab_state(stage_type: str | None, wall_length: float, properties: dict[str, Any] | None) -> dict[str, Any]:
-    required = stage_type in {"bottom_slab", "replacement", "support_removal", "final"}
+    props = dict(properties or {})
+    required = stage_type in {"bottom_slab", "replacement", "support_removal"} or props.get("active") is True
     if not required:
         return {
             "required": False,
@@ -228,7 +229,6 @@ def _replacement_slab_state(stage_type: str | None, wall_length: float, properti
             "source": "stage does not activate replacement slab",
             "components": {},
         }
-    props = dict(properties or {})
     width = float(props.get("effectiveWidthM") or 0.0)
     thickness = float(props.get("thicknessM") or 0.0)
     elastic_modulus_mpa = float(props.get("elasticModulusMpa") or 0.0)
@@ -252,6 +252,7 @@ def _replacement_slab_state(stage_type: str | None, wall_length: float, properti
         "stiffness": stiffness if status == "active" else None,
         "source": "EA/L equivalent in-plane slab/frame transfer stiffness with connection reduction",
         "components": {
+            "activationDepthM": props.get("activationDepthM"),
             "effectiveWidthM": round(width, 4),
             "thicknessM": round(thickness, 4),
             "elasticModulusMpa": round(elastic_modulus_mpa, 3),
@@ -260,6 +261,30 @@ def _replacement_slab_state(stage_type: str | None, wall_length: float, properti
             "grossStiffnessKnM": round(gross, 3),
         },
     }
+
+
+def _resolve_slab_location(state: dict[str, Any], wall_depths: list[float], excavation_depth: float, stage_type: str | None) -> dict[str, Any]:
+    """Resolve a single full-face spring; missing geometry cannot create restraint."""
+    state = dict(state)
+    if not state.get("stiffness"):
+        return state
+    components = dict(state.get("components") or {})
+    depth = components.get("activationDepthM")
+    assumed = depth is None
+    if assumed and stage_type not in {"bottom_slab", "replacement", "support_removal"}:
+        state.update(status="missing", stiffness=None, source="Explicit slab activation requires activationDepthM")
+        return state
+    depth = excavation_depth if assumed else float(depth)
+    if not math.isfinite(depth) or not min(wall_depths) <= depth <= max(wall_depths):
+        state.update(status="invalid", stiffness=None, source="Slab activationDepthM is outside wall depth")
+        return state
+    node = min(range(len(wall_depths)), key=lambda i: abs(wall_depths[i] - depth))
+    components.update(activationDepthM=depth, appliedWallNode=node,
+                      appliedDepthM=wall_depths[node], assumedExcavationBottom=assumed or bool(components.get("assumedExcavationBottom")), applicationCount=1)
+    state["components"] = components
+    if assumed:
+        state["source"] += "; activation elevation assumed at current excavation bottom"
+    return state
 
 
 def _solve_spatial_frame_proxy(
@@ -320,10 +345,13 @@ def _solve_spatial_frame_proxy(
     K = np.zeros((n, n), dtype=float)
     F = np.zeros(n, dtype=float)
 
+    # Wall EI is supplied per metre; loads and springs represent the full face.
+    face_width = max(wall_length, 1.0)
+    face_wall_ei = wall_ei * face_width
     # Wall beam with translation/rotation DOFs.
     for i in range(wall_count - 1):
         L = max(wall_depths[i + 1] - wall_depths[i], 0.25)
-        _add_matrix(K, [wall_u[i], wall_t[i], wall_u[i + 1], wall_t[i + 1]], _beam4_stiffness(wall_ei, L))
+        _add_matrix(K, [wall_u[i], wall_t[i], wall_u[i + 1], wall_t[i + 1]], _beam4_stiffness(face_wall_ei, L))
         q1 = _pressure_at_depth(pressure_profile, wall_depths[i]) * max(wall_length, 1.0)
         q2 = _pressure_at_depth(pressure_profile, wall_depths[i + 1]) * max(wall_length, 1.0)
         fe = _beam4_load(0.5 * (q1 + q2), L)
@@ -336,18 +364,21 @@ def _solve_spatial_frame_proxy(
             dz_right = wall_depths[i + 1] - d if i < wall_count - 1 else 0.5
             trib = max(0.25, 0.5 * (dz_left + dz_right))
             _add_spring(K, wall_u[i], None, soil_k * trib * max(wall_length, 1.0))
-    _add_spring(K, wall_u[0], None, END_ANCHOR_KN_M)
-    _add_spring(K, wall_t[0], None, END_ANCHOR_KN_M * 0.25)
-    _add_spring(K, wall_u[-1], None, END_ANCHOR_KN_M * 2.0)
-    _add_spring(K, wall_t[-1], None, END_ANCHOR_KN_M * 0.5)
+    _add_spring(K, wall_u[0], None, END_ANCHOR_KN_M * face_width)
+    _add_spring(K, wall_t[0], None, END_ANCHOR_KN_M * 0.25 * face_width)
+    _add_spring(K, wall_u[-1], None, END_ANCHOR_KN_M * 2.0 * face_width)
+    _add_spring(K, wall_t[-1], None, END_ANCHOR_KN_M * 0.5 * face_width)
 
     rigid_zones: list[dict[str, Any]] = []
     support_reactions: list[dict[str, Any]] = []
     column_records: list[dict[str, Any]] = []
     stage_type = stage_type or "excavation"
     replacement_state = dict(replacement_slab_state or {})
+    replacement_state = _resolve_slab_location(replacement_state, wall_depths, excavation_depth, stage_type)
     slab_value = replacement_state.get("stiffness")
     slab_k = float(slab_value) if slab_value is not None else 0.0
+    if slab_k:
+        _add_spring(K, wall_u[replacement_state["components"]["appliedWallNode"]], None, slab_k)
     # Wale beam continuity by support level, including rotations.
     level_items: dict[int, list[tuple[int, dict[str, Any]]]] = {}
     for j, node in enumerate(wale_nodes):
@@ -366,21 +397,19 @@ def _solve_spatial_frame_proxy(
         rot_k = max(WALL_WALE_COUPLING_KN_M * 0.60 * max(0.01, min(float(joint_rotational_factor), 5.0)), 1.0e4)
         _add_spring(K, wall_u[nearest], wale_u[j], rigid_k)
         _add_spring(K, wall_t[nearest], wale_t[j], rot_k)
-        if slab_k:
-            _add_spring(K, wale_u[j], None, slab_k)
         spring = max(float(node["spring"]), 1.0)
         projection = max(float(node["projection"]), 0.2)
         cx, cy, sup_len = _support_direction_cosines(sup)
         # Support axial DOF is tied to the wale node through projected stiffness
         # and restrained at the far side by the opposite wall/support system.
-        axial_k = spring * projection * projection
+        axial_k = spring  # shared helper already projects EA/L to the wall normal
         design_axial = max(float(getattr(sup, "design_axial_force", 0.0) or 0.0), float(getattr(sup, "preload", 0.0) or 0.0))
         imperfection_load = design_axial * max(0.0, min(float(initial_imperfection_ratio), 0.02))
         F[wale_u[j]] += imperfection_load
         _add_spring(K, wale_u[j], support_a[j], axial_k)
         _add_spring(K, support_a[j], None, axial_k * 0.65)
-        # Column vertical DOF proxy: vertical stiffness participates as a real DOF;
-        # its load is induced from support inclination/imperfection after solving.
+        # No vertical load path is represented; retain the solved zero vertical DOF.
+        # This independent proxy DOF cannot provide a column design action.
         column_k = max(3.0e5, axial_k * 0.08)
         _add_spring(K, column_v[j], None, column_k)
         rigid_zones.append({
@@ -418,17 +447,15 @@ def _solve_spatial_frame_proxy(
         sup = node["support"]
         spring = max(float(node["spring"]), 1.0)
         projection = max(float(node["projection"]), 0.2)
-        axial_k = spring * projection * projection
+        axial_k = spring  # shared helper already projects EA/L to the wall normal
         reaction = max(0.0, axial_k * (float(U[wale_u[j]]) - float(U[support_a[j]])))
         axial = reaction / projection
         max_axial = max(max_axial, axial)
         deformation = float(U[support_a[j]])
         cx, cy, _ = _support_direction_cosines(sup)
-        col_load = 0.03 * axial + abs(float(U[wale_t[j]])) * 1500.0
         column_k = max(3.0e5, axial_k * 0.08)
-        col_disp = col_load / column_k
-        # Override vertical DOF solution with induced load-consistent displacement for traceability.
-        U[column_v[j]] = col_disp
+        col_disp = float(U[column_v[j]])
+        col_load = column_k * col_disp
         support_reactions.append({
             "supportId": sup.id,
             "supportCode": sup.code,
@@ -437,7 +464,7 @@ def _solve_spatial_frame_proxy(
             "levelIndex": sup.level_index,
             "chainage": round(node["chainage"], 3),
             "depth": round(node["depth"], 3),
-            "nodeDisplacement": round(float(U[wale_u[j]]), 8),
+            "nodeDisplacement": None if solve_failed else round(float(U[wale_u[j]]), 8),
             "springStiffness": round(float(spring), 3),
             "nodeReaction": round(reaction, 3),
             "axialForce": round(axial, 3),
@@ -461,17 +488,18 @@ def _solve_spatial_frame_proxy(
             "supportCode": sup.code,
             "endpoint": node["endpoint"],
             "verticalDof": column_v[j],
-            "verticalDisplacement": round(col_disp, 8),
-            "verticalReaction": round(col_load, 3),
+            "verticalDisplacement": None if solve_failed else round(col_disp, 8),
+            "verticalReaction": None if solve_failed else round(col_load, 3),
             "columnVerticalStiffness": round(column_k, 3),
-            "modelRole": "real vertical DOF with induced reaction for temporary column/pile sizing",
+            "loadRepresented": False,
+            "modelRole": "unloaded vertical proxy DOF; column design action unavailable",
         })
         wale_node_profile.append({
             "supportCode": sup.code,
             "endpoint": node["endpoint"],
             "chainage": round(node["chainage"], 3),
-            "horizontalDisplacement": round(float(U[wale_u[j]]), 8),
-            "rotation": round(float(U[wale_t[j]]), 8),
+            "horizontalDisplacement": None if solve_failed else round(float(U[wale_u[j]]), 8),
+            "rotation": None if solve_failed else round(float(U[wale_t[j]]), 8),
             "levelIndex": sup.level_index,
         })
     wall_profile = []
@@ -480,13 +508,13 @@ def _solve_spatial_frame_proxy(
         wall_profile.append({
             "depth": round(depth, 3),
             "elevation": round(top_elevation - depth, 3),
-            "horizontalDisplacement": round(float(U[wall_u[i]]), 8),
+            "horizontalDisplacement": None if solve_failed else round(float(U[wall_u[i]]), 8),
             "pressure": round(_pressure_at_depth(pressure_profile, depth), 3),
         })
         wall_rot.append({
             "depth": round(depth, 3),
             "elevation": round(top_elevation - depth, 3),
-            "rotation": round(float(U[wall_t[i]]), 8),
+            "rotation": None if solve_failed else round(float(U[wall_t[i]]), 8),
         })
     cond_raw = numerical_gate.get("scaledConditionNumber")
     cond_method = numerical_gate.get("scaledConditionMethod") or "symmetric_diagonal_scaling"
@@ -505,7 +533,7 @@ def _solve_spatial_frame_proxy(
         "illConditionedBlocked": bool(numerical_gate.get("blocked")),
         "equilibriumDiagnostics": equilibrium_diagnostics,
         "dofs": [
-            {"index": i, "name": name, "value": round(float(U[i]), 8), "unit": dof_meta[i]["unit"], "dofType": dof_meta[i]["type"], "objectId": dof_meta[i].get("objectId"), "stageStatus": stage_type}
+            {"index": i, "name": name, "value": None if solve_failed else float(U[i]), "unit": dof_meta[i]["unit"], "dofType": dof_meta[i]["type"], "objectId": dof_meta[i].get("objectId"), "stageStatus": stage_type}
             for i, name in enumerate(dof_names)
         ],
         "dofSummary": {
@@ -529,7 +557,7 @@ def _solve_spatial_frame_proxy(
         "slabReplacementRequired": bool(replacement_state.get("required", False)),
         "slabReplacementComponents": dict(replacement_state.get("components") or {}),
         "rigidNodeZones": rigid_zones,
-        "maxWallDisplacement": max((abs(p["horizontalDisplacement"]) for p in wall_profile), default=0.0),
+        "maxWallDisplacement": None if solve_failed else max((abs(p["horizontalDisplacement"]) for p in wall_profile), default=0.0),
         "maxSupportAxialForce": round(max_axial, 3),
         "modelAssumptions": {
             "wallStiffnessFactor": round(float(wall_stiffness_factor), 4),
@@ -649,7 +677,7 @@ def solve_global_wall_wale_support_system(
     # stiffness between neighbouring wall nodes.
     for i in range(len(wall_depths) - 1):
         dz = max(wall_depths[i + 1] - wall_depths[i], 0.25)
-        beam_k = max(1.0e3, 12.0 * ei / (dz ** 3))
+        beam_k = max(1.0e3, 12.0 * ei * max(length, 1.0) / (dz ** 3))
         _add_spring(k_global, i, i + 1, beam_k)
         q1 = _pressure_at_depth(pressure_profile, wall_depths[i])
         q2 = _pressure_at_depth(pressure_profile, wall_depths[i + 1])
@@ -671,8 +699,8 @@ def solve_global_wall_wale_support_system(
             dz_right = wall_depths[i + 1] - d if i < len(wall_depths) - 1 else 0.5
             tributary = max(0.25, 0.5 * (dz_left + dz_right))
             _add_spring(k_global, i, None, soil_k * soil_modulus_factor * tributary * max(length, 1.0))
-    _add_spring(k_global, 0, None, END_ANCHOR_KN_M)
-    _add_spring(k_global, len(wall_depths) - 1, None, END_ANCHOR_KN_M * 2.0)
+    _add_spring(k_global, 0, None, END_ANCHOR_KN_M * max(length, 1.0))
+    _add_spring(k_global, len(wall_depths) - 1, None, END_ANCHOR_KN_M * 2.0 * max(length, 1.0))
 
     # Wale/support DOFs and wall-wale coupling.
     for j, node in enumerate(support_nodes):
@@ -693,6 +721,13 @@ def solve_global_wall_wale_support_system(
         for (idx_a, a), (idx_b, b) in zip(items, items[1:]):
             span = max(abs(b["chainage"] - a["chainage"]), 1.0)
             _add_spring(k_global, idx_a, idx_b, 12.0 * wale_ei / (span ** 3))
+
+    replacement_state = _resolve_slab_location(
+        _replacement_slab_state(stage_type, length, replacement_slab_properties),
+        wall_depths, excavation_depth, stage_type,
+    )
+    if replacement_state.get("stiffness"):
+        _add_spring(k_global, replacement_state["components"]["appliedWallNode"], None, float(replacement_state["stiffness"]))
 
     u, condensed_numerical_gate = solve_scaled_symmetric(
         k_global,
@@ -727,7 +762,7 @@ def solve_global_wall_wale_support_system(
             "levelIndex": node["support"].level_index,
             "chainage": round(node["chainage"], 3),
             "depth": round(node["depth"], 3),
-            "nodeDisplacement": round(float(u[idx]), 8),
+            "nodeDisplacement": None if solve_failed else round(float(u[idx]), 8),
             "springStiffness": round(float(node["spring"]), 3),
             "localSupportStiffness": round(float(node.get("localSpring") or node["spring"]), 3),
             "transferFarEndStiffness": round(float(node.get("farEndAxisSpring")), 3) if node.get("farEndAxisSpring") else None,
@@ -743,21 +778,21 @@ def solve_global_wall_wale_support_system(
         wall_points.append({
             "depth": round(d, 3),
             "elevation": round(top_elevation - d, 3),
-            "horizontalDisplacement": round(float(u[i]), 8),
+            "horizontalDisplacement": None if solve_failed else round(float(u[i]), 8),
             "pressure": round(_pressure_at_depth(pressure_profile, d), 3),
         })
-    max_disp = max((abs(p["horizontalDisplacement"]) for p in wall_points), default=0.0)
+    max_disp = None if solve_failed else max((abs(p["horizontalDisplacement"]) for p in wall_points), default=0.0)
 
     column_supports = []
     for sr in support_reactions:
         column_supports.append({
             "supportCode": sr["supportCode"],
             "levelIndex": sr["levelIndex"],
-            "estimatedVerticalShare": round(0.03 * sr["axialForce"], 3),
-            "modelRole": "V1.9 column vertical reaction proxy; superseded by V2.0 columnVerticalDofs when available",
+            "estimatedVerticalShare": None,
+            "loadRepresented": False,
+            "modelRole": "vertical load path is not represented; column design action unavailable",
         })
 
-    replacement_state = _replacement_slab_state(stage_type, length, replacement_slab_properties)
     if len(support_nodes) > MAX_SPATIAL_SUPPORT_NODES:
         spatial = {
             "available": False,
@@ -777,7 +812,7 @@ def solve_global_wall_wale_support_system(
             wall_depth=wall_depth,
             wall_length=length,
             wall_ei=ei,
-            soil_k=soil_k,
+            soil_k=soil_k * soil_modulus_factor,
             stage_id=stage_id,
             stage_type=stage_type,
             replacement_slab_state=replacement_state,
@@ -800,14 +835,17 @@ def solve_global_wall_wale_support_system(
     if spatial.get("available"):
         support_reactions = spatial.get("supportReactions", support_reactions) or support_reactions
         wall_points = spatial.get("wallDisplacementProfile", wall_points) or wall_points
-        max_disp = spatial.get("maxWallDisplacement", max_disp) or max_disp
+        max_disp = spatial.get("maxWallDisplacement")
+        fallback = bool(spatial.get("fallback"))
+        reason = spatial.get("reason")
         max_axial = spatial.get("maxSupportAxialForce", max_axial) or max_axial
         column_supports = spatial.get("columnVerticalDofs", column_supports) or column_supports
 
     return {
         "method": "V2.0 spatial wall-wale-support-column-slab stiffness matrix prototype",
         "modelDimension": "space-frame-proxy-with-wall-and-wale-rotational-dofs" if spatial.get("available") else "condensed-wall-wale-support-matrix",
-        "soilSpringKnM2": round(soil_k, 3),
+        "soilSpringKnM2": round(soil_k * soil_modulus_factor, 3),
+        "soilModulusFactor": soil_modulus_factor,
         "soilSpringSource": soil_spring.get("source"),
         "soilSpringFormalUseAllowed": bool(soil_spring.get("formalUseAllowed")),
         "soilSpringLayerValues": soil_spring.get("layerValues"),
@@ -838,13 +876,13 @@ def solve_global_wall_wale_support_system(
         },
         "spatialDofSummary": spatial.get("dofSummary", {}) if spatial.get("available") else {},
         "dofs": spatial.get("dofs") if spatial.get("available") else [
-            {"index": i, "name": name, "value": round(float(u[i]), 8), "unit": "m", "dofType": "condensed_translation"}
+            {"index": i, "name": name, "value": None if solve_failed else float(u[i]), "unit": "m", "dofType": "condensed_translation"}
             for i, name in enumerate(dofs)
         ],
         "wallDisplacementProfile": wall_points,
         "supportReactions": support_reactions,
         "columnVerticalSupports": column_supports,
-        "maxWallDisplacement": round(max_disp, 8),
+        "maxWallDisplacement": round(max_disp, 8) if max_disp is not None else None,
         "maxSupportAxialForce": round(max_axial, 3),
         "wallRotationProfile": spatial.get("wallRotationProfile", []) if spatial.get("available") else [],
         "waleNodeProfile": spatial.get("waleNodeProfile", []) if spatial.get("available") else [],
@@ -858,7 +896,7 @@ def solve_global_wall_wale_support_system(
         "rigidNodeZones": spatial.get("rigidNodeZones", []) if spatial.get("available") else [],
         "notes": [
             "V2.0 已将墙体梁转角自由度、围檩梁转角自由度、支撑轴向变形自由度、立柱竖向自由度和支撑节点刚域纳入同一空间杆系代理矩阵。",
-            "地下室楼板换撑在 bottom_slab/replacement/support_removal/final 阶段激活；未激活显示为 not_active/—，激活阶段按 EA/L 与连接折减计算，缺失参数会标记 missing 而不会伪装成 0。",
+            "地下室楼板换撑在 bottom_slab/replacement/support_removal 或显式 active 阶段激活；未激活显示为 not_active/—，激活阶段按 EA/L 与连接折减计算，缺失参数会标记 missing 而不会伪装成 0。",
             "施工阶段激活/失活由 active_supports、deactivated_support_ids 和 stage_id 控制；正式生产级仍应采用完整三维杆系/FEM求解器复核。",
         ],
     }

@@ -224,7 +224,8 @@ def build_calculation_trace(project: Project) -> dict[str, Any]:
                 stage_name=stage_name,
                 demand_name="最大水平位移",
                 demand_value=w.max_displacement,
-                capacity_value=max(max_disp * 1.20, w.max_displacement or 0.0, 1.0),
+                capacity_value=(max(max_disp * 1.20, w.max_displacement, 1.0)
+                                if w.max_displacement is not None and latest.governing_values.max_displacement is not None else None),
                 unit="mm",
                 formula="u_max = max(|u_i|), limit = min(H/ratio, project_limit)",
                 code_reference="JGJ 120-2012 支护结构变形控制子集",

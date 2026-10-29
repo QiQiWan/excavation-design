@@ -4,7 +4,7 @@ from typing import Any
 
 from app.rules.base import CheckResult, DesignRule
 from app.rules.jgj120_2012.earth_pressure_rules import calculate_jgj120_lateral_pressure_profile
-from app.schemas.domain import GeologicalLayer
+from app.schemas.domain import GeologicalLayer, PressureProfile
 
 JGJ120_HORIZONTAL_LOAD_RULE = DesignRule(
     rule_id="JGJ120-2012-3.4-LATERAL-PRESSURE-SUBSET",
@@ -108,7 +108,18 @@ def check_embedment_stability(
     groundwater_level_inside: float | None,
     surcharge: float,
     safety_grade: str,
+    pressure_profile: PressureProfile | None = None,
+    pressure_method: str = "active",
+    water_soil_method: str = "separate",
 ) -> tuple[CheckResult, dict[str, Any]]:
+    if excavation_depth <= 0.0:
+        return CheckResult(
+            rule_id=JGJ120_EMBEDMENT_RULE.rule_id, object_id=object_id,
+            object_type="DiaphragmWallPanel", status="manual_review", calculated_value=None,
+            limit_value=required_embedment_factor(safety_grade), unit="-",
+            message="当前阶段未开挖，嵌固筛查无开挖驱动力，安全系数不适用。",
+            clause_reference=JGJ120_EMBEDMENT_RULE.clause_reference,
+        ), {"factor": None, "applicability": "not_applicable", "methodStatus": "unverified_screening", "formalUseAllowed": False}
     wall_depth = top_elevation - wall_bottom_elevation
     if wall_depth <= excavation_depth:
         check = CheckResult(
@@ -123,23 +134,63 @@ def check_embedment_stability(
             clause_reference=JGJ120_EMBEDMENT_RULE.clause_reference,
         )
         return check, {"wallDepth": wall_depth, "excavationDepth": excavation_depth}
+    if water_soil_method != "separate":
+        raise ValueError("Embedment screening requires supported separate water/soil pressure")
     gw_inside = groundwater_level_inside if groundwater_level_inside is not None else min(groundwater_level_outside, top_elevation - excavation_depth)
-    active = calculate_jgj120_lateral_pressure_profile(soil_profile, wall_depth, groundwater_level_outside, surcharge, top_elevation, step=0.25, mode="active")
-    passive = calculate_jgj120_lateral_pressure_profile(soil_profile, wall_depth, gw_inside, 0.0, top_elevation, step=0.25, mode="passive")
-    active_force, active_moment = _integrate_moment(active, 0.0, excavation_depth, wall_depth)
+    shared = pressure_profile
+    if shared is None:
+        shared = calculate_jgj120_lateral_pressure_profile(
+            soil_profile, excavation_depth, groundwater_level_outside, surcharge, top_elevation,
+            step=0.25, mode=pressure_method, groundwater_level_inside=gw_inside,
+            calculation_depth=wall_depth,
+        )
+    pit_bottom = top_elevation - excavation_depth
+    if all(point.active_earth_pressure is not None and point.passive_earth_pressure is not None for point in shared.points):
+        # Component fields are soil-only. Add each water side once; the frozen
+        # net total cannot be reused as the outside driving pressure.
+        active = shared.model_copy(update={"points": [
+            point.model_copy(update={"total_pressure": point.active_earth_pressure + (point.outside_water_pressure or 0.0)})
+            for point in shared.points
+        ]})
+        driving = shared.model_copy(update={"points": [
+            point.model_copy(update={"total_pressure": max(0.0, point.active_earth_pressure + (point.outside_water_pressure or 0.0) - (point.inside_water_pressure or 0.0))})
+            for point in shared.points
+        ]})
+        passive = shared.model_copy(update={"points": [
+            point.model_copy(update={"total_pressure": point.passive_earth_pressure + (point.inside_water_pressure or 0.0)})
+            for point in shared.points
+        ]})
+    else:
+        # Legacy caller profiles without decomposition are outside pressure.
+        # Build only the missing pit-side resistance from the local soil slice.
+        active = driving = shared
+        embedded_layers = [
+            layer.model_copy(update={"top_elevation": min(layer.top_elevation, pit_bottom),
+                                     "thickness": min(layer.top_elevation, pit_bottom) - layer.bottom_elevation})
+            for layer in soil_profile if layer.bottom_elevation < pit_bottom
+        ]
+        passive_local = calculate_jgj120_lateral_pressure_profile(
+            embedded_layers, wall_depth - excavation_depth, gw_inside, 0.0,
+            pit_bottom, step=0.25, mode="passive"
+        )
+        passive = passive_local.model_copy(update={"points": [
+            point.model_copy(update={"depth": point.depth + excavation_depth})
+            for point in passive_local.points
+        ]})
+    active_force, active_moment = _integrate_moment(driving, 0.0, excavation_depth, wall_depth)
     resistance_force, resistance_moment = _integrate_moment(passive, excavation_depth, wall_depth, wall_depth, net_with=active)
-    factor = resistance_moment / active_moment if active_moment > 1e-9 else 999.0
+    factor = resistance_moment / active_moment if active_moment > 1e-9 else None
     limit = required_embedment_factor(safety_grade)
-    status = "pass" if factor >= limit else "fail"
+    status = "manual_review" if factor is None or factor >= limit else "fail"
     check = CheckResult(
         rule_id=JGJ120_EMBEDMENT_RULE.rule_id,
         object_id=object_id,
         object_type="DiaphragmWallPanel",
         status=status,
-        calculated_value=round(factor, 3),
+        calculated_value=round(factor, 3) if factor is not None else None,
         limit_value=limit,
         unit="-",
-        message=("嵌固稳定筛查通过。" if status == "pass" else "嵌固稳定筛查未通过，应增加嵌固深度或调整支护体系。") + " 该项为朗肯压力抗力矩/作用矩筛查，正式公式、被动土折减、承压水和施工阶段需按规范原文复核。",
+        message=("当前压力无驱动力，嵌固筛查安全系数不适用。" if factor is None else ("嵌固筛查数值达到阈值，但方法未经验证，不能确认规范验算通过。" if status == "manual_review" else "嵌固稳定筛查未通过，应增加嵌固深度或调整支护体系。") + " 该项为朗肯压力抗力矩/作用矩筛查，正式公式、被动土折减、承压水和施工阶段需按规范原文复核。"),
         clause_reference=JGJ120_EMBEDMENT_RULE.clause_reference,
     )
     trace = {
@@ -151,8 +202,13 @@ def check_embedment_stability(
         "activeMomentKnMPerM": round(active_moment, 3),
         "netPassiveForceKnPerM": round(resistance_force, 3),
         "netPassiveMomentKnMPerM": round(resistance_moment, 3),
-        "factor": round(factor, 3),
+        "factor": round(factor, 3) if factor is not None else None,
+        "applicability": "applicable" if factor is not None else "not_applicable",
         "limit": limit,
+        "methodStatus": "unverified_screening",
+        "formalUseAllowed": False,
+        "passiveOriginDepthM": excavation_depth,
+        "passiveOriginElevationM": pit_bottom,
     }
     return check, trace
 

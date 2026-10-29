@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import artifacts, auth, boreholes, calculation, design, design_core, excavation, export, geology, projects, rebar, standards, tasks, statutory, workflow, intelligent_design
+from app.routers import artifacts, auth, boreholes, calculation, design, design_core, excavation, export, geology, projects, rebar, standards, tasks, statutory, workflow, intelligent_design, sections, normative_calculation
+from app.engineering.single_braced_pile.router import router as one_strut_router
 from app.rules.registry import list_rules
 from app.version import SOFTWARE_VERSION, version_manifest
 from app.services.unit_registry import unit_registry
@@ -32,7 +33,7 @@ logger = logging.getLogger("pitguard.performance")
 app = FastAPI(
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.87.15 production-safe same-origin API deployment with release consistency verification.",
+    description="PitGuard V3.87.26 one-strut working design, reviewed outputs and normative method toolbox, unit-safe parameter suggestions and controlled calculation agent.",
 )
 
 app.add_middleware(
@@ -127,6 +128,8 @@ for _router in (
     excavation.router,
     design.router,
     calculation.router,
+    sections.router,
+    normative_calculation.router,
     rebar.router,
     standards.router,
     statutory.router,
@@ -137,6 +140,8 @@ for _router in (
     export.router,
 ):
     app.include_router(_router)
+
+app.include_router(one_strut_router)
 
 if PRODUCT_MODE == "full":
     from app.routers import (

@@ -27,7 +27,7 @@ def earth_pressure_coefficients(phi_deg: float, k0: float | None = None) -> tupl
 def calculate_lateral_pressure_profile(
     soil_profile: list[GeologicalLayer],
     excavation_depth: float,
-    groundwater_level: float,
+    groundwater_level: float | None,
     surcharge: float,
     top_elevation: float = 0.0,
     step: float = 0.5,
@@ -44,10 +44,15 @@ def calculate_lateral_pressure_profile(
     coefficient and hydrostatic water pressure.  It is deliberately kept in the
     calculation layer so UI code never embeds professional formulae.
     """
-    if excavation_depth <= 0:
-        raise ValueError("excavation_depth must be positive")
-    if step <= 0:
-        raise ValueError("step must be positive")
+    if mode not in {"active", "passive", "at_rest"}:
+        raise ValueError(f"Unsupported pressure mode: {mode}")
+    if water_soil_method != "separate":
+        raise ValueError(
+            "Unsupported water_soil_method: combined total-stress analysis requires "
+            "independently established total-stress strength parameters and drainage assumptions; "
+            "the current soil schema does not provide them. Select separate with effective-stress "
+            "parameters or obtain a separately verified total-stress analysis."
+        )
     use_at_rest = mode == "at_rest"
     profile = calculate_jgj120_pressure_profile(
         soil_profile=soil_profile,
@@ -60,26 +65,12 @@ def calculate_lateral_pressure_profile(
         calculation_depth=calculation_depth,
         use_at_rest=use_at_rest,
     )
-    if water_soil_method == "combined":
-        # Keep compatibility with earlier API setting: combined means total stress
-        # treatment, so do not add a separate displayed water component.  The
-        # profile remains conservative because earth pressure already contains
-        # the total stress contribution in the underlying helper.
-        profile = profile.model_copy(
-            update={
-                "points": [
-                    p.model_copy(update={"water_pressure": 0.0, "total_pressure": p.earth_pressure})
-                    for p in profile.points
-                ],
-                "warnings": profile.warnings + ["已按水土合算显示压力；正式设计需确认适用土类和地下水条件。"],
-            }
-        )
     if mode == "passive":
         # A passive-only profile is mainly used by isolated checks.  Rebuild from
         # coefficient fields without subtracting inside resistance.
         passive_points = []
         for p in profile.points:
-            kp = p.kp or rankine_passive_coefficient(p.friction_angle or 30.0)
+            kp = rankine_passive_coefficient(p.friction_angle if p.friction_angle is not None else 30.0)
             c = p.cohesion or 0.0
             sig = p.vertical_stress_effective or 0.0
             passive = max(0.0, kp * sig + 2.0 * c * math.sqrt(max(kp, 0.0)))
@@ -89,10 +80,12 @@ def calculate_lateral_pressure_profile(
                         "earth_pressure": round(passive, 6),
                         "active_earth_pressure": None,
                         "passive_earth_pressure": round(passive, 6),
-                        "total_pressure": round(passive + (p.water_pressure or 0.0), 6),
+                        "water_pressure": p.outside_water_pressure or 0.0,
+                        "inside_water_pressure": 0.0,
+                        "total_pressure": round(passive + (p.outside_water_pressure or 0.0), 6),
                         "method": "JGJ120-2012 Rankine passive pressure profile",
                     }
                 )
             )
-        profile = profile.model_copy(update={"points": passive_points})
+        profile = profile.model_copy(update={"points": passive_points, "method": "Rankine passive effective-stress soil + outside water"})
     return profile

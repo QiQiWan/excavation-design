@@ -231,6 +231,71 @@ def validate_calculation_case(project: Project, case: CalculationCase) -> dict[s
     }
 
 
+def select_calculation_case_for_verification(
+    project: Project, case_id: str | None = None,
+) -> tuple[CalculationCase, dict[str, Any]]:
+    """Select and validate an existing numerical case without repairing inputs.
+
+    An explicitly locked user case has priority; otherwise use a requested case
+    or the last saved case. Semantic design controls are compared, never synced.
+    """
+    case = next((row for row in reversed(project.calculation_cases)
+                 if row.source == "user_defined" and row.locked), None)
+    if case is None and case_id is not None:
+        case = next((row for row in project.calculation_cases if row.id == case_id), None)
+        if case is None:
+            raise ValueError(f"未找到已保存计算工况 {case_id}；请先选择并保存工况，复算不会自动生成。")
+    if case is None:
+        case = project.calculation_cases[-1] if project.calculation_cases else None
+    if case is None:
+        raise ValueError("没有已保存计算工况；请先确认并保存施工阶段，复算不会自动生成或同步。")
+    validation = validate_calculation_case(project, case)
+    if not validation["valid"]:
+        messages = "；".join(str(item["message"]) for item in validation["issues"] if item["severity"] == "fail")
+        raise ValueError("已保存工况已失效或校验未通过：" + messages[:1200] + " 请在阶段编辑器确认并保存；复算不会修复引用。")
+    # Also enforce event sequencing (removed support reuse, slab activation)
+    # before the numerical solver is entered. The builder does not mutate input.
+    from app.calculation.stage_state import build_stage_states
+    build_stage_states(project, case)
+    controls = list(project.design_control_stages or [])
+    if controls:
+        from app.services.workflow_v381 import validate_design_control_stages
+        control_validation = validate_design_control_stages(project)
+        if not control_validation["valid"]:
+            raise ValueError("语义设计控制工况校验未通过；请确认并保存，复算不会同步或修复。")
+        mismatches: list[str] = []
+        if len(controls) != len(case.stages):
+            mismatches.append("阶段数量")
+        settings = project.design_settings
+        for control, stage in zip(controls, case.stages):
+            for field, actual, expected in (
+                ("开挖标高", stage.excavation_elevation, control.excavation_elevation_lower),
+                ("阶段类型", stage.stage_type, control.stage_type),
+                ("激活支撑", set(stage.active_support_ids), set(control.required_support_ids)),
+                ("退出支撑", set(stage.deactivated_support_ids), set(control.permitted_inactive_support_ids)),
+                ("分区", stage.zone, control.zone),
+                ("换撑条件", stage.replacement_action, control.replacement_action),
+                ("坑外水位", stage.groundwater_level_outside if stage.groundwater_level_outside is not None else settings.groundwater_level,
+                 settings.groundwater_level),
+                ("坑内水位", stage.groundwater_level_inside if stage.groundwater_level_inside is not None else settings.groundwater_level_inside,
+                 control.groundwater_level_limit if control.groundwater_level_limit is not None else settings.groundwater_level_inside),
+                ("超载", stage.surcharge, control.surcharge_limit if control.surcharge_limit is not None else settings.surcharge),
+            ):
+                same = (math.isclose(float(actual), float(expected), rel_tol=0.0, abs_tol=1e-8)
+                        if isinstance(actual, (int,float)) and isinstance(expected, (int,float)) else actual == expected)
+                if not same:
+                    mismatches.append(f"{stage.name}:{field}")
+            if control.source_stage_id and control.source_stage_id != stage.id:
+                mismatches.append(f"{stage.name}:阶段来源")
+        if mismatches:
+            raise ValueError("已保存计算工况与语义设计控制工况不一致（" + "、".join(mismatches)[:1000]
+                             + "）；请显式确认并保存同步结果，复算不会自动同步。")
+    return case, {"source":case.source, "preserved":True, "caseId":case.id,
+        "stageCount":len(case.stages), "validation":validation,
+        "selectionMode":"verify_saved_case", "semanticControlsChecked":bool(controls),
+        "requestedCaseId":case_id, "synchronized":False}
+
+
 def select_calculation_case_for_run(project: Project) -> tuple[CalculationCase, dict[str, Any]]:
     from app.calculation.engine import build_default_construction_cases
 

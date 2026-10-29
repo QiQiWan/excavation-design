@@ -39,30 +39,32 @@ def _support_counts(project: Project) -> tuple[dict[str, dict[int, int]], dict[s
 
 
 def _wall_envelopes(project: Project, stage_results: list[StageCalculationResult]) -> list[dict[str, Any]]:
-    by_segment: dict[str, dict[str, float | str | None]] = {}
+    by_segment: dict[str, dict[str, Any]] = {}
     for item in stage_results:
         wall = item.wall_internal_force
-        if not wall:
-            continue
-        row = by_segment.setdefault(
-            str(item.segment_id),
-            {
-                "segmentId": str(item.segment_id),
-                "maxMomentKnMPerM": 0.0,
-                "maxShearKnPerM": 0.0,
-                "maxDisplacementMm": 0.0,
-                "governingStageId": None,
-            },
-        )
-        values = {
-            "maxMomentKnMPerM": abs(float(wall.max_moment_design or wall.max_moment or 0.0)),
-            "maxShearKnPerM": abs(float(wall.max_shear_design or wall.max_shear or 0.0)),
-            "maxDisplacementMm": abs(float(wall.max_displacement or 0.0)),
-        }
-        if values["maxDisplacementMm"] >= float(row["maxDisplacementMm"] or 0.0):
-            row["governingStageId"] = str(item.stage_id)
-        for key, value in values.items():
-            row[key] = max(float(row[key] or 0.0), value)
+        row = by_segment.setdefault(str(item.segment_id), {
+            "segmentId": str(item.segment_id), "maxMomentKnMPerM": 0.0,
+            "maxShearKnPerM": 0.0, "maxDisplacementMm": None,
+            "maximumKnownDisplacementMm": None, "governingStageId": None,
+            "unknownDisplacementCount": 0,
+        })
+        if wall is None or wall.max_displacement is None:
+            row["unknownDisplacementCount"] += 1
+        else:
+            displacement = abs(float(wall.max_displacement))
+            if row["maximumKnownDisplacementMm"] is None or displacement >= row["maximumKnownDisplacementMm"]:
+                row["maximumKnownDisplacementMm"] = displacement
+                row["governingStageId"] = str(item.stage_id)
+        if wall:
+            row["maxMomentKnMPerM"] = max(row["maxMomentKnMPerM"], abs(float(wall.max_moment_design if wall.max_moment_design is not None else wall.max_moment)))
+            row["maxShearKnPerM"] = max(row["maxShearKnPerM"], abs(float(wall.max_shear_design if wall.max_shear_design is not None else wall.max_shear)))
+    for row in by_segment.values():
+        if row["unknownDisplacementCount"]:
+            row["governingStageId"] = None
+            row["displacementStatus"] = "partial" if row["maximumKnownDisplacementMm"] is not None else "unavailable"
+        else:
+            row["maxDisplacementMm"] = row["maximumKnownDisplacementMm"]
+            row["displacementStatus"] = "complete"
     if project.retaining_system:
         metadata = {
             str(wall.segment_id): {
@@ -286,8 +288,9 @@ def build_calculation_diagnostics(
             action="打开校核清单定位对象、工况、计算值和限值；修复后重新计算，旧结果不得用于出图。",
         ))
 
+    unknown_wall_displacement = not envelopes or any(row["maxDisplacementMm"] is None for row in envelopes)
     counts = Counter(str(item.get("status") or "manual_review") for item in checks)
-    status = "fail" if counts.get("fail", 0) else ("warning" if counts.get("warning", 0) or roots else "pass")
+    status = "fail" if counts.get("fail", 0) else "manual_review" if unknown_wall_displacement or counts.get("manual_review", 0) else "warning" if counts.get("warning", 0) or roots else "pass"
     prior = project.calculation_results[-1] if project.calculation_results else None
     comparison = None
     current = governing_values or {}
@@ -323,7 +326,7 @@ def build_calculation_diagnostics(
         "waleBayBeforeM": wale_before.get("maxBayM"),
         "waleBayAfterM": wale_after.get("maxBayM"),
         "strengthStatus": "fail" if any(("FLEXURE" in rule or "SHEAR" in rule or "AXIAL" in rule) for rule in fail_rules) else "pass",
-        "stiffnessStatus": "fail" if any(("DEFORMATION" in rule or "DEFLECTION" in rule) for rule in fail_rules) else "pass",
+        "stiffnessStatus": "fail" if any(("DEFORMATION" in rule or "DEFLECTION" in rule) for rule in fail_rules) else "manual_review" if unknown_wall_displacement else "pass",
         "topologyStatus": "fail" if any(rule.startswith("QUALITY-SUPPORT_") or "WALE_SUPPORT_BAY" in rule for rule in fail_rules) else "pass",
         "loadPathPolicy": "replacement slab/waler elevations remain in vertical tributary-band partition during support removal stages",
         "waleBoundaryPolicy": "closed-perimeter rigid corner joints restrain face-wale end bays; direct strut reactions retain conservative qL equilibrium",

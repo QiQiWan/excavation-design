@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "pitguard.release-visual-review/1",
+  "reviewDateUtc": "2026-10-25",
+  "snapshotHash": "0c8810fbacd0901852c249ed224fc9965a04e45bfd25f8e22f502e58700c93d4",
+  "resultHash": "3b83981156de969254ba56c72651392b2d539141a3cc998f798affcf48012f55",
+  "sourceDocxSha256": "9338a5a50f70ccea527f42712fa64795ebc9ad479dce4eb63e1443838f32cb9c",
+  "renderedPdfSha256": "b33007100c9285bf78244ff5ed4656994b623179df8028e970108fe853b0cb10",
+  "status": "reviewed_no_blocking_visual_issue",
+  "reviewScope": "Rendered-page visual QA and traceability only; not professional engineering approval.",
+  "calculationPages": 16,
+  "drawingPages": 10,
+  "pageCjkCounts": [
+    326,
+    476,
+    285,
+    312,
+    99,
+    112,
+    419,
+    279,
+    346,
+    404,
+    249,
+    330,
+    299,
+    355,
+    516,
+    583
+  ],
+  "rootReviewed": [
+    "calculation pages 1-8",
+    "section_A3 page 1",
+    "envelopes_A3 pages 1-2",
+    "stage_pressures pages 1-6",
+    "rebar_geometry page 1"
+  ],
+  "independentReviewerReviewed": [
+    "calculation pages 9-16"
+  ],
+  "checks": [
+    "Chinese glyphs, editable native equations and 5/2 superscript visible",
+    "tables and repeating headers readable, no clipping or footer overlap",
+    "uniform and finite loads distinguished",
+    "characteristic/design curves, single-pile units, signed shear jumps retained",
+    "all rendered outputs identify the same sealed snapshot/result",
+    "engineering fail, unverified crack and missing original conditions visible",
+    "given-cage geometry label and construction limitation visible"
+  ],
+  "minorNotes": [
+    "A near-zero demand is formatted as -0 on page 9; no effect on calculation or acceptance."
+  ],
+  "originalExportVisualReviewUnchanged": "not_automatically_certified",
+  "formalConstructionIssue": false
+}

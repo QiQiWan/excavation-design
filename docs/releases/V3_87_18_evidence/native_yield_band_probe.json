@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "pitguard.native-yield-band-probe/1",
+  "openseesVersion": "3.8.0",
+  "pythonVersion": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "DBL_EPSILON": 2.220446049250313e-16,
+  "E": 1.0,
+  "yieldStrainPositive": 0.5,
+  "yieldStrainNegative": -0.5,
+  "source": "https://github.com/OpenSees/OpenSees/blob/master/SRC/material/uniaxial/ElasticPPMaterial.cpp",
+  "rule": "fYieldSurface=-E*DBL_EPSILON; f<=fYieldSurface => elastic tangent E, else yielded tangent zero",
+  "results": [
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 0.0,
+      "strain": 0.5,
+      "actualInteriorDistanceOverEpsilon": 0.0,
+      "stress": 0.5,
+      "tangent": 0.0
+    },
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 0.25,
+      "strain": 0.49999999999999994,
+      "actualInteriorDistanceOverEpsilon": 0.25,
+      "stress": 0.5,
+      "tangent": 0.0
+    },
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 0.5,
+      "strain": 0.4999999999999999,
+      "actualInteriorDistanceOverEpsilon": 0.5,
+      "stress": 0.5,
+      "tangent": 0.0
+    },
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 1.0,
+      "strain": 0.4999999999999998,
+      "actualInteriorDistanceOverEpsilon": 1.0,
+      "stress": 0.4999999999999998,
+      "tangent": 1.0
+    },
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 2.0,
+      "strain": 0.49999999999999956,
+      "actualInteriorDistanceOverEpsilon": 2.0,
+      "stress": 0.49999999999999956,
+      "tangent": 1.0
+    },
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 4.0,
+      "strain": 0.4999999999999991,
+      "actualInteriorDistanceOverEpsilon": 4.0,
+      "stress": 0.4999999999999991,
+      "tangent": 1.0
+    },
+    {
+      "side": "upper",
+      "requestedInteriorDistanceOverEpsilon": 8.0,
+      "strain": 0.4999999999999982,
+      "actualInteriorDistanceOverEpsilon": 8.0,
+      "stress": 0.4999999999999982,
+      "tangent": 1.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 0.0,
+      "strain": -0.5,
+      "actualInteriorDistanceOverEpsilon": 0.0,
+      "stress": -0.5,
+      "tangent": 0.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 0.25,
+      "strain": -0.49999999999999994,
+      "actualInteriorDistanceOverEpsilon": 0.25,
+      "stress": -0.5,
+      "tangent": 0.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 0.5,
+      "strain": -0.4999999999999999,
+      "actualInteriorDistanceOverEpsilon": 0.5,
+      "stress": -0.5,
+      "tangent": 0.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 1.0,
+      "strain": -0.4999999999999998,
+      "actualInteriorDistanceOverEpsilon": 1.0,
+      "stress": -0.4999999999999998,
+      "tangent": 1.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 2.0,
+      "strain": -0.49999999999999956,
+      "actualInteriorDistanceOverEpsilon": 2.0,
+      "stress": -0.49999999999999956,
+      "tangent": 1.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 4.0,
+      "strain": -0.4999999999999991,
+      "actualInteriorDistanceOverEpsilon": 4.0,
+      "stress": -0.4999999999999991,
+      "tangent": 1.0
+    },
+    {
+      "side": "lower",
+      "requestedInteriorDistanceOverEpsilon": 8.0,
+      "strain": -0.4999999999999982,
+      "actualInteriorDistanceOverEpsilon": 8.0,
+      "stress": -0.4999999999999982,
+      "tangent": 1.0
+    }
+  ],
+  "sourceRuleMatches": true
+}

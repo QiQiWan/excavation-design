@@ -112,10 +112,12 @@ def test_search_reports_cannot_close_when_no_candidate_is_feasible(monkeypatch) 
     assert result.design_iteration_summary["optimizationSearch"]["status"] == "cannot_close"
 
 
-def test_workspace_has_one_unified_calculation_button_and_monotonic_task_progress() -> None:
+def test_workspace_separates_verification_and_optimization_and_preserves_monotonic_progress() -> None:
     workspace = (ROOT / "apps/web/src/pages/CoreProjectWorkspace.tsx").read_text(encoding="utf-8")
     manager = (ROOT / "services/api/app/tasks/manager.py").read_text(encoding="utf-8")
-    assert workspace.count("一键计算、优化并闭合") >= 2
+    assert workspace.count("仅复算当前方案") >= 2
+    assert "优化并采用方案" in workspace
+    assert "mode: 'verify', topN: 0" in workspace
     assert "修复阻断并复算" not in workspace
     assert "一键优化并复算" not in workspace
     assert "计算当前方案" not in workspace

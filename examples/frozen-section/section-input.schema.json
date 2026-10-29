@@ -1,0 +1,694 @@
+{
+  "$defs": {
+    "AnalysisSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "soil_method": {
+          "const": "two_sided_elastoplastic_winkler_v1",
+          "title": "Soil Method",
+          "type": "string"
+        },
+        "pressure_method": {
+          "const": "effective_rankine_bounds_k0_v1",
+          "title": "Pressure Method",
+          "type": "string"
+        },
+        "max_element_size_m": {
+          "maximum": 2,
+          "minimum": 0.02,
+          "title": "Max Element Size M",
+          "type": "number"
+        },
+        "water_unit_weight_kn_m3": {
+          "exclusiveMaximum": 11,
+          "exclusiveMinimum": 9,
+          "title": "Water Unit Weight Kn M3",
+          "type": "number"
+        },
+        "design_effect_factor": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Design Effect Factor",
+          "type": "number"
+        },
+        "design_effect_factor_basis": {
+          "maxLength": 500,
+          "minLength": 10,
+          "title": "Design Effect Factor Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "soil_method",
+        "pressure_method",
+        "max_element_size_m",
+        "water_unit_weight_kn_m3",
+        "design_effect_factor",
+        "design_effect_factor_basis"
+      ],
+      "title": "AnalysisSettings",
+      "type": "object"
+    },
+    "Datum": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "wall_top_elevation_m": {
+          "title": "Wall Top Elevation M",
+          "type": "number"
+        },
+        "elevation_system": {
+          "enum": [
+            "local",
+            "project_relative",
+            "absolute"
+          ],
+          "title": "Elevation System",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "wall_top_elevation_m",
+        "elevation_system"
+      ],
+      "title": "Datum",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "parameter": {
+          "title": "Parameter",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "source_fact",
+            "explicit_assumption",
+            "verification_definition"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "source_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Sha256"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Page"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "parameter",
+        "kind",
+        "source",
+        "source_sha256",
+        "page",
+        "note"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Pile": {
+      "additionalProperties": false,
+      "properties": {
+        "diameter_m": {
+          "exclusiveMinimum": 0.1,
+          "maximum": 3,
+          "title": "Diameter M",
+          "type": "number"
+        },
+        "spacing_m": {
+          "exclusiveMinimum": 0.1,
+          "maximum": 6,
+          "title": "Spacing M",
+          "type": "number"
+        },
+        "length_m": {
+          "exclusiveMinimum": 1,
+          "maximum": 80,
+          "title": "Length M",
+          "type": "number"
+        },
+        "elastic_modulus_kpa": {
+          "exclusiveMinimum": 100000.0,
+          "maximum": 1000000000.0,
+          "title": "Elastic Modulus Kpa",
+          "type": "number"
+        },
+        "inertia_factor": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Inertia Factor",
+          "type": "number"
+        },
+        "toe_boundary": {
+          "enum": [
+            "free",
+            "fixed",
+            "pinned"
+          ],
+          "title": "Toe Boundary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "diameter_m",
+        "spacing_m",
+        "length_m",
+        "elastic_modulus_kpa",
+        "inertia_factor",
+        "toe_boundary"
+      ],
+      "title": "Pile",
+      "type": "object"
+    },
+    "ReinforcementInput": {
+      "additionalProperties": false,
+      "properties": {
+        "longitudinal_extent": {
+          "const": "full_length",
+          "title": "Longitudinal Extent",
+          "type": "string"
+        },
+        "bar_start_angle_deg": {
+          "exclusiveMaximum": 360,
+          "minimum": 0,
+          "title": "Bar Start Angle Deg",
+          "type": "number"
+        },
+        "bar_count": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 6,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bar Count"
+        },
+        "bar_diameter_mm": {
+          "anyOf": [
+            {
+              "maximum": 50,
+              "minimum": 8,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bar Diameter Mm"
+        },
+        "bar_axis_cover_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 150,
+          "title": "Bar Axis Cover Mm",
+          "type": "number"
+        },
+        "concrete_design_strength_mpa": {
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "title": "Concrete Design Strength Mpa",
+          "type": "number"
+        },
+        "concrete_peak_strain": {
+          "exclusiveMinimum": 0,
+          "maximum": 0.01,
+          "title": "Concrete Peak Strain",
+          "type": "number"
+        },
+        "concrete_ultimate_strain": {
+          "exclusiveMinimum": 0,
+          "maximum": 0.02,
+          "title": "Concrete Ultimate Strain",
+          "type": "number"
+        },
+        "steel_design_strength_mpa": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "title": "Steel Design Strength Mpa",
+          "type": "number"
+        },
+        "steel_modulus_mpa": {
+          "exclusiveMinimum": 10000.0,
+          "maximum": 300000.0,
+          "title": "Steel Modulus Mpa",
+          "type": "number"
+        },
+        "minimum_longitudinal_ratio": {
+          "exclusiveMinimum": 0,
+          "maximum": 0.04,
+          "title": "Minimum Longitudinal Ratio",
+          "type": "number"
+        },
+        "minimum_ratio_basis": {
+          "maxLength": 500,
+          "minLength": 5,
+          "title": "Minimum Ratio Basis",
+          "type": "string"
+        },
+        "stirrup_diameter_mm": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 4,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Stirrup Diameter Mm"
+        },
+        "stirrup_spacing_mm": {
+          "anyOf": [
+            {
+              "maximum": 500,
+              "minimum": 40,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Stirrup Spacing Mm"
+        },
+        "axial_force_kn": {
+          "const": 0.0,
+          "title": "Axial Force Kn",
+          "type": "number"
+        }
+      },
+      "required": [
+        "longitudinal_extent",
+        "bar_start_angle_deg",
+        "bar_count",
+        "bar_diameter_mm",
+        "bar_axis_cover_mm",
+        "concrete_design_strength_mpa",
+        "concrete_peak_strain",
+        "concrete_ultimate_strain",
+        "steel_design_strength_mpa",
+        "steel_modulus_mpa",
+        "minimum_longitudinal_ratio",
+        "minimum_ratio_basis",
+        "stirrup_diameter_mm",
+        "stirrup_spacing_mm",
+        "axial_force_kn"
+      ],
+      "title": "ReinforcementInput",
+      "type": "object"
+    },
+    "SectionStage": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "event": {
+          "enum": [
+            "initial",
+            "excavate",
+            "install",
+            "remove",
+            "water_or_load"
+          ],
+          "title": "Event",
+          "type": "string"
+        },
+        "excavation_depth_m": {
+          "minimum": 0,
+          "title": "Excavation Depth M",
+          "type": "number"
+        },
+        "water_inside_depth_m": {
+          "minimum": 0,
+          "title": "Water Inside Depth M",
+          "type": "number"
+        },
+        "water_outside_depth_m": {
+          "minimum": 0,
+          "title": "Water Outside Depth M",
+          "type": "number"
+        },
+        "surcharge_kpa": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Surcharge Kpa",
+          "type": "number"
+        },
+        "install_support_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Install Support Ids",
+          "type": "array"
+        },
+        "remove_support_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remove Support Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "event",
+        "excavation_depth_m",
+        "water_inside_depth_m",
+        "water_outside_depth_m",
+        "surcharge_kpa",
+        "install_support_ids",
+        "remove_support_ids"
+      ],
+      "title": "SectionStage",
+      "type": "object"
+    },
+    "SectionSupport": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "depth_m": {
+          "minimum": 0,
+          "title": "Depth M",
+          "type": "number"
+        },
+        "kind": {
+          "enum": [
+            "elastic",
+            "rigid"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "stiffness_kn_per_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Stiffness Kn Per M"
+        },
+        "compression_only": {
+          "title": "Compression Only",
+          "type": "boolean"
+        },
+        "preload_kn": {
+          "title": "Preload Kn",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "depth_m",
+        "kind",
+        "stiffness_kn_per_m",
+        "compression_only",
+        "preload_kn"
+      ],
+      "title": "SectionSupport",
+      "type": "object"
+    },
+    "SoilLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "top_m": {
+          "minimum": 0,
+          "title": "Top M",
+          "type": "number"
+        },
+        "bottom_m": {
+          "exclusiveMinimum": 0,
+          "title": "Bottom M",
+          "type": "number"
+        },
+        "gamma_unsat_kn_m3": {
+          "exclusiveMinimum": 0,
+          "maximum": 35,
+          "title": "Gamma Unsat Kn M3",
+          "type": "number"
+        },
+        "gamma_sat_kn_m3": {
+          "exclusiveMinimum": 0,
+          "maximum": 35,
+          "title": "Gamma Sat Kn M3",
+          "type": "number"
+        },
+        "cohesion_kpa": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Cohesion Kpa",
+          "type": "number"
+        },
+        "phi_deg": {
+          "exclusiveMaximum": 50,
+          "minimum": 0,
+          "title": "Phi Deg",
+          "type": "number"
+        },
+        "k0": {
+          "exclusiveMinimum": 0,
+          "maximum": 3,
+          "title": "K0",
+          "type": "number"
+        },
+        "m_inside_kn_m4": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000000.0,
+          "title": "M Inside Kn M4",
+          "type": "number"
+        },
+        "m_outside_kn_m4": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000000.0,
+          "title": "M Outside Kn M4",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "top_m",
+        "bottom_m",
+        "gamma_unsat_kn_m3",
+        "gamma_sat_kn_m3",
+        "cohesion_kpa",
+        "phi_deg",
+        "k0",
+        "m_inside_kn_m4",
+        "m_outside_kn_m4"
+      ],
+      "title": "SoilLayer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "pitguard.frozen-section/1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "section_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Section Id",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "purpose": {
+      "enum": [
+        "verification_fixture",
+        "project_reconstruction",
+        "project_review"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "source_project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Project Id"
+    },
+    "source_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Revision"
+    },
+    "comparison_reference": {
+      "anyOf": [
+        {
+          "const": "uploaded_A3_3",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Comparison Reference"
+    },
+    "datum": {
+      "$ref": "#/$defs/Datum"
+    },
+    "pile": {
+      "$ref": "#/$defs/Pile"
+    },
+    "soil_effective_width_m": {
+      "exclusiveMinimum": 0,
+      "maximum": 10,
+      "title": "Soil Effective Width M",
+      "type": "number"
+    },
+    "soil_layers": {
+      "items": {
+        "$ref": "#/$defs/SoilLayer"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Soil Layers",
+      "type": "array"
+    },
+    "supports": {
+      "items": {
+        "$ref": "#/$defs/SectionSupport"
+      },
+      "maxItems": 20,
+      "title": "Supports",
+      "type": "array"
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/SectionStage"
+      },
+      "maxItems": 50,
+      "minItems": 2,
+      "title": "Stages",
+      "type": "array"
+    },
+    "analysis": {
+      "$ref": "#/$defs/AnalysisSettings"
+    },
+    "reinforcement": {
+      "$ref": "#/$defs/ReinforcementInput"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "maxItems": 200,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "section_id",
+    "name",
+    "purpose",
+    "source_project_id",
+    "source_revision",
+    "comparison_reference",
+    "datum",
+    "pile",
+    "soil_effective_width_m",
+    "soil_layers",
+    "supports",
+    "stages",
+    "analysis",
+    "reinforcement",
+    "evidence",
+    "limitations"
+  ],
+  "title": "SectionInput",
+  "type": "object"
+}

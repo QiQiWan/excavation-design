@@ -1,0 +1,27 @@
+
+> pitguard-web@3.87.18 test
+> npm run generate:units && vitest run src/components/FrozenSectionPanel.test.tsx src/api/client.section.test.ts src/pages/CoreProjectWorkspace.test.tsx src/viewers/RetainingSystemViewer.test.tsx src/viewers/ResultViewer.test.tsx
+
+
+> pitguard-web@3.87.18 generate:units
+> node ../../scripts/generate-unit-registry.mjs
+
+[PitGuard] generated apps/web/src/generated/engineeringUnits.ts
+
+ RUN  v4.1.9 /workspace/scratch/fd5d8a28c64e/work/foundation_section_validation/apps/web
+
+
+ Test Files  5 passed (5)
+      Tests  55 passed (55)
+   Start at  09:48:11
+   Duration  4.09s (transform 1.60s, setup 273ms, import 2.12s, tests 4.29s, environment 2.74s)
+
+
+--- stderr ---
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

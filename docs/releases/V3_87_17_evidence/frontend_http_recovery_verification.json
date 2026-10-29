@@ -1,0 +1,102 @@
+{
+  "verification": "Full app HTTPS cookie flow with read-only latest-result recovery; separate evidence from the original HTTP run",
+  "requests": [
+    {
+      "action": "unauthenticated rejection",
+      "method": "GET",
+      "path": "/api/sections/example",
+      "statusCode": 401
+    },
+    {
+      "action": "cookie login",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "statusCode": 200
+    },
+    {
+      "action": "load synthetic example",
+      "method": "GET",
+      "path": "/api/sections/example",
+      "statusCode": 200
+    },
+    {
+      "action": "invalid input validation",
+      "method": "POST",
+      "path": "/api/sections/freeze",
+      "statusCode": 422
+    },
+    {
+      "action": "freeze full input",
+      "method": "POST",
+      "path": "/api/sections/freeze",
+      "statusCode": 200
+    },
+    {
+      "action": "no saved result before analysis",
+      "method": "GET",
+      "path": "/api/sections/snapshots/2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd/latest-result",
+      "statusCode": 404
+    },
+    {
+      "action": "analyze server snapshot",
+      "method": "POST",
+      "path": "/api/sections/snapshots/2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd/analyze",
+      "statusCode": 200
+    },
+    {
+      "action": "retrieve persisted result",
+      "method": "GET",
+      "path": "/api/sections/results/f0ae5992a341be1385b4a5156e4cef9f394134ad74481c06bc52dab2ff99df81",
+      "statusCode": 200
+    },
+    {
+      "action": "recover latest persisted result",
+      "method": "GET",
+      "path": "/api/sections/snapshots/2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd/latest-result",
+      "statusCode": 200
+    },
+    {
+      "action": "download same-result ZIP",
+      "method": "GET",
+      "path": "/api/sections/results/f0ae5992a341be1385b4a5156e4cef9f394134ad74481c06bc52dab2ff99df81/package",
+      "statusCode": 200
+    }
+  ],
+  "latestResultIdentityMatches": true,
+  "recoveredResultHash": "f0ae5992a341be1385b4a5156e4cef9f394134ad74481c06bc52dab2ff99df81",
+  "status": "passed",
+  "elapsedSeconds": 6.944019450999804,
+  "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+  "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+  "resultHash": "f0ae5992a341be1385b4a5156e4cef9f394134ad74481c06bc52dab2ff99df81",
+  "stageCount": 6,
+  "engineeringStatus": "review_required",
+  "comparisonStatuses": {
+    "hand": "passed",
+    "independent": "passed",
+    "mesh": "passed",
+    "original": "incomplete"
+  },
+  "packageBytes": 1296386,
+  "packageSha256": "23b3229c0737a32265ddcfefb59288482929350c40fde039c1896178ba62a796",
+  "packageFiles": [
+    "README.txt",
+    "SHA256SUMS.txt",
+    "calculation.docx",
+    "comparison.csv",
+    "consistency.json",
+    "envelope_characteristic.png",
+    "envelope_design.png",
+    "envelopes.csv",
+    "envelopes_A3.pdf",
+    "frozen_section.json",
+    "input_sources.csv",
+    "manifest.json",
+    "reinforcement.csv",
+    "section.dxf",
+    "section_A3.pdf",
+    "section_result.json",
+    "stage_results.csv"
+  ],
+  "manifestIdentityMatches": true
+}

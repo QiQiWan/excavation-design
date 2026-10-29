@@ -1,0 +1,23 @@
+.normCalc { margin:14px 0; padding:14px; border:1px solid #d1dce5; border-radius:8px; background:#fafcfd; }
+.normCalc h4 { margin:0 0 8px; font-size:16px; }
+.normCalc p { margin:6px 0 12px; font-size:13px; line-height:1.6; color:#536779; }
+.normCalc label { display:flex; flex-direction:column; gap:5px; min-width:0; font-size:13px; font-weight:500; }
+.normCalc input,.normCalc select { min-width:0; border:1px solid #b5c9d7; border-radius:6px; background:white; padding:8px; color:#243a4c; font-size:13px; }
+.normCalc > label > select { width:100%; margin:5px 0 2px; }
+.normCalcFields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:12px 0; }
+.normCalcNumber { display:flex; gap:6px; }.normCalcNumber input { width:100%; flex:1 1 0; }.normCalcNumber select { width:115px; flex:0 0 115px; }
+.normCalcScope { padding:8px 10px; background:#edf2f6; border-left:3px solid #89a2b5; }
+.normCalcApproval { margin:12px 0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.normCalcApproval input:not([type=checkbox]) { width:100%; box-sizing:border-box; }
+.normCalcCheckbox { grid-column:1/-1; align-items:center; flex-direction:row!important; gap:8px!important; }
+.normCalcCheckbox input { width:16px; height:16px; }.normCalcError { color:#992c25!important; }
+.normCalcOutcome { margin-top:12px; border-top:1px solid #d3e0e9; padding-top:12px; font-size:13px; }
+.normCalcOutcome dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 18px; }
+.normCalcOutcome dl > div { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid #e0e7ec; }
+.normCalcOutcome dt { color:#4f6779; }.normCalcOutcome dd { margin:0; font-variant-numeric:tabular-nums; }
+.normCalc small { display:block; color:#607488; }
+@media(max-width:720px) { .normCalcFields,.normCalcApproval,.normCalcOutcome dl { grid-template-columns:1fr; } }
+
+.normCalcPerField { grid-column:1/-1; padding:8px 0; }
+.normCalcPerField summary { cursor:pointer; color:#395d72; font-size:13px; }
+.normCalcPerField label { margin-top:8px; }

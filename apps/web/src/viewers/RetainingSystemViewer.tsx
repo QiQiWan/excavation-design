@@ -234,8 +234,11 @@ function supportMaterialLabel(sectionType?: string, materialGrade?: string) {
 }
 
 
-export default function RetainingSystemViewer({ project, highlightLocator, previewCandidate }: { project: Project; highlightLocator?: Record<string, unknown>; previewCandidate?: SupportLayoutOptimizationCandidate }) {
-  const retaining = project.retainingSystem;
+export default function RetainingSystemViewer({ project, highlightLocator, previewCandidate, resultEvidenceCurrent = false }: { project: Project; highlightLocator?: Record<string, unknown>; previewCandidate?: SupportLayoutOptimizationCandidate; resultEvidenceCurrent?: boolean }) {
+  const latest = project.calculationResults?.[project.calculationResults.length - 1];
+  const verificationOnly = latest?.calculationMode === 'verify';
+  const proposal = verificationOnly && resultEvidenceCurrent ? latest?.derivedDesign?.retainingSystem : undefined;
+  const retaining = proposal ?? project.retainingSystem;
   const supportCountByRole = retaining?.layoutSummary?.supportCountByRole as Record<string, number> | undefined;
   const wallFallback = wallDesignFallback(project);
   const supportFallback = supportForceFallback(project);
@@ -245,6 +248,7 @@ export default function RetainingSystemViewer({ project, highlightLocator, previ
       <SupportQualityPlan project={project} highlightLocator={highlightLocator} previewCandidate={previewCandidate} />
       <div className="card">
         <h3>围护结构参数与校核状态</h3>
+        {proposal ? <p className="warning">复算需求与配筋建议（未采用）</p> : verificationOnly ? <p className="warning">当前表为已保存方案；历史承载力不作为本次复算证据。</p> : null}
         {retaining?.layoutSummary && (
           <div className="metricGrid compact">
             <div><strong>{retaining.layoutSummary.supportCount as number}</strong><span>支撑总数</span></div>
@@ -258,7 +262,7 @@ export default function RetainingSystemViewer({ project, highlightLocator, previ
         <h4>地连墙</h4>
         <table className="table">
           <thead><tr><th>编号</th><th>设计面</th><th>厚度</th><th>墙底</th><th>设计弯矩</th><th>承载力</th><th>配筋</th><th>状态</th></tr></thead>
-          <tbody>{retaining?.diaphragmWalls.map((w) => { const fb = wallFallback.get(w.segmentId); const moment = w.designResults?.maxMomentDesign ?? fb?.moment; const capacity = w.designResults?.momentCapacity ?? (moment !== undefined && moment !== null ? moment * 1.18 : undefined); return <tr key={w.id}><td>{w.panelCode}</td><td>{w.designFaceCode ?? '-'}</td><td>{w.thickness}</td><td>{w.bottomElevation}</td><td>{fmt(moment)} kN·m/m</td><td>{fmt(capacity)} kN·m/m</td><td>{w.reinforcement.map((r) => `${r.name} D${r.diameter}${r.spacing ? '@' + r.spacing : ''}`).join('; ')}</td><td>{w.designResults?.checkStatus ?? fb?.status ?? 'manual_review'}</td></tr>; }) ?? <tr><td colSpan={8}>未生成</td></tr>}</tbody>
+          <tbody>{retaining?.diaphragmWalls.map((w) => { const fb = wallFallback.get(w.segmentId); const moment = w.designResults?.maxMomentDesign ?? fb?.moment; const capacity = verificationOnly && !proposal ? undefined : w.designResults?.momentCapacity; return <tr key={w.id}><td>{w.panelCode}</td><td>{w.designFaceCode ?? '-'}</td><td>{w.thickness}</td><td>{w.bottomElevation}</td><td>{fmt(moment)} kN·m/m</td><td>{capacity != null && Number.isFinite(capacity) ? `${fmt(capacity)} kN·m/m` : '未计算'}</td><td>{w.reinforcement.map((r) => `${r.name} D${r.diameter}${r.spacing ? '@' + r.spacing : ''}`).join('; ')}</td><td>{verificationOnly ? proposal ? '配筋建议（未采用）' : '未复核' : w.designResults?.checkStatus ?? fb?.status ?? 'manual_review'}</td></tr>; }) ?? <tr><td colSpan={8}>未生成</td></tr>}</tbody>
         </table>
         <h4>水平支撑分仓与围檩连续梁轴力分配</h4>
         <table className="table">

@@ -1,0 +1,494 @@
+{
+  "softwareVersion": "3.87.17",
+  "dateUTC": "2026-10-25T04:04:12.412795+00:00",
+  "baseCommit": "6204f17",
+  "branch": "frozen-section-validation",
+  "releaseStatus": "bounded_section_review",
+  "formalDesignReady": false,
+  "engineeringStatus": "review_required",
+  "scope": "Frozen 2D pile-row section validation and same-snapshot review deliverables; legacy full-pit soil model block remains.",
+  "runtime": {
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.39"
+  },
+  "identities": {
+    "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+    "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+    "discreteInputHash": "4f035a9e6b3c69f8d9c867e4de076f9b860b7431df13b0382226eb1588880a3b",
+    "resultHash": "69f2e1a3a784947b6a1f2e13b31d6bd704a71597effc217a6659d2def8dbe8f9",
+    "implementationHash": "25c56984b4d8854d3fb95a8ea172bd86a977cbf16abe4ce5406e93dad8653e38"
+  },
+  "primarySourceCodeHashes": {
+    "models.py": "0ed333d2eef529c8171c3697d8a57412aa152469b8c4d25667c8a78bb9e272d0",
+    "preprocess.py": "b6e4e4dba0e26bfd879bf1475ce9f2b0d157636fbd91adb06485a69c28b7a861",
+    "solver.py": "5cf9f3820862259adb68c4c00736c0a75377187671f6020745eb2307580e35e1",
+    "service.py": "adb79bd52a2b06b3d9d933e2532b203ce6a8bc511756c927701058ed4d99f475",
+    "reinforcement.py": "345e1780abbe109626c06178865bcbfe2ed69e548810833d5eb3de699ecfbf4a"
+  },
+  "softwareGates": {
+    "focusedBackend": {
+      "status": "passed",
+      "passed": 248,
+      "sectionTests": 103,
+      "baselineTests": 145,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "V3_87_17_evidence/final_gates/focused_backend.xml"
+    },
+    "focusedFrontend": {
+      "status": "passed",
+      "passed": 41,
+      "files": 5
+    },
+    "releaseMetadata": "passed",
+    "pythonCompilation": "passed",
+    "typeCheckAndProductionBuild": "passed",
+    "productionBundle": "passed (19 assets, same-origin API)",
+    "fullFrontend": {
+      "previousVersion": "3.87.16",
+      "currentVersion": "3.87.17",
+      "sameFailedTestIdentities": true,
+      "sameUnhandledErrorTypesAndMessages": true,
+      "previous": {
+        "passed": 46,
+        "failed": 10,
+        "unhandledErrors": 4,
+        "failedTests": [
+          "FAIL src/app/AuthRouting.test.tsx > application login routing > redirects an unauthenticated protected URL to /login and returns after login",
+          "FAIL src/components/DesignQualificationPanel.test.tsx > shows storage, coordinate and system-level decisions without pretending diagnostic cards are designs",
+          "FAIL src/components/DrawingRuleSetPanel.test.tsx > DrawingRuleSetPanel > shows configurable drawing rules and optimization candidates",
+          "FAIL src/components/ProgressiveDesignPanel.test.tsx > groups progressive decisions by engineering meaning and exposes configuration traceability",
+          "FAIL src/components/ProjectDataWorkspacePanel.test.tsx > loads only storage health initially and defers the artifact manifest until expanded",
+          "FAIL src/components/RebarDesignPanel.test.tsx > RebarDesignPanel > renders guided diagnosis and review-only CAD gate",
+          "FAIL src/components/RebarDesignPanel.test.tsx > RebarDesignPanel > supports problem-first filtering and drawing scope downloads",
+          "FAIL src/components/SchemeComparisonPanel.test.tsx > SchemeComparisonPanel > loads missing candidate geometry through the lightweight preview endpoint",
+          "FAIL src/pages/LoginPage.test.tsx > LoginPage > uses the independent application form and returns the authenticated identity",
+          "FAIL src/pages/ProjectsPage.test.tsx > ProjectsPage delete > deletes a project after explicit confirmation"
+        ],
+        "errorMessages": [
+          "TypeError: Cannot read properties of undefined (reading 'find')",
+          "TypeError: Cannot read properties of undefined (reading 'find')",
+          "TypeError: Cannot read properties of undefined (reading 'steps')",
+          "TypeError: projects.map is not a function"
+        ]
+      },
+      "current": {
+        "passed": 68,
+        "failed": 10,
+        "unhandledErrors": 4,
+        "failedTests": [
+          "FAIL src/app/AuthRouting.test.tsx > application login routing > redirects an unauthenticated protected URL to /login and returns after login",
+          "FAIL src/components/DesignQualificationPanel.test.tsx > shows storage, coordinate and system-level decisions without pretending diagnostic cards are designs",
+          "FAIL src/components/DrawingRuleSetPanel.test.tsx > DrawingRuleSetPanel > shows configurable drawing rules and optimization candidates",
+          "FAIL src/components/ProgressiveDesignPanel.test.tsx > groups progressive decisions by engineering meaning and exposes configuration traceability",
+          "FAIL src/components/ProjectDataWorkspacePanel.test.tsx > loads only storage health initially and defers the artifact manifest until expanded",
+          "FAIL src/components/RebarDesignPanel.test.tsx > RebarDesignPanel > renders guided diagnosis and review-only CAD gate",
+          "FAIL src/components/RebarDesignPanel.test.tsx > RebarDesignPanel > supports problem-first filtering and drawing scope downloads",
+          "FAIL src/components/SchemeComparisonPanel.test.tsx > SchemeComparisonPanel > loads missing candidate geometry through the lightweight preview endpoint",
+          "FAIL src/pages/LoginPage.test.tsx > LoginPage > uses the independent application form and returns the authenticated identity",
+          "FAIL src/pages/ProjectsPage.test.tsx > ProjectsPage delete > deletes a project after explicit confirmation"
+        ],
+        "errorMessages": [
+          "TypeError: Cannot read properties of undefined (reading 'find')",
+          "TypeError: Cannot read properties of undefined (reading 'find')",
+          "TypeError: Cannot read properties of undefined (reading 'steps')",
+          "TypeError: projects.map is not a function"
+        ]
+      },
+      "scope": "Full frontend suites were executed. Known baseline failures remain; this does not assert the whole application passes."
+    },
+    "fullBackendSuite": {
+      "status": "not_run_this_iteration",
+      "reason": "Targeted new-module and preserved reliability gates executed; no claim that all historical backend tests pass."
+    },
+    "dependencyLock": "passed: uv lock --check --offline, 57 packages",
+    "postLayoutExportRegression": {
+      "status": "passed",
+      "passed": 6,
+      "scope": "After final 8-decimal worked-depth rendering; asserts analytic F=10 is present.",
+      "evidence": "V3_87_17_evidence/final_export_regression.log"
+    }
+  },
+  "engineeringComparisons": {
+    "statusByKind": {
+      "hand": "passed",
+      "independent": "passed",
+      "mesh": "passed",
+      "original": "incomplete"
+    },
+    "hand": {
+      "analyticChecks": 7,
+      "sameSnapshotQuantityChecks": 6,
+      "workedSoilPressureRows": 2,
+      "stageEquilibria": 6
+    },
+    "independent": {
+      "solver": "OpenSees",
+      "version": "3.8.0",
+      "relativeTolerance": 0.001,
+      "absoluteDifferencesMax": {
+        "nodalDisplacementM": 5.4975121677180994e-14,
+        "nodalRotation": 2.932257301552221e-14,
+        "elementShearKn": 7.503128784946966e-09,
+        "elementMomentKnM": 5.037428252308018e-09,
+        "pressureKn": 6.959322007560331e-12,
+        "plasticDisplacementM": 2.1033522146218786e-16,
+        "supportReactionKn": 1.4036913853487931e-09,
+        "supportReferenceM": 1.7520707107365752e-16
+      },
+      "sourceHash": "ae66d24601a1bac63cfd813572722032e24ab1f1b745f47c7fa743e257c2bb7b",
+      "allSixStagesPassed": true
+    },
+    "mesh": {
+      "status": "passed",
+      "coarseNodes": 83,
+      "fineNodes": 163,
+      "relativeTolerance": 0.02,
+      "maxRelativePeakChange": 0.009993404109726323
+    },
+    "originalProject": {
+      "status": "incomplete",
+      "sameConditionsConfirmed": false,
+      "reason": "原项目PDF提供部分结果，尚未具备原生模型和完整方法参数，不能进行可判定的同条件比较。",
+      "reference": "A3-3 / uploaded calculation report / PDF pages 32–37",
+      "sourceSha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+      "comparisonType": "reference_evidence_only",
+      "currentCasePurpose": "verification_fixture",
+      "missingConditions": [
+        "原生FRWS模型及版本与计算选项",
+        "数值E与EI折减系数",
+        "m法具体定义、有效土宽与屈服设置",
+        "桩端边界与冠梁等效支撑生效阶段",
+        "M/V单桩或每米宽度身份",
+        "坡台、有限宽邻载与土水合算的同条件实现",
+        "原设计/特征内力组合及修正系数完整来源"
+      ],
+      "referenceStageExtrema": [
+        {
+          "stage": "1",
+          "displacementMinMm": 0.6,
+          "displacementMaxMm": 2.6,
+          "momentMinLabel": 0,
+          "momentMaxLabel": 87.7,
+          "shearMinLabel": -43,
+          "shearMaxLabel": 49.9
+        },
+        {
+          "stage": "2",
+          "displacementMinMm": 0.6,
+          "displacementMaxMm": 2.6,
+          "momentMinLabel": 0,
+          "momentMaxLabel": 87.7,
+          "shearMinLabel": -43,
+          "shearMaxLabel": 49.9
+        },
+        {
+          "stage": "3",
+          "displacementMinMm": 2.9,
+          "displacementMaxMm": 6.0,
+          "momentMinLabel": 0,
+          "momentMaxLabel": 206.7,
+          "shearMinLabel": -91.8,
+          "shearMaxLabel": 120.6
+        },
+        {
+          "stage": "4",
+          "displacementMinMm": 2.9,
+          "displacementMaxMm": 6.0,
+          "momentMinLabel": 0,
+          "momentMaxLabel": 206.7,
+          "shearMinLabel": -91.8,
+          "shearMaxLabel": 120.6
+        },
+        {
+          "stage": "5",
+          "displacementMinMm": 3.6,
+          "displacementMaxMm": 6.0,
+          "momentMinLabel": 0,
+          "momentMaxLabel": 176.9,
+          "shearMinLabel": -80.2,
+          "shearMaxLabel": 109.6
+        }
+      ],
+      "notes": [
+        "原资料曲线标注M为kNm、V为kN，宽度身份尚待确认，因此未生成误差百分比。",
+        "本文验证例与原A3-3的土层、地形和边界不同；数值接近不构成原模型复现。"
+      ]
+    }
+  },
+  "reinforcementIndependentCheck": {
+    "status": "passed",
+    "count": 12,
+    "resultHash": "69f2e1a3a784947b6a1f2e13b31d6bd704a71597effc217a6659d2def8dbe8f9",
+    "currentImplementation": true,
+    "scope": "Only the explicitly frozen N=0 solid circular-section material model; no code-compliance claim.",
+    "evidence": "V3_87_17_evidence/independent_circular_section_check_current.json"
+  },
+  "stagePeaks": [
+    {
+      "id": "S0",
+      "event": "initial",
+      "maxAbsDisplacementMm": 0.0,
+      "maxAbsMomentKnM": 0.0,
+      "maxAbsShearKn": 0.0
+    },
+    {
+      "id": "S1",
+      "event": "excavate",
+      "maxAbsDisplacementMm": 3.949400106576668,
+      "maxAbsMomentKnM": 57.00597881657914,
+      "maxAbsShearKn": 21.386522948451614
+    },
+    {
+      "id": "S2",
+      "event": "install",
+      "maxAbsDisplacementMm": 3.949400106576668,
+      "maxAbsMomentKnM": 57.00597881657914,
+      "maxAbsShearKn": 21.386522948451614
+    },
+    {
+      "id": "S3",
+      "event": "excavate",
+      "maxAbsDisplacementMm": 5.329166465397299,
+      "maxAbsMomentKnM": 101.12503567805535,
+      "maxAbsShearKn": 65.67055255380988
+    },
+    {
+      "id": "S4",
+      "event": "install",
+      "maxAbsDisplacementMm": 5.329166465397299,
+      "maxAbsMomentKnM": 101.12503567805535,
+      "maxAbsShearKn": 65.67055255380988
+    },
+    {
+      "id": "S5",
+      "event": "remove",
+      "maxAbsDisplacementMm": 11.394221873648359,
+      "maxAbsMomentKnM": 119.36861438720531,
+      "maxAbsShearKn": 91.5412393941804
+    }
+  ],
+  "reinforcementRows": [
+    {
+      "id": "FULL-PILE",
+      "fromDepthM": 0.0,
+      "toDepthM": 10.0,
+      "governingStageId": "S5",
+      "shearGoverningStageId": "S5",
+      "momentDesignKnM": 149.21076798400665,
+      "shearDesignKn": 114.42654924272549,
+      "requiredAreaMm2": 2309.070600388498,
+      "providedAreaMm2": 4071.5040790523717,
+      "providedBarsLabel": "16Φ18",
+      "minimumAreaMm2": 2309.070600388498,
+      "capacityKnM": 381.69337043216706,
+      "utilization": 0.39091789258761506,
+      "status": "strength_pass",
+      "notes": [
+        "内力效应系数只施加一次；控制弯矩与剪力允许来自不同阶段，各自保留身份。"
+      ],
+      "stirrupLabel": "Φ8@125（未作抗剪与构造验算）",
+      "capacityPositiveKnM": 381.69337043216717,
+      "capacityNegativeKnM": 381.69337043216706,
+      "strengthRequiredAreaMm2": 1424.33681958969
+    }
+  ],
+  "reviewClosure": {
+    "p2SoilBoundary": "closed",
+    "p2TimeoutRecovery": "closed",
+    "mixedPrecision": "reviewed; no new blocker",
+    "evidence": "V3_87_17_evidence/section_final_review.md"
+  },
+  "integrationEvidence": {
+    "actualHttpsFlowAndRecovery": "passed during development; original result identity retained in evidence",
+    "evidence": "V3_87_17_evidence/frontend_http_recovery_verification.json"
+  },
+  "deliverables": {
+    "schemaVersion": "pitguard.section-delivery-render-review/1",
+    "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+    "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+    "resultHash": "69f2e1a3a784947b6a1f2e13b31d6bd704a71597effc217a6659d2def8dbe8f9",
+    "sourceDirectory": "/workspace/scratch/fd5d8a28c64e/work/section_final_deliverables_v3_87_17/section_VERIFY-PILE-01_2223478185_69f2e1a3a7_23m97wln",
+    "qaDirectory": "/workspace/scratch/fd5d8a28c64e/work/section_final_deliverables_v3_87_17/qa_verified",
+    "pages": {
+      "calculation": 11,
+      "sectionA3": 1,
+      "envelopesA3": 2
+    },
+    "nativeEquationCount": 10,
+    "csvRows": {
+      "envelopes.csv": 328,
+      "stage_results.csv": 1968,
+      "reinforcement.csv": 1,
+      "comparison.csv": 851,
+      "input_sources.csv": 1
+    },
+    "dxf": {
+      "format": "AC1032",
+      "modelUnits": "mm",
+      "nativeDimensionsMm": [
+        700.0,
+        10000.0
+      ],
+      "scaleDenominator": 100.0,
+      "viewportLocked": true,
+      "auditErrors": 0
+    },
+    "pdfDrawing": {
+      "paperWidthMm": 419.99994506835935,
+      "paperHeightMm": 297.0000023735894,
+      "pilePrintedWidthMm": 6.999992624918619,
+      "pilePrintedLengthMm": 100.00001152886284,
+      "scaleDenominator": 100,
+      "status": "pass"
+    },
+    "checks": {
+      "sealedPairValidation": "pass",
+      "resultIdenticalToFinalRun": "pass",
+      "allPackageSha256": "pass",
+      "zipCRC": "pass",
+      "csvIdentity": "pass",
+      "copyByteIdentity": "pass"
+    },
+    "visualReview": {
+      "calculationPages": "All 11 pages reviewed; final pages 1-6 pixel-identical to reviewed render; revised worked-depth rows rechecked independently.",
+      "drawingPages": "All 3 A3 pages reviewed and final renders pixel-identical; no observed missing glyphs, clipping or overlap.",
+      "workedArithmetic": "Printed integration depth 5.91130886 m reproduces rounded segment contributions and effective stresses."
+    },
+    "comparisons": {
+      "hand": "passed",
+      "independent": "passed",
+      "mesh": "passed",
+      "original": "incomplete"
+    },
+    "engineeringStatus": "review_required",
+    "formalDesignReady": false,
+    "files": {
+      "剖面验证_计算书.docx": {
+        "bytes": 301722,
+        "sha256": "6be219fd7adc9b43aec40593713551845e5ecb88110eb15a07a4e4d610be8edc",
+        "sourceFile": "calculation.docx"
+      },
+      "剖面验证_计算书.pdf": {
+        "bytes": 878058,
+        "sha256": "b4369bf90cea198f6ffde06cc124f3b25e373773d8efca61c3a0fc282368bc99",
+        "sourceFile": "calculation.pdf"
+      },
+      "剖面验证_剖面图_A3.pdf": {
+        "bytes": 33473,
+        "sha256": "713834cac3fa8c6cf05a26c6514f678605da3994d9fd282d6b06d07cee27ef25",
+        "sourceFile": "section_A3.pdf"
+      },
+      "剖面验证_可编辑剖面.dxf": {
+        "bytes": 68149,
+        "sha256": "5bc38f0482c518f7e31bbb31a5352761e9a000375d5a23d4e4e88fa6b1b7ecf5",
+        "sourceFile": "section.dxf"
+      },
+      "剖面验证_内力位移包络_A3.pdf": {
+        "bytes": 37166,
+        "sha256": "4b43d3a6eafeafab962ee86a2671f00f1523bd6dda20fdbeef4317501b72085d",
+        "sourceFile": "envelopes_A3.pdf"
+      },
+      "剖面验证_配筋核对.csv": {
+        "bytes": 1139,
+        "sha256": "310f372e93d4a78df21ed2edbd85c57fe7d3ebe767188d3106ce954d82dc12e1",
+        "sourceFile": "reinforcement.csv"
+      },
+      "reinforcement.csv": {
+        "bytes": 1139,
+        "sha256": "310f372e93d4a78df21ed2edbd85c57fe7d3ebe767188d3106ce954d82dc12e1",
+        "sourceFile": "reinforcement.csv"
+      },
+      "剖面验证_包络数据.csv": {
+        "bytes": 146513,
+        "sha256": "aaba05f073a9f9d9f5bbae08fcb8abeee67b301689858ed83543240f6628d82d",
+        "sourceFile": "envelopes.csv"
+      },
+      "剖面验证_阶段数据.csv": {
+        "bytes": 697718,
+        "sha256": "82d757f96a30f6cff156f4055f664ea3086aac956afb146f15a2c1afc5690b35",
+        "sourceFile": "stage_results.csv"
+      },
+      "剖面验证_对照核查.csv": {
+        "bytes": 258927,
+        "sha256": "6670cdbfa921c222b56c0ecc9674a7c8de995514226a7ed81b85adc8419fa087",
+        "sourceFile": "comparison.csv"
+      },
+      "剖面验证_输入来源.csv": {
+        "bytes": 575,
+        "sha256": "8b42db26b093a0d4f126426678c1ea73170dd1e3512145a79d650ac9ef313c22",
+        "sourceFile": "input_sources.csv"
+      },
+      "剖面验证_冻结输入.json": {
+        "bytes": 5643,
+        "sha256": "0cb937a1697f8bf471eacc1f9154219781ea748f579f134e55f0a8056266981c",
+        "sourceFile": "frozen_section.json"
+      },
+      "剖面验证_封存结果.json": {
+        "bytes": 5318401,
+        "sha256": "28f4f3f43a774f878ef3192000d506d043ad3a27a9eac5696ab3f7c8918a2723",
+        "sourceFile": "section_result.json"
+      },
+      "剖面验证_最小成果包.zip": {
+        "bytes": 1299151,
+        "sha256": "e73716f114d0ef4e514fc7c0f46ba75317e32e1c3dcca1052bebd549e5377c53",
+        "sourceFile": "section_VERIFY-PILE-01_2223478185_69f2e1a3a7_23m97wln.zip"
+      },
+      "剖面验证_导出回归.txt": {
+        "bytes": 1334,
+        "sha256": "04e42c0daaba31bd347a9fba5cd2d8c61de3d89b867fb3a6fd1d78310712e320"
+      },
+      "剖面验证_交付说明.txt": {
+        "bytes": 1634,
+        "sha256": "5aedef53cb8dc5ad5ba6a9630cccf80806682d40428da47e08686ecd14361124"
+      }
+    },
+    "reviewedAt": "2026-10-25T04:07:06.515266+00:00",
+    "exportRegression": {
+      "testCount": 6,
+      "status": "passed",
+      "elapsedSeconds": 10.39,
+      "logFile": "剖面验证_导出回归.txt",
+      "scope": "frozen source and geometry, tamper gate, failed results, long-pile exact scale, simultaneous downloads, same-snapshot hand report including depth precision and F=10 kN"
+    },
+    "fontReview": {
+      "cjkPdfFontEmbedded": true,
+      "docxPreviewFontsEmbedded": true,
+      "source": "repo-bundled Noto Sans CJK SC; OFL license included in source assets"
+    },
+    "parameterDisplayReview": {
+      "page": 8,
+      "actualPdfText": "验证参数：L = 5 m，EI = 100,000 kN·m²，F = 10 kN，支撑刚度 K = 2,000 kN/m。",
+      "clipImage": "/workspace/scratch/fd5d8a28c64e/work/section_final_deliverables_v3_87_17/qa_verified/docx/page-8-parameters-pdf-clip.png",
+      "status": "pass"
+    },
+    "exportSourceSha256": {
+      "services/api/app/section/export.py": "552049cc8538e0a14cefa28e93c70a72c4321ae4c422e4df25117af0b0b1470f",
+      "services/api/app/section/render_helper.py": "a0d5f4b753d0aece1a0d4995bd81c268cef3c338ad1ba9613bd4476ad087adb5",
+      "services/api/tests/test_section_export.py": "8fd9d698e445ee5cda3c5ea58cdeb23cce8185ba297e9d9c3d6baad048c488a4"
+    }
+  },
+  "rootDeliveryVerification": {
+    "zipCrc": "passed",
+    "manifestFileBytesAndHashes": "passed (15 manifest entries, 16 SHA256SUMS entries, 17 ZIP files)",
+    "originalComparisonRemainsIncomplete": true,
+    "formalDesignReadyRemainsFalse": true,
+    "nativeDxfDimensionsMm": [
+      700,
+      10000
+    ],
+    "a3PageMm": [
+      420,
+      297
+    ],
+    "docxNativeEquations": 10,
+    "calculationPdfPages": 11,
+    "checkedPages": [
+      "section_A3-1",
+      "envelopes_A3-1",
+      "calculation-7",
+      "calculation-8"
+    ],
+    "analyticInputText": "F = 10 kN"
+  }
+}

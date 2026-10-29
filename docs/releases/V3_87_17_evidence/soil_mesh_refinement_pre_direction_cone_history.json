@@ -1,0 +1,627 @@
+{
+  "formula": "a=theta_i-(y_j-y_i)/L; b=theta_j-(y_j-y_i)/L; Mi=2EI/L*(2a+b); Mj=2EI/L*(a+2b); Vi=(Mi+Mj)/L",
+  "toleranceChanged": false,
+  "artificialStiffnessAdded": false,
+  "runs": [
+    {
+      "hM": 0.25,
+      "nodeCount": 44,
+      "status": "complete",
+      "elapsedSeconds": 0.5307259749997684,
+      "snapshotHash": "4e2027d8c465fa4cb999933e6442289da698d9fcfbbaca50d9d17bba004e46cf",
+      "analysisHash": "0b670f2ded422abcc769b3d3bc25ce3195f7a3ba7f18afa67ac52ca8c70b5c55",
+      "stages": [
+        {
+          "id": "S0",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 0.0,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "equilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          }
+        },
+        {
+          "id": "S1",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 3,
+          "residualInfKn": 1.9847590237986878e-10,
+          "maxAbsDisplacementMm": 3.9430485527864576,
+          "maxAbsMomentKnM": 56.957042350013566,
+          "maxAbsShearKn": 21.35810431608343,
+          "equilibrium": {
+            "horizontalForceResidualKn": -1.4202666820395393e-12,
+            "momentResidualKnM": -3.825620376041172e-12,
+            "relativeForceResidual": 3.1894830013771833e-15,
+            "relativeMomentResidual": 8.591169048325121e-16
+          }
+        },
+        {
+          "id": "S2",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 1.9847590237986878e-10,
+          "maxAbsDisplacementMm": 3.9430485527864576,
+          "maxAbsMomentKnM": 56.957042350013566,
+          "maxAbsShearKn": 21.35810431608343,
+          "equilibrium": {
+            "horizontalForceResidualKn": -1.417824191385364e-12,
+            "momentResidualKnM": -3.819625171708196e-12,
+            "relativeForceResidual": 3.1839979171172834e-15,
+            "relativeMomentResidual": 8.577705659687186e-16
+          }
+        },
+        {
+          "id": "S3",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 4,
+          "residualInfKn": 5.772062827702484e-10,
+          "maxAbsDisplacementMm": 5.322743774089503,
+          "maxAbsMomentKnM": 100.78719903072775,
+          "maxAbsShearKn": 64.99155674045066,
+          "equilibrium": {
+            "horizontalForceResidualKn": 5.896547139450092e-12,
+            "momentResidualKnM": 2.582854763399922e-11,
+            "relativeForceResidual": 1.2044875346353526e-14,
+            "relativeMomentResidual": 5.275996770168923e-15
+          }
+        },
+        {
+          "id": "S4",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 5.772067268594583e-10,
+          "maxAbsDisplacementMm": 5.322743774089503,
+          "maxAbsMomentKnM": 100.78719903072775,
+          "maxAbsShearKn": 64.99155674045066,
+          "equilibrium": {
+            "horizontalForceResidualKn": -3.4829443495976165e-10,
+            "momentResidualKnM": -1.6033961797168317e-09,
+            "relativeForceResidual": 7.114609539626613e-13,
+            "relativeMomentResidual": 3.275256969676288e-13
+          }
+        },
+        {
+          "id": "S5",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 3,
+          "residualInfKn": 1.3686320965433652e-09,
+          "maxAbsDisplacementMm": 11.378141008221839,
+          "maxAbsMomentKnM": 119.36861438723393,
+          "maxAbsShearKn": 90.21589375945275,
+          "equilibrium": {
+            "horizontalForceResidualKn": -3.194913916759745e-10,
+            "momentResidualKnM": -1.4624176453148507e-09,
+            "relativeForceResidual": 5.724538807935768e-13,
+            "relativeMomentResidual": 2.6203105254570937e-13
+          }
+        }
+      ],
+      "roundoff": {
+        "eiKnM2": 353576.4356844887,
+        "minimumElementM": 0.125,
+        "maxAbsStiffnessEntry": 2614542076.136665,
+        "maxRowAbsoluteStiffnessTimesDisplacementSum": 47188396.6337312,
+        "maxAbsStableBeamInternalForce": 172.87584130939658,
+        "oldGlobalMultiplyMinusCenteredElementAssemblyInf": 3.3439677693536396e-09,
+        "epsilonTimesMaxAbsoluteRowSum": 1.0477928887582522e-08,
+        "nonlinearResidualToleranceKn": 4.2338832669999996e-08
+      }
+    },
+    {
+      "hM": 0.125,
+      "nodeCount": 83,
+      "status": "complete",
+      "elapsedSeconds": 0.6470554429997719,
+      "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+      "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+      "stages": [
+        {
+          "id": "S0",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 0.0,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "equilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          }
+        },
+        {
+          "id": "S1",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 4,
+          "residualInfKn": 1.525033765936712e-09,
+          "maxAbsDisplacementMm": 3.94940010657668,
+          "maxAbsMomentKnM": 57.00597881658209,
+          "maxAbsShearKn": 21.38652294813586,
+          "equilibrium": {
+            "horizontalForceResidualKn": -5.03670022355962e-13,
+            "momentResidualKnM": -2.7262584550991065e-12,
+            "relativeForceResidual": 1.1309690405447845e-15,
+            "relativeMomentResidual": 6.121694308543645e-16
+          }
+        },
+        {
+          "id": "S2",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 1.525033765936712e-09,
+          "maxAbsDisplacementMm": 3.94940010657668,
+          "maxAbsMomentKnM": 57.00597881658209,
+          "maxAbsShearKn": 21.38652294813586,
+          "equilibrium": {
+            "horizontalForceResidualKn": -4.991181079549989e-13,
+            "momentResidualKnM": -2.7104932881494292e-12,
+            "relativeForceResidual": 1.1207479155339716e-15,
+            "relativeMomentResidual": 6.086294314603756e-16
+          }
+        },
+        {
+          "id": "S3",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 4,
+          "residualInfKn": 2.9483153696219233e-09,
+          "maxAbsDisplacementMm": 5.32916646539723,
+          "maxAbsMomentKnM": 101.12503567797052,
+          "maxAbsShearKn": 65.67055255259369,
+          "equilibrium": {
+            "horizontalForceResidualKn": 1.0951833190331328e-11,
+            "momentResidualKnM": 7.622406698881701e-11,
+            "relativeForceResidual": 2.2427425413803666e-14,
+            "relativeMomentResidual": 1.5609346375341836e-14
+          }
+        },
+        {
+          "id": "S4",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 2.92223134579217e-09,
+          "maxAbsDisplacementMm": 5.32916646539723,
+          "maxAbsMomentKnM": 101.12503567797052,
+          "maxAbsShearKn": 65.67055255259369,
+          "equilibrium": {
+            "horizontalForceResidualKn": -2.9373285574674224e-09,
+            "momentResidualKnM": -1.348584183734347e-08,
+            "relativeForceResidual": 6.015131530362831e-12,
+            "relativeMomentResidual": 2.7616628804791307e-12
+          }
+        },
+        {
+          "id": "S5",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 3,
+          "residualInfKn": 6.791717077625492e-09,
+          "maxAbsDisplacementMm": 11.394221873648377,
+          "maxAbsMomentKnM": 119.3686143872498,
+          "maxAbsShearKn": 91.54123939319726,
+          "equilibrium": {
+            "horizontalForceResidualKn": 2.407862069453426e-10,
+            "momentResidualKnM": 1.1295412227080304e-09,
+            "relativeForceResidual": 4.3174868790164335e-13,
+            "relativeMomentResidual": 2.0253566307712583e-13
+          }
+        }
+      ],
+      "roundoff": {
+        "eiKnM2": 353576.4356844887,
+        "minimumElementM": 0.09999999999999964,
+        "maxAbsStiffnessEntry": 8485834456.427705,
+        "maxRowAbsoluteStiffnessTimesDisplacementSum": 124311015.3399919,
+        "maxAbsStableBeamInternalForce": 175.84857447869587,
+        "oldGlobalMultiplyMinusCenteredElementAssemblyInf": 6.801132670930521e-09,
+        "epsilonTimesMaxAbsoluteRowSum": 2.7602590288998007e-08,
+        "nonlinearResidualToleranceKn": 4.2338832669999996e-08
+      }
+    },
+    {
+      "hM": 0.0625,
+      "nodeCount": 163,
+      "status": "complete",
+      "elapsedSeconds": 0.9223768340007155,
+      "snapshotHash": "eac05a696e0cbc4eac4d33e2c83374021ed59cd1b5c2435ccd584ec59e1087ae",
+      "analysisHash": "68788af25a7248b7c26db81b94eb42e68a582dd16615d19589a5769fe390027e",
+      "stages": [
+        {
+          "id": "S0",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 0.0,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "equilibrium": {
+            "horizontalForceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0
+          }
+        },
+        {
+          "id": "S1",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 4,
+          "residualInfKn": 1.550265879557422e-08,
+          "maxAbsDisplacementMm": 3.9513069367207545,
+          "maxAbsMomentKnM": 57.024077477348555,
+          "maxAbsShearKn": 21.401631365713094,
+          "equilibrium": {
+            "horizontalForceResidualKn": 3.1328646274420002e-12,
+            "momentResidualKnM": 2.1438378633095723e-11,
+            "relativeForceResidual": 7.03441779935627e-15,
+            "relativeMomentResidual": 4.813693861043781e-15
+          }
+        },
+        {
+          "id": "S2",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 1.550265879557422e-08,
+          "maxAbsDisplacementMm": 3.9513069367207545,
+          "maxAbsMomentKnM": 57.024077477348555,
+          "maxAbsShearKn": 21.401631365713094,
+          "equilibrium": {
+            "horizontalForceResidualKn": 3.1389708540774386e-12,
+            "momentResidualKnM": 2.1464330096296336e-11,
+            "relativeForceResidual": 7.048128493701305e-15,
+            "relativeMomentResidual": 4.819520906140421e-15
+          }
+        },
+        {
+          "id": "S3",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 4,
+          "residualInfKn": 2.3015672898779593e-08,
+          "maxAbsDisplacementMm": 5.330745471450124,
+          "maxAbsMomentKnM": 101.16913324884011,
+          "maxAbsShearKn": 65.92072406926998,
+          "equilibrium": {
+            "horizontalForceResidualKn": -9.219399289134289e-11,
+            "momentResidualKnM": -4.4788683374076543e-10,
+            "relativeForceResidual": 1.8880069782284247e-13,
+            "relativeMomentResidual": 9.172110254035905e-14
+          }
+        },
+        {
+          "id": "S4",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 0,
+          "residualInfKn": 2.3015672905718487e-08,
+          "maxAbsDisplacementMm": 5.330745471450124,
+          "maxAbsMomentKnM": 101.16913324884011,
+          "maxAbsShearKn": 65.92072406926998,
+          "equilibrium": {
+            "horizontalForceResidualKn": -8.282156289778075e-09,
+            "momentResidualKnM": -3.81217043017492e-08,
+            "relativeForceResidual": 1.6960724207170935e-11,
+            "relativeMomentResidual": 7.80680405376189e-12
+          }
+        },
+        {
+          "id": "S5",
+          "status": "success",
+          "failureReason": null,
+          "iterations": 5,
+          "residualInfKn": 3.4403281556905085e-08,
+          "maxAbsDisplacementMm": 11.397232355353728,
+          "maxAbsMomentKnM": 119.36861438715525,
+          "maxAbsShearKn": 92.46528232319703,
+          "equilibrium": {
+            "horizontalForceResidualKn": 5.103910442720572e-09,
+            "momentResidualKnM": 2.3477988114186873e-08,
+            "relativeForceResidual": 9.150858500127712e-12,
+            "relativeMomentResidual": 4.209394923984691e-12
+          }
+        }
+      ],
+      "roundoff": {
+        "eiKnM2": 353576.4356844887,
+        "minimumElementM": 0.05999999999999961,
+        "maxAbsStiffnessEntry": 39286270631.61062,
+        "maxRowAbsoluteStiffnessTimesDisplacementSum": 787299181.7200395,
+        "maxAbsStableBeamInternalForce": 178.0245047679948,
+        "oldGlobalMultiplyMinusCenteredElementAssemblyInf": 6.553571907375044e-08,
+        "epsilonTimesMaxAbsoluteRowSum": 1.748155357628266e-07,
+        "nonlinearResidualToleranceKn": 4.2338832669999996e-08
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "coarseM": 0.25,
+      "fineM": 0.125,
+      "maximumRelativeDifference": 0.014478126389044667,
+      "passedTwoPercent": true,
+      "metrics": [
+        {
+          "stageId": "S0",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 0.0,
+          "fineValue": 0.0,
+          "relativeDifference": 0.0
+        },
+        {
+          "stageId": "S0",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 0.0,
+          "fineValue": 0.0,
+          "relativeDifference": 0.0
+        },
+        {
+          "stageId": "S0",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 0.0,
+          "fineValue": 0.0,
+          "relativeDifference": 0.0
+        },
+        {
+          "stageId": "S1",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 3.9430485527864576,
+          "fineValue": 3.94940010657668,
+          "relativeDifference": 0.0016082325464178047
+        },
+        {
+          "stageId": "S1",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 56.957042350013566,
+          "fineValue": 57.00597881658209,
+          "relativeDifference": 0.0008584444576591049
+        },
+        {
+          "stageId": "S1",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 21.35810431608343,
+          "fineValue": 21.38652294813586,
+          "relativeDifference": 0.0013288103036358952
+        },
+        {
+          "stageId": "S2",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 3.9430485527864576,
+          "fineValue": 3.94940010657668,
+          "relativeDifference": 0.0016082325464178047
+        },
+        {
+          "stageId": "S2",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 56.957042350013566,
+          "fineValue": 57.00597881658209,
+          "relativeDifference": 0.0008584444576591049
+        },
+        {
+          "stageId": "S2",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 21.35810431608343,
+          "fineValue": 21.38652294813586,
+          "relativeDifference": 0.0013288103036358952
+        },
+        {
+          "stageId": "S3",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 5.322743774089503,
+          "fineValue": 5.32916646539723,
+          "relativeDifference": 0.001205196225231533
+        },
+        {
+          "stageId": "S3",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 100.78719903072775,
+          "fineValue": 101.12503567797052,
+          "relativeDifference": 0.0033407814887561308
+        },
+        {
+          "stageId": "S3",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 64.99155674045066,
+          "fineValue": 65.67055255259369,
+          "relativeDifference": 0.01033942590325002
+        },
+        {
+          "stageId": "S4",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 5.322743774089503,
+          "fineValue": 5.32916646539723,
+          "relativeDifference": 0.001205196225231533
+        },
+        {
+          "stageId": "S4",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 100.78719903072775,
+          "fineValue": 101.12503567797052,
+          "relativeDifference": 0.0033407814887561308
+        },
+        {
+          "stageId": "S4",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 64.99155674045066,
+          "fineValue": 65.67055255259369,
+          "relativeDifference": 0.01033942590325002
+        },
+        {
+          "stageId": "S5",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 11.378141008221839,
+          "fineValue": 11.394221873648377,
+          "relativeDifference": 0.001411317561204297
+        },
+        {
+          "stageId": "S5",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 119.36861438723393,
+          "fineValue": 119.3686143872498,
+          "relativeDifference": 1.32979048122185e-13
+        },
+        {
+          "stageId": "S5",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 90.21589375945275,
+          "fineValue": 91.54123939319726,
+          "relativeDifference": 0.014478126389044667
+        }
+      ]
+    },
+    {
+      "coarseM": 0.125,
+      "fineM": 0.0625,
+      "maximumRelativeDifference": 0.009993404084031593,
+      "passedTwoPercent": true,
+      "metrics": [
+        {
+          "stageId": "S0",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 0.0,
+          "fineValue": 0.0,
+          "relativeDifference": 0.0
+        },
+        {
+          "stageId": "S0",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 0.0,
+          "fineValue": 0.0,
+          "relativeDifference": 0.0
+        },
+        {
+          "stageId": "S0",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 0.0,
+          "fineValue": 0.0,
+          "relativeDifference": 0.0
+        },
+        {
+          "stageId": "S1",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 3.94940010657668,
+          "fineValue": 3.9513069367207545,
+          "relativeDifference": 0.0004825821366478908
+        },
+        {
+          "stageId": "S1",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 57.00597881658209,
+          "fineValue": 57.024077477348555,
+          "relativeDifference": 0.00031738629658062276
+        },
+        {
+          "stageId": "S1",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 21.38652294813586,
+          "fineValue": 21.401631365713094,
+          "relativeDifference": 0.000705947005583856
+        },
+        {
+          "stageId": "S2",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 3.94940010657668,
+          "fineValue": 3.9513069367207545,
+          "relativeDifference": 0.0004825821366478908
+        },
+        {
+          "stageId": "S2",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 57.00597881658209,
+          "fineValue": 57.024077477348555,
+          "relativeDifference": 0.00031738629658062276
+        },
+        {
+          "stageId": "S2",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 21.38652294813586,
+          "fineValue": 21.401631365713094,
+          "relativeDifference": 0.000705947005583856
+        },
+        {
+          "stageId": "S3",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 5.32916646539723,
+          "fineValue": 5.330745471450124,
+          "relativeDifference": 0.0002962073618690711
+        },
+        {
+          "stageId": "S3",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 101.12503567797052,
+          "fineValue": 101.16913324884011,
+          "relativeDifference": 0.00043587969426535974
+        },
+        {
+          "stageId": "S3",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 65.67055255259369,
+          "fineValue": 65.92072406926998,
+          "relativeDifference": 0.003795035934578133
+        },
+        {
+          "stageId": "S4",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 5.32916646539723,
+          "fineValue": 5.330745471450124,
+          "relativeDifference": 0.0002962073618690711
+        },
+        {
+          "stageId": "S4",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 101.12503567797052,
+          "fineValue": 101.16913324884011,
+          "relativeDifference": 0.00043587969426535974
+        },
+        {
+          "stageId": "S4",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 65.67055255259369,
+          "fineValue": 65.92072406926998,
+          "relativeDifference": 0.003795035934578133
+        },
+        {
+          "stageId": "S5",
+          "metric": "maxAbsDisplacementMm",
+          "coarseValue": 11.394221873648377,
+          "fineValue": 11.397232355353728,
+          "relativeDifference": 0.0002641414697434642
+        },
+        {
+          "stageId": "S5",
+          "metric": "maxAbsMomentKnM",
+          "coarseValue": 119.3686143872498,
+          "fineValue": 119.36861438715525,
+          "relativeDifference": 7.921598802199821e-13
+        },
+        {
+          "stageId": "S5",
+          "metric": "maxAbsShearKn",
+          "coarseValue": 91.54123939319726,
+          "fineValue": 92.46528232319703,
+          "relativeDifference": 0.009993404084031593
+        }
+      ]
+    }
+  ],
+  "currentAlgorithm": false,
+  "algorithmState": "historical_before_complementary_direction_cone_and_extended_displacement_fix"
+}

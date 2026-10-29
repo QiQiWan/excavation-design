@@ -361,10 +361,22 @@ def _governing_conclusion(project: Project, checks: list[dict[str, Any]]) -> str
         return "当前尚未形成完整计算结果，暂不能给出工程通过性结论。"
     fail_count = int((latest.check_summary or {}).get("fail", 0) or 0)
     warning_count = int((latest.check_summary or {}).get("warning", 0) or 0)
+    proposal = dict(getattr(latest, "derived_design", None) or {})
+    verification_only = getattr(latest, "calculation_mode", None) == "verify" or proposal.get("status") == "proposal_only"
+    verification_note = "本次为仅复算当前方案。计算需求及配筋建议未采用；图纸与钢筋表仍引用已保存输入，不能据建议配筋认定原输入配筋通过。请核对 supplied_reinforcement 验算及人工复核项。"
     if fail_count:
-        return f"当前方案存在 {fail_count} 个不通过项，需调整结构体系、截面或施工条件后重新计算。"
+        return f"当前方案存在 {fail_count} 个不通过项，需调整结构体系、截面或施工条件后重新计算。" + (verification_note if verification_only else "")
+    if verification_only:
+        return verification_note
+    manual_count = max(
+        int((latest.check_summary or {}).get("manualReview", 0) or 0),
+        int((latest.check_summary or {}).get("manual_review", 0) or 0),
+        sum(item.get("status") in {"manual_review", "preliminary"} for item in checks),
+    )
+    if manual_count:
+        return f"当前计算仍有 {manual_count} 个人工复核或缺失证据项，尚不能认定原输入设计通过；请补齐输入配筋、模型适用性及施工阶段复核证据。"
     if warning_count:
-        return f"当前计算未发现不通过项，但存在 {warning_count} 个预警项，应完成针对性复核后再进入正式出图。"
+        return f"当前计算有 {warning_count} 个预警项，尚不能认定工程约束全部满足；应完成针对性复核后再进入正式出图。"
     if not checks:
         return "当前没有可追溯的规范检查记录，计算结果只能作为方案参考。"
     return "当前已实现的规范检查未发现不通过项，可进入配筋和审查成果编制；正式发行仍需专业校审。"

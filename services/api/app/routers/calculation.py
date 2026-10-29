@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
@@ -144,12 +145,33 @@ def reset_construction_stages(
 
 
 @router.post("/run", response_model=CalculationResult)
-def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = Depends(get_repository)) -> CalculationResult:
+def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = Depends(get_repository),
+        mode: Literal["verify", "design"] = "verify") -> CalculationResult:
     _require_embedded_heavy_execution()
     from app.calculation.engine import run_calculation
     from app.services.intelligent_design_closure import run_intelligent_design_closure
-    from app.services.construction_stages import select_calculation_case_for_run, validate_calculation_case
-    project = repo.require_for_calculation(project_id)
+    from app.services.construction_stages import select_calculation_case_for_run, select_calculation_case_for_verification, validate_calculation_case
+    from app.services.calculation_assurance import apply_calculation_assurance
+    if mode not in {"verify", "design"}:
+        raise HTTPException(status_code=422, detail="mode must be verify or design")
+    expected_revision = repo.revision(project_id) if mode == "verify" else None
+    project = repo.require_for_calculation(project_id, migrate=False) if mode == "verify" else repo.require_for_calculation(project_id)
+    if mode == "verify":
+        try:
+            if not project.design_settings.design_basis_confirmed:
+                raise ValueError("请先确认设计基准；复算不会自动修复或替换设计输入。")
+            case, stage_selection = select_calculation_case_for_verification(project, case_id)
+            result = run_calculation(project, case, auto_repair=False, mode="verify")
+            result.design_iteration_summary = dict(result.design_iteration_summary or {})
+            result.design_iteration_summary["constructionStageSelection"] = stage_selection
+            apply_calculation_assurance(project, case, result)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        project.calculation_results.append(result)
+        mark_calculation_state_current(project, result.id)
+        repo.save(project, expected_revision=expected_revision,
+                  action="calculation.verify", summary="Verified saved design without adoption or repair")
+        return result
     case = None
     stage_selection: dict = {}
     if case_id:
@@ -186,7 +208,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
                 auto_repair=not bool(stage_selection.get("preserved")),
             )
         else:
-            result = run_calculation(project, case, auto_repair=not bool(stage_selection.get("preserved")))
+            result = run_calculation(project, case, auto_repair=not bool(stage_selection.get("preserved")), mode="design")
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     result.design_iteration_summary = dict(result.design_iteration_summary or {})
@@ -194,6 +216,7 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
     project.calculation_results.append(result)
     mark_calculation_state_current(project, result.id)
     mark_wall_length_recalculated(project, result.id)
+    apply_calculation_assurance(project, case, result)
     repo.save(project)
     return result
 

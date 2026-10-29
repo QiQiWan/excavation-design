@@ -63,7 +63,7 @@ def _simplified_span_envelope(profile: PressureProfile, wall_depth: float, suppo
             local = z - a
             moment = q_mean * local * (span - local) / 2.0
             shear = q_mean * (span / 2.0 - local)
-            points.append({"depth": round(float(z), 3), "pressure": round(float(q), 3), "moment": round(float(moment), 3), "shear": round(float(shear), 3), "displacementMm": 0.0})
+            points.append({"depth": round(float(z), 3), "pressure": round(float(q), 3), "moment": round(float(moment), 3), "shear": round(float(shear), 3), "displacementMm": None})
     return {
         "method": "simplified-continuous-span-envelope-fallback",
         "points": points,
@@ -94,29 +94,41 @@ def analyze_wall_on_elastic_foundation(
     soil_modulus_factor: float = 1.0,
     support_stiffness_factor: float = 1.0,
     support_stiffness_overrides_kn_per_m: dict[str, float] | None = None,
+    pressure_method: str = "active",
+    water_soil_method: str = "separate",
+    lateral_restraints: list[dict[str, Any]] | None = None,
+    long_term_stiffness_factor: float = 1.0,
+    pressure_profile: PressureProfile | None = None,
 ) -> dict[str, Any]:
     """Finite-difference beam-on-elastic-foundation wall analysis.
 
     The formulation solves EI*y'''' + k_s*y + sum(k_support*y delta) = q(z), where q(z) is the
-    net active/passive lateral pressure profile.  It is suitable for preliminary envelopes and for
+    net active/passive lateral pressure profile. Supplied pressure_profile is used without rebuilding.
+    Overrides and explicit lateral restraints are full-face normal stiffness in kN/m;
+    they are divided by face length once. Explicit zero stiffness is valid and no
+    stiffness clamp or additional support/transfer factor is applied to overrides. Defaults retain the shared EA/L helper's
+    bounds. Non-head restraints on derivative rows snap to an interior mesh node;
+    appliedDepth records that location. This approximation is suitable for preliminary envelopes and for
     driving reinforcement design; soil-structure interaction assumptions must be reviewed for final
     design.
     """
     wall_depth = top_elevation - wall_bottom_elevation
     if wall_depth <= excavation_depth:
         wall_depth = excavation_depth
-    profile = calculate_lateral_pressure_profile(
-        soil_profile=soil_profile,
-        excavation_depth=excavation_depth,
-        groundwater_level=groundwater_level_outside,
-        groundwater_level_inside=groundwater_level_inside,
-        surcharge=surcharge,
-        top_elevation=top_elevation,
-        step=step,
-        calculation_depth=wall_depth,
-        mode="active",
-        water_soil_method="separate",
-    )
+    profile = pressure_profile
+    if profile is None:
+        profile = calculate_lateral_pressure_profile(
+            soil_profile=soil_profile,
+            excavation_depth=excavation_depth,
+            groundwater_level=groundwater_level_outside,
+            groundwater_level_inside=groundwater_level_inside,
+            surcharge=surcharge,
+            top_elevation=top_elevation,
+            step=step,
+            calculation_depth=wall_depth,
+            mode=pressure_method,
+            water_soil_method=water_soil_method,
+        )
     transferred_supports = list(transferred_supports or [])
     support_stiffness_overrides_kn_per_m = dict(support_stiffness_overrides_kn_per_m or {})
     wall_restraints = [*supports, *transferred_supports]
@@ -131,7 +143,8 @@ def analyze_wall_on_elastic_foundation(
     wall_stiffness_factor = max(0.25, min(float(wall_stiffness_factor), 4.0))
     soil_modulus_factor = max(0.25, min(float(soil_modulus_factor), 4.0))
     support_stiffness_factor = max(0.25, min(float(support_stiffness_factor), 4.0))
-    ei = e_kn_m2 * inertia * wall_stiffness_factor
+    long_term_stiffness_factor = max(0.20, min(float(long_term_stiffness_factor), 1.0))
+    ei = e_kn_m2 * inertia * wall_stiffness_factor * long_term_stiffness_factor
     if ei <= 0:
         return _simplified_span_envelope(profile, wall_depth, supports_depth)
 
@@ -145,13 +158,19 @@ def analyze_wall_on_elastic_foundation(
     a[1, 1] = 3.0
     a[1, 2] = -3.0
     a[1, 3] = 1.0
+    def restraint_node(depth: float) -> int:
+        nearest = int(np.argmin(np.abs(z - depth)))
+        # Boundary rows 1, n-2 and n-1 impose derivatives, not field equilibrium.
+        # Snap non-head restraints to the nearest assembled interior equation.
+        return 0 if nearest == 0 else max(2, min(n - 3, nearest))
+
     # Interior finite-difference equations.
     support_indices: dict[int, list[tuple[SupportElement, float, str]]] = {}
     transferred_ids = {support.id for support in transferred_supports}
     for support in wall_restraints:
         d = top_elevation - support.elevation
         if 0.0 <= d <= wall_depth:
-            idx = int(np.argmin(np.abs(z - d)))
+            idx = restraint_node(d)
             is_transfer = support.id in transferred_ids
             is_corner_transfer = str(getattr(support, "code", "")).startswith("CT-")
             if is_corner_transfer:
@@ -164,29 +183,53 @@ def analyze_wall_on_elastic_foundation(
                 factor = 1.0
                 source = "temporary_support"
             support_indices.setdefault(idx, []).append((support, factor, source))
+    distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
+    def effective_support_stiffness(support: SupportElement, transfer_factor: float) -> float:
+        if support.id in support_stiffness_overrides_kn_per_m:
+            raw = float(support_stiffness_overrides_kn_per_m[support.id])
+        elif support_spring_kn_per_m is not None:
+            raw = float(support_spring_kn_per_m)
+        elif segment is not None:
+            raw, _ = support_spring_stiffness(support, segment)
+        else:
+            length = max(float(support.span_length or 1.0), 1.0)
+            width = float(support.section.width or support.section.diameter or 1.0)
+            height = float(support.section.height or support.section.diameter or 1.0)
+            area = max(width * height, 0.05)
+            elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
+            raw = elastic_modulus * area / length
+        if not math.isfinite(raw) or raw < 0.0:
+            raise ValueError("Support stiffness must be finite and nonnegative")
+        if support.id in support_stiffness_overrides_kn_per_m:
+            # Overrides are final effective full-face stiffness from the coupled model.
+            return raw / distribution_length
+        return raw * support_stiffness_factor * transfer_factor / distribution_length
+
+    effective_springs = {
+        (idx, support.id): effective_support_stiffness(support, factor)
+        for idx, items in support_indices.items() for support, factor, _ in items
+    }
+    explicit_springs: dict[int, list[dict[str, Any]]] = {}
+    for restraint in lateral_restraints or []:
+        depth = float(restraint["depth"])
+        raw = float(restraint["stiffnessKnPerM"])
+        if not math.isfinite(depth) or not 0.0 <= depth <= wall_depth:
+            raise ValueError("Lateral restraint depth must lie within the wall")
+        if not math.isfinite(raw) or raw < 0.0:
+            raise ValueError("Lateral restraint stiffness must be finite and nonnegative")
+        item = dict(restraint, distributedStiffness=raw / distribution_length)
+        explicit_springs.setdefault(restraint_node(depth), []).append(item)
+
+    def total_stiffness_at(idx: int) -> float:
+        return (sum(effective_springs[(idx, support.id)] for support, _, _ in support_indices.get(idx, []))
+                + sum(item["distributedStiffness"] for item in explicit_springs.get(idx, [])))
+
     # A support at the excavation top is common for crown-beam/top-strut systems.
     # The previous free-head boundary equations silently ignored springs at node 0,
     # which exaggerated the first-span displacement and moment. Keep M(0)=0 and
     # replace the free-shear equation with a spring-supported shear boundary.
-    if 0 in support_indices:
-        top_level_stiffness = 0.0
-        for support, stiffness_factor, _source in support_indices[0]:
-            if support.id in support_stiffness_overrides_kn_per_m:
-                support_k = float(support_stiffness_overrides_kn_per_m[support.id])
-            elif support_spring_kn_per_m is not None:
-                support_k = float(support_spring_kn_per_m)
-            elif segment is not None:
-                support_k, _projection = support_spring_stiffness(support, segment)
-            else:
-                length = max(float(support.span_length or 1.0), 1.0)
-                width = float(support.section.width or support.section.diameter or 1.0)
-                height = float(support.section.height or support.section.diameter or 1.0)
-                area = max(width * height, 0.05)
-                elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
-                support_k = elastic_modulus * area / length
-            top_level_stiffness += max(1.0e4, min(2.0e7, support_k * support_stiffness_factor)) * stiffness_factor
-        distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
-        k_top = top_level_stiffness / distribution_length
+    if 0 in support_indices or 0 in explicit_springs:
+        k_top = total_stiffness_at(0)
         shear_scale = ei / dz**3
         a[1, :] = 0.0
         a[1, 0] = -shear_scale + k_top
@@ -204,27 +247,7 @@ def analyze_wall_on_elastic_foundation(
         ks = 0.0
         if z[i] > excavation_depth:
             ks = _m_value(layer) * soil_modulus_factor * (z[i] - excavation_depth)
-        if i in support_indices:
-            level_stiffness = 0.0
-            for support, stiffness_factor, _source in support_indices[i]:
-                if support_spring_kn_per_m is not None:
-                    support_k = float(support_spring_kn_per_m)
-                elif segment is not None:
-                    support_k, _projection = support_spring_stiffness(support, segment)
-                else:
-                    length = max(float(support.span_length or 1.0), 1.0)
-                    width = float(support.section.width or support.section.diameter or 1.0)
-                    height = float(support.section.height or support.section.diameter or 1.0)
-                    area = max(width * height, 0.05)
-                    elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
-                    support_k = elastic_modulus * area / length
-                level_stiffness += max(1.0e4, min(2.0e7, support_k * support_stiffness_factor)) * stiffness_factor
-            # The vertical wall model is for a one-metre strip. Discrete struts
-            # distributed along a wall face must be converted to an equivalent
-            # spring per metre of wall length; summing the full EA/L of every
-            # strut directly over-stiffens the wall by roughly the support count.
-            distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
-            ks += level_stiffness / distribution_length / dz
+        ks += total_stiffness_at(i) / dz
         a[i, i] += ks
         b[i] = q[i]
     # Free-toe conditions; embedded soil springs provide restraint above the toe.
@@ -240,28 +263,17 @@ def analyze_wall_on_elastic_foundation(
     except np.linalg.LinAlgError:
         return _simplified_span_envelope(profile, wall_depth, supports_depth)
 
+    if not np.all(np.isfinite(y)):
+        return _simplified_span_envelope(profile, wall_depth, supports_depth)
+
     y2 = np.gradient(np.gradient(y, dz), dz)
     y3 = np.gradient(y2, dz)
     moment = -ei * y2
     shear = -ei * y3
     support_reactions = []
-    distribution_length = max(float(getattr(segment, "length", 1.0) or 1.0), 1.0)
     for idx, support_list in support_indices.items():
         for support, stiffness_factor, source in support_list:
-            if support.id in support_stiffness_overrides_kn_per_m:
-                support_k = float(support_stiffness_overrides_kn_per_m[support.id])
-            elif support_spring_kn_per_m is not None:
-                support_k = float(support_spring_kn_per_m)
-            elif segment is not None:
-                support_k, _projection = support_spring_stiffness(support, segment)
-            else:
-                length = max(float(support.span_length or 1.0), 1.0)
-                width = float(support.section.width or support.section.diameter or 1.0)
-                height = float(support.section.height or support.section.diameter or 1.0)
-                area = max(width * height, 0.05)
-                elastic_modulus = float(support.material.elastic_modulus or (32_500_000.0 if support.material.name == "Concrete" else 200_000_000.0))
-                support_k = elastic_modulus * area / length
-            distributed_k = support_k * support_stiffness_factor * stiffness_factor / distribution_length
+            distributed_k = effective_springs[(idx, support.id)]
             reaction = distributed_k * float(y[idx])
             support_reactions.append(
                 {
@@ -272,8 +284,22 @@ def analyze_wall_on_elastic_foundation(
                     "springStiffness": round(distributed_k, 3),
                     "unit": "kN/m",
                     "restraintSource": source,
+                    "appliedDepth": round(float(z[idx]), 6),
                 }
             )
+    for idx, restraints in explicit_springs.items():
+        for restraint in restraints:
+            distributed_k = restraint["distributedStiffness"]
+            support_reactions.append({
+                "supportId": restraint.get("id"),
+                "levelIndex": restraint.get("levelIndex", 0),
+                "elevation": top_elevation - restraint["depth"],
+                "reactionPerMeter": round(distributed_k * float(y[idx]), 3),
+                "springStiffness": round(distributed_k, 3),
+                "unit": "kN/m",
+                "restraintSource": "explicit_lateral_restraint",
+                "appliedDepth": round(float(z[idx]), 6),
+            })
     max_m = float(np.max(np.abs(moment)))
     max_v = float(np.max(np.abs(shear)))
     max_disp_mm = float(np.max(np.abs(y)) * 1000.0)

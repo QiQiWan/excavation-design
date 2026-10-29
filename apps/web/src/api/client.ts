@@ -33,6 +33,7 @@ type RequestOptions = RequestInit & {
   timeoutMessage?: string;
   retryCount?: number;
   responseIdleTimeoutMs?: number;
+  responseType?: 'blob';
   activity?: RequestActivityOptions;
 };
 
@@ -82,6 +83,14 @@ function requestKey(path: string, method: string, body: BodyInit | null | undefi
 
 function formatStructuredApiError(status: number, statusText: string, payload: unknown): string {
   const root = payload && typeof payload === 'object' ? payload as Record<string, any> : {};
+  if (Array.isArray(root.detail)) {
+    const issues = root.detail.filter((item: unknown) => item && typeof item === 'object');
+    const messages = issues.slice(0, 8).map((item: Record<string, unknown>) => {
+      const location = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').join('.') : '';
+      return `${location || '输入'}：${String(item.msg ?? '字段校验未通过')}`;
+    });
+    if (messages.length) return `输入校验未通过：${messages.join('；')}${issues.length > messages.length ? `；另有 ${issues.length - messages.length} 项` : ''}`;
+  }
   const detail = root.detail && typeof root.detail === 'object' ? root.detail as Record<string, any> : root;
   if (String(detail.code ?? '') === 'PROJECT_FULL_LOAD_BLOCKED') {
     const payloadMb = Number(detail.payloadBytes ?? 0) / 1048576;
@@ -121,17 +130,20 @@ async function readResponsePayload<T>(
   controller: AbortController,
   activityId: string,
   idleTimeoutMs: number,
+  asBlob = false,
 ): Promise<T> {
   if (response.status === 204) return undefined as T;
   const contentType = String(response.headers.get('Content-Type') ?? '').toLowerCase();
   if (!response.body) {
     dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '正在解析返回数据', progress: 96 });
+    if (asBlob) return response.blob() as Promise<T>;
     return (contentType.includes('json') ? response.json() : response.text()) as Promise<T>;
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   const textParts: string[] = [];
+  const blobParts: ArrayBuffer[] = [];
   const explicitLength = Math.max(0, Number(response.headers.get('X-PitGuard-Response-Uncompressed-Bytes') ?? 0));
   const contentEncoding = String(response.headers.get('Content-Encoding') ?? '').toLowerCase();
   const declaredLength = explicitLength || (contentEncoding ? 0 : Math.max(0, Number(response.headers.get('Content-Length') ?? 0)));
@@ -149,7 +161,8 @@ async function readResponsePayload<T>(
       resetIdleTimer();
       if (done) break;
       if (!value?.byteLength) continue;
-      textParts.push(decoder.decode(value, { stream: true }));
+      if (asBlob) blobParts.push(Uint8Array.from(value).buffer);
+      else textParts.push(decoder.decode(value, { stream: true }));
       received += value.byteLength;
       const ratio = declaredLength > 0 ? Math.min(1, received / declaredLength) : 0;
       const progress = declaredLength > 0 ? 42 + ratio * 52 : Math.min(94, 42 + Math.log2(Math.max(2, received / 65536 + 1)) * 8);
@@ -172,6 +185,7 @@ async function readResponsePayload<T>(
     phase: `正在解析数据 ${formatTransferBytes(received)}`,
     progress: 97,
   });
+  if (asBlob) return new Blob(blobParts, { type: contentType || 'application/octet-stream' }) as T;
   textParts.push(decoder.decode());
   const text = textParts.join('');
   if (!contentType.includes('json')) return text as T;
@@ -184,7 +198,7 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
   const idleTimeoutMs = Math.max(4000, init.responseIdleTimeoutMs ?? Math.min(timeoutMs, 20000));
   const retryCount = Math.max(0, Math.min(init.retryCount ?? (method === 'GET' ? 1 : 0), 3));
   const externalSignal = init.signal;
-  const { timeoutMs: _timeoutMs, timeoutMessage, retryCount: _retryCount, responseIdleTimeoutMs: _idleTimeoutMs, activity: _activity, signal: _signal, ...fetchInit } = init;
+  const { timeoutMs: _timeoutMs, timeoutMessage, retryCount: _retryCount, responseIdleTimeoutMs: _idleTimeoutMs, responseType, activity: _activity, signal: _signal, ...fetchInit } = init;
   const headers = new Headers(fetchInit.headers);
   headers.set('X-PitGuard-Client-Request-Id', activityId);
   headers.set('Accept', headers.get('Accept') || 'application/json');
@@ -216,7 +230,7 @@ async function executeRequest<T>(path: string, init: RequestOptions, activityId:
         continue;
       }
       dispatchActivity(requestActivityEvents.phase, { id: activityId, phase: '服务器已响应，正在接收数据', progress: 38 });
-      const payload = await readResponsePayload<unknown>(response, controller, activityId, idleTimeoutMs);
+      const payload = await readResponsePayload<unknown>(response, controller, activityId, idleTimeoutMs, response.ok && responseType === 'blob');
       if (!response.ok) {
         if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/bootstrap' && path !== '/api/auth/status') {
           window.dispatchEvent(new CustomEvent('pitguard:unauthorized', { detail: { requestPath: path } }));
@@ -301,7 +315,67 @@ export function invalidateApiCache(prefix = '') {
 
 export type AuthIdentity = { actor: string; role: string; authenticated: boolean; keyId?: string; username?: string; authMode?: string };
 
+// Full input and result payloads stay intact; the panel only projects review fields.
+export type FrozenSectionInput = Record<string, unknown>;
+export type FrozenSectionSnapshotRecord = {
+  schemaVersion: string;
+  snapshotHash: string;
+  analysisHash: string;
+  input: FrozenSectionInput;
+};
+export type FrozenSectionStageResult = {
+  id: string; name?: string; event?: string; status?: string; failureReason?: string | null;
+  maxAbsDisplacementMm?: number | null; maxAbsMomentKnM?: number | null; maxAbsShearKn?: number | null;
+  supports?: { id: string; status?: string; active?: boolean; depthM?: number | null; reactionCharacteristicKn?: number | null }[] | null;
+  [key: string]: unknown;
+};
+export type FrozenSectionComparison = {
+  status?: string; reason?: string; scope?: string; missingConditions?: unknown[];
+  [key: string]: unknown;
+};
+export type FrozenSectionResult = {
+  schemaVersion: string; sectionId: string; snapshotHash: string; analysisHash: string; resultHash: string;
+  algorithmVersion?: string; discreteInputHash?: string; status?: string; engineeringStatus?: string;
+  formalDesignReady?: boolean; stages: FrozenSectionStageResult[];
+  envelope?: { complete?: boolean; governing?: {
+    displacementAbs?: { valueMm?: number | null; stageId?: string; depthM?: number | null } | null;
+    momentAbs?: { valueKnM?: number | null; stageId?: string; depthM?: number | null } | null;
+    shearAbs?: { valueKn?: number | null; stageId?: string; depthM?: number | null } | null;
+  } | null } | null;
+  comparisons?: Partial<Record<'hand' | 'independent' | 'mesh' | 'original', FrozenSectionComparison | null>> | null;
+  [key: string]: unknown;
+};
+
+export type SectionReferenceContext = {
+  contract: Record<string, unknown>; assessment: Record<string, unknown>; curveTemplate?: Record<string, unknown>;
+};
+export type SectionReferenceComparison = {
+  schemaVersion: 'pitguard.reference-comparison-record/1'; snapshotHash: string; resultHash: string;
+  contractHash: string; curveBundleHash: string; comparisonHash: string; report: Record<string, unknown>;
+};
+
+const sectionRequestOptions: RequestOptions = {
+  timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
+  activity: { blocking: false, cacheTtlMs: 0, deduplicate: false },
+};
+
 export const api = {
+  getNormativeMethods: () => request<Record<string, unknown>>('/api/sections/norms/catalog', sectionRequestOptions),
+  getNormativeCandidates: () => request<Record<string, unknown>>('/api/sections/norms/candidates', sectionRequestOptions),
+  executeNormativeMethod: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/sections/norms/calculate', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+  runNormativeAgent: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/sections/norms/agent', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+  getSectionExample: () => request<FrozenSectionInput>('/api/sections/example', { ...sectionRequestOptions, activity: { ...sectionRequestOptions.activity, label: '正在加载合成剖面验证例' } }),
+  getSectionExampleV2: () => request<FrozenSectionInput>('/api/sections/example-v2', sectionRequestOptions),
+  getA3Reference: () => request<SectionReferenceContext>('/api/sections/reference/a3-3', sectionRequestOptions),
+  saveSectionReferenceContract: (contract: Record<string, unknown>) => request<SectionReferenceContext>('/api/sections/reference/contracts', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contract) }),
+  saveSectionReferenceCurves: (curves: Record<string, unknown>) => request<Record<string, unknown>>('/api/sections/reference/curves', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(curves) }),
+  compareSectionReference: (resultHash: string, binding: { contract_hash: string; curve_bundle_hash: string }) => request<SectionReferenceComparison>(`/api/sections/results/${encodeURIComponent(resultHash)}/compare-reference`, { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(binding) }),
+  getSectionCurves: (resultHash: string) => request<Record<string, unknown>>(`/api/sections/results/${encodeURIComponent(resultHash)}/curves`, sectionRequestOptions),
+  freezeSection: (input: FrozenSectionInput) => request<FrozenSectionSnapshotRecord>('/api/sections/freeze', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), activity: { ...sectionRequestOptions.activity, label: '正在校验并冻结剖面输入' } }),
+  analyzeSectionSnapshot: (snapshotHash: string) => request<FrozenSectionResult>(`/api/sections/snapshots/${encodeURIComponent(snapshotHash)}/analyze`, { ...sectionRequestOptions, method: 'POST', timeoutMs: 180000, responseIdleTimeoutMs: 180000, timeoutMessage: '分析等待超过 180 秒。计算可能仍在执行，可恢复该冻结输入最近已保存结果。', activity: { ...sectionRequestOptions.activity, label: '正在计算冻结剖面与比较结果', expectedMs: 12000 } }),
+  getLatestSectionResult: (snapshotHash: string) => request<FrozenSectionResult>(`/api/sections/snapshots/${encodeURIComponent(snapshotHash)}/latest-result`, { ...sectionRequestOptions, activity: { ...sectionRequestOptions.activity, label: '正在读取冻结输入最近已保存结果' } }),
+  getSectionResult: (resultHash: string) => request<FrozenSectionResult>(`/api/sections/results/${encodeURIComponent(resultHash)}`, sectionRequestOptions),
+  downloadSectionPackage: (resultHash: string) => request<Blob>(`/api/sections/results/${encodeURIComponent(resultHash)}/package`, { ...sectionRequestOptions, timeoutMs: 120000, responseIdleTimeoutMs: 120000, responseType: 'blob', headers: { Accept: 'application/zip' }, activity: { ...sectionRequestOptions.activity, label: '正在生成并下载同源剖面成果包', expectedMs: 15000 } }),
   authBootstrap: async () => {
     const options = { timeoutMs: 5000, timeoutMessage: '登录服务 5 秒内未响应。系统已进入离线恢复页。', activity: { label: '正在恢复登录会话', expectedMs: 1000, cacheTtlMs: 0 } };
     const bootstrap = await request<{ loginRequired?: boolean; mode?: string; sessionTtlSeconds?: number; authenticated?: boolean; identity?: AuthIdentity }>('/api/auth/bootstrap', options);

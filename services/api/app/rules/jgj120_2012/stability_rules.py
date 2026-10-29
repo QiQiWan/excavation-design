@@ -315,7 +315,7 @@ def check_overall_stability_circular_search(
 
     The search is intentionally compact for deterministic unit tests. It evaluates families of candidate
     circular sliding mechanisms by equivalent arc length, slip wedge weight and average c-phi strength. It
-    is a complete software gate for the prototype, while formal review must replace/confirm it for real projects.
+    remains an unverified screening method and cannot certify overall stability.
     """
     h = max(excavation_depth, 0.1)
     d = max(embedment_depth, 0.1)
@@ -343,24 +343,21 @@ def check_overall_stability_circular_search(
                 best_factor = factor
                 best_radius = radius
                 best_center_offset = center_offset
-    # The raw circular-search value is complemented with an embedment/strength calibration index so
-    # short early excavation stages and supported pits are not unrealistically governed by a tiny
-    # unsupported wedge. This keeps the prototype deterministic while still surfacing weak-soil cases.
-    driving_index = max(gamma * h + max(surcharge, 0.0), 1e-6)
-    calibrated = (c / driving_index) * 2.5 + (d / h) * 1.35 + math.tan(phi) * 1.6 + 0.40
-    factor = max(best_factor, calibrated)
+    # Preserve the raw candidate minimum. This heuristic search is unverified;
+    # no empirical upward calibration may turn it into a passing design check.
+    factor = best_factor
     limit = required_overall_factor(safety_grade)
     return CheckResult(
         rule_id=JGJ120_OVERALL_STABILITY_RULE.rule_id,
         object_id=object_id,
         object_type="ExcavationModel",
-        status="pass" if factor >= limit else "fail",
+        status="manual_review" if factor >= limit else "fail",
         calculated_value=round(factor, 3),
         limit_value=limit,
         unit="-",
-        message=("整体稳定圆弧搜索筛查通过。" if factor >= limit else "整体稳定圆弧搜索筛查未通过，应调整嵌固、支撑或土体加固方案。") + f" 最不利候选圆半径约 {best_radius:.2f}m、中心水平偏移约 {best_center_offset:.2f}m；raw={best_factor:.3f}，calibrated={calibrated:.3f}。",
+        message=("整体稳定原始候选筛查达到阈值，仍需独立验算。" if factor >= limit else "整体稳定原始候选筛查低于阈值。") + f" 未经验证的简化筛查，不能作为规范稳定性结论；候选圆半径 {best_radius:.2f}m、中心偏移 {best_center_offset:.2f}m；raw={best_factor:.3f}。",
         clause_reference=JGJ120_OVERALL_STABILITY_RULE.clause_reference,
-        formula="K = max(raw circular-search K, c/gammaH index + embedment/H index + tan(phi) index)",
+        formula="unverified screening: K = min(raw candidate resistance / driving); no upward calibration",
     )
 
 

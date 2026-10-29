@@ -544,6 +544,10 @@ class WaleBeamInternalForceResult(DomainModel):
     beam_length: float
     support_node_count: int
     points: list[WaleBeamInternalForcePoint] = Field(default_factory=list)
+    design_points: list[WaleBeamInternalForcePoint] = Field(default_factory=list)
+    load_record_id: str | None = None
+    solve_id: str | None = None
+    governing_design_stage_id: str | None = None
     max_moment: float = 0.0
     max_shear: float = 0.0
     max_deflection: float = 0.0
@@ -811,6 +815,7 @@ class ConstructionStage(DomainModel):
     stage_type: Literal["excavation", "support_installation", "bottom_slab", "replacement", "support_removal", "final"] = "excavation"
     zone: str | None = None
     replacement_action: str | None = None
+    slab_activation_elevation: float | None = None
     groundwater_level_inside: float | None = None
     groundwater_level_outside: float | None = None
     surcharge: float = 20.0
@@ -1094,13 +1099,16 @@ class WallInternalForceResult(DomainModel):
     segment_id: str
     stage_id: str
     points: list[WallInternalForcePoint] = Field(default_factory=list)
+    design_points: list[WallInternalForcePoint] = Field(default_factory=list)
+    load_record_id: str | None = None
+    solve_id: str | None = None
     max_moment: float = 0.0
     max_shear: float = 0.0
     max_displacement: float | None = None
     max_moment_design: float | None = None
     max_shear_design: float | None = None
     importance_factor: float = 1.0
-    load_combination_factor: float = 1.25
+    load_combination_factor: float | None = None
     method: str = "equivalent vertical beam from pressure profile; elastic-foundation solver reserved"
     warnings: list[str] = Field(default_factory=list)
 
@@ -1110,7 +1118,7 @@ class WallInternalForceResult(DomainModel):
 class GlobalCoupledDof(DomainModel):
     index: int
     name: str
-    value: float
+    value: float | None
     unit: str = "m"
     dof_type: str | None = None
     object_id: str | None = None
@@ -1159,7 +1167,7 @@ class GlobalCoupledSystemResult(DomainModel):
     wall_displacement_profile: list[dict[str, Any]] = Field(default_factory=list)
     support_reactions: list[GlobalCoupledSupportReaction] = Field(default_factory=list)
     column_vertical_supports: list[dict[str, Any]] = Field(default_factory=list)
-    max_wall_displacement: float = 0.0
+    max_wall_displacement: float | None = None
     max_support_axial_force: float = 0.0
     # V2.0 spatial frame fields: wall/wale rotational DOFs, support axial DOFs, column vertical DOFs and slab replacement stiffness.
     model_dimension: str | None = None
@@ -1384,10 +1392,15 @@ class StageCalculationResult(DomainModel):
     stage_id: str
     segment_id: str
     pressure_profile: PressureProfile
+    design_pressure_profile: PressureProfile | None = None
+    load_evidence: dict[str, Any] = Field(default_factory=dict)
+    stage_state: dict[str, Any] = Field(default_factory=dict)
+    solve_id: str | None = None
     support_forces: list[SupportForceResult] = Field(default_factory=list)
     wale_beam_results: list[WaleBeamInternalForceResult] = Field(default_factory=list)
     coupled_system_result: dict[str, Any] = Field(default_factory=dict)
     global_coupled_result: GlobalCoupledSystemResult | None = None
+    design_global_coupled_result: GlobalCoupledSystemResult | None = None
     wall_internal_force: WallInternalForceResult | None = None
     wall_internal_force_placeholder: dict[str, Any] = Field(default_factory=dict)
     stability_checks: list[dict[str, Any]] = Field(default_factory=list)
@@ -1417,6 +1430,10 @@ class CalculationResult(DomainModel):
     id: str = Field(default_factory=lambda: new_id("calc"))
     project_id: str
     case_id: str
+    calculation_mode: Literal["verify", "design"] = "design"
+    input_before_hash: str | None = None
+    input_after_hash: str | None = None
+    derived_design: dict[str, Any] = Field(default_factory=dict)
     support_topology_hash: str | None = None
     input_snapshot_hash: str | None = None
     adopted_design_snapshot_hash: str | None = None

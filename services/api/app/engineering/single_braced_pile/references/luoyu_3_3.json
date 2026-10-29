@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "pitguard.one-strut-historical-reference/1",
+  "project": "温岭市GY060207地块（螺屿村新民之家）项目",
+  "section": "3-3",
+  "source": {
+    "file": "1-文本，2-计算书.pdf",
+    "physicalPages": [32,33,34,35,36],
+    "basis": "原设计报告（2020-05-21），图示数值来源与最新施工图需要再核对",
+    "nativeCurveSamplesAvailable": false,
+    "sourceOfNumbers": "原PDF工程概况、土层参数、工况表、极值标注；非逐点数值导出"
+  },
+  "facts": {
+    "supportType": "钻孔灌注桩加一道内支撑，随后换撑拆除原支撑",
+    "pileDiameterM": 0.7,
+    "pileSpacingM": 0.9,
+    "pileLengthM": 6.6,
+    "pileTopOriginalGroundDepthM": 1.3,
+    "siteFinalExcavationDepthM": 4.9,
+    "siteSupportDepthM": 1.625,
+    "siteReplacementLevelM": 4.6,
+    "outsideWaterOriginalGroundDepthM": 0.5,
+    "finiteAdjacentSurcharge": {"pressureKpa":30,"nearDistanceM":4.3,"widthM":12,"lengthM":65},
+    "terrain": {"slopeHeightM":1.3,"slopeWidthM":1.3,"benchWidthM":1.7},
+    "soilLayersOriginalGround": [
+      {"name":"填土","thicknessM":1.1,"gammaNaturalKnM3":18,"cKpa":10,"phiDeg":15,"stressBasis":"separated","mMPaPerM2":4},
+      {"name":"黏土","thicknessM":0.7,"gammaNaturalKnM3":18,"cKpa":14.85,"phiDeg":8.39,"stressBasis":"combined","mMPaPerM2":2.05},
+      {"name":"淤泥","thicknessM":5.2,"gammaNaturalKnM3":16.22,"cKpa":5.55,"phiDeg":6.36,"stressBasis":"combined","mMPaPerM2":0.73},
+      {"name":"强风化岩","thicknessM":0.6,"gammaNaturalKnM3":21,"cKpa":30,"phiDeg":30,"stressBasis":"combined","mMPaPerM2":18},
+      {"name":"中风化岩","thicknessM":50,"gammaNaturalKnM3":22,"cKpa":50,"phiDeg":30,"stressBasis":"combined","mMPaPerM2":20}
+    ],
+    "strutStiffnessMNPerM2":32.3,
+    "reportedEmbedmentFactorFinal":1.66,
+    "reportedHeaveFactor":18.25,
+    "reportedMomentCharacteristicKnM":206.7,
+    "reportedMomentDesignKnM":258.4,
+    "reportedLongitudinalBars":"16Φ18"
+  },
+  "stages": [
+    {"id":"S1","event":"excavate","siteExcavationDepthM":2.05,"displacementRangeMm":[0.6,2.6],"momentRangeKnM":[0,87.7],"shearRangeKn":[-43,49.9]},
+    {"id":"S2","event":"install_strut","siteExcavationDepthM":2.05,"displacementRangeMm":[0.6,2.6],"momentRangeKnM":[0,87.7],"shearRangeKn":[-43,49.9]},
+    {"id":"S3","event":"excavate","siteExcavationDepthM":4.9,"displacementRangeMm":[2.9,6],"momentRangeKnM":[0,206.7],"shearRangeKn":[-91.8,120.6]},
+    {"id":"S4","event":"install_replacement","siteExcavationDepthM":4.9,"replacementDepthM":4.6,"displacementRangeMm":[2.9,6],"momentRangeKnM":[0,206.7],"shearRangeKn":[-91.8,120.6]},
+    {"id":"S5","event":"remove_original_strut","siteExcavationDepthM":4.9,"displacementRangeMm":[3.6,6],"momentRangeKnM":[0,176.9],"shearRangeKn":[-80.2,109.6]}
+  ],
+  "conversionToPileTopLocal": {
+    "formula":"z_local=z_site-1.3m; the above-pile ground, surcharge and groundwater remain physical loads",
+    "firstExcavationLocalM":0.75,
+    "finalExcavationLocalM":3.6,
+    "initialSupportLocalM":0.325,
+    "replacementLocalM":3.3,
+    "outsideWaterLocalM":-0.8
+  },
+  "limitations": [
+    "尚无实际数字化节点曲线；PDF图中的极值不能生成完整曲线",
+    "原项目包含坡台和有限邻载；当前工作台只支持水平地面均布荷载",
+    "原项目土水分算与合算混合且包含岩层；当前工作台仅有效应力分算的土体",
+    "原项目换撑拆撑并附加冠梁等效约束；单撑模型未表达该传力体系",
+    "原内力的单桩或单位宽度口径、FRWS选项及实际边界尚未独立确认",
+    "未获得完整原项目数值曲线，不得报告逐点差值、RMSE或误差率"
+  ]
+}

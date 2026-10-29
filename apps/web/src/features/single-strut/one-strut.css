@@ -1,0 +1,29 @@
+/* Isolated single-strut engineer workspace; no global layout overrides. */
+.oss{padding:20px;background:#fff;border:1px solid #d9e1e8;border-radius:12px;color:#253649;line-height:1.5;margin:12px 0}
+.oss *{box-sizing:border-box}.ossHead{display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1px solid #edf0f3;padding-bottom:12px}
+.ossHead h3{margin:0;font-size:22px}.ossHead p{margin:4px 0 0;color:#64748b}.ossHead span,.ossTrace{font-size:12px;color:#5e7082}
+.ossTabs{display:flex;gap:6px;margin:16px 0}.ossTabs button{border-radius:8px;padding:8px 16px;background:#edf1f5;color:#26364a}
+.ossTabs button.active{background:#1f466d;color:white}.ossGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:12px 0}
+.ossField{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600}.ossField small{color:#64748b;font-weight:400}
+.ossField input,.ossField select,.ossTableScroll input{padding:8px;border:1px solid #cbd5e1;border-radius:6px;min-width:0;width:100%;font:inherit;color:#273545;background:white}
+.oss h4{font-size:16px;font-weight:650;margin:20px 0 10px}.ossBanner{padding:9px 12px;background:#f1f6fb;border-left:3px solid #4377aa;margin:14px 0;font-size:13px}
+.ossActions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.ossActions>label{display:inline-flex;gap:5px;align-items:center;border:1px solid #ccd6e2;padding:7px 12px;border-radius:7px;cursor:pointer}
+.ossActions button{padding:9px 18px;border-radius:7px;background:#244e74;color:#fff;border:0;cursor:pointer}.ossActions .secondary{border:1px solid #bdcbd8;background:#fff;color:#26435f}
+.ossActions button:disabled{opacity:.5;cursor:not-allowed}.ossTableScroll{overflow-x:auto}.ossTableScroll table{min-width:650px;width:100%;border-collapse:collapse;font-size:13px}
+.ossTableScroll th{background:#f4f7fa;color:#475569;text-align:left;padding:8px;white-space:nowrap}.ossTableScroll td{padding:7px;border-bottom:1px solid #ecf0f5}
+.ossTableScroll input{width:90px;padding:6px}.ossIssues{max-height:260px;overflow-y:auto;border:1px solid #e0e6ec;border-radius:7px;padding:10px 14px;margin:14px 0}
+.ossIssues p{font-size:13px;margin:7px 0}.ossError{background:#fff2f2;color:#9f2929;padding:10px}.ossStatus{display:flex;gap:16px;justify-content:space-between;background:#f3f7fa;padding:12px;border-radius:7px}
+.ossMetrics{display:flex;gap:15px;flex-wrap:wrap}.ossMetrics>div{display:flex;flex-direction:column;gap:4px;padding:13px;border-bottom:2px solid #b4c8db;min-width:160px}.ossMetrics strong{font-size:20px}
+.ossAck{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:15px 0}.ossAck label{font-size:12px;display:flex;gap:6px;align-items:center}
+.oss details{border-bottom:1px solid #edf0f3;padding:10px 0}.oss pre{font-size:12px;white-space:pre-wrap;max-height:180px;overflow:auto}
+@media(max-width:760px){.oss{padding:12px}.ossHead{align-items:flex-start;flex-direction:column}.ossMetrics strong{font-size:18px}}
+
+/* P1-P4 supplementary engineering review stays within the one-strut workflow. */
+.ossAssurance {margin-top:20px;border-top:1px solid #d9e0e8;padding:16px 2px;}
+.ossAssurance > summary {font-weight:650;cursor:pointer;}
+.ossAssuranceField {display:flex;flex-direction:column;gap:6px;min-width:170px;font-size:13px;}
+.ossAssuranceField textarea {min-height:84px;max-width:100%;resize:vertical;padding:8px;font:inherit;}
+.ossAssuranceField input, .ossAssuranceField select {padding:7px;}
+.ossAssurance .ossTableScroll {max-width:100%;overflow:auto;}
+.ossAssurance table ul {margin:5px 0;padding-left:16px;max-width:360px;}
+.ossAssurance table td {vertical-align:top;}

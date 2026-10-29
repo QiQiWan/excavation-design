@@ -316,7 +316,7 @@ class ProjectRepository:
         _migrate_loaded_project(project)
         return project
 
-    def get_for_calculation(self, project_id: str) -> Project | None:
+    def get_for_calculation(self, project_id: str, *, migrate: bool = True) -> Project | None:
         """Load canonical inputs plus the full geology and latest stage evidence."""
         data = self.store.get(project_id)
         if not data:
@@ -325,11 +325,12 @@ class ProjectRepository:
         hydrated = rehydrate_geological_evidence(data, artifact_store)
         hydrated = rehydrate_latest_calculation_evidence(hydrated, artifact_store)
         project = Project.model_validate(hydrated)
-        _migrate_loaded_project(project)
+        if migrate:
+            _migrate_loaded_project(project)
         return project
 
-    def require_for_calculation(self, project_id: str) -> Project:
-        project = self.get_for_calculation(project_id)
+    def require_for_calculation(self, project_id: str, *, migrate: bool = True) -> Project:
+        project = self.get_for_calculation(project_id, migrate=migrate)
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
         return project

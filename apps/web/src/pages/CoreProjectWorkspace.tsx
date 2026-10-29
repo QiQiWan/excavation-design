@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-// Legacy operations calculation_recovery and calculation_closure_action remain supported by the backend (forceClosure: true, 自动诊断、修复并复算); the primary UI uses calculation_auto_close.
+// Verification uses the saved design; optimization is an explicit separate action.
 import { api } from '../api/client';
 import BoreholeImport from '../components/BoreholeImport';
 import ExcavationEditor from '../components/ExcavationEditor';
@@ -19,6 +19,8 @@ const ResultViewer = lazy(() => import('../viewers/ResultViewer'));
 const RebarDesignPanel = lazy(() => import('../components/RebarDesignPanel'));
 const RebarIfcViewer = lazy(() => import('../viewers/RebarIfcViewer'));
 const SchemeComparisonPanel = lazy(() => import('../components/SchemeComparisonPanel'));
+const FrozenSectionPanel = lazy(() => import('../components/FrozenSectionPanel'));
+const OneStrutWorkbench = lazy(() => import('../features/single-strut/OneStrutWorkbench'));
 
 
 type CoreStageKey = 'basis' | 'input' | 'scheme' | 'calculation' | 'reinforcement' | 'deliverables';
@@ -103,6 +105,8 @@ function CandidateMiniPreview({ candidate }: { candidate: SupportLayoutOptimizat
 export default function CoreProjectWorkspace({ project, onBack, onProjectChange }: { project: Project; onBack: () => void; onProjectChange: (project: Project) => void }) {
   const [current, setCurrent] = useState(project);
   const [status, setStatus] = useState<CoreStatus>();
+  const [statusLoadState, setStatusLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [statusRevision, setStatusRevision] = useState<string>();
   const [active, setActive] = useState<CoreStageKey>('basis');
   const [taskState, setTaskState] = useState<ActiveTask>();
   const [taskLaunching, setTaskLaunching] = useState(false);
@@ -115,6 +119,8 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   const [showRebar3d, setShowRebar3d] = useState(false);
   const [calculationEvidence, setCalculationEvidence] = useState<CalculationResult>();
   const [assuranceOpen, setAssuranceOpen] = useState(false);
+  const [frozenSectionOpen, setFrozenSectionOpen] = useState(false);
+  const [oneStrutOpen, setOneStrutOpen] = useState(false);
   const pollingTaskRef = useRef<string | undefined>(undefined);
   const taskSubmissionRef = useRef(false);
   const initialStageAppliedRef = useRef(false);
@@ -144,14 +150,17 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
     refreshAbortRef.current?.abort();
     const controller = new AbortController();
     refreshAbortRef.current = controller;
+    setStatusLoadState('loading');
     const [updated, core] = await Promise.all([
       api.getProject(projectId, controller.signal),
       api.getCoreDesignStatus(projectId, active, 'stage', controller.signal),
-    ]);
+    ]).catch((reason) => { if (!controller.signal.aborted && generation === refreshGenerationRef.current) setStatusLoadState('error'); throw reason; });
     if (generation !== refreshGenerationRef.current || updated.id !== projectId || controller.signal.aborted) return core as CoreStatus;
     loadedStageKeyRef.current = `${updated.id}:${updated.updatedAt}:${active}`;
     setCurrent(updated);
     setStatus(core as CoreStatus);
+    setStatusRevision(`${updated.id}:${updated.updatedAt}`);
+    setStatusLoadState('ready');
     onProjectChange(updated);
     return core as CoreStatus;
   }
@@ -161,18 +170,22 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
     const controller = new AbortController();
     summaryAbortRef.current = controller;
     setError(undefined);
+    setStatus(undefined);
+    setStatusLoadState('loading');
     api.getCoreDesignStatus(current.id, undefined, 'summary', controller.signal)
       .then((value) => {
         if (controller.signal.aborted) return;
         const core = value as CoreStatus;
         setStatus(core);
+        setStatusRevision(`${current.id}:${current.updatedAt}`);
+        setStatusLoadState('ready');
         if (!initialStageAppliedRef.current && core.nextStage) {
           setActive(core.nextStage);
           initialStageAppliedRef.current = true;
         }
       })
       .catch((reason) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+        if (!controller.signal.aborted) { setStatusLoadState('error'); setError(reason instanceof Error ? reason.message : String(reason)); }
       });
     return () => controller.abort();
   }, [current.id]);
@@ -184,14 +197,17 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
     stageAbortRef.current?.abort();
     const controller = new AbortController();
     stageAbortRef.current = controller;
+    setStatusLoadState('loading');
     api.getCoreDesignStatus(current.id, active, 'stage', controller.signal)
       .then((value) => {
         if (controller.signal.aborted) return;
         loadedStageKeyRef.current = key;
         setStatus(value as CoreStatus);
+        setStatusRevision(`${current.id}:${current.updatedAt}`);
+        setStatusLoadState('ready');
       })
       .catch((reason) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+        if (!controller.signal.aborted) { setStatusLoadState('error'); setError(reason instanceof Error ? reason.message : String(reason)); }
       });
     return () => controller.abort();
   }, [active, current.id, current.updatedAt, status?.projectId]);
@@ -285,13 +301,6 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
 
   const workspaceLatest = current.calculationResults?.[current.calculationResults.length - 1];
   const latest = calculationEvidence?.id === workspaceLatest?.id ? calculationEvidence : workspaceLatest;
-  const visualProject = useMemo<Project>(() => {
-    if (!latest || latest === workspaceLatest) return current;
-    const history = [...(current.calculationResults ?? [])];
-    if (history.length) history[history.length - 1] = latest;
-    else history.push(latest);
-    return { ...current, calculationResults: history };
-  }, [current, latest, workspaceLatest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -322,8 +331,23 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   const p3Summary = (status?.p3DetailingClosure?.summary ?? {}) as Record<string, any>;
   const deepeningReadiness = (status?.deepeningReadiness ?? {}) as Record<string, any>;
   const p3EntryBlockers = (Array.isArray(deepeningReadiness.blockers) ? deepeningReadiness.blockers : []) as Record<string, any>[];
-  const canRunP3 = Boolean(deepeningReadiness.canRunP3);
-  const calculationCurrent = Boolean(status?.calculationReadiness?.valid ?? latest);
+  const statusEvidenceCurrent = statusLoadState === 'ready' && statusRevision === `${current.id}:${current.updatedAt}`;
+  const readiness = statusEvidenceCurrent ? status?.calculationReadiness : undefined;
+  const readinessMatches = Boolean(readiness && latest && readiness.resultId === latest.id);
+  const calculationCurrent = readinessMatches && readiness?.valid === true;
+  const resultCurrent = readinessMatches && !readiness?.explicitlyStale && (calculationCurrent || (readiness?.contract?.current === true && readiness?.stageEvidenceComplete === true));
+  const canRunP3 = calculationCurrent && Boolean(deepeningReadiness.canRunP3);
+  const resultStateLabel = statusLoadState === 'error' ? '检查读取失败' : !statusEvidenceCurrent ? '正在读取检查' : !latest ? '未计算' : !readinessMatches ? '结果状态未确认' : readiness?.explicitlyStale || readiness?.contract?.current === false ? '结果已过期' : !resultCurrent ? '计算证据不完整' : calculationCurrent ? '当前计算结果' : '当前计算已完成，工程检查未通过';
+  const failCount = resultCurrent && typeof status?.summary?.failCount === 'number' && Number.isFinite(status.summary.failCount) ? Math.max(status.summary.failCount, Number(status?.verificationDistribution?.summary?.overall?.failCount ?? 0)) : undefined;
+  const warningCount = resultCurrent && typeof status?.summary?.warningCount === 'number' && Number.isFinite(status.summary.warningCount) ? status.summary.warningCount : undefined;
+  const visualProject = useMemo<Project>(() => {
+    const proposal = resultCurrent && latest?.calculationMode === 'verify' ? latest.derivedDesign?.retainingSystem : undefined;
+    if ((!latest || latest === workspaceLatest) && !proposal) return current;
+    const history = [...(current.calculationResults ?? [])];
+    if (history.length) history[history.length - 1] = latest;
+    else history.push(latest);
+    return { ...current, calculationResults: history, retainingSystem: proposal ?? current.retainingSystem };
+  }, [current, latest, workspaceLatest, resultCurrent]);
   const recoveryState = ((current.advancedEngineering ?? {}).calculationBlockerRecovery ?? {}) as Record<string, any>;
   const recoveryPlan = (recoveryState.after ?? recoveryState.before ?? {}) as Record<string, any>;
   const recoveryActions = (Array.isArray(recoveryPlan.actions) ? recoveryPlan.actions : []) as Record<string, any>[];
@@ -344,8 +368,10 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
         <div><h2>{current.name}</h2><span>{current.location || '未设置地点'}</span></div>
       </div>
       <div className="coreHeaderActions">
-        <span className={`coreGate ${Number(status?.summary?.failCount ?? 0) ? 'fail' : 'pass'}`}>Fail {Number(status?.summary?.failCount ?? 0)}</span>
-        <span className="coreGate warning">Warning {Number(status?.summary?.warningCount ?? 0)}</span>
+        {failCount === undefined || warningCount === undefined ? <span className="coreGate warning">{resultStateLabel}</span> : <>
+          <span className={`coreGate ${failCount > 0 ? 'fail' : 'warning'}`}>Fail {failCount}</span>
+          <span className="coreGate warning">Warning {warningCount}</span>
+        </>}
         <button type="button" className="secondary coreAssuranceToggle" onClick={() => setAssuranceOpen(true)}>质量与追溯</button>
       </div>
     </header>
@@ -377,7 +403,7 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
       <button type="button" className="secondary" onClick={() => void cancelActiveTask()}>取消任务</button>
     </div></section> : null}
     {error ? <div className="coreError"><strong>操作未完成</strong><span>{error}</span><button className="secondary" onClick={() => setError(undefined)}>关闭</button></div> : null}
-    {operationNotice ? <div className="coreOperationNotice"><strong>计算闭合结果</strong><span>{operationNotice}</span><button className="secondary" onClick={() => setOperationNotice(undefined)}>关闭</button></div> : null}
+    {operationNotice ? <div className="coreOperationNotice"><strong>计算执行结果（工程状态以检查为准）</strong><span>{operationNotice}</span><button className="secondary" onClick={() => setOperationNotice(undefined)}>关闭</button></div> : null}
     <section className="coreMain">
       <div className="coreStageHeading">
         <div><span>当前步骤</span><h3>{stages.find((item) => item.key === active)?.title}</h3></div>
@@ -420,7 +446,7 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
               onRefresh={refresh}
               onSelectCandidate={setInspectedCandidate}
             />
-            {current.retainingSystem ? <RetainingSystemViewer project={current} previewCandidate={inspectedCandidate} /> : <div className="coreEmpty">生成并采用方案后显示完整围护结构三维模型、构件表和支撑质量平面。</div>}
+            {current.retainingSystem ? <RetainingSystemViewer project={current} previewCandidate={inspectedCandidate} resultEvidenceCurrent={resultCurrent} /> : <div className="coreEmpty">生成并采用方案后显示完整围护结构三维模型、构件表和支撑质量平面。</div>}
           </section></PanelErrorBoundary>
         </Suspense> : <>
           {candidates.length ? <div className="coreCandidateGrid">{candidates.map((candidate, index) => <article key={String(candidate.id ?? index)} className={String(candidate.id) === String(selected) ? 'selected' : ''}>
@@ -436,15 +462,19 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
       </section> : null}
 
       {active === 'calculation' ? <section className="corePanel">
+        <div className="coreSecondaryAction"><div><strong>独立剖面计算与成果复核</strong><span>加载合成验证例或导入完整剖面输入，冻结后查看阶段结果、比较证据与同源成果包。</span></div><button type="button" className="secondary" aria-expanded={frozenSectionOpen} aria-controls="frozen-section-validation" onClick={() => setFrozenSectionOpen((open) => !open)}>剖面结果验证</button></div>
+        <div className="coreSecondaryAction"><div><strong>单排桩＋一道内支撑规范工作台</strong><span>录入工程资料，完成阶段计算、缺项审查和受限成果复核。</span></div><button type="button" className="secondary" onClick={()=>setOneStrutOpen(v=>!v)} aria-expanded={oneStrutOpen}>{oneStrutOpen?'收起工作台':'打开规范工作台'}</button></div>
+        {oneStrutOpen ? <PanelErrorBoundary title="单排桩规范计算" resetKey={current.id}><Suspense fallback={<div className="coreModuleFallback">正在加载规范工作台…</div>}><OneStrutWorkbench projectId={current.id}/></Suspense></PanelErrorBoundary> : null}
+        {frozenSectionOpen ? <div id="frozen-section-validation"><PanelErrorBoundary title="冻结剖面验证" resetKey={current.id}><Suspense fallback={<div className="coreModuleFallback">正在加载剖面验证入口…</div>}><FrozenSectionPanel key={current.id} /></Suspense></PanelErrorBoundary></div> : null}
         <ConstructionStageEditor project={current} onChanged={async () => { await refresh(); }} />
-        {status?.calculationReadiness ? <div className={`calculationEvidenceBanner ${String(status.calculationReadiness.stageEvidenceState ?? 'not_generated')}`}><div><strong>施工阶段计算证据</strong><span>{String((status.calculationReadiness.messages as string[] | undefined)?.[0] ?? '等待计算')}</span></div><b>{String(status.calculationReadiness.stageResultCount ?? 0)} / {String(status.calculationReadiness.expectedStageResultCount || '-')} 条已载入</b><em>{String(status.calculationReadiness.stageEvidenceState ?? 'not_generated')}</em></div> : null}
+        <div className={`calculationEvidenceBanner ${resultCurrent ? 'loaded' : 'not_generated'}`}><div><strong>{resultStateLabel}</strong><span>{resultCurrent ? `${latest?.calculationMode === 'verify' && latest.derivedDesign?.retainingSystem ? '复算需求与配筋建议（未采用）。' : ''}计算执行完成与工程检查通过分别判定；正式发行仍须完成质量审核。` : '以下已有结果仅供历史参考，不表示当前方案通过。'} {String((readiness?.messages as string[] | undefined)?.[0] ?? '')}</span></div>{readiness ? <b>{String(readiness.stageResultCount ?? '未知')} / {String(readiness.expectedStageResultCount || '-')} 条计算证据</b> : null}</div>
         <div className="calculationRecoveryCenter">
-          <div className="calculationRecoveryHeading"><div><strong>计算、优化与闭合中心</strong><span>单次执行前置阻断修复、施工阶段同步、体系—截面联合搜索、正式复算和配筋刷新。若在自动优化边界内仍不满足要求，系统明确显示“无法计算闭合”及剩余控制项。</span></div><div className="coreButtonGroup"><button disabled={calculationBusy || !basisReady || !current.excavation || !current.retainingSystem} onClick={() => void runTask('一键计算、优化并闭合', 'calculation_auto_close', { maxCandidates: 7, maxIterations: 6, applyRebar: true, autoAdoptStandardTransferPath: true, rebarMode: String(rebar?.mode ?? 'balanced') })}>{calculationBusy ? '计算处理中…' : '一键计算、优化并闭合'}</button></div></div>
-          {recoveryActions.length ? <div className="calculationRecoveryActions">{recoveryActions.map((item, index) => <article key={`${String(item.code)}-${index}`} className={String(item.mode ?? 'manual_review')}><header><strong>{String(item.title ?? item.code)}</strong><em>{String(item.mode ?? 'manual_review')}</em></header>{item.automaticAction ? <p><b>自动处理：</b>{String(item.automaticAction)}</p> : null}<p><b>仍需确认：</b>{String(item.manualAction ?? '无')}</p>{item.targetStage ? <button type="button" className="secondary compactButton" onClick={() => setActive(String(item.targetStage) as CoreStageKey)}>定位到{String(item.targetStage)}</button> : null}</article>)}</div> : <p className="coreHint">尚无独立阻断任务。一键闭合会先执行安全的几何、地质覆盖、支撑拓扑和常规施工阶段引用修复。</p>}
+          <div className="calculationRecoveryHeading"><div><strong>复算当前方案</strong><span>仅验证已保存的工程输入并更新计算结果。优化并采用方案会另行修改设计并刷新配筋。</span></div><div className="coreButtonGroup"><button disabled={calculationBusy || !basisReady || !current.excavation || !current.retainingSystem} onClick={() => void runTask('仅复算当前方案', 'calculation_full', { mode: 'verify', topN: 0 })}>{calculationBusy ? '计算处理中…' : '仅复算当前方案'}</button><button className="secondary" disabled={calculationBusy || !basisReady || !current.excavation || !current.retainingSystem} onClick={() => void runTask('优化并采用方案', 'calculation_auto_close', { maxCandidates: 7, maxIterations: 6, applyRebar: true, autoAdoptStandardTransferPath: true, rebarMode: String(rebar?.mode ?? 'balanced') })}>优化并采用方案</button></div></div>
+          {recoveryActions.length ? <div className="calculationRecoveryActions">{recoveryActions.map((item, index) => <article key={`${String(item.code)}-${index}`} className={String(item.mode ?? 'manual_review')}><header><strong>{String(item.title ?? item.code)}</strong><em>{String(item.mode ?? 'manual_review')}</em></header>{item.automaticAction ? <p><b>自动处理：</b>{String(item.automaticAction)}</p> : null}<p><b>仍需确认：</b>{String(item.manualAction ?? '无')}</p>{item.targetStage ? <button type="button" className="secondary compactButton" onClick={() => setActive(String(item.targetStage) as CoreStageKey)}>定位到{String(item.targetStage)}</button> : null}</article>)}</div> : <p className="coreHint">尚无独立阻断任务。仅复算保留当前设计；需要调整体系或截面时，另行选择优化并采用方案。</p>}
         </div>
         {Object.keys(closureSummary).length ? <div className={`calculationClosureSummary ${String(closureSummary.status ?? 'unknown')}`}>
           <header><div><strong>验算—优化—再验算闭环</strong><span>已执行 {String(closureSummary.executedIterations ?? 0)} / {String(closureSummary.maximumIterations ?? 0)} 轮；结构闭合：{closureSummary.structuralClosed ? '是' : '否'}。</span></div><em>{String(closureSummary.status ?? 'unknown')}</em></header>
-          <div className="calculationClosureMetrics"><span>硬失败 {String(closureSummary.hardFailCount ?? 0)}</span><span>定量未闭合 {String(closureSummary.quantitativeOpenCount ?? 0)}</span><span>自动干预 {String(closureSummary.automaticInterventionCount ?? 0)}</span><span>已应用措施 {String(closureSummary.appliedInterventionCount ?? 0)}</span><span>专业复核 {String(closureSummary.reviewCount ?? 0)}</span></div>
+          <div className="calculationClosureMetrics"><span>硬失败 {String(closureSummary.hardFailCount ?? 0)}</span><span>定量未闭合 {String(closureSummary.quantitativeOpenCount ?? 0)}</span><span>定量证据未知 {String(closureSummary.quantitativeUnknownCount ?? 0)}</span><span>自动干预 {String(closureSummary.automaticInterventionCount ?? 0)}</span><span>已应用措施 {String(closureSummary.appliedInterventionCount ?? 0)}</span><span>专业复核 {String(closureSummary.reviewCount ?? 0)}</span></div>
           {Number(closureSummary.automaticInterventionCount ?? 0) > 0 ? <p className="coreHint">系统已自动应用墙趾加深、局部截面增强或支撑深化等单调安全措施，并完成第二阶段复算；全部动作保存在计算迭代记录中。</p> : null}
           {closureSummary.lastAppliedAction?.changed ? <div className="calculationAppliedAction"><strong>最近一次有效修改</strong><span>{String(closureSummary.lastAppliedAction.objectCode ?? closureSummary.lastAppliedAction.actionId)}：{String(closureSummary.lastAppliedAction.before)} → {typeof closureSummary.lastAppliedAction.after === 'object' ? JSON.stringify(closureSummary.lastAppliedAction.after) : String(closureSummary.lastAppliedAction.after)}；已生成新的计算合同。</span></div> : null}
           {closureOptions.length ? <div className="calculationClosureOptions">{closureOptions.slice(0, 8).map((option, index) => <article key={`${String(option.actionId)}-${index}`}><div><strong>{String(option.label ?? option.actionId ?? '处理建议')}</strong><span>{String(option.reason ?? '')}</span></div><em>{option.automaticAllowed !== false ? '已纳入一键优化搜索' : '需人工确认'}</em></article>)}</div> : <p className="coreHint">闭环没有剩余可自动应用的结构措施。</p>}
@@ -461,9 +491,9 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
           <div><span>最大位移</span><strong>{formatEngineeringValue(latest.governingValues?.maxDisplacement, 'displacement')}</strong></div>
           <div><span>最大支撑轴力</span><strong>{formatEngineeringValue(latest.governingValues?.maxSupportAxialForce, 'force')}</strong></div>
           <div><span>墙体弯矩</span><strong>{formatEngineeringValue(latest.governingValues?.maxWallMoment, 'moment')}</strong></div>
-          <div><span>检查</span><strong>{latest.checkSummary?.fail ?? 0} Fail / {latest.checkSummary?.warning ?? 0} Warning</strong></div>
+          <div><span>检查</span><strong>{failCount !== undefined && warningCount !== undefined ? `${failCount} Fail / ${warningCount} Warning` : '检查摘要不可用于当前方案'}</strong></div>
         </div>
-        <div className="coreCheckList">{(latest.checks ?? []).filter((item: any) => item.status !== 'pass').slice(0, 8).map((item: any, index: number) => <div key={String(item.ruleId ?? index)} className={String(item.status)}><strong>{String(item.ruleId ?? item.category ?? '检查')}</strong><span>{String(item.message ?? '')}</span></div>)}{!(latest.checks ?? []).some((item: any) => item.status !== 'pass') ? <div className="pass"><strong>当前已实现检查未发现超限</strong></div> : null}</div>
+        <div className="coreCheckList">{(latest.checks ?? []).filter((item: any) => item.status !== 'pass').slice(0, 8).map((item: any, index: number) => <div key={String(item.ruleId ?? index)} className={String(item.status)}><strong>{String(item.ruleId ?? item.category ?? '检查')}</strong><span>{String(item.message ?? '')}</span></div>)}{!latest.checks?.length ? <div className="manual_review"><strong>检查明细未加载</strong></div> : resultCurrent && !(latest.checks ?? []).some((item: any) => item.status !== 'pass') ? <div className="pass"><strong>当前已加载检查未发现超限</strong></div> : null}</div>
         </> : <div className="coreEmpty">尚未生成当前方案计算结果。</div>}
         {visualMode === 'professional' ? <Suspense fallback={<div className="coreModuleFallback">正在加载完整内力包络、变形云图和规范校核明细…</div>}>
           <section className="coreProfessionalSection">
@@ -478,7 +508,7 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
           <AdverseScenarioPanel scenarios={adverseRows as any[]} />
           <StabilityDistributionVisual distribution={status?.stabilityDistribution as any} />
         </>}
-        {latest ? <div className={`coreNextBar ${calculationCurrent ? '' : 'blocked'}`}><span>{calculationCurrent ? '当前计算合同有效，可检查配筋深化入口。' : String((status?.calculationReadiness?.messages as string[] | undefined)?.[0] ?? '计算结果与当前设计快照不一致，请重新计算。')}</span><button onClick={() => setActive('reinforcement')}>查看配筋深化诊断</button></div> : null}
+        {latest ? <div className={`coreNextBar ${calculationCurrent ? '' : 'blocked'}`}><span>{calculationCurrent ? '当前计算合同有效，可检查配筋深化入口。' : `${resultStateLabel}：${String((readiness?.messages as string[] | undefined)?.[0] ?? '请确认当前计算证据后继续。')}`}</span><button onClick={() => setActive('reinforcement')}>查看配筋深化诊断</button></div> : null}
       </section> : null}
 
       {active === 'reinforcement' ? <section className="corePanel">
@@ -500,9 +530,9 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
 
       {active === 'deliverables' ? <section className="corePanel">
         <div className="coreDeliverableGrid">
-          <button disabled={!latest} onClick={() => void runTask('生成管理者可读计算书', 'export_report', {}, true)}><strong>计算书</strong><span>排版 DOCX · 明文结论</span></button>
-          <button disabled={!latest} onClick={() => void runTask('生成施工图', 'export_drawings_cad', { scope: 'full', issueMode: 'review' }, true)}><strong>施工图</strong><span>CAD ZIP</span></button>
-          <button disabled={!current.retainingSystem} onClick={() => void runTask('生成协调模型', 'export_ifc_construction_visual', {}, true)}><strong>BIM 模型</strong><span>IFC</span></button>
+          <button disabled={!latest} onClick={() => void runTask('生成管理者可读计算书', 'export_report', {}, true)}><strong>审查计算书</strong><span>排版 DOCX · 明文结论</span></button>
+          <button disabled={!latest} onClick={() => void runTask('生成审查图纸', 'export_drawings_cad', { scope: 'full', issueMode: 'review' }, true)}><strong>审查图纸</strong><span>CAD ZIP · 审查版</span></button>
+          <button disabled={!current.retainingSystem} onClick={() => void runTask('生成协调模型', 'export_ifc_construction_visual', {}, true)}><strong>协调模型</strong><span>IFC · 协调参考</span></button>
           <button disabled={!latest} onClick={() => void runTask('生成项目管理者成果包', 'export_coordinated_delivery', { issueMode: 'review', includeIfcProfiles: false, managerReadable: true }, true)}><strong>审查成果包</strong><span>项目摘要 + 图纸 + 计算书</span></button>
         </div>
       </section> : null}

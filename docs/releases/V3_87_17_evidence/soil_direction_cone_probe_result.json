@@ -1,0 +1,46 @@
+{
+  "verificationOnly": true,
+  "verifiedAtUtc": "2026-10-25T03:59:51.871452+00:00",
+  "status": "passed",
+  "softwareVersion": "3.87.17",
+  "fixScope": "P2 complementary one-sided restraint: rigid-motion direction cone",
+  "method": "two_sided_elastoplastic_winkler_v1",
+  "independentMethod": "two_sided_elastoplastic_winkler_v1",
+  "primarySourceSha256": "5cf9f3820862259adb68c4c00736c0a75377187671f6020745eb2307580e35e1",
+  "independentSourceSha256": "ae66d24601a1bac63cfd813572722032e24ab1f1b745f47c7fa743e257c2bb7b",
+  "primaryCheckerSourceSha256": "ef2cd52e8fc372863dc4acfc4d71b43e09e857b3a35c5385e628843076a5bbcd",
+  "independentCheckerSourceSha256": "0705b11cf81c901af8626f69f183c2db53a648cbd4cddab95dd635a81352b509",
+  "sourceUnchangedDuringRun": true,
+  "oracle": "Exact Fraction interval feasibility, fixing a=+/-1 or b=+/-1",
+  "nodesM": [
+    0.0,
+    0.5,
+    1.0
+  ],
+  "nodeBranchStates": [
+    "no_soil",
+    "inside_lower",
+    "outside_lower",
+    "complementary_lower",
+    "interior_elastic",
+    "strict_capacity_plateau",
+    "complementary_upper"
+  ],
+  "toeBoundaries": [
+    "free",
+    "pinned",
+    "fixed"
+  ],
+  "configurationCount": 1029,
+  "closedConeCount": 743,
+  "nonzeroZeroStiffnessConeCount": 286,
+  "mismatchCount": 0,
+  "directionTolerance": 1e-12,
+  "boundRoundoffMultiplier": 64.0,
+  "elapsedSeconds": 0.2039101110003685,
+  "scopeLimitations": [
+    "Tests classifiers against branch states, not whole-stage equilibrium solutions.",
+    "Three rational depths; does not bound displacement errors for nearly singular geometries.",
+    "No OpenSees native run or contact-support enumeration in this probe."
+  ]
+}

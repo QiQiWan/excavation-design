@@ -1,0 +1,182 @@
+{
+  "schema_version": "pitguard.frozen-section/1",
+  "section_id": "VERIFY-PILE-01",
+  "name": "二维排桩阶段分析验证例",
+  "purpose": "verification_fixture",
+  "source_project_id": null,
+  "source_revision": null,
+  "comparison_reference": "uploaded_A3_3",
+  "datum": {
+    "label": "验证模型地面 z=0",
+    "wall_top_elevation_m": 0.0,
+    "elevation_system": "local"
+  },
+  "pile": {
+    "diameter_m": 0.7,
+    "spacing_m": 0.9,
+    "length_m": 10.0,
+    "elastic_modulus_kpa": 30000000.0,
+    "inertia_factor": 1.0,
+    "toe_boundary": "free"
+  },
+  "soil_effective_width_m": 0.9,
+  "soil_layers": [
+    {
+      "id": "L1",
+      "name": "验证砂土层一",
+      "top_m": 0,
+      "bottom_m": 4,
+      "gamma_unsat_kn_m3": 18,
+      "gamma_sat_kn_m3": 20,
+      "cohesion_kpa": 0,
+      "phi_deg": 30,
+      "k0": 0.5,
+      "m_inside_kn_m4": 8000,
+      "m_outside_kn_m4": 8000
+    },
+    {
+      "id": "L2",
+      "name": "验证砂土层二",
+      "top_m": 4,
+      "bottom_m": 20,
+      "gamma_unsat_kn_m3": 19,
+      "gamma_sat_kn_m3": 21,
+      "cohesion_kpa": 0,
+      "phi_deg": 34,
+      "k0": 0.44,
+      "m_inside_kn_m4": 15000,
+      "m_outside_kn_m4": 15000
+    }
+  ],
+  "supports": [
+    {
+      "id": "STRUT-1",
+      "depth_m": 1.625,
+      "kind": "elastic",
+      "stiffness_kn_per_m": 29070,
+      "compression_only": true,
+      "preload_kn": 0
+    },
+    {
+      "id": "REPLACEMENT",
+      "depth_m": 4.6,
+      "kind": "rigid",
+      "stiffness_kn_per_m": null,
+      "compression_only": false,
+      "preload_kn": 0
+    }
+  ],
+  "stages": [
+    {
+      "id": "S0",
+      "name": "初始地应力平衡",
+      "event": "initial",
+      "excavation_depth_m": 0.0,
+      "water_inside_depth_m": 1.5,
+      "water_outside_depth_m": 1.5,
+      "surcharge_kpa": 0,
+      "install_support_ids": [],
+      "remove_support_ids": []
+    },
+    {
+      "id": "S1",
+      "name": "开挖至2.05米",
+      "event": "excavate",
+      "excavation_depth_m": 2.05,
+      "water_inside_depth_m": 2.55,
+      "water_outside_depth_m": 1.5,
+      "surcharge_kpa": 0,
+      "install_support_ids": [],
+      "remove_support_ids": []
+    },
+    {
+      "id": "S2",
+      "name": "安装第一道支撑",
+      "event": "install",
+      "excavation_depth_m": 2.05,
+      "water_inside_depth_m": 2.55,
+      "water_outside_depth_m": 1.5,
+      "surcharge_kpa": 0,
+      "install_support_ids": [
+        "STRUT-1"
+      ],
+      "remove_support_ids": []
+    },
+    {
+      "id": "S3",
+      "name": "开挖至4.9米",
+      "event": "excavate",
+      "excavation_depth_m": 4.9,
+      "water_inside_depth_m": 5.4,
+      "water_outside_depth_m": 1.5,
+      "surcharge_kpa": 0,
+      "install_support_ids": [],
+      "remove_support_ids": []
+    },
+    {
+      "id": "S4",
+      "name": "安装刚性换撑支点",
+      "event": "install",
+      "excavation_depth_m": 4.9,
+      "water_inside_depth_m": 5.4,
+      "water_outside_depth_m": 1.5,
+      "surcharge_kpa": 0,
+      "install_support_ids": [
+        "REPLACEMENT"
+      ],
+      "remove_support_ids": []
+    },
+    {
+      "id": "S5",
+      "name": "拆除第一道支撑",
+      "event": "remove",
+      "excavation_depth_m": 4.9,
+      "water_inside_depth_m": 5.4,
+      "water_outside_depth_m": 1.5,
+      "surcharge_kpa": 0,
+      "install_support_ids": [],
+      "remove_support_ids": [
+        "STRUT-1"
+      ]
+    }
+  ],
+  "analysis": {
+    "soil_method": "two_sided_elastoplastic_winkler_v1",
+    "pressure_method": "effective_rankine_bounds_k0_v1",
+    "max_element_size_m": 0.125,
+    "water_unit_weight_kn_m3": 9.81,
+    "design_effect_factor": 1.25,
+    "design_effect_factor_basis": "验证例显式采用1.25的特征内力效应放大系数，不代表任何实际项目规范取值"
+  },
+  "reinforcement": {
+    "longitudinal_extent": "full_length",
+    "bar_start_angle_deg": 0.0,
+    "bar_count": 16,
+    "bar_diameter_mm": 18,
+    "bar_axis_cover_mm": 59,
+    "concrete_design_strength_mpa": 14.3,
+    "concrete_peak_strain": 0.002,
+    "concrete_ultimate_strain": 0.0033,
+    "steel_design_strength_mpa": 360,
+    "steel_modulus_mpa": 200000,
+    "minimum_longitudinal_ratio": 0.006,
+    "minimum_ratio_basis": "本验证例明示的最小纵筋率，用于验证成果链，实际工程须确认采用依据",
+    "stirrup_diameter_mm": 8,
+    "stirrup_spacing_mm": 125,
+    "axial_force_kn": 0.0
+  },
+  "evidence": [
+    {
+      "parameter": "all_inputs",
+      "kind": "verification_definition",
+      "source": "PitGuard冻结剖面解析与独立求解验证集",
+      "source_sha256": null,
+      "page": null,
+      "note": "完整合成算例；阶段顺序参考A3-3事件结构，其土层、边界和几何不冒充原项目。"
+    }
+  ],
+  "limitations": [
+    "这是完整定义的合成验证例，不能作为原A3-3项目重建模型。",
+    "平地垂直排桩，分层有效应力与静水压力；不含坡台、有限宽邻载、渗流及土水合算。"
+  ]
+}

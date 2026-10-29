@@ -268,6 +268,8 @@ def required_role(method: str, path: str) -> str:
         return "viewer"
     if normalized.startswith("/api/system/backup"):
         return "admin"
+    if normalized in ("/api/engineering/one-strut/review", "/api/engineering/one-strut/exports"):
+        return "checker"
     if method.upper() in {"GET", "HEAD", "OPTIONS"}:
         return "viewer"
     if "/advanced/review/" in normalized:

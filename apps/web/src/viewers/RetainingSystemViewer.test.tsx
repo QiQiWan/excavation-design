@@ -43,3 +43,33 @@ describe('RetainingSystemViewer candidate quality plan', () => {
     expect(screen.getByText('47.84')).toBeInTheDocument();
   });
 });
+
+it('shows uncalculated wall capacity when only the design moment exists', () => {
+  const withMoment = { ...project, retainingSystem: { ...project.retainingSystem, diaphragmWalls: [{ id: 'W1', segmentId: 'SEG1', panelCode: 'W1', thickness: 0.8, bottomElevation: -15, reinforcement: [], designResults: { maxMomentDesign: 100 } }] } } as unknown as Project;
+  const { container } = render(<RetainingSystemViewer project={withMoment} />);
+  const wallRow = container.querySelector('table tbody tr')!;
+  expect(wallRow.children[4]).toHaveTextContent('100.00');
+  expect(wallRow.children[5]).toHaveTextContent('未计算');
+  expect(wallRow.children[5]).not.toHaveTextContent('118');
+});
+
+it('does not show previous adopted capacity as verified evidence after verify-only calculation', () => {
+  const previous = { ...project, calculationResults: [{ id: 'verify', calculationMode: 'verify' }], retainingSystem: { ...project.retainingSystem, diaphragmWalls: [{ id: 'W1', segmentId: 'SEG1', panelCode: 'W1', thickness: 0.8, bottomElevation: -15, reinforcement: [], designResults: { maxMomentDesign: 100, momentCapacity: 250, checkStatus: 'pass' } }] } } as unknown as Project;
+  const { container } = render(<RetainingSystemViewer project={previous} />);
+  const wallRow = container.querySelector('table tbody tr')!;
+  expect(wallRow.children[5]).toHaveTextContent('未计算');
+  expect(wallRow.children[7]).not.toHaveTextContent('pass');
+});
+
+it('labels current result-only reinforcement and capacity as unadopted suggestions', () => {
+  const wall = { id: 'W1', segmentId: 'SEG1', panelCode: 'W1', thickness: 0.8, bottomElevation: -15, reinforcement: [], designResults: { maxMomentDesign: 100, momentCapacity: 300, checkStatus: 'pass' } };
+  const proposal = { ...project.retainingSystem, diaphragmWalls: [wall] };
+  const resultProject = { ...project, calculationResults: [{ id: 'verify', calculationMode: 'verify', derivedDesign: { status: 'proposal_only', adopted: false, retainingSystem: proposal } }] } as unknown as Project;
+  const savedInput = JSON.stringify(resultProject.retainingSystem);
+  const { container } = render(<RetainingSystemViewer project={resultProject} resultEvidenceCurrent />);
+  expect(screen.getByText('复算需求与配筋建议（未采用）')).toBeInTheDocument();
+  const wallRow = container.querySelector('table tbody tr')!;
+  expect(wallRow.children[5]).toHaveTextContent('300.00');
+  expect(wallRow.children[7]).toHaveTextContent('配筋建议（未采用）');
+  expect(JSON.stringify(resultProject.retainingSystem)).toBe(savedInput);
+});

@@ -1,6 +1,6 @@
 {
   "name": "pitguard-web",
-  "version": "3.87.15",
+  "version": "3.87.26",
   "private": true,
   "type": "module",
   "scripts": {

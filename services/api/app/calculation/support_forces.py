@@ -66,6 +66,7 @@ def estimate_support_axial_forces(
     wale_beams: list | None = None,
     stage_id: str | None = None,
     wale_result_collector: list | None = None,
+    apply_design_factor: bool = True,
 ) -> list[SupportForceResult]:
     """Estimate support axial forces through a continuous wale-beam model.
 
@@ -104,7 +105,7 @@ def estimate_support_axial_forces(
                 wale_result_collector.append(analysis.internal_force)
             if reactions:
                 for reaction in reactions:
-                    axial_design = design_effect_standard_to_uls(reaction.axial_force, safety_grade=safety_grade, combined_partial_factor=partial_factor)
+                    axial_design = design_effect_standard_to_uls(reaction.axial_force, safety_grade=safety_grade, combined_partial_factor=partial_factor) if apply_design_factor else None
                     results.append(
                         SupportForceResult(
                             support_id=reaction.support_id,
@@ -113,9 +114,9 @@ def estimate_support_axial_forces(
                             tributary_top=round(top_elevation - tributary_top, 6),
                             tributary_bottom=round(top_elevation - tributary_bottom, 6),
                             axial_force=round(reaction.axial_force, 3),
-                            axial_force_design=round(axial_design, 3),
+                            axial_force_design=round(axial_design, 3) if axial_design is not None else None,
                             importance_factor=round(gamma0, 3),
-                            partial_factor=round(max(partial_factor, 1.25), 3),
+                            partial_factor=round(max(partial_factor, 1.25), 3) if apply_design_factor else None,
                             face_code=reaction.face_code,
                             support_endpoint=reaction.endpoint,
                             wale_beam_code=reaction.wale_beam_code,
@@ -139,7 +140,7 @@ def estimate_support_axial_forces(
             wall_width = _tributary_width_for_segment(support, segment_name, fallback_width)
             role_factor = _role_factor(support)
             per_support_force = line_load * wall_width * role_factor
-            axial_design = design_effect_standard_to_uls(per_support_force, safety_grade=safety_grade, combined_partial_factor=partial_factor)
+            axial_design = design_effect_standard_to_uls(per_support_force, safety_grade=safety_grade, combined_partial_factor=partial_factor) if apply_design_factor else None
             results.append(
                 SupportForceResult(
                     support_id=support.id,
@@ -148,9 +149,9 @@ def estimate_support_axial_forces(
                     tributary_top=round(top_elevation - tributary_top, 6),
                     tributary_bottom=round(top_elevation - tributary_bottom, 6),
                     axial_force=round(per_support_force, 3),
-                    axial_force_design=round(axial_design, 3),
+                    axial_force_design=round(axial_design, 3) if axial_design is not None else None,
                     importance_factor=round(gamma0, 3),
-                    partial_factor=round(max(partial_factor, 1.25), 3),
+                    partial_factor=round(max(partial_factor, 1.25), 3) if apply_design_factor else None,
                     face_code=segment_name,
                     support_endpoint="start" if support.start_face_code == segment_name else "end" if support.end_face_code == segment_name else "unknown",
                     tributary_width=wall_width,

@@ -1,6 +1,64 @@
-# PitGuard V3.87.15
+# PitGuard V3.87.26
 
-Production-safe release with same-origin API verification and synchronized frontend/backend package versions.
+本版提供 P1-P4 工程证据与分项验收工作版：不利水头复算、圆桩受限应力核对、螺屿村五阶段全通道核对，以及冻结结果的校审成果。正式施工图签发仍保持阻断。
+
+参见 [V3.87.26 详细实施及验收说明](STANDARDIZATION_AND_ACCEPTANCE_V3_87_26.md) 和 [V3.87.26 发布记录](RELEASE_3.87.26.md)。
+
+---
+
+# PitGuard V3.87.18
+
+本版增加原项目条件证据合同、明确方法的v2冻结输入、有限邻载与分层土水口径、可区分的土体历史规则、逐阶段全曲线导入比较，以及轴弯/抗剪/保护层/锚固等独立工程检查。结果、原工程条件是否一致、工程检查是否完成分别显示，缺失资料不会变成通过。
+
+原A3-3条件已整理为337项字段，FRWS9.0原生工程与关键选项仍缺；当前验证例没有冒充原项目复现。坡台只完成明确适用域内的独立主动楔体合力核验，分层含水坡台的完整阶段模型及圆桩裂缝宽度仍待补。原全基坑引擎限制继续保留。
+
+同一冻结结果生成计算书、剖面、内力包络、逐阶段两侧压力、配筋需求与分项工程表，以及已知钢筋截面几何图。DOCX嵌入许可允许的完整中文字体，避免依赖接收机器的字体安装；缺连接条件的节点不补造。
+
+详见 [V3.87.18 原项目条件、方法差异与工程配筋复核](docs/releases/V3_87_18_ORIGINAL_PROJECT_REVIEW.md) 和 [条件/曲线交换协议](examples/project-reference/README.md)。
+
+```bash
+uv sync --project services/api --python 3.12 --extra dev --extra benchmark
+uv run --project services/api python scripts/run-section-validation.py --example-v2 --a3-intake --output verification-output/v3_87_18
+uv run --project services/api python scripts/verify-frozen-section.py --require-independent
+```
+
+这是有明确范围和真实缺项的剖面复核通道。**原项目同条件验收未完成，正式施工图发行仍保持阻断。** 最终验证证据见 [V3.87.18 验证记录](docs/releases/V3_87_18_VALIDATION.json)。
+
+---
+
+## 历史版本 V3.87.17
+
+本版增加冻结剖面的阶段分析与同源成果链：严格输入快照、双侧弹塑性土弹簧、安装/换撑/拆撑历史、手算核对、真实 OpenSees 独立求解、网格检查，以及从同一封存结果生成的计算书、剖面 PDF/DXF、带符号内力包络和配筋表。
+
+计算页新增可折叠的“剖面结果验证”。首次打开为空，可显式加载合成验证例或导入剖面 JSON；冻结后计算，超时可恢复已保存结果。验证例不自动读取或修改当前工程，也不冒充上传 A3-3 原项目的复现结果。原全基坑引擎的土体抗力限制继续保留。
+
+请先阅读 [V3.87.17 方法、实现、验证与后续工作](docs/releases/V3_87_17_FROZEN_SECTION.md)。复现命令：
+
+```bash
+uv sync --project services/api --python 3.12 --extra dev --extra benchmark
+uv run --project services/api python scripts/run-section-validation.py --example --output verification-output/example
+uv run --project services/api python scripts/verify-frozen-section.py --require-independent
+```
+
+验证结果与当前工程适用性分别记录。当前只完成明确边界内的二维排桩剖面结果验证；圆截面纯弯检算不涵盖抗剪、裂缝、锚固及完整构造。正式施工图发行保持阻断。详见 [本版验证记录](docs/releases/V3_87_17_VALIDATION.json)。
+
+---
+
+## 历史版本 V3.87.16
+
+本版落实计算可信性修复：真实状态、不改变输入方案的复算、统一阶段荷载、刚度与稳定筛查修复、显式阶段事件，以及最终包络与配筋需求的一致性。
+
+主操作为“仅复算当前方案”；优化采用单独执行。旧算法结果需重新复算。当前土体抗力模型、独立线弹性阶段分析和立柱竖向受力仍有明确边界，系统保持工程适用性与正式发行阻断。通过程序回归不代表项目设计或施工成果已经通过校审。
+
+请先阅读 [本轮实现、验证及升级说明](docs/releases/V3_87_16_CALCULATION_RELIABILITY.md)。复现验证可运行 `python scripts/verify-calculation-reliability.py`。当前版本的测试证据见 `docs/releases/V3_87_16_VALIDATION.json`。
+
+下文保留历史版本说明；涉及自动闭合、设计采用和工程能力的旧描述，以本版明确的操作与模型边界为准。
+
+---
+
+## 历史版本 V3.87.15
+
+Same-origin API verification and synchronized frontend/backend package versions.
 
 V3.87.14 根据云端诊断包修复任务完成后页面长期停留在 92% 的问题。后台计算与配筋本身均正常结束，主要瓶颈来自约 9.3 MB 工作区、完整配筋检查和核心状态的并行回读。新版增加工程 shell 投影、配筋复核按需读取、分阶段核心状态、真实字节进度、非阻断读取卡片、JSON 压缩和慢请求诊断。结构算法版本保持 V3.87.10。
 
@@ -255,3 +313,16 @@ python scripts/smoke-candidate-memory.py --keep-runtime
 V3.87 的默认工作流按九个设计阶段组织。施工计划、现场快照和偏差事件不再进入设计完成度或首次设计发行门禁。外部资料通过“外部资料”页登记，涉及原设计边界时自动形成设计复核请求。
 
 后端接口 `/api/projects/{projectId}/design-core` 返回九阶段状态、参数来源、方案搜索完整度、逐构件包络、配筋闭环、交付质量及生产发布资格。
+
+## V3.87.23 研究扩展入口
+
+单排桩工作台仍提供 `example`、`preflight`、`calculate`、`review`、`exports`。另外新增独立研究路由：
+
+`GET /api/engineering/one-strut/research/luoyu-3-3?mesh_max_m=0.15`
+
+此结果包含螺屿村 3-3 五个阶段的曲线及支点反力，并明确 `sameConditionsAsOriginal=false`；不以试算峰值接近作为规范通过的依据。
+
+新版 `soft_soil_slip`、`seepage_fd`、`actions`、`support`、`reinforcement` 均在 `single_braced_pile/normative/`。数据样例和验证报告另包交付，不随运行源码。
+
+
+V3.87.25 工程标准化审查合同与实施计划详见 `STANDARDIZATION_AND_ACCEPTANCE_V3_87_25.md`。

@@ -127,7 +127,7 @@ def test_intelligent_feedback_expands_and_strengthens_every_wall_object() -> Non
     assert all(wall.thickness > before[wall.id] for wall in walls)
 
 
-def test_engine_warning_is_a_review_item_not_an_automatic_section_failure() -> None:
+def test_engine_warning_preserves_review_and_blocks_quantitative_failure() -> None:
     project = _project(supports=False)
     wall = project.retaining_system.diaphragm_walls[0]
     result = CalculationResult(
@@ -147,10 +147,10 @@ def test_engine_warning_is_a_review_item_not_an_automatic_section_failure() -> N
     )
 
     assessment = _assessment(project, result)
-    assert assessment["quantitativeOpenCount"] == 0
+    assert assessment["quantitativeOpenCount"] == 1
     assert assessment["hardFailCount"] == 0
-    assert assessment["calculationClosed"] is True
-    assert assessment["structuralClosed"] is True
+    assert assessment["calculationClosed"] is False
+    assert assessment["structuralClosed"] is False
     assert assessment["reviewCount"] == 1
 
 
@@ -163,11 +163,19 @@ def test_crown_beams_receive_stage_design_and_complete_five_family_rebar() -> No
             WallInternalForcePoint(depth=2.0, elevation=-2.0, shear=65.0, moment=90.0, displacement=0.001),
             WallInternalForcePoint(depth=8.0, elevation=-8.0, shear=10.0, moment=20.0, displacement=0.0),
         ]
+        # Independent design-load solution: do not derive these points by
+        # multiplying the standard-load response by an assumed coefficient.
+        design_points = [
+            WallInternalForcePoint(depth=0.0, elevation=0.0, shear=100.0 + index, moment=0.0, displacement=0.0),
+            WallInternalForcePoint(depth=2.0, elevation=-2.0, shear=78.0, moment=115.0, displacement=0.0012),
+            WallInternalForcePoint(depth=8.0, elevation=-8.0, shear=12.0, moment=26.0, displacement=0.0),
+        ]
         stage_results.append(StageCalculationResult(
             stageId="stage-final", segmentId=segment.id, pressureProfile=PressureProfile(points=[]),
             wallInternalForce=WallInternalForceResult(
-                segmentId=segment.id, stageId="stage-final", points=points,
+                segmentId=segment.id, stageId="stage-final", points=points, designPoints=design_points,
                 maxMoment=90.0, maxShear=85.0 + index, maxDisplacement=0.001,
+                maxMomentDesign=115.0, maxShearDesign=100.0 + index,
             ),
         ))
 
@@ -177,6 +185,48 @@ def test_crown_beams_receive_stage_design_and_complete_five_family_rebar() -> No
     assert all(beam.design_result.check_status == "pass" for beam in project.retaining_system.crown_beams)
     expected = {"longitudinal", "stirrup", "distribution", "tie", "additional"}
     assert all(expected.issubset({group.bar_type for group in beam.reinforcement}) for beam in project.retaining_system.crown_beams)
+
+    segment_by_name = {segment.name: (index, segment) for index, segment in enumerate(project.excavation.segments, start=1)}
+    for beam in project.retaining_system.crown_beams:
+        index, segment = segment_by_name[beam.code.removeprefix("CB-")]
+        control_span = max(1.5, min(segment.length, 6.0))
+        design = beam.design_result
+        assert design.max_moment_design == pytest.approx((100.0 + index) * control_span**2 / 8.0, abs=0.001)
+        assert design.max_shear_design == pytest.approx((100.0 + index) * control_span / 2.0, abs=0.001)
+        assert design.max_moment == pytest.approx((85.0 + index) * control_span**2 / 8.0, abs=0.001)
+        assert design.max_moment_design != pytest.approx(design.max_moment * 1.35)
+
+
+def test_crown_missing_design_action_evidence_clears_historical_pass() -> None:
+    project = _project(supports=False)
+    for beam in project.retaining_system.crown_beams:
+        beam.design_result = WaleBeamDesignResult(
+            waleBeamCode=beam.code, checkStatus="pass", maxMomentDesign=999.0,
+            maxShearDesign=999.0, momentCapacity=1500.0, shearCapacity=1500.0,
+        )
+        beam.design_moment = 999.0
+        beam.design_shear = 999.0
+    stages = [StageCalculationResult(
+        stageId="standard-only", segmentId=segment.id,
+        pressureProfile=PressureProfile(points=[]),
+        wallInternalForce=WallInternalForceResult(
+            segmentId=segment.id, stageId="standard-only",
+            points=[WallInternalForcePoint(depth=0, elevation=0, shear=85.0, moment=0.0, displacement=0.0)],
+            maxMoment=90.0, maxShear=85.0, maxDisplacement=0.001,
+        ),
+    ) for segment in project.excavation.segments]
+
+    checks = _design_crown_beams(project, stages, gamma0=1.0)
+
+    assert len(checks) == len(project.retaining_system.crown_beams)
+    assert all(check["ruleId"] == "PITGUARD-CROWN-BEAM-STAGE-EVIDENCE" for check in checks)
+    assert all(check["status"] == "manual_review" for check in checks)
+    assert all(check["calculatedValue"] is None and check["limitValue"] is None for check in checks)
+    for beam in project.retaining_system.crown_beams:
+        assert beam.design_result is None
+        assert beam.design_moment is None
+        assert beam.design_shear is None
+        assert beam.internal_force_results == []
 
 
 def test_support_scheme_persists_stirrups_and_construction_bar_contract() -> None:

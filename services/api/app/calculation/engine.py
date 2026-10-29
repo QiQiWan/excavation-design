@@ -10,6 +10,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.calculation.earth_pressure import calculate_lateral_pressure_profile
+from app.calculation.stage_loads import build_stage_loads
+from app.calculation.stage_state import build_stage_states
+from app.calculation.stage_solver import solve_stage_response
+from app.calculation.final_envelope import build_final_wall_envelopes
+from app.calculation.final_checks import refresh_final_stage_checks as _refresh_final_stage_checks, wall_deformation_check as _wall_deformation_check, supplied_beam_checks
+from app.calculation.input_identity import canonical_hash, full_design_input, solver_configuration_hash
 from app.calculation.global_coupled import solve_global_wall_wale_support_system
 from app.calculation.reaction_iteration import iterate_wall_wale_transfer_reactions
 from app.calculation.execution_trace import CalculationExecutionTrace
@@ -38,8 +44,6 @@ from app.version import SOFTWARE_VERSION, ALGORITHM_VERSION, RULE_SET_VERSION, E
 from app.geology.section import extract_representative_section
 from app.geology.model_builder import ensure_geological_model_covers_excavation, geological_coverage_audit
 from app.rules.gb50007.foundation_rules import check_foundation_bearing_pressure
-from app.rules.gb50009.load_combination_rules import design_effect_standard_to_uls
-from app.rules.gb50009.load_combinations import check_combination_documented, combination_record
 from app.rules.gb50010.rc_section_rules import check_rc_rectangular_axial_capacity, check_rectangular_shear_capacity, concrete_ec, design_rectangular_flexural_reinforcement, design_rectangular_shear_reinforcement, rectangular_flexural_capacity_knm_per_m
 from app.rules.gb50010.detailing_rules import check_crack_width, check_rebar_anchorage_and_lap
 from app.rules.gb50010.reinforcement_rules import check_minimum_wall_reinforcement
@@ -108,11 +112,19 @@ def _normalize_check_dict(check: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_to_dict(check) -> dict[str, Any]:
+    trace = None
     if isinstance(check, tuple):
-        check = check[0]
-    if hasattr(check, "model_dump"):
-        return _normalize_check_dict(check.model_dump(mode="json"))
-    return _normalize_check_dict(dict(check))
+        check, trace = check[0], check[1]
+    data = _normalize_check_dict(check.model_dump(mode="json") if hasattr(check, "model_dump") else dict(check))
+    if isinstance(trace, dict):
+        data["trace"] = trace
+        if trace.get("applicability"):
+            data["applicability"] = trace["applicability"]
+    return data
+
+
+def _round_optional(value: float | None, places: int = 3) -> float | None:
+    return round(value, places) if value is not None and math.isfinite(value) else None
 
 
 def _support_length(support) -> float:
@@ -340,9 +352,9 @@ def _check_governing_score(check: dict[str, Any]) -> tuple[int, float]:
     calculated = check.get("calculatedValue")
     limit = check.get("limitValue")
     numeric_score = 0.0
-    if isinstance(calculated, (int, float)):
+    if isinstance(calculated, (int, float)) and math.isfinite(calculated):
         numeric_score = abs(float(calculated))
-        if isinstance(limit, (int, float)) and abs(float(limit)) > 1.0e-9:
+        if isinstance(limit, (int, float)) and math.isfinite(limit) and abs(float(limit)) > 1.0e-9:
             ratio = float(calculated) / float(limit)
             rule_id = str(check.get("ruleId") or "").upper()
             # Stability/safety factors are worse when the ratio is smaller;
@@ -364,12 +376,18 @@ def _consolidate_global_checks(project: Project, checks: list[dict[str, Any]]) -
     cycle notices as separate engineering problems.
     """
     normalized = [_normalize_check_dict(item) for item in checks]
-    per_object: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    per_object: dict[tuple, list[dict[str, Any]]] = {}
     for item in normalized:
         key = (
             str(item.get("ruleId") or "UNKNOWN"),
             str(item.get("objectId") or project.id),
             str(item.get("objectType") or "EngineeringObject"),
+            str(item.get("evidenceScope") or "calculation"),
+            str(item.get("applicability") or "applicable"),
+            # A known warning in another stage must not erase unavailable
+            # quantitative evidence or a missing capacity.
+            tuple(isinstance(item.get(key), (int, float)) and math.isfinite(item[key])
+                for key in ("calculatedValue", "limitValue")),
         )
         per_object.setdefault(key, []).append(item)
     governing: list[dict[str, Any]] = []
@@ -387,16 +405,17 @@ def _consolidate_global_checks(project: Project, checks: list[dict[str, Any]]) -
             merged["stageNames"] = stage_names
         governing.append(merged)
 
-    grouped_advisories: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    grouped_advisories: dict[tuple, list[dict[str, Any]]] = {}
     passthrough: list[dict[str, Any]] = []
     for item in governing:
         rule_id = str(item.get("ruleId") or "")
         status = str(item.get("status") or "manual_review")
         if rule_id in _ADVISORY_GROUP_RULES and status != "fail":
-            grouped_advisories.setdefault((rule_id, status, str(item.get("objectType") or "EngineeringObject")), []).append(item)
+            grouped_advisories.setdefault((rule_id, status, str(item.get("objectType") or "EngineeringObject"),
+                str(item.get("evidenceScope") or "calculation"), item.get("limitValue") is None), []).append(item)
         else:
             passthrough.append(item)
-    for (rule_id, status, object_type), records in grouped_advisories.items():
+    for (rule_id, status, object_type, _scope, _missing), records in grouped_advisories.items():
         selected = max(records, key=_check_governing_score)
         merged = dict(selected)
         object_ids = sorted({str(item.get("objectId")) for item in records if item.get("objectId")})
@@ -474,9 +493,21 @@ def _design_review_summary(checks: list[dict[str, Any]], stage_results: list[Sta
         calc = c.get("calculatedValue")
         limit = c.get("limitValue")
         util = None
-        if isinstance(calc, (int, float)) and isinstance(limit, (int, float)) and abs(limit) > 1e-9:
+        if c.get("applicability") in {"not_applicable", "not_required"}:
+            continue
+        if rid == "PITGUARD-SOIL-RESISTANCE-MODEL":
+            strength_fail += status == "fail"
+            stiffness_fail += status == "fail"
+            stability_fail += status == "fail"
+        if rid in {"PITGUARD-STAGE-HISTORY-LIMITATION", "PITGUARD-SUPPORT-CONSTRUCTION-EFFECT-APPLICABILITY"}:
+            strength_manual += 1
+            stiffness_manual += 1
+            stability_manual += 1
+        if isinstance(calc, (int, float)) and isinstance(limit, (int, float)) and math.isfinite(calc) and math.isfinite(limit) and abs(limit) > 1e-9:
             # For safety factors calc/limit is inverted below when applicable.
             util = abs(float(calc) / float(limit))
+        if util is not None and util > 1.0 and status == "warning" and any(tok in rid for tok in (*strength_tokens, *stiffness_tokens)):
+            status = "fail"
         if any(tok in rid for tok in strength_tokens):
             strength_fail += status == "fail"
             strength_warning += status == "warning"
@@ -496,7 +527,11 @@ def _design_review_summary(checks: list[dict[str, Any]], stage_results: list[Sta
             stability_manual += status == "manual_review"
             if semantic.metric_type == "safety_factor" and isinstance(calc, (int, float)) and float(calc) < 900.0:
                 min_stab = float(calc) if min_stab is None else min(min_stab, float(calc))
-    global_max_disp = max((sr.global_coupled_result.max_wall_displacement for sr in stage_results if sr.global_coupled_result), default=0.0)
+    displacement_values = [sr.global_coupled_result.max_wall_displacement if sr.global_coupled_result else None for sr in stage_results]
+    known_displacements = [value for value in displacement_values if value is not None and math.isfinite(value)]
+    if len(known_displacements) != len(stage_results) or not stage_results:
+        stiffness_manual += 1
+    global_max_disp = max(known_displacements, default=0.0)
     if global_max_disp > 0.08:
         stiffness_warning += 1
     return DesignReviewSummary(
@@ -518,84 +553,6 @@ def _design_review_summary(checks: list[dict[str, Any]], stage_results: list[Sta
             "稳定性复核汇总覆盖嵌固、抗隆起、抗渗/承压水、整体稳定等专项筛查；安全系数与风险比值分别统计。",
         ],
     )
-
-
-def _wall_force_model(segment_id: str, stage_id: str, wall_force: dict[str, Any], gamma0: float) -> WallInternalForceResult:
-    raw_points = wall_force.get("points", [])
-    stride = max(1, len(raw_points) // 80) if raw_points else 1
-    points: list[WallInternalForcePoint] = []
-    for p in raw_points[::stride]:
-        points.append(
-            WallInternalForcePoint(
-                depth=float(p.get("depth", 0.0)),
-                elevation=float(p.get("elevation", -float(p.get("depth", 0.0)))),
-                shear=float(p.get("shear", 0.0)),
-                moment=float(p.get("moment", 0.0)),
-                displacement=p.get("displacementMm"),
-            )
-        )
-    max_m = abs(float(wall_force.get("maxMoment") or 0.0))
-    max_v = abs(float(wall_force.get("maxShear") or 0.0))
-    max_d = wall_force.get("maxDisplacement")
-    return WallInternalForceResult(
-        segment_id=segment_id,
-        stage_id=stage_id,
-        points=points,
-        max_moment=round(max_m, 3),
-        max_shear=round(max_v, 3),
-        max_displacement=round(abs(float(max_d)), 3) if max_d is not None else None,
-        max_moment_design=round(max_m * gamma0 * LOAD_FACTOR_RETAINING, 3),
-        max_shear_design=round(max_v * gamma0 * LOAD_FACTOR_RETAINING, 3),
-        importance_factor=gamma0,
-        load_combination_factor=LOAD_FACTOR_RETAINING,
-        method=str(wall_force.get("method") or "JGJ120 pressure + finite-difference beam-on-elastic-foundation"),
-        warnings=[str(x) for x in wall_force.get("warnings", [])],
-    )
-
-
-
-
-def _support_construction_effects(support, standard_force: float, safety_grade: str, *, preload_override: float | None = None) -> dict[str, Any]:
-    """Preliminary construction-effect model for internal supports.
-
-    The model records the main design effects that are normally considered by
-    engineers: preload, temperature, joint-gap closure and construction
-    eccentricity/deviation.  It is intentionally traceable and conservative, not
-    a substitute for project-specific construction monitoring and preloading
-    protocols.
-    """
-    standard = max(float(standard_force or 0.0), 0.0)
-    length = _support_length(support)
-    area = support_axial_area(support)
-    e = support_elastic_modulus(support)
-    alpha = 1.0e-5
-    temp_delta = support.temperature_delta_c if support.temperature_delta_c is not None else (12.0 if support.section_type == "steel_pipe" else 8.0)
-    preload_ratio = support.preload_ratio if support.preload_ratio is not None else (0.30 if support.section_type == "steel_pipe" else 0.10)
-    # Preload is recomputed from the current raw standard-force envelope. Reusing
-    # a stored preload from an earlier topology/calculation can recursively inflate
-    # the next design envelope. A fixed protocol preload may be passed explicitly
-    # when evaluating each stage.
-    preload = float(preload_override) if preload_override is not None else standard * preload_ratio
-    # A small fraction of elastic thermal restraint is used because temporary
-    # support nodes are not perfectly fixed in real construction.
-    thermal = max(0.0, e * area * alpha * abs(temp_delta) * 0.15)
-    gap = standard * (0.06 if support.section_type == "steel_pipe" else 0.03)
-    deviation_mm = support.construction_deviation_mm if support.construction_deviation_mm is not None else min(30.0, max(10.0, length * 2.0))
-    eccentricity = standard * deviation_mm / 1000.0
-    effective_standard = standard + 0.50 * preload + thermal + gap
-    design = design_effect_standard_to_uls(effective_standard, safety_grade=safety_grade, combined_partial_factor=1.25)
-    return {
-        "standard": round(standard, 3),
-        "preload": round(preload, 3),
-        "preloadRatio": round(preload_ratio, 3),
-        "thermal": round(thermal, 3),
-        "gap": round(gap, 3),
-        "deviationMm": round(deviation_mm, 3),
-        "eccentricityMoment": round(eccentricity, 3),
-        "effectiveStandard": round(effective_standard, 3),
-        "design": round(design, 3),
-        "note": "轴力包络已叠加预加轴力折减项、温度约束效应、节点间隙闭合和施工偏心；参数为施工阶段快速筛查默认值，正式工程需按专项施工方案复核。",
-    }
 
 
 def _add_wale_reinforcement_groups(beam, design: WaleBeamDesignResult) -> list[ReinforcementGroup]:
@@ -664,8 +621,17 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         grouped.setdefault(result.wale_beam_code, []).append(result)
     beams = list(project.retaining_system.wale_beams) + list(getattr(project.retaining_system, "ring_beams", []) or [])
     for beam in beams:
+        supplied_groups = list(beam.reinforcement)
         results = grouped.get(beam.code, [])
         if not results:
+            beam.internal_force_results = []
+            beam.design_result = None
+            beam.design_moment = None
+            beam.design_shear = None
+            checks.append({"ruleId": "PITGUARD-WALE-CURRENT-RESULT-MISSING", "objectId": beam.id,
+                "objectType": "BeamElement", "status": "manual_review", "calculatedValue": None,
+                "limitValue": None, "unit": "-", "message": "本轮没有该梁的阶段内力，已清除陈旧设计结果；请确认是否应参与当前工况。",
+                "clauseReference": "current stage evidence required"})
             continue
         envelope = build_wale_beam_envelope(beam.code, results)
         max_m = max(abs(r.max_moment) for r in results)
@@ -675,8 +641,18 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
             max_m = max(max_m, abs(envelope.max_positive_moment), abs(envelope.max_negative_moment))
             max_v = max(max_v, envelope.max_abs_shear)
             max_d = max(max_d, envelope.max_abs_deflection)
-        m_design = max_m * gamma0 * LOAD_FACTOR_RETAINING
-        v_design = max_v * gamma0 * LOAD_FACTOR_RETAINING
+        if any(r.max_moment_design is None or r.max_shear_design is None for r in results):
+            beam.internal_force_results = results
+            beam.design_result = None
+            beam.design_moment = None
+            beam.design_shear = None
+            checks.append({"ruleId": "PITGUARD-WALE-DESIGN-RESPONSE-MISSING", "objectId": beam.id,
+                "objectType": "BeamElement", "status": "manual_review", "calculatedValue": None, "limitValue": None,
+                "unit": "-", "message": "设计作用内力不完整，未以标准内力替代或补乘固定系数。",
+                "clauseReference": "complete design-load solve required"})
+            continue
+        m_design = max(abs(r.max_moment_design) for r in results)
+        v_design = max(abs(r.max_shear_design) for r in results)
         initial_width = max(float(beam.section.width or 0.9), 0.2)
         initial_height = max(float(beam.section.height or 0.8), 0.2)
         width = initial_width
@@ -694,8 +670,8 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         # passing section. The former first-hit loop could later fall back to the
         # original section and its shear check ignored the stirrups drawn by the
         # detailing layer.
-        candidate_widths = sorted({max(value, initial_width) for value in [initial_width, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0]})
-        candidate_heights = sorted({max(value, initial_height) for value in [initial_height, 0.9, 1.2, 1.5, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0]})
+        candidate_widths = [initial_width]
+        candidate_heights = [initial_height]
         optimization_history: list[dict[str, Any]] = []
         passing_designs: list[tuple[float, float, dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         best_available: tuple[float, float, dict[str, Any], dict[str, Any], dict[str, Any]] | None = None
@@ -750,10 +726,6 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         )
         if selected_design is not None:
             width, height, base_flex, flex, shear = selected_design
-        if found and (abs(width - initial_width) > 1e-9 or abs(height - initial_height) > 1e-9):
-            beam.section.width = round(width, 3)
-            beam.section.height = round(height, 3)
-            beam.section.name = f"{int(round(width * 1000))}x{int(round(height * 1000))} RC wale beam"
         provided = flex["barArrangement"]["providedAs"]
         required = base_flex["asRequired"]
         capacity = rectangular_flexural_capacity_knm_per_m(provided, height, beam.material.grade, "HRB400") * width
@@ -815,16 +787,18 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
         beam.design_moment = design.max_moment_design
         beam.design_shear = design.max_shear_design
         beam.reinforcement = _add_wale_reinforcement_groups(beam, design)
+        checks.extend(supplied_beam_checks(beam, design, supplied_groups))
         checks.extend([
             {
                 "ruleId": "GB50010-WALE-FLEXURE-SUBSET",
                 "objectId": beam.id,
                 "objectType": "BeamElement",
                 "status": status,
+                "evidenceScope": "reinforcement_proposal", "adopted": False,
                 "calculatedValue": design.max_moment_design,
                 "limitValue": design.moment_capacity,
                 "unit": "kN*m",
-                "message": f"围檩正截面受弯承载力：Md={design.max_moment_design} kN*m，Mu={design.moment_capacity} kN*m；按项目储备目标 {strength_target:.2f} 配置 {flex['barArrangement']['description']}。",
+                "message": f"未采用配筋建议的受弯能力：Md={design.max_moment_design} kN*m，Mu={design.moment_capacity} kN*m；按项目储备目标 {strength_target:.2f} 建议 {flex['barArrangement']['description']}。",
                 "clauseReference": "GB 50010 rectangular flexure subset for RC wale beam; final clause applicability to verify",
                 "formula": "M <= alpha1*fc*b*x*(h0-x/2); alpha1*fc*b*x = fy*As; total beam M converted by beam width",
             },
@@ -833,6 +807,7 @@ def _design_wale_beams(project: Project, wale_results: list, gamma0: float) -> l
                 "objectId": beam.id,
                 "objectType": "BeamElement",
                 "status": "pass" if shear["status"] == "pass" else "fail",
+                "evidenceScope": "reinforcement_proposal", "adopted": False,
                 "calculatedValue": round(v_design, 3),
                 "limitValue": round(shear_capacity, 3),
                 "unit": "kN",
@@ -896,12 +871,16 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
 
     checks: list[dict[str, Any]] = []
     for beam in ret.crown_beams or []:
+        supplied_groups = list(beam.reinforcement)
         segment_name = str(beam.code).removeprefix("CB-")
         segment = segment_by_name.get(segment_name)
         segment_results = results_by_segment.get(str(segment.id), []) if segment else []
         wall_force_rows = [row.wall_internal_force for row in segment_results if row.wall_internal_force and row.wall_internal_force.points]
-        if segment is None or not wall_force_rows:
+        if segment is None or not wall_force_rows or any(not row.design_points for row in wall_force_rows):
             beam.design_result = None
+            beam.internal_force_results = []
+            beam.design_moment = None
+            beam.design_shear = None
             checks.append({
                 "ruleId": "PITGUARD-CROWN-BEAM-STAGE-EVIDENCE",
                 "objectId": beam.id,
@@ -916,6 +895,7 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
             continue
 
         top_shear = 0.0
+        top_shear_design = 0.0
         governing_stage_id = None
         for wall_force in wall_force_rows:
             maximum_depth = max((float(point.depth) for point in wall_force.points), default=0.0)
@@ -924,6 +904,8 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
             if not points:
                 points = [min(wall_force.points, key=lambda point: float(point.depth))]
             candidate = max((abs(float(point.shear)) for point in points), default=0.0)
+            design_points = [point for point in wall_force.design_points if float(point.depth) <= top_band + 1e-9]
+            top_shear_design = max(top_shear_design, max((abs(float(point.shear)) for point in design_points), default=0.0))
             if candidate >= top_shear:
                 top_shear = candidate
                 governing_stage_id = wall_force.stage_id
@@ -937,10 +919,10 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
         line_load = max(top_shear, 0.0)
         max_m = line_load * control_span**2 / 8.0
         max_v = line_load * control_span / 2.0
-        m_design = max_m * gamma0 * LOAD_FACTOR_RETAINING
-        v_design = max_v * gamma0 * LOAD_FACTOR_RETAINING
-        initial_width = max(float(beam.section.width or 1.0), 0.6)
-        initial_height = max(float(beam.section.height or 0.8), 0.6)
+        m_design = top_shear_design * control_span**2 / 8.0
+        v_design = top_shear_design * control_span / 2.0
+        initial_width = float(beam.section.width or 1.0)
+        initial_height = float(beam.section.height or 0.8)
         width, height = initial_width, initial_height
         base_flex = design_rectangular_flexural_reinforcement(m_design / width, height, beam.material.grade, "HRB400")
         reserve_flex = design_rectangular_flexural_reinforcement(m_design * strength_target / width, height, beam.material.grade, "HRB400")
@@ -948,8 +930,8 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
         max_deflection = 0.0
         optimization_history: list[dict[str, Any]] = []
         found = False
-        candidate_widths = sorted({initial_width, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0})
-        candidate_heights = sorted({initial_height, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8})
+        candidate_widths = [initial_width]
+        candidate_heights = [initial_height]
         for cand_h in candidate_heights:
             for cand_w in candidate_widths:
                 if cand_w + 1.0e-9 < initial_width or cand_h + 1.0e-9 < initial_height:
@@ -980,9 +962,6 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
             e_pa = concrete_ec(beam.material.grade) * 1.0e6 * float(project.design_settings.wale_cracked_stiffness_factor)
             max_deflection = 5.0 * line_load * 1000.0 * control_span**4 / max(384.0 * e_pa * inertia, 1.0e-9)
 
-        beam.section.width = round(width, 3)
-        beam.section.height = round(height, 3)
-        beam.section.name = f"{int(round(width * 1000))}x{int(round(height * 1000))} 钢筋混凝土冠梁"
         provided = float(reserve_flex["barArrangement"]["providedAs"])
         required = float(base_flex["asRequired"])
         moment_capacity = rectangular_flexural_capacity_knm_per_m(provided, height, beam.material.grade, "HRB400") * width
@@ -1027,10 +1006,15 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
         beam.design_moment = design.max_moment_design
         beam.design_shear = design.max_shear_design
         beam.reinforcement = _add_wale_reinforcement_groups(beam, design)
+        original_checks = supplied_beam_checks(beam, design, supplied_groups)
+        for original_check in original_checks:
+            original_check["ruleId"] = original_check["ruleId"].replace("WALE", "CROWN-BEAM")
+        checks.extend(original_checks)
         checks.extend([
             {
                 "ruleId": "GB50010-CROWN-BEAM-FLEXURE-SUBSET", "objectId": beam.id, "objectType": "BeamElement",
                 "status": status if reserve_flex["status"] == "pass" else "fail",
+                "evidenceScope": "reinforcement_proposal", "adopted": False,
                 "calculatedValue": round(m_design, 3), "limitValue": round(moment_capacity, 3), "unit": "kN*m",
                 "message": f"冠梁受弯承载力：墙顶剪力包络形成 q={line_load:.2f} kN/m，Md={m_design:.2f} kN*m，Mu={moment_capacity:.2f} kN*m；按储备目标 {strength_target:.2f} 配置 {reserve_flex['barArrangement']['description']}。",
                 "clauseReference": "GB/T 50010 正截面受弯承载力；施工阶段冠梁传力路径",
@@ -1038,6 +1022,7 @@ def _design_crown_beams(project: Project, stage_results: list[StageCalculationRe
             {
                 "ruleId": "GB50010-CROWN-BEAM-SHEAR-SUBSET", "objectId": beam.id, "objectType": "BeamElement",
                 "status": "pass" if reserve_shear["status"] == "pass" else "fail",
+                "evidenceScope": "reinforcement_proposal", "adopted": False,
                 "calculatedValue": round(v_design, 3), "limitValue": round(shear_capacity, 3), "unit": "kN",
                 "message": f"冠梁斜截面抗剪按储备目标 {strength_target:.2f} 控制，建议 D12@{stirrup_spacing}，转角及接头区加密。",
                 "clauseReference": "GB/T 50010 斜截面受剪承载力与箍筋构造",
@@ -1174,96 +1159,45 @@ def synchronize_calculation_case_supports(project: Project, case: CalculationCas
     }
 
 def build_default_construction_cases(project: Project) -> list[CalculationCase]:
+    """Propose explicit pre-installation and post-installation control states.
+
+    Replacement/removal requires designer-owned permanent load-path inputs and
+    is deliberately not inferred from the final excavation label.
+    """
     if not project.excavation:
         raise ValueError("Project has no excavation")
     supports = project.retaining_system.supports if project.retaining_system else []
-    stages: list[ConstructionStage] = []
-    top = project.excavation.top_elevation
-    bottom = project.excavation.bottom_elevation
+    top, bottom = project.excavation.top_elevation, project.excavation.bottom_elevation
     topology_hash = _support_topology_hash(project)
-    surcharge_value = project.design_settings.surcharge if action_group_enabled(project, "ground_surcharge") else 0.0
-    water_enabled = action_group_enabled(project, "water_pressure")
-    groundwater_outside = project.design_settings.groundwater_level
-    groundwater_inside = (project.design_settings.groundwater_level_inside if project.design_settings.groundwater_level_inside is not None else groundwater_outside)
-    if not water_enabled:
-        groundwater_inside = groundwater_outside
-    if supports:
-        # Group stages by semantic level_index, not raw member elevation.
-        # Historical projects may contain millimetric elevation drift between
-        # members in one level; grouping by elevation previously exploded a
-        # five-level scheme into dozens of construction stages.
-        level_groups: dict[int, list[Any]] = {}
-        for support in supports:
-            level_groups.setdefault(int(support.level_index), []).append(support)
-        ordered_level_groups = sorted(
-            level_groups.items(),
-            key=lambda item: -sum(float(row.elevation) for row in item[1]) / max(len(item[1]), 1),
-        )
-        active: list[str] = []
-        active_levels: list[int] = []
-        for idx, (level_index, level_supports) in enumerate(ordered_level_groups, start=1):
-            level_supports = sorted(level_supports, key=lambda row: (str(row.code), str(row.id)))
-            support_ids = [support.id for support in level_supports]
-            elevation = sum(float(row.elevation) for row in level_supports) / max(len(level_supports), 1)
-            excavation_elev = elevation - 0.5
-            active.extend(support_ids)
-            active_levels.append(level_index)
-            stages.append(
-                ConstructionStage(
-                    name=f"第 {idx} 阶段：开挖至 {excavation_elev:.2f}m，并安装第 {level_index} 道水平支撑",
-                    excavation_elevation=max(excavation_elev, bottom),
-                    active_support_ids=list(active),
-                    active_support_levels=sorted(set(active_levels)),
-                    support_topology_hash=topology_hash,
-                    stage_type="support_installation",
-                    zone=f"Z{idx}",
-                    groundwater_level_inside=groundwater_inside,
-                    groundwater_level_outside=groundwater_outside,
-                    surcharge=surcharge_value,
-                )
-            )
-    stages.append(
-        ConstructionStage(
-            name=f"最终开挖至坑底 {bottom:.2f}m，并进行使用阶段校核",
-            excavation_elevation=bottom,
-            active_support_ids=[s.id for s in supports],
-            active_support_levels=sorted({int(s.level_index) for s in supports}),
-            support_topology_hash=topology_hash,
-            stage_type="final",
-            zone="Z-final",
-            groundwater_level_inside=groundwater_inside,
-            groundwater_level_outside=groundwater_outside,
-            surcharge=surcharge_value,
-        )
-    )
-    if supports:
-        level_groups_desc = sorted({s.level_index for s in supports}, reverse=True)
-        remaining_support_ids = [s.id for s in supports]
-        remaining_levels = sorted({int(s.level_index) for s in supports})
-        transferred_levels: list[int] = []
-        for level in level_groups_desc:
-            remove_ids = [s.id for s in supports if s.level_index == level]
-            remaining_support_ids = [support_id for support_id in remaining_support_ids if support_id not in set(remove_ids)]
-            remaining_levels = [item for item in remaining_levels if item != int(level)]
-            transferred_levels.append(int(level))
-            stages.append(
-                ConstructionStage(
-                    name=f"换撑拆除：楼板或换撑构件达到条件后，拆除第 {level} 道水平支撑",
-                    excavation_elevation=bottom,
-                    active_support_ids=list(remaining_support_ids),
-                    deactivated_support_ids=remove_ids,
-                    active_support_levels=list(remaining_levels),
-                    transferred_support_levels=sorted(transferred_levels),
-                    support_topology_hash=topology_hash,
-                    stage_type="replacement",
-                    zone=f"replace-L{level}",
-                    replacement_action="地下室楼板或换撑构件达到设计强度并完成传力确认后，自下而上分级拆除支撑",
-                    groundwater_level_inside=groundwater_inside,
-                    groundwater_level_outside=groundwater_outside,
-                    surcharge=surcharge_value,
-                )
-            )
-    return [CalculationCase(name="推荐分步开挖、支撑安装与换撑拆除算例", stages=stages, support_topology_hash=topology_hash)]
+    gw_out = project.design_settings.groundwater_level
+    gw_in = project.design_settings.groundwater_level_inside
+    if gw_in is None:
+        gw_in = gw_out
+    common = dict(support_topology_hash=topology_hash,
+        groundwater_level_inside=gw_in, groundwater_level_outside=gw_out,
+        surcharge=project.design_settings.surcharge if action_group_enabled(project, "ground_surcharge") else 0.0)
+    stages = [ConstructionStage(name="初始状态：尚未开挖", excavation_elevation=top,
+        stage_type="excavation", zone="initial", **common)]
+    groups: dict[int, list[Any]] = {}
+    for support in supports:
+        groups.setdefault(int(support.level_index), []).append(support)
+    ordered = sorted(groups.items(), key=lambda item: -sum(s.elevation for s in item[1]) / len(item[1]))
+    active: list[str] = []
+    levels: list[int] = []
+    for index, (level, members) in enumerate(ordered, start=1):
+        elevation = min(top, max(bottom, sum(s.elevation for s in members) / len(members) - 0.5))
+        stages.append(ConstructionStage(name=f"开挖至 {elevation:.2f}m：第 {level} 道支撑安装前",
+            excavation_elevation=elevation, active_support_ids=list(active), active_support_levels=list(levels),
+            stage_type="excavation", zone=f"excavate-L{level}", **common))
+        active.extend(sorted(s.id for s in members))
+        levels.append(level)
+        stages.append(ConstructionStage(name=f"第 {level} 道支撑安装生效：工作面 {elevation:.2f}m",
+            excavation_elevation=elevation, active_support_ids=list(active), active_support_levels=sorted(levels),
+            stage_type="support_installation", zone=f"install-L{level}", **common))
+    stages.append(ConstructionStage(name=f"最终开挖至坑底 {bottom:.2f}m：保留当前临时支撑",
+        excavation_elevation=bottom, active_support_ids=list(active), active_support_levels=sorted(levels),
+        stage_type="final", zone="final-excavation", **common))
+    return [CalculationCase(name="推荐分步开挖与支撑安装控制算例", stages=stages, support_topology_hash=topology_hash)]
 
 
 def _candidate_label(index: int) -> str:
@@ -1558,7 +1492,7 @@ def run_single_candidate_calculation(
     wale_preflight = repair_wale_support_bays(trial_project)
     trial_project.calculation_cases = build_default_construction_cases(trial_project)
     candidate_result = run_calculation(
-        trial_project, trial_project.calculation_cases[0], auto_repair=False, include_candidate_comparison=False
+        trial_project, trial_project.calculation_cases[0], auto_repair=False, include_candidate_comparison=False, mode="design"
     )
     summary = _summarize_candidate_calculation(label, candidate, candidate_result, trial_project)
     summary["changedSupportCount"] = len(adjustments)
@@ -1657,7 +1591,7 @@ def run_candidate_comparison_for_project(project: Project, top_n: int = 3) -> li
     return comparison
 
 
-def _run_calculation_impl(project: Project, calculation_case: CalculationCase | None = None, auto_repair: bool = True, include_candidate_comparison: bool = False) -> CalculationResult:
+def _run_calculation_impl(project: Project, calculation_case: CalculationCase | None = None, auto_repair: bool = True, include_candidate_comparison: bool = False, mode: str = "verify") -> CalculationResult:
     execution = CalculationExecutionTrace(
         run_id=f"calc-run-{project.id}-{hashlib.sha256(os.urandom(16)).hexdigest()[:12]}",
     )
@@ -1688,7 +1622,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         }
     elif missing_wall_segment_ids:
         raise ValueError("Retaining-system wall panels do not cover every excavation segment")
-    geology_extended = ensure_geological_model_covers_excavation(project)
+    geology_extended = ensure_geological_model_covers_excavation(project) if mode == "design" else False
     geology_audit = geological_coverage_audit(project)
     geology_screening_fallback = False
     if not geology_audit.get("designDomainCovered", False):
@@ -1711,7 +1645,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     wall_embedment_preflight = auto_design_wall_embedment(
         project,
         requested_case,
-        enabled=bool(getattr(project.design_settings, "auto_wall_embedment_design_enabled", True)),
+        enabled=mode == "design" and bool(getattr(project.design_settings, "auto_wall_embedment_design_enabled", True)),
     )
     concave_topology_preflight = repair_concave_return_supports(project) if auto_repair else {"changed": False}
     wale_topology_preflight = repair_wale_support_bays(project) if auto_repair and strength_auto_enabled else {"changed": False, "status": "not_run"}
@@ -1798,20 +1732,33 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             + "。普通轴压支撑必须两端落在围护墙/围檩/环梁节点；端墙应采用直接对撑或墙—墙长斜撑。"
         )
 
-    case, support_case_sync = synchronize_calculation_case_supports(project, requested_case)
-    if support_case_sync.get("synchronized"):
-        replaced = False
-        if requested_case is not None:
-            for index, existing_case in enumerate(project.calculation_cases):
-                if existing_case.id == requested_case.id:
-                    case.id = requested_case.id
-                    case.created_at = requested_case.created_at
-                    project.calculation_cases[index] = case
-                    replaced = True
-                    break
-        if not replaced:
-            project.calculation_cases.append(case)
+    if mode == "verify":
+        if requested_case is None:
+            raise ValueError("仅复算需要已保存的设计控制工况，请先生成并确认工况。")
+        from app.services.construction_stages import validate_calculation_case
+        case = requested_case
+        validation = validate_calculation_case(project, case)
+        if not validation["valid"]:
+            raise ValueError("设计控制工况校验失败：" + "；".join(item["message"] for item in validation["issues"] if item["severity"] == "fail"))
+        support_case_sync = {"synchronized": False, "mode": "verify", "validation": validation}
+    else:
+        case, support_case_sync = synchronize_calculation_case_supports(project, requested_case)
+        if support_case_sync.get("synchronized"):
+            replaced = False
+            if requested_case is not None:
+                for index, existing_case in enumerate(project.calculation_cases):
+                    if existing_case.id == requested_case.id:
+                        case.id = requested_case.id
+                        case.created_at = requested_case.created_at
+                        project.calculation_cases[index] = case
+                        replaced = True
+                        break
+            if not replaced:
+                project.calculation_cases.append(case)
+    stage_states = build_stage_states(project, case)
+    stage_load_records: dict[tuple[str, str], Any] = {}
     calculation_contract = build_calculation_contract(project, case)
+    solved_configuration_hash = solver_configuration_hash(project, case)
     execution.input_contract_id = str(calculation_contract.get("inputContractId") or calculation_contract.get("contractId") or "") or None
     calculation_input_audit = audit_calculation_inputs(project, case)
     input_summary = dict(calculation_input_audit.get("summary") or {})
@@ -1877,7 +1824,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     top = project.excavation.top_elevation
     bottom = project.excavation.bottom_elevation
     final_depth = top - bottom
-    gamma0 = importance_factor(project.design_settings.safety_grade)
+    gamma0 = float(project.design_settings.importance_factor)
     strength_target = max(1.0, float(safety_targets(project).get("strength", 1.0)))
     segment_wall_envelopes: dict[str, dict[str, float]] = {}
     segment_wall_design: dict[str, dict[str, float]] = {}
@@ -1893,26 +1840,23 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         segment_design = {"moment": 0.0, "shear": 0.0}
 
         for stage in case.stages:
-            stage_depth = min(final_depth, max(0.0, top - stage.excavation_elevation)) or final_depth
+            stage_state = stage_states[stage.id]
+            stage_depth = float(stage_state["excavationDepthM"])
             gw_out = (stage.groundwater_level_outside if stage.groundwater_level_outside is not None else project.design_settings.groundwater_level) + groundwater_offset_m
-            gw_in = stage.groundwater_level_inside if stage.groundwater_level_inside is not None else project.design_settings.groundwater_level
-            pressure = calculate_lateral_pressure_profile(
-                soil_profile=section.layers,
-                excavation_depth=stage_depth,
-                groundwater_level=gw_out,
-                groundwater_level_inside=gw_in,
-                surcharge=stage.surcharge,
-                top_elevation=top,
-                calculation_depth=max(stage_depth, top - wall_bottom),
-                mode="at_rest" if "严格" in project.design_settings.environment_grade else "active",
-            )
+            gw_in = stage.groundwater_level_inside
+            if gw_in is None:
+                gw_in = project.design_settings.groundwater_level_inside
+            if gw_in is None:
+                gw_in = gw_out
+            loads = build_stage_loads(section.layers, stage_depth, gw_out, gw_in,
+                stage.surcharge, top, top - wall_bottom, project.design_settings)
+            stage_load_records[(stage.id, segment.id)] = loads
+            pressure = loads.standard_profile
             deactivated_ids = set(stage.deactivated_support_ids or [])
             active_supports = [supports_by_id[sid] for sid in stage.active_support_ids if sid in supports_by_id and sid not in deactivated_ids]
-            transferred_levels = {int(level) for level in (stage.transferred_support_levels or [])}
-            transferred_supports = [
-                support for support in project.retaining_system.supports
-                if int(support.level_index) in transferred_levels and support.id not in {item.id for item in active_supports}
-            ]
+            # Removed struts do not survive as fictitious springs. Permanent
+            # restraints are represented once at their explicit activation depth.
+            transferred_supports: list[Any] = []
             segment_supports = [s for s in active_supports if segment.name in {s.start_face_code, s.end_face_code}]
             segment_transferred_supports = [s for s in transferred_supports if segment.name in {s.start_face_code, s.end_face_code}]
             load_path_supports = [*active_supports, *transferred_supports]
@@ -1923,142 +1867,26 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                 target_spacing_m=float(project.design_settings.default_support_spacing or 5.0),
             )
             wall_restraint_supports = [*segment_supports, *segment_transferred_supports, *corner_transfer_supports]
-            # Physical supports remain the only source of permanent member
-            # forces and quantities. Short return-wall proxies are nevertheless
-            # included in the local continuous-wale solution so every wall face
-            # receives a construction-stage moment/shear envelope.
-            wale_stage_results = []
-            # During replacement/removal stages the basement slab or replacement
-            # waler remains part of the lateral load path at the transferred
-            # elevation.  Using only the still-active struts makes the uppermost
-            # support inherit the full excavation pressure band and creates
-            # fictitious wale moments.  Retain transferred levels while forming
-            # vertical tributary bands, then keep member forces/envelopes only for
-            # physical supports and wales that remain active in this stage.
-            force_distribution_supports = [
-                *segment_supports,
-                *segment_transferred_supports,
-                *corner_transfer_supports,
-            ]
-            forces_all = estimate_support_axial_forces(
-                pressure,
-                force_distribution_supports,
-                segment.length,
-                top,
-                top - stage_depth,
-                safety_grade=project.design_settings.safety_grade,
-                segment_name=segment.name,
-                segment=segment,
-                wale_beams=project.retaining_system.wale_beams,
-                stage_id=stage.id,
-                wale_result_collector=wale_stage_results,
-            )
-            active_segment_support_ids = {item.id for item in segment_supports}
-            active_segment_levels = {
-                int(item.level_index)
-                for item in [*segment_supports, *corner_transfer_supports]
-            }
-            forces = [item for item in forces_all if item.support_id in active_segment_support_ids]
-            wale_stage_results = [
-                item for item in wale_stage_results
-                if int(item.level_index) in active_segment_levels
-            ]
-            wall_force_raw = analyze_wall_on_elastic_foundation(
-                soil_profile=section.layers,
-                supports=segment_supports,
-                excavation_depth=stage_depth,
-                groundwater_level_outside=gw_out,
-                groundwater_level_inside=gw_in,
-                surcharge=stage.surcharge,
-                top_elevation=top,
-                wall_bottom_elevation=wall_bottom,
-                wall_thickness=wall_thickness,
-                concrete_grade=concrete_grade,
-                segment=segment,
-                transferred_supports=[*segment_transferred_supports, *corner_transfer_supports],
-                transfer_stiffness_factor=0.55 if corner_transfer_supports and not segment_transferred_supports else 1.0,
-                wall_stiffness_factor=wall_stiffness_factor,
-                soil_modulus_factor=soil_modulus_factor,
-                support_stiffness_factor=support_stiffness_factor,
-            )
-            wall_force = _wall_force_model(segment.id, stage.id, wall_force_raw, gamma0)
-            global_coupled_raw = solve_global_wall_wale_support_system(
-                pressure_profile=pressure,
-                segment=segment,
-                face_code=segment.name,
-                active_supports=wall_restraint_supports,
-                top_elevation=top,
-                excavation_elevation=top - stage_depth,
-                wall_bottom_elevation=wall_bottom,
-                wall_thickness=wall_thickness,
-                concrete_grade=concrete_grade,
-                soil_profile=section.layers,
-                stage_id=stage.id,
-                stage_type=stage.stage_type,
-                wall_stiffness_factor=wall_stiffness_factor,
-                soil_modulus_factor=soil_modulus_factor,
-                support_stiffness_factor=support_stiffness_factor,
-                replacement_slab_properties={
-                    "effectiveWidthM": project.design_settings.replacement_slab_effective_width_m,
-                    "thicknessM": project.design_settings.replacement_slab_thickness_m,
-                    "elasticModulusMpa": project.design_settings.replacement_slab_elastic_modulus_mpa,
-                    "connectionReduction": project.design_settings.replacement_connection_reduction,
-                    "transferLengthM": float(segment.length),
-                },
-                wale_stiffness_factor=float(project.design_settings.wale_cracked_stiffness_factor),
-                joint_translational_factor=float(project.design_settings.joint_translational_stiffness_factor),
-                joint_rotational_factor=float(project.design_settings.joint_rotational_stiffness_factor),
-                rigid_zone_length_factor=float(project.design_settings.rigid_zone_length_factor),
-                initial_imperfection_ratio=float(project.design_settings.initial_imperfection_ratio),
-                long_term_stiffness_factor=long_term_stiffness_factor,
-            )
-            global_coupled = GlobalCoupledSystemResult(**global_coupled_raw)
-            # Upgrade support force entries with global matrix reactions when the
-            # same support endpoint is solved in the coupled model.  This keeps
-            # the V1.6/V1.9 continuous-wale fields while promoting the governing
-            # standard/design values to the wall-wale-support global stiffness result.
-            reaction_map = {(r.support_id, r.endpoint): r for r in global_coupled.support_reactions}
-            for force in forces:
-                key = (force.support_id, force.support_endpoint)
-                reaction = reaction_map.get(key)
-                reference_force = max(float(force.axial_force or 0.0), 0.0)
-                force.reference_axial_force = round(reference_force, 3)
-                if reaction and reaction.axial_force > 0:
-                    global_force = max(float(reaction.axial_force), 0.0)
-                    ratio = global_force / max(reference_force, 1e-9) if reference_force > 1e-6 else None
-                    force.global_axial_force = round(global_force, 3)
-                    force.force_reconciliation_ratio = round(ratio, 3) if ratio is not None else None
-                    if global_coupled.fallback or (global_coupled.condition_number is not None and global_coupled.condition_number > 1.0e12):
-                        reconciliation_status = "manual_review"
-                    elif ratio is not None and (ratio > 3.0 or ratio < 0.20):
-                        reconciliation_status = "warning"
-                    else:
-                        reconciliation_status = "pass"
-                    force.force_reconciliation_status = reconciliation_status
-                    # The global matrix remains governing; the continuous-wale
-                    # result is retained as an independent reference and ratio
-                    # diagnostic rather than silently discarded.
-                    force.axial_force = round(global_force, 3)
-                    force.axial_force_design = round(design_effect_standard_to_uls(global_force, safety_grade=project.design_settings.safety_grade, combined_partial_factor=LOAD_FACTOR_RETAINING), 3)
-                    force.continuous_beam_reaction = reaction.node_reaction
-                    force.elastic_support_stiffness = reaction.spring_stiffness
-                    force.normal_projection_factor = reaction.normal_projection_factor
-                    force.distribution_method = "global_wall_wale_support_matrix; continuous_wale_reference"
-                    force.distribution_note = f"全局矩阵轴力/连续围檩参考轴力比={ratio:.3f}。" if ratio is not None else "全局矩阵轴力已采用；连续围檩结果保留为参考。"
-                    force.method = "global wall-wale-support stiffness matrix; independent continuous-wale reference retained for reconciliation"
+            solved = solve_stage_response(project, segment, stage, section, wall, loads, stage_state,
+                segment_supports=segment_supports, corner_transfer_supports=corner_transfer_supports,
+                wall_stiffness_factor=wall_stiffness_factor, soil_modulus_factor=soil_modulus_factor,
+                support_stiffness_factor=support_stiffness_factor, long_term_stiffness_factor=long_term_stiffness_factor)
+            forces, wale_stage_results = solved["forces"], solved["wales"]
+            wall_force_raw, wall_force = solved["wall_raw"], solved["wall"]
+            global_coupled = solved["global"]
             max_pressure = max(max_pressure, *(abs(p.total_pressure) for p in pressure.points))
             max_support_force = max(max_support_force, *(f.axial_force_design or f.axial_force for f in forces), 0.0)
             m = abs(wall_force.max_moment)
             v = abs(wall_force.max_shear)
-            d = abs(wall_force.max_displacement or 0.0)
-            m_design = abs(wall_force.max_moment_design or m)
-            v_design = abs(wall_force.max_shear_design or v)
+            d = abs(wall_force.max_displacement) if wall_force.max_displacement is not None else None
+            m_design = abs(wall_force.max_moment_design) if wall_force.max_moment_design is not None else 0.0
+            v_design = abs(wall_force.max_shear_design) if wall_force.max_shear_design is not None else 0.0
             max_wall_moment = max(max_wall_moment, m)
             max_wall_shear = max(max_wall_shear, v)
-            max_displacement = max(max_displacement, d)
+            max_displacement = max(max_displacement, d) if d is not None and max_displacement is not None else None
             segment_max["moment"] = max(segment_max["moment"], m)
             segment_max["shear"] = max(segment_max["shear"], v)
-            segment_max["displacement"] = max(segment_max["displacement"], d)
+            segment_max["displacement"] = max(segment_max["displacement"], d) if d is not None and segment_max["displacement"] is not None else None
             segment_design["moment"] = max(segment_design["moment"], m_design)
             segment_design["shear"] = max(segment_design["shear"], v_design)
             stage_checks: list[dict[str, Any]] = []
@@ -2154,7 +1982,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                     "stageId": stage.id,
                     "stageName": stage.name,
                 })
-            if wall:
+            if wall and stage_depth > 0.0:
                 embedment_check = check_embedment_stability(
                     object_id=wall.id,
                     soil_profile=section.layers,
@@ -2165,17 +1993,19 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                     groundwater_level_inside=gw_in,
                     surcharge=stage.surcharge,
                     safety_grade=project.design_settings.safety_grade,
+                    pressure_profile=pressure, pressure_method=project.design_settings.pressure_method,
+                    water_soil_method=project.design_settings.water_soil_method,
                 )
                 stage_checks.append(_check_to_dict(embedment_check))
-                stage_checks.append(_check_to_dict(check_wall_deformation(wall.id, stage_depth, d, project.design_settings.environment_grade)))
-                stage_checks.append(_check_to_dict(check_water_stability(project.excavation.id, max(0.0, bottom - wall_bottom), gw_out, gw_in, top - stage_depth, safety_grade=project.design_settings.safety_grade)))
+                stage_checks.append(_wall_deformation_check(wall.id, stage_depth, d, project.design_settings.environment_grade))
+                stage_checks.append(_check_to_dict(check_water_stability(project.excavation.id, max(0.0, top - stage_depth - wall_bottom), gw_out, gw_in, top - stage_depth, safety_grade=project.design_settings.safety_grade)))
                 stage_checks.append(
                     _check_to_dict(
                         check_base_heave_stability(
                             object_id=project.excavation.id,
                             soil_profile=section.layers,
                             excavation_depth=stage_depth,
-                            embedment_depth=max(0.0, bottom - wall_bottom),
+                            embedment_depth=max(0.0, top - stage_depth - wall_bottom),
                             top_elevation=top,
                             excavation_bottom_elevation=top - stage_depth,
                             surcharge=stage.surcharge,
@@ -2187,7 +2017,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                     object_id=project.excavation.id,
                     soil_profile=section.layers,
                     excavation_depth=stage_depth,
-                    embedment_depth=max(0.0, bottom - wall_bottom),
+                    embedment_depth=max(0.0, top - stage_depth - wall_bottom),
                     top_elevation=top,
                     excavation_bottom_elevation=top - stage_depth,
                     surcharge=stage.surcharge,
@@ -2225,64 +2055,6 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                     excavation_bottom_elevation=top - stage_depth,
                     safety_grade=project.design_settings.safety_grade,
                 )))
-                base_flex = design_rectangular_flexural_reinforcement(m_design, wall_thickness, concrete_grade, rebar_grade)
-                flex = design_rectangular_flexural_reinforcement(m_design * strength_target, wall_thickness, concrete_grade, rebar_grade)
-                shear = check_rectangular_shear_capacity(v_design * strength_target, wall_thickness, concrete_grade)
-                moment_capacity_for_crack = rectangular_flexural_capacity_knm_per_m(flex["barArrangement"]["providedAs"], wall_thickness, concrete_grade, rebar_grade)
-                stage_checks.append({
-                    "ruleId": "GB50010-FLEXURE-SUBSET",
-                    "objectId": wall.id,
-                    "objectType": "DiaphragmWallPanel",
-                    "status": flex["status"],
-                    "calculatedValue": round(abs(m_design), 3),
-                    "limitValue": round(moment_capacity_for_crack, 3),
-                    "unit": "kN*m/m",
-                    "message": f"正截面受弯承载力：Md={base_flex['momentDesign']} kN*m/m，Mu={moment_capacity_for_crack:.3f} kN*m/m；按项目储备目标 {strength_target:.2f} 配置 {flex['barArrangement']['description']}。",
-                    "clauseReference": "GB 50010 6.2.10 subset; final clause applicability to verify",
-                    "formula": "M <= alpha1*fc*b*x*(h0-x/2); alpha1*fc*b*x = fy*As",
-                })
-                stage_checks.append({
-                    "ruleId": "GB50010-SHEAR-SUBSET",
-                    "objectId": wall.id,
-                    "objectType": "DiaphragmWallPanel",
-                    "status": shear["status"],
-                    "calculatedValue": round(abs(v_design), 3),
-                    "limitValue": shear["concreteShearCapacity"],
-                    "unit": "kN/m",
-                    "message": f"斜截面抗剪承载力子集已按项目储备目标 {strength_target:.2f} 控制截面；箍筋和节点构造仍需复核。",
-                    "clauseReference": "GB 50010 shear subset; final clause applicability to verify",
-                    "formula": "V <= 0.7*ft*b*h0 plus stirrup contribution if detailed",
-                })
-                stage_checks.append(_check_to_dict(check_minimum_wall_reinforcement(wall.id, wall_thickness, flex["barArrangement"]["diameter"], flex["barArrangement"]["spacing"])))
-                stage_checks.append(_check_to_dict(check_combination_documented(wall.id, combination_record(permanent=m, variable=stage.surcharge))))
-                stage_checks.append(_check_to_dict(check_crack_width(
-                    wall.id,
-                    m_design,
-                    moment_capacity_for_crack,
-                    flex["barArrangement"]["spacing"],
-                    flex["barArrangement"]["diameter"],
-                    project.design_settings.environment_grade,
-                    rebar_grade,
-                )))
-                for detail_check in check_rebar_anchorage_and_lap(
-                    object_id=wall.id,
-                    bar_diameter_mm=flex["barArrangement"]["diameter"],
-                    rebar_grade=rebar_grade,
-                    available_anchor_length_mm=max(1200.0, 0.12 * max(wall.top_elevation - wall.bottom_elevation, 1.0) * 1000.0),
-                    available_lap_length_mm=max(1400.0, 0.14 * max(wall.top_elevation - wall.bottom_elevation, 1.0) * 1000.0),
-                    seismic=False,
-                ):
-                    stage_checks.append(_check_to_dict(detail_check))
-                for detail_check in check_diaphragm_wall_construction(
-                    object_id=wall.id,
-                    thickness_m=wall_thickness,
-                    concrete_grade=concrete_grade,
-                    main_bar_diameter_mm=flex["barArrangement"]["diameter"],
-                    main_bar_spacing_mm=flex["barArrangement"]["spacing"],
-                    horizontal_bar_diameter_mm=16,
-                    horizontal_bar_spacing_mm=200,
-                ):
-                    stage_checks.append(_check_to_dict(detail_check))
             for check in stage_checks:
                 check.setdefault("stageId", stage.id)
                 check.setdefault("stageName", stage.name)
@@ -2316,13 +2088,17 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                 "slabReplacementComponents": global_coupled.slab_replacement_components,
                 "wallRestraintAudit": wall_restraint_audit,
                 "cornerTransferProxyCount": len(corner_transfer_supports),
-                "note": "墙体/围檩转角、支撑空间方向、立柱竖向、节点刚域和楼板换撑均进入空间杆系代理矩阵；短回墙可由两端连续围檩形成折减分析约束，代理不计入工程量。",
+                "note": "各阶段为独立线弹性快照；楼板按显式生效事件与标高加入。立柱竖向荷载尚未建模，不能据此设计基础。",
+                "solveEvidence": solved["evidence"],
             }
             stage_results.append(
                 StageCalculationResult(
                     stage_id=stage.id,
                     segment_id=segment.id,
-                    pressure_profile=pressure,
+                    pressure_profile=pressure, design_pressure_profile=loads.design_profile,
+                    load_evidence={**loads.evidence, "consumers": solved["evidence"]},
+                    stage_state=stage_state, solve_id=solved["solve_id"],
+                    design_global_coupled_result=solved["global_design"],
                     support_forces=forces,
                     wale_beam_results=wale_stage_results,
                     coupled_system_result=coupled_system_result,
@@ -2356,129 +2132,19 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         metrics={
             "stageSegmentResultCount": len(stage_results),
             "expectedStageSegmentResultCount": len(case.stages) * len(project.excavation.segments),
-            "maximumWallDisplacementMm": round(max_displacement, 6),
+            "maximumWallDisplacementMm": _round_optional(max_displacement, 6),
             "maximumSupportForceKn": round(max_support_force, 6),
         },
     )
 
     support_checks: list[dict[str, Any]] = []
-    for support in project.retaining_system.supports:
-        standard_forces = [
-            force.axial_force
-            for result in stage_results
-            for force in result.support_forces
-            if force.support_id == support.id
-        ]
-        level_forces = [
-            (force.axial_force_design or force.axial_force)
-            for result in stage_results
-            for force in result.support_forces
-            if force.support_id == support.id
-        ]
-        if standard_forces or level_forces:
-            base_standard = max(standard_forces) if standard_forces else max(level_forces) / max(gamma0 * LOAD_FACTOR_RETAINING, 1e-9)
-            effects = _support_construction_effects(support, base_standard, project.design_settings.safety_grade)
-            support.raw_axial_force_standard_envelope = round(base_standard, 3)
-            related_forces = [
-                force
-                for result in stage_results
-                for force in result.support_forces
-                if force.support_id == support.id
-            ]
-            reconciliation_statuses = {force.force_reconciliation_status for force in related_forces if force.force_reconciliation_status}
-            support.force_reconciliation_status = "manual_review" if "manual_review" in reconciliation_statuses else "warning" if "warning" in reconciliation_statuses else "pass"
-            max_ratio = max((float(force.force_reconciliation_ratio) for force in related_forces if force.force_reconciliation_ratio is not None), default=None)
-            support.force_reconciliation_note = (
-                f"支撑轴力以全局矩阵为控制值，连续围檩为独立参考；最大比值={max_ratio:.3f}。"
-                if max_ratio is not None
-                else "支撑轴力缺少独立参考比对，需复核。"
-            )
-            support.preload = effects["preload"]
-            support.preload_ratio = effects["preloadRatio"]
-            support.temperature_delta_c = support.temperature_delta_c if support.temperature_delta_c is not None else (12.0 if support.section_type == "steel_pipe" else 8.0)
-            support.thermal_axial_force = effects["thermal"]
-            support.gap_closure_force = effects["gap"]
-            support.construction_deviation_mm = effects["deviationMm"]
-            support.eccentricity_moment = effects["eccentricityMoment"]
-            support.effective_axial_force_standard = effects["effectiveStandard"]
-            support.construction_effect_note = effects["note"]
-            # Stored on the support as the envelope design axial force used by RC/steel checks and IFC export.
-            support.design_axial_force = max(max(level_forces) if level_forces else 0.0, effects["design"])
-            for result in stage_results:
-                for force in result.support_forces:
-                    if force.support_id == support.id:
-                        stage_effects = _support_construction_effects(
-                            support,
-                            float(force.axial_force or 0.0),
-                            project.design_settings.safety_grade,
-                            preload_override=float(effects["preload"]),
-                        )
-                        force.preload_effect = stage_effects["preload"]
-                        force.thermal_effect = stage_effects["thermal"]
-                        force.gap_effect = stage_effects["gap"]
-                        force.eccentricity_effect = stage_effects["eccentricityMoment"]
-                        force.effective_axial_force = stage_effects["effectiveStandard"]
-                        force.construction_effect_note = stage_effects["note"]
-            support.preload_stage_id = support.preload_stage_id or support.installation_stage_id or "auto-preload-after-installation"
-            support.removal_stage_id = support.removal_stage_id or "auto-remove-after-basement-slab-strength"
-            support.lifecycle_note = (
-                f"{support.code} 采用安装后预加轴力、开挖阶段保持、底板/楼板形成后按换撑路径拆除的生命周期模型；"
-                "当前为方案级时序，需施工组织和监测反馈复核。"
-            )
-            support.preload_protocol_status = "warning"
-            support_checks.append({
-                "ruleId": "JGJ120-SUPPORT-CONSTRUCTION-EFFECTS-SUBSET",
-                "objectId": support.id,
-                "objectType": "SupportElement",
-                "status": "warning",
-                "calculatedValue": support.design_axial_force,
-                "limitValue": max(level_forces) if level_forces else support.design_axial_force,
-                "unit": "kN",
-                "message": "支撑设计轴力已考虑预加轴力、温度、节点间隙闭合和施工偏心的快速筛查效应；正式工程需按施工方案和监测数据复核。",
-                "clauseReference": "JGJ120 internal support construction-stage effects screening; final protocol to verify",
-                "formula": "N_eff = N_wale + 0.5*N_preload + N_temperature + N_gap; M_e = N*e0",
-            })
-            support_checks.append({
-                "ruleId": "JGJ120-SUPPORT-LIFECYCLE-PATH-SUBSET",
-                "objectId": support.id,
-                "objectType": "SupportElement",
-                "status": "warning",
-                "calculatedValue": support.design_axial_force,
-                "limitValue": support.design_axial_force,
-                "unit": "kN",
-                "message": support.lifecycle_note,
-                "clauseReference": "internal support installation/preload/removal sequence screening; final construction method statement to verify",
-                "formula": "install -> preload -> staged excavation -> replacement slab -> remove support",
-            })
-        support.reinforcement = support_reinforcement(support.section.width, support.section.height, support.design_axial_force, support.material.grade if support.material.name == "Concrete" else "C35")
-        if support.section_type == "rc_rectangular":
-            rebar = next((r for r in support.reinforcement if r.bar_type == "longitudinal"), None)
-            rc_check = check_rc_rectangular_axial_capacity(
-                (support.design_axial_force or 0.0),
-                support.section.width or 0.8,
-                support.section.height or 0.8,
-                support.material.grade,
-                rebar.grade if rebar else "HRB400",
-                rebar.diameter if rebar else 25,
-                rebar.count if rebar and rebar.count else 8,
-            )
-            support_checks.append({
-                "ruleId": "GB50010-RC-SUPPORT-AXIAL-SUBSET",
-                "objectId": support.id,
-                "objectType": "SupportElement",
-                "status": rc_check["status"],
-                "calculatedValue": rc_check["axialDesign"],
-                "limitValue": rc_check["capacity"],
-                "unit": "kN",
-                "message": "混凝土支撑轴压承载力子集筛查；长细比、节点、偏心和施工阶段需复核。",
-                "clauseReference": "GB 50010 axial compression subset; final clause applicability to verify",
-                "formula": "N <= phi*(fc*Ac + fy*As)",
-            })
-        elif support.section_type == "steel_pipe":
-            support_checks.append(_check_to_dict(check_steel_pipe_support_axial_capacity(support.id, support.design_axial_force or 0.0, support.section.diameter or 0.609, support.section.wall_thickness or 0.016, _support_length(support), gamma0=1.0, force_factor=1.0)))
-
-    max_support_force = max(max_support_force, *(s.design_axial_force or 0.0 for s in project.retaining_system.supports), 0.0)
-
+    support_checks.append({
+        "ruleId": "PITGUARD-SOIL-RESISTANCE-MODEL", "objectId": project.retaining_system.id,
+        "objectType": "RetainingSystem", "status": "fail", "calculatedValue": None, "limitValue": None,
+        "unit": "-", "formalUseAllowed": False,
+        "message": "当前土压力含坑内被动抗力，结构模型同时采用坑底以下弹性土弹簧；两者动员关系尚未完成本构一致性验证，可能重复计入土体抗力。结果仅用于排错与筛查。",
+        "clauseReference": "unvalidated passive-resistance and elastic-spring compatibility; requires a calibrated constitutive model",
+    })
     # V3.68-V3.70: solve the concave transfer frame for every construction
     # stage using the support reactions already produced by the wall/wale
     # analysis.  The resulting envelope is written back to the actual transfer
@@ -2496,6 +2162,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             support_stiffness_factor=support_stiffness_factor,
             long_term_stiffness_factor=long_term_stiffness_factor,
             groundwater_offset_m=groundwater_offset_m,
+            stage_load_records=stage_load_records, stage_states=stage_states,
         )
         project.advanced_engineering["wallWaleTransferReactionIteration"] = reaction_iteration
         support_checks.append({
@@ -2514,14 +2181,23 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             },
         })
         stage_force_maps: dict[str, dict[str, float]] = {}
+        standard_stage_force_maps: dict[str, dict[str, float]] = {}
         stage_names: dict[str, str] = {str(stage.id): str(stage.name) for stage in case.stages}
         for stage_result in stage_results:
             stage_id = str(stage_result.stage_id)
             force_map = stage_force_maps.setdefault(stage_id, {})
+            standard_map = standard_stage_force_maps.setdefault(stage_id, {})
             for force in stage_result.support_forces:
+                standard_map[force.support_id] = max(standard_map.get(force.support_id, 0.0), force.axial_force)
+                if force.axial_force_design is None:
+                    support_checks.append({"ruleId": "PITGUARD-TRANSFER-DESIGN-REACTION-MISSING", "objectId": force.support_id,
+                        "objectType": "SupportElement", "status": "fail", "calculatedValue": None, "limitValue": None,
+                        "unit": "kN", "stageId": stage_id, "message": "转接体系缺少设计反力，未用标准反力代替。",
+                        "clauseReference": "design reaction evidence required"})
+                    continue
                 force_map[force.support_id] = max(
                     float(force_map.get(force.support_id, 0.0)),
-                    float(force.axial_force_design or force.axial_force or 0.0),
+                    float(force.axial_force_design),
                 )
         governing_sensitivity_stage = max(
             stage_force_maps,
@@ -2544,9 +2220,26 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             )
         ]
         transfer_envelope = envelope_transfer_frame_analyses(transfer_stage_analyses)
+        standard_transfer_analyses = [
+            analyze_transfer_frame_system(project.retaining_system, support_force_overrides=force_map,
+                stage_id=stage_id, stage_name=stage_names.get(stage_id), run_sensitivity=False,
+                allow_screening_regularization=False)
+            for stage_id, force_map in standard_stage_force_maps.items()
+            if any(support.id in force_map and support.support_role == "ring_strut" for support in project.retaining_system.supports)
+        ]
+        standard_transfer_envelope = envelope_transfer_frame_analyses(standard_transfer_analyses)
         transfer_spatial = analyze_transfer_node_spatial_effects(project, transfer_envelope)
         project.advanced_engineering["concaveTransferSpatialAnalysis"] = transfer_spatial
-        transfer_wale_results = apply_transfer_frame_envelope(project.retaining_system, transfer_envelope)
+        transfer_wale_results = apply_transfer_frame_envelope(project.retaining_system, standard_transfer_envelope)
+        design_transfer_results = apply_transfer_frame_envelope(project.retaining_system, transfer_envelope)
+        design_transfer_by_code = {row.wale_beam_code: row for row in design_transfer_results}
+        for row in transfer_wale_results:
+            design_row = design_transfer_by_code.get(row.wale_beam_code)
+            if design_row:
+                row.max_moment_design, row.max_shear_design = design_row.max_moment, design_row.max_shear
+                row.design_points = design_row.points
+                row.governing_design_stage_id = design_row.stage_id
+            row.method += "; separate standard/design reaction envelopes; diagram points are schematic extrema"
         support_checks.extend(transfer_frame_checks(project.retaining_system, transfer_envelope))
         support_checks.append({
             "ruleId": "PITGUARD-TRANSFER-NODE-SPATIAL-EFFECTS",
@@ -2576,6 +2269,8 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         )
         project.retaining_system.layout_summary["transferSystem"] = transfer_audit
         project.advanced_engineering["concaveTransferFrameAnalysis"] = {
+            "loadBasis": "design",
+            "standardBeamEnvelope": standard_transfer_envelope.get("beamEnvelope"),
             "schema": transfer_envelope.get("schema"),
             "status": transfer_envelope.get("status"),
             "stageCount": transfer_envelope.get("stageCount"),
@@ -2590,6 +2285,11 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             "beamEnvelope": transfer_envelope.get("beamEnvelope"),
             "stageSummaries": transfer_envelope.get("stageSummaries"),
         }
+        # The independent spatial check must receive these final design
+        # reactions rather than a retained demand from an earlier run.
+        for support in project.retaining_system.supports:
+            demands = [values[support.id] for values in stage_force_maps.values() if support.id in values]
+            support.design_axial_force = max(demands) if demands else None
         six_dof_verification = analyze_global_six_dof_verification(project)
         support_checks.append({
             "ruleId": "PITGUARD-GLOBAL-6DOF-SPATIAL-VERIFICATION",
@@ -2604,6 +2304,59 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             "diagnostics": six_dof_verification,
         })
 
+    final_wall_envelopes = _refresh_final_stage_checks(project, case, stage_results, stage_states)
+    global_checks = list(calculation_input_audit.get("checks") or []) + [check for row in stage_results for check in row.checks]
+    segment_wall_envelopes = {key: value["standard"] for key, value in final_wall_envelopes.items()}
+    segment_wall_design = {key: value["design"] for key, value in final_wall_envelopes.items()}
+    max_wall_moment = max((row.wall_internal_force.max_moment for row in stage_results if row.wall_internal_force), default=0.0)
+    max_wall_shear = max((row.wall_internal_force.max_shear for row in stage_results if row.wall_internal_force), default=0.0)
+    all_displacements = [row.wall_internal_force.max_displacement if row.wall_internal_force else None for row in stage_results]
+    max_displacement = max(all_displacements, default=0.0) if all(value is not None for value in all_displacements) else None
+    for support in project.retaining_system.supports:
+        related = [force for row in stage_results for force in row.support_forces if force.support_id == support.id]
+        supplied_rebar = list(support.reinforcement)
+        support.thermal_axial_force = None
+        support.gap_closure_force = None
+        support.eccentricity_moment = None
+        known_design = [force.axial_force_design for force in related if force.axial_force_design is not None]
+        support.design_axial_force = max(known_design) if related and len(known_design) == len(related) else None
+        support.raw_axial_force_standard_envelope = max((force.axial_force for force in related), default=None)
+        support.effective_axial_force_standard = support.raw_axial_force_standard_envelope
+        support.force_reconciliation_status = "manual_review" if not related or any(force.force_reconciliation_status == "manual_review" for force in related) else "warning" if any(force.force_reconciliation_status == "warning" for force in related) else "pass"
+        support.force_reconciliation_note = "最终标准/设计阶段反力包络；连续围檩为独立参考。"
+        support.construction_effect_note = "土水压力和地面超载已求解；预加轴力、温度、安装应变及间隙尚未进入联立阶段方程。"
+        support_checks.append({"ruleId": "PITGUARD-SUPPORT-CONSTRUCTION-EFFECT-APPLICABILITY", "objectId": support.id,
+            "objectType": "SupportElement", "status": "manual_review", "calculatedValue": None, "limitValue": None,
+            "unit": "-", "message": support.construction_effect_note,
+            "clauseReference": "construction-effect load cases require explicit modelling; no empirical percentage added"})
+        if support.design_axial_force is None:
+            support_checks.append({"ruleId": "GB50010-RC-SUPPORT-AXIAL-SUBSET", "objectId": support.id,
+                "objectType": "SupportElement", "status": "manual_review", "calculatedValue": None, "limitValue": None,
+                "unit": "kN", "message": "缺少该支撑完整阶段设计反力，未按零轴力验算。",
+                "clauseReference": "complete design reaction envelope required"})
+            continue
+        if support.section_type == "rc_rectangular":
+            bar = next((g for g in supplied_rebar if g.bar_type == "longitudinal" and g.count and g.diameter > 0), None)
+            rc = check_rc_rectangular_axial_capacity(support.design_axial_force, support.section.width,
+                support.section.height, support.material.grade, bar.grade, bar.diameter, bar.count) if bar else None
+            support_checks.append({"ruleId": "GB50010-RC-SUPPORT-AXIAL-SUBSET", "objectId": support.id,
+                "objectType": "SupportElement", "status": rc["status"] if rc else "manual_review",
+                "calculatedValue": support.design_axial_force, "limitValue": rc["capacity"] if rc else None,
+                "unit": "kN", "evidenceScope": "supplied_reinforcement",
+                "message": "按输入支撑纵筋进行轴压子集筛查；建议配筋另存。" if rc else "缺少输入纵筋根数与直径，承载力未计算。",
+                "clauseReference": "GB/T 50010 axial compression subset; stability and eccentricity separate"})
+            support.reinforcement = support_reinforcement(support.section.width, support.section.height,
+                support.design_axial_force, support.material.grade)
+        elif support.section_type == "steel_pipe":
+            if support.section.diameter and support.section.wall_thickness:
+                support_checks.append(_check_to_dict(check_steel_pipe_support_axial_capacity(support.id, support.design_axial_force,
+                    support.section.diameter, support.section.wall_thickness, _support_length(support), gamma0=1.0, force_factor=1.0)))
+            else:
+                support_checks.append({"ruleId": "PITGUARD-STEEL-SUPPORT-SECTION-MISSING", "objectId": support.id,
+                    "objectType": "SupportElement", "status": "manual_review", "calculatedValue": None, "limitValue": None,
+                    "unit": "kN", "message": "钢管截面参数不完整，未使用默认尺寸补算。", "clauseReference": "specified section required"})
+    max_support_force = max((s.design_axial_force for s in project.retaining_system.supports if s.design_axial_force is not None), default=0.0)
+
     if project.retaining_system.supports:
         support_checks.extend([_check_to_dict(c) for c in check_internal_support_layout(
             project.retaining_system.supports,
@@ -2611,41 +2364,13 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             excavation_bottom_elevation=bottom,
             object_id=project.retaining_system.id,
         )])
-    supports_by_code = {s.code: s for s in project.retaining_system.supports}
-    total_support_design_force = sum((s.design_axial_force or 0.0) for s in project.retaining_system.supports)
-    column_count = max(len(project.retaining_system.columns), 1)
     for col in project.retaining_system.columns:
-        linked_support_force = sum((supports_by_code[code].design_axial_force or 0.0) for code in getattr(col, "support_codes", []) if code in supports_by_code)
-        if linked_support_force > 0:
-            carried_force = linked_support_force * 0.03
-        else:
-            carried_force = total_support_design_force * 0.03 / column_count
-        foundation = design_column_pile(col.code, carried_force, excavation_bottom_elevation=bottom)
-        col.foundation_design = foundation
-        pile_check = check_column_pile_capacity(col.id, foundation)
-        support_checks.append(pile_check)
-        # Keep the old spread-footing helper available for small shallow pits, but the normal temporary column path is now pile-based.
-        if foundation.foundation_type != "column_pile":
-            spread = design_column_foundation(col.code, carried_force)
-            bearing_check = _check_to_dict(
-                check_foundation_bearing_pressure(
-                    object_id=col.id,
-                    vertical_force_kN=spread.vertical_force,
-                    foundation_self_weight_kN=spread.foundation_self_weight,
-                    area_m2=spread.area,
-                    fa_kpa=spread.fa,
-                    pkmax_kpa=spread.max_pressure,
-                )
-            )
-            bearing_check["foundationCode"] = spread.code
-            bearing_check["foundationWidth"] = spread.width
-            bearing_check["foundationLength"] = spread.length
-            bearing_check["foundationThickness"] = spread.thickness
-            bearing_check["foundationArea"] = spread.area
-            bearing_check["foundationSelfWeight"] = spread.foundation_self_weight
-            bearing_check["maxPressure"] = spread.max_pressure
-            bearing_check["designNote"] = spread.design_note
-            support_checks.append(bearing_check)
+        col.foundation_design = None
+        support_checks.append({"ruleId": "PITGUARD-COLUMN-VERTICAL-LOAD-MISSING", "objectId": col.id,
+            "objectType": "ColumnElement", "status": "manual_review", "calculatedValue": None, "limitValue": None,
+            "unit": "kN", "verticalLoadRepresented": False,
+            "message": "立柱竖向荷载路径未建模，基础承载力与配筋未计算；未按水平轴力百分比生成基础。",
+            "clauseReference": "explicit vertical load and geotechnical pile parameters required"})
     if getattr(project.retaining_system, "support_nodes", None):
         node_checks = update_support_node_design(project.retaining_system.support_nodes, project.retaining_system.supports)
         support_checks.extend(node_checks)
@@ -2760,8 +2485,18 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     )
 
     for wall in project.retaining_system.diaphragm_walls:
-        env = segment_wall_envelopes.get(wall.segment_id, {"moment": 0.0, "shear": 0.0, "displacement": 0.0})
-        design_env = segment_wall_design.get(wall.segment_id, {"moment": env["moment"] * gamma0 * LOAD_FACTOR_RETAINING, "shear": env["shear"] * gamma0 * LOAD_FACTOR_RETAINING})
+        env = segment_wall_envelopes.get(wall.segment_id, {})
+        design_env = segment_wall_design.get(wall.segment_id, {})
+        required_values = [env.get("moment"), env.get("shear"), env.get("displacement"),
+            design_env.get("moment"), design_env.get("shear")]
+        if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in required_values):
+            wall.design_results = None
+            global_checks.append({"ruleId": "PITGUARD-WALL-DESIGN-ENVELOPE", "objectId": wall.id,
+                "objectType": "DiaphragmWallPanel", "status": "fail", "calculatedValue": None,
+                "limitValue": None, "evidenceScope": "reinforcement_proposal", "adopted": False,
+                "message": "最终标准或设计作用包络不完整，配筋需求未计算，历史设计结果已清除；输入钢筋保持原值。",
+                "clauseReference": "complete final response envelope required before reinforcement sizing"})
+            continue
         base_flex = design_rectangular_flexural_reinforcement(design_env["moment"], wall.thickness, wall.concrete_grade, wall.rebar_grade)
         flex = design_rectangular_flexural_reinforcement(design_env["moment"] * strength_target, wall.thickness, wall.concrete_grade, wall.rebar_grade)
         shear = check_rectangular_shear_capacity(design_env["shear"] * strength_target, wall.thickness, wall.concrete_grade)
@@ -2779,7 +2514,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         wall.design_results = WallDesignResult(
             max_moment=round(env["moment"], 3),
             max_shear=round(env["shear"], 3),
-            max_displacement=round(env["displacement"], 3),
+            max_displacement=_round_optional(env["displacement"], 3),
             max_moment_design=round(design_env["moment"], 3),
             max_shear_design=round(design_env["shear"], 3),
             required_reinforcement_area=round(required, 2),
@@ -2801,11 +2536,11 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                 "Ka=tan^2(45deg-phi/2); Kp=tan^2(45deg+phi/2); u=gamma_w*h_w",
                 "p_a=max(0, sigma_v_eff*Ka-2*c*sqrt(Ka))+u; p_p=max(0, sigma_v_eff*Kp+2*c*sqrt(Kp))+u",
                 "EI*y''''+k_s*y+sum(k_support*y*delta)=q(z) finite-difference screening",
-                f"M_design=gamma0*1.25*M_standard; V_design=gamma0*1.25*V_standard; member reserve target={strength_target:.2f}",
+                f"M_design,V_design from separate design pressure solve; member reserve target={strength_target:.2f}",
                 "alpha1*fc*b*x=fy*As; M<=alpha1*fc*b*x*(h0-x/2)",
             ],
             check_status=status,
-            method="JGJ120 lateral pressure + staged elastic-foundation beam + GB50010 RC section subset",
+            method="final stage design-load envelope; fixed-section reinforcement proposal",
             notes=[
                 "已由 JGJ120 土压力、水压力和弹性地基梁子集生成内力包络，并由 GB50010 子集生成配筋建议。",
                 "本版本已增加裂缝、锚固/搭接、内支撑布置、整体稳定圆弧搜索、承压水和基础承载力筛查；正式施工图仍需工程师签审。",
@@ -2927,7 +2662,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                 max_support_axial_force=round(max_support_force, 3),
                 max_wall_moment=round(max_wall_moment, 3),
                 max_wall_shear=round(max_wall_shear, 3),
-                max_displacement=round(max_displacement, 3),
+                max_displacement=_round_optional(max_displacement, 3),
             ),
             "support_layout_repair": support_repair,
         },
@@ -2955,7 +2690,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         support_case_sync=support_case_sync,
         wall_embedment_preflight=wall_embedment_preflight,
         governing_values={
-            "maxDisplacement": round(max_displacement, 3),
+            "maxDisplacement": _round_optional(max_displacement, 3),
             "maxWallMoment": round(max_wall_moment, 3),
             "maxWallShear": round(max_wall_shear, 3),
             "maxSupportAxialForce": round(max_support_force, 3),
@@ -2964,6 +2699,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     result = CalculationResult(
         project_id=project.id,
         case_id=case.id,
+        calculation_mode=mode,
         support_topology_hash=_support_topology_hash(project),
         stage_results=stage_results,
         governing_values=GoverningValues(
@@ -2971,7 +2707,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             max_support_axial_force=round(max_support_force, 3),
             max_wall_moment=round(max_wall_moment, 3),
             max_wall_shear=round(max_wall_shear, 3),
-            max_displacement=round(max_displacement, 3),
+            max_displacement=_round_optional(max_displacement, 3),
             governing_check_status=_governing_status(global_checks),
             embedment_safety_factor_min=_min_value(global_checks, "EMBEDMENT"),
             heave_safety_factor_min=_min_value(global_checks, "HEAVE"),
@@ -2989,6 +2725,8 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             "algorithmVersion": ALGORITHM_VERSION,
             "ruleSetVersion": RULE_SET_VERSION,
             "exportSchemaVersion": EXPORT_SCHEMA_VERSION,
+            "finalWallEnvelopes": final_wall_envelopes,
+            "stageAnalysisType": "independent_linear_stage_snapshots",
             "p0WaleEngineering": True,
             "p1SupportLifecycle": True,
             "p2CadEngineeringDrawing": True,
@@ -3156,7 +2894,9 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     result.report_diagram_data["supportDeepDesign"] = support_deep_design
     result.geotechnical_assurance = build_nonlinear_geotechnical_assurance(project, result)
     result.spatial_verification = dict((project.advanced_engineering or {}).get("sixDofSpatialVerification") or {})
-    result.statutory_workflow_assurance = evaluate_statutory_workflow(project)
+    # Legacy workflow assessment may derive stage records. Keep those review
+    # suggestions outside the frozen structural calculation inputs.
+    result.statutory_workflow_assurance = evaluate_statutory_workflow(_calculation_trial(project))
     result.verification_matrix = runtime_verification_summary()
     result.analysis_assurance = build_analysis_assurance(project, result)
     result.formal_report_gate = build_formal_report_gate(
@@ -3213,6 +2953,9 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
         input_audit=calculation_input_audit,
         contract=dict(result.calculation_assurance.get("contract") or calculation_contract),
     )
+    if solver_configuration_hash(project, case) != solved_configuration_hash:
+        raise ValueError("计算后的结构或阶段输入与实际求解输入不一致；截面或刚度修改必须重新求解，未发布结果。")
+    result.design_iteration_summary["solvedConfigurationHash"] = solved_configuration_hash
     return result
 
 _CALCULATION_TRANSACTION_MUTABLE_FIELDS = {
@@ -3223,6 +2966,10 @@ _CALCULATION_TRANSACTION_MUTABLE_FIELDS = {
     "calculation_cases",
     "advanced_engineering",
     "messages",
+}
+
+_CALCULATION_ISOLATED_INPUT_FIELDS = _CALCULATION_TRANSACTION_MUTABLE_FIELDS | {
+    "design_settings", "unit_system", "coordinate_system", "boreholes", "strata", "design_control_stages",
 }
 
 
@@ -3237,7 +2984,7 @@ def _calculation_trial(project: Project) -> Project:
     values: dict[str, Any] = {}
     for field_name in project.__class__.model_fields:
         value = getattr(project, field_name)
-        if field_name in _CALCULATION_TRANSACTION_MUTABLE_FIELDS:
+        if field_name in _CALCULATION_ISOLATED_INPUT_FIELDS:
             values[field_name] = copy.deepcopy(value)
         elif isinstance(value, list):
             values[field_name] = list(value)
@@ -3268,91 +3015,93 @@ def run_calculation(
     calculation_case: CalculationCase | None = None,
     auto_repair: bool = True,
     include_candidate_comparison: bool = False,
+    *,
+    mode: str = "verify",
 ) -> CalculationResult:
-    """Run one calculation in an isolated project transaction.
+    """Verify frozen inputs by default; adoption requires explicit design mode.
 
-    The previous implementation mutated wall toes, supports, stages and
-    detailing evidence before the calculation was known to succeed.  A late
-    numerical failure could therefore leave a half-updated project.  V3.77
-    retains the V3.72 transaction boundary and evaluates a selectively isolated working set and publishes only calculation-
-    mutable fields after immutable-result freezing. Large historical outputs stay
-    outside the duplicated working set to limit peak memory.
+    All solvers run on isolated inputs. Verification publishes result evidence
+    and a proposal snapshot only; it never commits geometry, bars or stages.
     """
+    if mode not in {"verify", "design"}:
+        raise ValueError("计算模式必须为 verify（仅复算）或 design（优化采用）。")
+    requested_case = calculation_case or (project.calculation_cases[-1] if project.calculation_cases else None)
+    if mode == "verify":
+        if requested_case is None:
+            raise ValueError("仅复算需要已保存的设计控制工况，请先生成并确认工况。")
+        saved = next((item for item in project.calculation_cases if item.id == requested_case.id), None)
+        if saved is None or saved.model_dump(mode="json") != requested_case.model_dump(mode="json"):
+            raise ValueError("仅复算工况与已保存输入不一致，请先保存并确认工况。")
+        if include_candidate_comparison:
+            raise ValueError("仅复算不启动候选方案比选，请单独使用优化操作。")
+        auto_repair = False
     rss_before_mb = _process_max_rss_mb()
-    append_event(
-        "calculation-execution",
-        "transaction_started",
-        projectId=project.id,
-        caseId=getattr(calculation_case, "id", None),
-        workingSetStrategy="selective_isolated_copy",
-        isolatedFields=sorted(_CALCULATION_TRANSACTION_MUTABLE_FIELDS),
-    )
+    input_before = full_design_input(project, requested_case) if requested_case is not None else None
+    before_hash = canonical_hash(input_before) if input_before is not None else None
+    frozen_contract = build_calculation_contract(project, requested_case) if requested_case is not None else None
+    append_event("calculation-execution", "transaction_started", projectId=project.id,
+        caseId=getattr(requested_case, "id", None), mode=mode,
+        workingSetStrategy="selective_isolated_copy", isolatedFields=sorted(_CALCULATION_ISOLATED_INPUT_FIELDS))
     trial = _calculation_trial(project)
-    trial_case: CalculationCase | None = None
-    if calculation_case is not None:
-        trial_case = next((item for item in trial.calculation_cases if item.id == calculation_case.id), None)
-        if trial_case is None:
-            trial_case = calculation_case.model_copy(deep=True)
+    trial_case = requested_case.model_copy(deep=True) if requested_case is not None else None
     try:
-        result = _run_calculation_impl(
-            trial,
-            trial_case,
-            auto_repair=auto_repair,
-            include_candidate_comparison=include_candidate_comparison,
-        )
+        result = _run_calculation_impl(trial, trial_case, auto_repair=auto_repair,
+            include_candidate_comparison=include_candidate_comparison, mode=mode)
+        result.calculation_mode = mode
+        result.input_before_hash = before_hash
+        result.derived_design = {
+            "schema": "pitguard-derived-design-v1", "status": "proposal_only" if mode == "verify" else "adopted_by_design_mode",
+            "adopted": mode == "design", "sourceInputHash": before_hash,
+            "retainingSystem": trial.retaining_system.model_dump(mode="json", by_alias=True),
+            "finalWallEnvelopes": result.design_iteration_summary.get("finalWallEnvelopes", {}),
+            "meaning": "固定截面计算需求及配筋建议；原输入配筋验算结果见 checks 中 supplied_reinforcement。",
+        }
+        if mode == "verify":
+            after_hash = canonical_hash(full_design_input(project, requested_case))
+            if after_hash != before_hash:
+                raise ValueError("复算期间工程输入发生变化，结果未发布。")
+            result.input_after_hash = after_hash
+            result.design_iteration_summary.update(verificationOnly=True, designInputsUnchanged=True,
+                resultOnlyReinforcement=True, inputBeforeHash=before_hash, inputAfterHash=after_hash)
+            # Freeze against the actual supplied design, not the proposal copy.
+            result = apply_calculation_assurance(project, requested_case, result, contract=frozen_contract)
+            project.advanced_engineering = copy.deepcopy(trial.advanced_engineering)
+        else:
+            adopted_case = next((item for item in trial.calculation_cases if item.id == result.case_id), trial_case)
+            result.input_after_hash = canonical_hash(full_design_input(trial, adopted_case))
+            result.design_iteration_summary.update(verificationOnly=False, designInputsUnchanged=before_hash == result.input_after_hash)
+            result = apply_calculation_assurance(trial, adopted_case, result,
+                contract=dict(result.calculation_assurance.get("contract") or frozen_contract or {}))
+        # Final gate sees the immutable result and its declared model limitations.
+        result.formal_report_gate = build_formal_report_gate(_calculation_trial(project if mode == "verify" else trial), result.support_layout_quality,
+            result.ifc_compatibility, latest_result=result)
+        result.report_diagram_data["formalReportGate"] = result.formal_report_gate.model_dump(mode="json", by_alias=True)
     except Exception as exc:
         advanced = dict(project.advanced_engineering or {})
-        advanced["lastCalculationFailure"] = {
-            "schema": "pitguard-calculation-transaction-failure-v1",
-            "status": "rolled_back",
-            "failedAt": datetime.now(timezone.utc).isoformat(),
-            "exceptionType": exc.__class__.__name__,
-            "message": str(exc),
-            "projectMutationCommitted": False,
-        }
+        advanced["lastCalculationFailure"] = {"schema": "pitguard-calculation-transaction-failure-v1",
+            "status": "rolled_back", "mode": mode, "failedAt": datetime.now(timezone.utc).isoformat(),
+            "exceptionType": type(exc).__name__, "message": str(exc), "projectMutationCommitted": False,
+            "resourceCleanup": {"garbageCollectionCompleted": True, "maxRssBeforeMb": rss_before_mb,
+                "maxRssAfterMb": _process_max_rss_mb()}}
         gc.collect()
-        advanced["lastCalculationFailure"]["resourceCleanup"] = {
-            "garbageCollectionCompleted": True,
-            "maxRssBeforeMb": rss_before_mb,
-            "maxRssAfterMb": _process_max_rss_mb(),
-        }
         project.advanced_engineering = advanced
-        append_event(
-            "calculation-execution",
-            "transaction_rolled_back",
-            projectId=project.id,
-            caseId=getattr(calculation_case, "id", None),
-            exceptionType=exc.__class__.__name__,
-            message=str(exc),
-        )
+        append_event("calculation-execution", "transaction_rolled_back", projectId=project.id,
+            exceptionType=type(exc).__name__, message=str(exc), mode=mode)
         raise
-    _commit_project_state(project, trial)
+    if mode == "design":
+        _commit_project_state(project, trial)
     advanced = dict(project.advanced_engineering or {})
     advanced.pop("lastCalculationFailure", None)
     gc.collect()
-    advanced["lastCalculationTransaction"] = {
-        "status": "committed",
-        "calculationResultId": result.id,
-        "committedAt": datetime.now(timezone.utc).isoformat(),
-        "inputSnapshotHash": result.input_snapshot_hash,
-        "resultHash": result.result_hash,
-        "workingSetStrategy": "selective_isolated_copy",
-        "isolatedFields": sorted(_CALCULATION_TRANSACTION_MUTABLE_FIELDS),
-        "sharedHistoryFields": sorted(set(project.__class__.model_fields).difference(_CALCULATION_TRANSACTION_MUTABLE_FIELDS)),
-        "resourceCleanup": {
-            "garbageCollectionCompleted": True,
-            "maxRssBeforeMb": rss_before_mb,
-            "maxRssAfterMb": _process_max_rss_mb(),
-        },
-    }
+    advanced["lastCalculationTransaction"] = {"status": "committed", "mode": mode,
+        "calculationResultId": result.id, "committedAt": datetime.now(timezone.utc).isoformat(),
+        "inputSnapshotHash": result.input_snapshot_hash, "resultHash": result.result_hash,
+        "inputBeforeHash": result.input_before_hash, "inputAfterHash": result.input_after_hash,
+        "designMutationCommitted": mode == "design", "workingSetStrategy": "selective_isolated_copy",
+        "isolatedFields": sorted(_CALCULATION_ISOLATED_INPUT_FIELDS),
+        "resourceCleanup": {"garbageCollectionCompleted": True, "maxRssBeforeMb": rss_before_mb,
+            "maxRssAfterMb": _process_max_rss_mb()}}
     project.advanced_engineering = advanced
-    append_event(
-        "calculation-execution",
-        "transaction_committed",
-        projectId=project.id,
-        caseId=getattr(calculation_case, "id", None),
-        calculationResultId=result.id,
-        resultHash=result.result_hash,
-    )
+    append_event("calculation-execution", "transaction_committed", projectId=project.id,
+        caseId=result.case_id, calculationResultId=result.id, resultHash=result.result_hash, mode=mode)
     return result
-

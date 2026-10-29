@@ -57,24 +57,15 @@ def _quantitative_open_records(distribution: dict[str, Any]) -> list[dict[str, A
             continue
         factor = row.get("safetyFactor")
         target = row.get("targetSafetyFactor")
-        if factor is None or target is None:
+        if factor is None or target is None or not math.isfinite(float(factor)) or not math.isfinite(float(target)):
             continue
-        raw_rule = str(row.get("rawRuleId") or row.get("ruleId") or "").upper()
-        if any(token in raw_rule for token in (
-            "LIFECYCLE-PATH", "CONSTRUCTION-EFFECTS", "DETAILING-READINESS",
-            "COORDINATION", "QUALITY-", "ASSURANCE", "COVERAGE",
-        )):
+        if row.get("quantitativeConstraint") is False:
             continue
         original_status = str(row.get("originalStatus") or "")
-        if original_status in {"manual_review", "preliminary", "not_applicable"}:
+        if original_status == "not_applicable" or row.get("quantitativeStatus") == "not_applicable":
             continue
-        # A warning emitted by the calculation engine is a professional review
-        # item (for example a weak-layer screen or a construction-effect
-        # reminder), not a numerical section-sizing target.  Rows that were
-        # originally ``pass`` but were promoted to ``warning`` only because
-        # they miss the project's reserve target remain eligible above.
-        if original_status == "warning":
-            continue
+        # Professional review and quantitative feasibility are independent.
+        # A measured failure stays open even when its source severity is warning.
         if float(factor) + 1.0e-4 >= float(target):
             continue
         key = (str(row.get("ruleId") or row.get("rawRuleId") or row.get("label")), str(row.get("objectId") or row.get("wallId") or "system"))
@@ -91,13 +82,14 @@ def _assessment(project: Project, result: CalculationResult) -> dict[str, Any]:
     distribution = _verification_for_result(project, result)
     expanded = _expanded_result_records(distribution)
     open_records = _quantitative_open_records(distribution)
+    unknown_records = [row for row in expanded if row.get("quantitativeConstraint") and (row.get("quantitativeStatus") == "unknown" or row.get("quantitativeUnknown"))]
     hard_records = [row for row in expanded if str(row.get("status") or "") == "fail"]
     review_records: list[dict[str, Any]] = []
     review_seen: set[tuple[str, str]] = set()
     for row in expanded:
         status = str(row.get("status") or "")
         original_status = str(row.get("originalStatus") or "")
-        if status not in {"warning", "manual_review", "preliminary"}:
+        if status not in {"warning", "manual_review", "preliminary"} and original_status not in {"warning", "manual_review", "preliminary"}:
             continue
         # Catalogue rows without ``rawRuleId`` describe completeness/readiness
         # elsewhere in the full matrix.  They are not emitted findings from
@@ -124,6 +116,8 @@ def _assessment(project: Project, result: CalculationResult) -> dict[str, Any]:
     return {
         "distribution": distribution,
         "openRecords": open_records,
+        "unknownRecords": unknown_records,
+        "quantitativeUnknownCount": len(unknown_records),
         "hardRecords": hard_records,
         "reviewRecords": review_records,
         "quantitativeOpenCount": len(open_records),
@@ -131,8 +125,8 @@ def _assessment(project: Project, result: CalculationResult) -> dict[str, Any]:
         "reserveShortfallCount": sum(float(row.get("safetyFactor") or 0.0) >= 1.0 for row in open_records),
         "structuralFailCount": len(structural_fails),
         "hardFailCount": hard_fail_count,
-        "structuralClosed": not open_records and not structural_fails,
-        "calculationClosed": not open_records and hard_fail_count == 0,
+        "structuralClosed": not open_records and not structural_fails and not unknown_records,
+        "calculationClosed": not open_records and hard_fail_count == 0 and not hard_records and not unknown_records,
     }
 
 
@@ -230,7 +224,7 @@ def _remaining_options(project: Project, assessment: dict[str, Any]) -> list[dic
     walls = {wall.id: wall for wall in (ret.diaphragm_walls if ret else [])}
     beams = {beam.id: beam for beam in ([*ret.crown_beams, *ret.wale_beams, *(ret.ring_beams or [])] if ret else [])}
     supports = {support.id: support for support in (ret.supports if ret else [])}
-    candidate_rows: list[dict[str, Any]] = list(assessment.get("openRecords") or [])
+    candidate_rows: list[dict[str, Any]] = [*(assessment.get("unknownRecords") or []), *(assessment.get("openRecords") or [])]
     known = {(str(row.get("ruleId")), str(row.get("objectId") or row.get("wallId") or "")) for row in candidate_rows}
     candidate_rows.extend(
         row for row in (assessment.get("hardRecords") or [])
@@ -246,6 +240,15 @@ def _remaining_options(project: Project, assessment: dict[str, Any]) -> list[dic
     )
     for row in candidate_rows[:400]:
         object_id = str(row.get("objectId") or row.get("wallId") or "")
+        if row.get("quantitativeStatus") == "unknown" or row.get("quantitativeUnknown"):
+            options.append({
+                "actionId": "restore_quantitative_evidence", "objectId": object_id or None,
+                "objectCode": row.get("objectCode") or row.get("wallCode") or "整体",
+                "label": "补齐定量计算证据", "reason": row.get("message") or "适用验算缺少有限的计算值或限值，不能判断满足要求。",
+                "currentSafetyFactor": None, "targetSafetyFactor": row.get("targetSafetyFactor"),
+                "automaticAllowed": False, "targetPanel": "计算验算 / 施工阶段 / 原始输入",
+            })
+            continue
         factor = float(row.get("safetyFactor") or 0.0)
         target = float(row.get("targetSafetyFactor") or 1.0)
         rule_text = " ".join(str(row.get(key) or "") for key in ("ruleId", "rawRuleId", "label")).lower()
@@ -445,7 +448,7 @@ def run_intelligent_design_closure(
     final_result: CalculationResult | None = None
     final_assessment: dict[str, Any] = {}
     for iteration in range(1, limit + 1):
-        result = run_calculation(project, calculation_case, auto_repair=auto_repair, include_candidate_comparison=False)
+        result = run_calculation(project, calculation_case, mode="design", auto_repair=auto_repair, include_candidate_comparison=False)
         assessment = _assessment(project, result)
         round_row = {
             "iteration": iteration,
@@ -453,6 +456,7 @@ def run_intelligent_design_closure(
             "hardFailCount": assessment["hardFailCount"],
             "structuralFailCount": assessment["structuralFailCount"],
             "quantitativeOpenBefore": assessment["quantitativeOpenCount"],
+            "quantitativeUnknownBefore": assessment["quantitativeUnknownCount"],
             "reserveShortfallBefore": assessment["reserveShortfallCount"],
             "governingOpenChecks": [
                 {
@@ -529,6 +533,7 @@ def run_intelligent_design_closure(
         "hardFailCount": int(final_assessment.get("hardFailCount") or 0),
         "structuralFailCount": int(final_assessment.get("structuralFailCount") or 0),
         "quantitativeOpenCount": int(final_assessment.get("quantitativeOpenCount") or 0),
+        "quantitativeUnknownCount": int(final_assessment.get("quantitativeUnknownCount") or 0),
         "reviewCount": int(final_assessment.get("reviewCount") or 0),
         "reviewGroupCount": len(review_group_rows),
         "reserveShortfallCount": int(final_assessment.get("reserveShortfallCount") or 0),
@@ -544,6 +549,7 @@ def run_intelligent_design_closure(
             }
             for row in (final_assessment.get("openRecords") or [])[:30]
         ],
+        "remainingUnknownItems": list(final_assessment.get("unknownRecords") or []),
         "remainingReviewItems": [
             {
                 "ruleId": row.get("ruleId"), "label": row.get("label"), "objectId": row.get("objectId"),

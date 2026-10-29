@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from statistics import fmean
 from typing import Any
 
@@ -71,16 +72,19 @@ def _number(value: Any) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     if isinstance(value, (int, float)):
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     if isinstance(value, dict):
         for key in ("value", "calculatedValue", "factor", "safetyFactor", "result", "ratio"):
             if key in value:
                 return _number(value.get(key))
         return None
     try:
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     except (TypeError, ValueError):
         return None
 
@@ -464,6 +468,8 @@ def _check_context(
 
 
 def _verification_category(check: dict[str, Any]) -> str:
+    if str(check.get("ruleId") or "").upper() == "PITGUARD-SOIL-RESISTANCE-MODEL":
+        return "stability"
     text = " ".join(str(check.get(key) or "") for key in ("ruleId", "category", "name", "message", "clauseReference")).lower()
     if any(token in text for token in ("seepage", "uplift", "piping", "water", "渗流", "突涌", "水位", "降水")):
         return "hydraulic"
@@ -618,7 +624,14 @@ def _controlling(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def key(item: dict[str, Any]) -> tuple[int, float]:
         factor = item.get("safetyFactor")
         return (_status_rank(item.get("status")), -(float(factor) if factor is not None else 1.0e9))
-    return dict(max(rows, key=key))
+    control = dict(max(rows, key=key))
+    # A controlling finite result must not erase missing evidence in another
+    # stage of the same physical object.
+    control["quantitativeUnknown"] = any(
+        row.get("quantitativeStatus") == "unknown" or row.get("quantitativeUnknown")
+        for row in rows
+    )
+    return control
 
 
 def _target_key(item: dict[str, Any]) -> str:
@@ -677,32 +690,40 @@ def build_verification_distribution(project: Project) -> dict[str, Any]:
         value = _number(check.get("calculatedValue") if "calculatedValue" in check else check.get("calculated_value"))
         limit = _number(check.get("limitValue") if "limitValue" in check else check.get("limit_value"))
         utilization = _number(check.get("utilization"))
-        safety_factor: float | None = None
-        if utilization is not None and utilization > 0:
-            safety_factor = 1.0 / utilization
-        elif value is not None and limit is not None and value > 0 and limit > 0:
-            safety_factor = value / limit if direction == "minimum" else limit / value
-        if safety_factor is not None and (safety_factor <= 0 or safety_factor > 1.0e6):
-            safety_factor = None
         canonical_rule = str(spec.get("ruleId") or "") if spec else ""
-        if canonical_rule in {"SUPPORT_PRELOAD", "REPLACEMENT_PATH_STABILITY"}:
-            # These rows document the magnitude of construction effects and the
-            # confirmed install/remove sequence.  Their two numbers are not a
-            # demand/capacity pair, so presenting their quotient as a safety
-            # factor produces a false failure.
+        informational = canonical_rule in {"SUPPORT_PRELOAD", "REPLACEMENT_PATH_STABILITY"}
+        # Use the established catalogue and metric direction. Construction
+        # effects document loads/sequence; their numbers are not capacity pairs.
+        quantitative = not informational and category in {"strength", "stiffness", "stability", "hydraulic"} and bool(
+            spec or "limitValue" in check or "limit_value" in check or "utilization" in check
+        )
+        safety_factor: float | None = None
+        known_zero_demand = False
+        if not informational:
+            if utilization is not None and utilization >= 0:
+                known_zero_demand = utilization == 0
+                safety_factor = 1.0 / utilization if utilization > 0 else None
+            elif value is not None and limit is not None and value >= 0 and limit > 0:
+                known_zero_demand = value == 0 and direction == "maximum"
+                safety_factor = value / limit if direction == "minimum" else limit / value if value > 0 else None
+        if safety_factor is not None and not math.isfinite(safety_factor):
             safety_factor = None
+        quantitative_status = "informational"
+        if quantitative:
+            quantitative_status = "satisfied" if known_zero_demand or safety_factor is not None and safety_factor >= 1 else "open" if safety_factor is not None else "unknown"
         original_status = str(check.get("status") or "manual_review")
+        trace = check.get("trace") if isinstance(check.get("trace"), dict) else {}
+        applicability = str(check.get("applicability") or trace.get("applicability") or "")
         status = original_status
-        if safety_factor is not None:
+        if original_status == "not_applicable" or applicability in {"not_applicable", "not_required"}:
+            quantitative_status = "not_applicable"
+        elif quantitative_status == "unknown":
+            status = "fail" if original_status == "fail" else "manual_review"
+        elif safety_factor is not None:
             status = "fail" if safety_factor < 1.0 else "warning" if safety_factor < reserve_threshold else "pass"
             if original_status == "fail":
                 status = "fail"
-            elif original_status in {"warning", "manual_review", "preliminary"}:
-                # A source rule deliberately classified as screening/review is
-                # not promoted to a hard failure by presentation arithmetic.
-                # Its numeric index remains visible, while the authoritative
-                # engineering severity and required professional action are
-                # preserved.
+            elif safety_factor >= 1.0 and original_status in {"warning", "manual_review", "preliminary"}:
                 status = original_status
         raw_rule_id = str(check.get("ruleId") or check.get("category") or f"check-{index + 1}")
         canonical_id = str(spec.get("ruleId")) if spec else raw_rule_id
@@ -723,6 +744,9 @@ def build_verification_distribution(project: Project) -> dict[str, Any]:
             "utilization": round(1.0 / safety_factor, 4) if safety_factor not in (None, 0.0) else utilization,
             "status": status,
             "originalStatus": original_status,
+            "quantitativeConstraint": quantitative,
+            "quantitativeStatus": quantitative_status,
+            "applicability": applicability,
             "standard": (spec.get("standard") if spec else None) or check.get("standard") or check.get("standardRef") or check.get("standardName"),
             "clause": check.get("clauseReference") or check.get("clause"),
             "message": check.get("message"),

@@ -3,7 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from app.calculation.global_coupled import solve_global_wall_wale_support_system
+from app.calculation.stage_loads import build_stage_loads
+from app.calculation.stage_state import build_stage_states
+from app.calculation.stage_solver import solve_stage_response
+from app.services.wall_restraint import build_effective_wall_restraints
 from app.calculation.planar_transfer_frame import analyze_transfer_frame_system
 from app.calculation.wall_internal_force import analyze_wall_on_elastic_foundation
 from app.geology.section import extract_representative_section
@@ -15,38 +18,6 @@ from app.schemas.domain import (
     WallInternalForcePoint,
     WallInternalForceResult,
 )
-
-
-def _wall_force_result(segment_id: str, stage_id: str, raw: dict[str, Any], gamma0: float) -> WallInternalForceResult:
-    points_raw = list(raw.get("points") or [])
-    stride = max(1, len(points_raw) // 80) if points_raw else 1
-    points = [
-        WallInternalForcePoint(
-            depth=float(item.get("depth") or 0.0),
-            elevation=float(item.get("elevation") or -float(item.get("depth") or 0.0)),
-            shear=float(item.get("shear") or 0.0),
-            moment=float(item.get("moment") or 0.0),
-            displacement=item.get("displacementMm"),
-        )
-        for item in points_raw[::stride]
-    ]
-    moment = abs(float(raw.get("maxMoment") or 0.0))
-    shear = abs(float(raw.get("maxShear") or 0.0))
-    displacement = raw.get("maxDisplacement")
-    return WallInternalForceResult(
-        segment_id=segment_id,
-        stage_id=stage_id,
-        points=points,
-        max_moment=round(moment, 3),
-        max_shear=round(shear, 3),
-        max_displacement=round(abs(float(displacement)), 3) if displacement is not None else None,
-        max_moment_design=round(moment * gamma0 * 1.25, 3),
-        max_shear_design=round(shear * gamma0 * 1.25, 3),
-        importance_factor=gamma0,
-        load_combination_factor=1.25,
-        method=str(raw.get("method") or "coupled wall-wale-transfer iteration"),
-        warnings=[str(item) for item in raw.get("warnings") or []],
-    )
 
 
 def _stage_force_maps(stage_results: list[StageCalculationResult]) -> dict[str, dict[str, float]]:
@@ -73,6 +44,13 @@ def _max_absolute_delta(current: dict[str, float], previous: dict[str, float]) -
     return max((abs(float(current.get(key, 0.0)) - float(previous.get(key, 0.0))) for key in keys), default=0.0)
 
 
+def _displacement_deltas(current_m: dict[str, float], previous_m: dict[str, float]) -> tuple[float, float]:
+    """Relative displacement change with a 1 mm floor; absolute change in mm."""
+    current_mm = {key: value * 1000.0 for key, value in current_m.items()}
+    previous_mm = {key: value * 1000.0 for key, value in previous_m.items()}
+    return _max_relative_delta(current_mm, previous_mm), _max_absolute_delta(current_mm, previous_mm)
+
+
 def _nested_relative_delta(current: dict[str, dict[str, float]], previous: dict[str, dict[str, float]]) -> float:
     return max(
         (_max_relative_delta(current.get(key, {}), previous.get(key, {})) for key in set(current) | set(previous)),
@@ -95,6 +73,8 @@ def iterate_wall_wale_transfer_reactions(
     force_tolerance: float = 0.02,
     displacement_tolerance: float = 0.01,
     relaxation: float = 1.0,
+    stage_load_records: dict | None = None,
+    stage_states: dict | None = None,
 ) -> dict[str, Any]:
     """Iterate wall/wale reactions with transfer-frame far-end stiffness.
 
@@ -104,14 +84,17 @@ def iterate_wall_wale_transfer_reactions(
     transfer frame.  The method is deliberately explicit and records every
     residual so a reviewer can judge convergence.
     """
+    states = stage_states if stage_states is not None else build_stage_states(project, case)
+    load_records = stage_load_records if stage_load_records is not None else {}
     stage_by_id = {str(stage.id): stage for stage in case.stages}
     segment_by_id = {str(segment.id): segment for segment in project.excavation.segments}
     wall_by_segment = {str(wall.segment_id): wall for wall in project.retaining_system.diaphragm_walls}
     supports_by_id = {str(support.id): support for support in project.retaining_system.supports}
     force_maps = _stage_force_maps(stage_results)
     previous_displacements = {
-        f"{result.stage_id}:{result.segment_id}": float(result.global_coupled_result.max_wall_displacement if result.global_coupled_result else 0.0)
+        f"{result.stage_id}:{result.segment_id}": float(result.global_coupled_result.max_wall_displacement)
         for result in stage_results
+        if result.global_coupled_result and result.global_coupled_result.max_wall_displacement is not None
     }
     history: list[dict[str, Any]] = []
     stage_analyses: dict[str, dict[str, Any]] = {}
@@ -147,7 +130,7 @@ def iterate_wall_wale_transfer_reactions(
             }
         if failed_stage_ids:
             return {
-                "schema": "pitguard-wall-wale-transfer-iteration-v1",
+                "schema": "pitguard-wall-wale-transfer-iteration-v2",
                 "status": "fail",
                 "converged": False,
                 "iterationCount": iteration,
@@ -158,135 +141,85 @@ def iterate_wall_wale_transfer_reactions(
             }
 
         current_displacements: dict[str, float] = {}
-        updated_maps: dict[str, dict[str, float]] = {stage_id: dict(values) for stage_id, values in force_maps.items()}
+        updated_maps: dict[str, dict[str, float]] = {stage_id: {} for stage_id in force_maps}
+        solved_maps: dict[str, dict[str, float]] = {stage_id: {} for stage_id in force_maps}
         for result in stage_results:
-            stage_id = str(result.stage_id)
-            segment_id = str(result.segment_id)
-            stage = stage_by_id.get(stage_id)
-            segment = segment_by_id.get(segment_id)
-            if stage is None or segment is None:
-                continue
-            wall = wall_by_segment.get(segment_id)
+            stage_id, segment_id = str(result.stage_id), str(result.segment_id)
+            stage, segment = stage_by_id[stage_id], segment_by_id[segment_id]
+            wall = wall_by_segment[segment_id]
+            state = states[stage_id]
             section = extract_representative_section(project, segment_id)
             top = float(project.excavation.top_elevation)
-            bottom = float(project.excavation.bottom_elevation)
-            final_depth = top - bottom
-            stage_depth = min(final_depth, max(0.0, top - float(stage.excavation_elevation))) or final_depth
-            active_ids = {str(item) for item in stage.active_support_ids or []} - {str(item) for item in stage.deactivated_support_ids or []}
-            transferred_levels = {int(level) for level in stage.transferred_support_levels or []}
-            active_supports = [
-                support for support in project.retaining_system.supports
-                if (
-                    str(support.id) in active_ids
-                    or int(support.level_index or 0) in transferred_levels
-                )
-                and segment.name in {support.start_face_code, support.end_face_code}
-            ]
-            if not active_supports:
-                continue
+            loads = load_records.get((stage_id, segment_id))
+            if loads is None:
+                gw_out = (stage.groundwater_level_outside if stage.groundwater_level_outside is not None else project.design_settings.groundwater_level) + groundwater_offset_m
+                gw_in = stage.groundwater_level_inside
+                if gw_in is None:
+                    gw_in = project.design_settings.groundwater_level_inside
+                if gw_in is None:
+                    gw_in = gw_out
+                loads = build_stage_loads(section.layers, state["excavationDepthM"], gw_out, gw_in,
+                    stage.surcharge, top, top-wall.bottom_elevation, project.design_settings)
+                load_records[(stage_id, segment_id)] = loads
+            active = [supports_by_id[sid] for sid in state["activeSupportIds"]]
+            segment_supports = [s for s in active if segment.name in {s.start_face_code, s.end_face_code}]
+            corners, restraint_audit = build_effective_wall_restraints(project.excavation, segment, active,
+                target_spacing_m=float(project.design_settings.default_support_spacing or 5.0))
             far_end = endpoint_stiffness_by_stage.get(stage_id, {})
-            raw_global = solve_global_wall_wale_support_system(
-                pressure_profile=result.pressure_profile,
-                segment=segment,
-                face_code=segment.name,
-                active_supports=active_supports,
-                top_elevation=top,
-                excavation_elevation=top - stage_depth,
-                wall_bottom_elevation=float(wall.bottom_elevation if wall else bottom - max(4.0, 0.35 * final_depth)),
-                wall_thickness=float(wall.thickness if wall else 1.0),
-                concrete_grade=str(wall.concrete_grade if wall else "C35"),
-                soil_profile=section.layers,
-                stage_id=stage_id,
-                stage_type=stage.stage_type,
-                wall_stiffness_factor=wall_stiffness_factor,
-                soil_modulus_factor=soil_modulus_factor,
-                support_stiffness_factor=support_stiffness_factor,
-                replacement_slab_properties={
-                    "effectiveWidthM": project.design_settings.replacement_slab_effective_width_m,
-                    "thicknessM": project.design_settings.replacement_slab_thickness_m,
-                    "elasticModulusMpa": project.design_settings.replacement_slab_elastic_modulus_mpa,
-                    "connectionReduction": project.design_settings.replacement_connection_reduction,
-                    "transferLengthM": float(segment.length),
-                },
-                wale_stiffness_factor=float(project.design_settings.wale_cracked_stiffness_factor),
-                joint_translational_factor=float(project.design_settings.joint_translational_stiffness_factor),
-                joint_rotational_factor=float(project.design_settings.joint_rotational_stiffness_factor),
-                rigid_zone_length_factor=float(project.design_settings.rigid_zone_length_factor),
-                initial_imperfection_ratio=float(project.design_settings.initial_imperfection_ratio),
-                long_term_stiffness_factor=long_term_stiffness_factor,
-                support_far_end_stiffness_by_id=far_end,
-            )
-            coupled = GlobalCoupledSystemResult(**raw_global)
-            result.global_coupled_result = coupled
+            solved = solve_stage_response(project, segment, stage, section, wall, loads, state,
+                segment_supports=segment_supports, corner_transfer_supports=corners,
+                wall_stiffness_factor=wall_stiffness_factor, soil_modulus_factor=soil_modulus_factor,
+                support_stiffness_factor=support_stiffness_factor, long_term_stiffness_factor=long_term_stiffness_factor,
+                far_end_stiffness=far_end, iteration=iteration)
+            result.pressure_profile, result.design_pressure_profile = loads.standard_profile, loads.design_profile
+            result.load_evidence = {**loads.evidence, "consumers": solved["evidence"]}
+            result.stage_state, result.solve_id = state, solved["solve_id"]
+            result.global_coupled_result, result.design_global_coupled_result = solved["global"], solved["global_design"]
+            result.wall_internal_force = solved["wall"]
+            result.support_forces, result.wale_beam_results = solved["forces"], solved["wales"]
+            result.coupled_system_result.update(solveEvidence=solved["evidence"], wallRestraintAudit=restraint_audit)
             result.coupled_system_result["wallWaleTransferIteration"] = {
-                "iteration": iteration,
-                "farEndSupportCount": len(far_end),
-                "maximumScaledConditionNumber": raw_global.get("scaledConditionNumber"),
-                "conditionGrade": raw_global.get("conditionGrade"),
-                "blocked": raw_global.get("illConditionedBlocked"),
+                "iteration": iteration, "farEndSupportCount": len(far_end),
+                "maximumScaledConditionNumber": solved["global"].scaled_condition_number,
+                "blocked": solved["global"].ill_conditioned_blocked,
             }
-            current_displacements[f"{stage_id}:{segment_id}"] = float(coupled.max_wall_displacement or 0.0)
-            effective_springs = {
-                str(reaction.support_id): float(reaction.spring_stiffness)
-                for reaction in coupled.support_reactions
-                if float(reaction.spring_stiffness or 0.0) > 0.0
+            result.wall_internal_force_placeholder = {
+                "status": "calculated" if solved["wall"].max_displacement is not None else "partial",
+                "coupledIteration": iteration, "solveId": solved["solve_id"], "loadRecordId": loads.load_id,
+                "maxMoment": solved["wall"].max_moment, "maxShear": solved["wall"].max_shear,
+                "maxDisplacement": solved["wall"].max_displacement,
+                "maxMomentDesign": solved["wall"].max_moment_design, "maxShearDesign": solved["wall"].max_shear_design,
+                "supportReactions": solved["wall_raw"].get("supportReactions", []),
+                "points": solved["wall_raw"].get("points", []),
             }
-            gw_out = (stage.groundwater_level_outside if stage.groundwater_level_outside is not None else project.design_settings.groundwater_level) + groundwater_offset_m
-            gw_in = stage.groundwater_level_inside if stage.groundwater_level_inside is not None else project.design_settings.groundwater_level
-            raw_wall = analyze_wall_on_elastic_foundation(
-                soil_profile=section.layers,
-                supports=[support for support in active_supports if str(support.id) in active_ids],
-                excavation_depth=stage_depth,
-                groundwater_level_outside=gw_out,
-                groundwater_level_inside=gw_in,
-                surcharge=stage.surcharge,
-                top_elevation=top,
-                wall_bottom_elevation=float(wall.bottom_elevation if wall else bottom - max(4.0, 0.35 * final_depth)),
-                wall_thickness=float(wall.thickness if wall else 1.0),
-                concrete_grade=str(wall.concrete_grade if wall else "C35"),
-                segment=segment,
-                transferred_supports=[support for support in active_supports if str(support.id) not in active_ids],
-                wall_stiffness_factor=wall_stiffness_factor,
-                soil_modulus_factor=soil_modulus_factor,
-                support_stiffness_factor=support_stiffness_factor,
-                support_stiffness_overrides_kn_per_m=effective_springs,
-            )
-            result.wall_internal_force = _wall_force_result(segment_id, stage_id, raw_wall, gamma0)
-            result.wall_internal_force_placeholder.update({
-                "coupledIteration": iteration,
-                "maxMoment": raw_wall.get("maxMoment"),
-                "maxShear": raw_wall.get("maxShear"),
-                "maxDisplacement": raw_wall.get("maxDisplacement"),
-                "supportStiffnessOverrideCount": len(effective_springs),
-            })
-            reaction_force = {
-                str(reaction.support_id): float(reaction.axial_force or 0.0)
-                for reaction in coupled.support_reactions
-                if str(reaction.support_id) in supports_by_id
-            }
-            target_map = updated_maps.setdefault(stage_id, {})
-            for support_id, new_force in reaction_force.items():
-                old_force = float(target_map.get(support_id, new_force) or new_force)
-                relaxed = (1.0 - current_relaxation) * old_force + current_relaxation * new_force
-                target_map[support_id] = max(relaxed, 0.0)
-                for force in result.support_forces:
-                    if str(force.support_id) == support_id:
-                        force.axial_force = round(max(relaxed, 0.0), 3)
-                        if force.axial_force_design is not None:
-                            force.axial_force_design = round(max(float(force.axial_force_design), relaxed * gamma0 * 1.25), 3)
-                        force.distribution_method = "wall-wale-transfer fixed-point iteration"
-                        force.distribution_note = f"第 {iteration} 次迭代，松弛系数 {current_relaxation:.2f}，远端框架刚度已进入串联支承。"
+            displacement = solved["global"].max_wall_displacement
+            if displacement is None or solved["global"].fallback or solved["global_design"].fallback or any(
+                evidence["status"] != "solved" for evidence in solved["evidence"]["wallSolvers"].values()
+            ):
+                return {"schema": "pitguard-wall-wale-transfer-iteration-v2", "status": "fail", "converged": False,
+                    "iterationCount": iteration, "history": history, "failedStageIds": [stage_id],
+                    "message": "最终标准或设计作用求解不可用，未按零位移/零反力判为收敛。"}
+            current_displacements[f"{stage_id}:{segment_id}"] = float(displacement)
+            for force in result.support_forces:
+                sid = str(force.support_id)
+                value = float(force.axial_force)
+                solved_maps[stage_id][sid] = max(solved_maps[stage_id].get(sid, 0.0), value)
+        # Relaxation is an iteration variable only. Published results always
+        # retain the actual reactions of the last solved displacement vector.
+        for stage_id, values in solved_maps.items():
+            for sid, value in values.items():
+                old = previous_force_maps.get(stage_id, {}).get(sid, value)
+                updated_maps[stage_id][sid] = (1-current_relaxation)*old + current_relaxation*value
 
         force_delta = max(
-            (_max_relative_delta(updated_maps.get(stage_id, {}), previous_force_maps.get(stage_id, {})) for stage_id in updated_maps),
+            (_max_relative_delta(solved_maps.get(stage_id, {}), previous_force_maps.get(stage_id, {})) for stage_id in updated_maps),
             default=0.0,
         )
         force_absolute_delta = max(
-            (_max_absolute_delta(updated_maps.get(stage_id, {}), previous_force_maps.get(stage_id, {})) for stage_id in updated_maps),
+            (_max_absolute_delta(solved_maps.get(stage_id, {}), previous_force_maps.get(stage_id, {})) for stage_id in updated_maps),
             default=0.0,
         )
-        displacement_delta = _max_relative_delta(current_displacements, previous_displacements)
-        displacement_absolute_delta = _max_absolute_delta(current_displacements, previous_displacements)
+        displacement_delta, displacement_absolute_delta = _displacement_deltas(current_displacements, previous_displacements)
         cycle_delta = _nested_relative_delta(updated_maps, two_iterations_back) if two_iterations_back is not None else math.inf
         cycle_detected = bool(
             two_iterations_back is not None
@@ -308,7 +241,7 @@ def iterate_wall_wale_transfer_reactions(
         })
         converged = force_delta <= force_tolerance and displacement_delta <= displacement_tolerance
         if converged:
-            force_maps = updated_maps
+            force_maps = solved_maps
             convergence_quality = "strong" if force_delta <= force_tolerance * 0.25 and displacement_delta <= displacement_tolerance * 0.25 else "acceptable"
             return {
                 "schema": "pitguard-wall-wale-transfer-iteration-v2",

@@ -338,7 +338,7 @@ def execute_full_industrial_closure(project: Project, *, top_n: int = 3) -> dict
         "requestedTopN": max(1, min(int(top_n), 5)),
     }
     if not _calculation_contract(project).get("current"):
-        result = run_calculation(project, None, auto_repair=True)
+        result = run_calculation(project, None, auto_repair=True, mode="design")
         project.calculation_results.append(result)
         mark_calculation_state_current(project, result.id)
         mark_wall_length_recalculated(project, result.id)

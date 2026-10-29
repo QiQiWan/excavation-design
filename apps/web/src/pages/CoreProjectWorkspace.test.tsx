@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import CoreProjectWorkspace from './CoreProjectWorkspace';
 import { api } from '../api/client';
@@ -74,4 +74,95 @@ it('keeps the current stage after a completed task without showing a completion 
   expect(screen.queryByText('当前步骤已更新')).not.toBeInTheDocument();
   expect(screen.queryByText(/系统不会自动切换页面/)).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: '4计算验算待方案' })).toBeInTheDocument();
+});
+
+it('does not present unloaded checks as Fail zero or pass', () => {
+  vi.restoreAllMocks();
+  vi.spyOn(api, 'getCoreDesignStatus').mockImplementation(() => new Promise(() => undefined));
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  const { container } = render(<CoreProjectWorkspace project={project} onBack={() => undefined} onProjectChange={() => undefined} />);
+  expect(container.querySelector('.coreHeaderActions .coreGate.pass')).toBeNull();
+  expect(screen.queryByText('Fail 0')).not.toBeInTheDocument();
+  expect(screen.getByText('正在读取检查')).toBeInTheDocument();
+});
+
+it('requires explicit readiness before enabling reinforcement even when a result exists', async () => {
+  vi.restoreAllMocks();
+  vi.spyOn(api, 'getCoreDesignStatus').mockResolvedValue({ nextStage: 'reinforcement', summary: { failCount: 0, warningCount: 0 } } as any);
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  vi.spyOn(api, 'getLatestCalculationEvidence').mockResolvedValue({} as any);
+  const historical = { ...project, calculationResults: [{ id: 'old', checks: [], checkSummary: { fail: 0, warning: 0 } }] } as unknown as Project;
+  render(<CoreProjectWorkspace project={historical} onBack={() => undefined} onProjectChange={() => undefined} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: '保守' })).toBeDisabled());
+  expect(screen.queryByText('Fail 0')).not.toBeInTheDocument();
+});
+
+it('submits verify-only recalculation separately from explicit optimization', async () => {
+  vi.restoreAllMocks();
+  const ready = { ...project, designSettings: { ...project.designSettings, designBasisConfirmed: true }, excavation: { id: 'EX', outline: { points: [], closed: true }, segments: [], topElevation: 0, bottomElevation: -10 }, retainingSystem: { diaphragmWalls: [], crownBeams: [], waleBeams: [], ringBeams: [], supports: [], columns: [], supportNodes: [], warnings: [] } } as unknown as Project;
+  vi.spyOn(api, 'getCoreDesignStatus').mockResolvedValue({ nextStage: 'calculation', summary: {}, designBasis: { confirmed: true } } as any);
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  vi.spyOn(api, 'getConstructionStages').mockResolvedValue({ stages: [], checks: [], summary: {} } as any);
+  vi.spyOn(api, 'createTask').mockImplementation(() => new Promise(() => undefined));
+  render(<CoreProjectWorkspace project={ready} onBack={() => undefined} onProjectChange={() => undefined} />);
+  const button = await screen.findByRole('button', { name: '仅复算当前方案' });
+  expect(screen.getByRole('button', { name: '优化并采用方案' })).toBeInTheDocument();
+  button.click();
+  await waitFor(() => expect(api.createTask).toHaveBeenCalledWith(project.id, 'calculation_full', { mode: 'verify', topN: 0 }));
+});
+
+it('shows stale backend evidence explicitly and does not use zero summary as passing checks', async () => {
+  vi.restoreAllMocks();
+  vi.spyOn(api, 'getCoreDesignStatus').mockResolvedValue({ nextStage: 'calculation', summary: { failCount: 0, warningCount: 0 }, calculationReadiness: { valid: false, explicitlyStale: true, resultId: 'old', messages: ['输入已修改'] } } as any);
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  vi.spyOn(api, 'getLatestCalculationEvidence').mockResolvedValue({} as any);
+  vi.spyOn(api, 'getConstructionStages').mockResolvedValue({ stages: [], checks: [], summary: {} } as any);
+  const old = { ...project, calculationResults: [{ id: 'old', stageResults: [], governingValues: {}, checks: [], checkSummary: {} }] } as unknown as Project;
+  const { container } = render(<CoreProjectWorkspace project={old} onBack={() => undefined} onProjectChange={() => undefined} />);
+  await waitFor(() => expect(container.querySelector('.calculationEvidenceBanner')).toHaveTextContent('结果已过期'));
+  expect(container.querySelector('.coreHeaderActions .coreGate.pass')).toBeNull();
+  expect(screen.queryByText('Fail 0')).not.toBeInTheDocument();
+  expect(screen.queryByText('当前已加载检查未发现超限')).not.toBeInTheDocument();
+});
+
+it('shows unavailable checks after a failed status request', async () => {
+  vi.restoreAllMocks();
+  vi.spyOn(api, 'getCoreDesignStatus').mockRejectedValue(new Error('readiness unavailable'));
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  render(<CoreProjectWorkspace project={project} onBack={() => undefined} onProjectChange={() => undefined} />);
+  await screen.findByText('检查读取失败');
+  expect(screen.queryByText('Fail 0')).not.toBeInTheDocument();
+});
+
+it('keeps current failed engineering checks separate from calculation execution success', async () => {
+  vi.restoreAllMocks();
+  vi.spyOn(api, 'getCoreDesignStatus').mockResolvedValue({ nextStage: 'calculation', summary: { failCount: 0, warningCount: 1 }, calculationReadiness: { valid: false, resultId: 'measured', contract: { current: true }, stageEvidenceComplete: true }, verificationDistribution: { records: [], summary: { overall: { failCount: 1, warningCount: 1 } } } } as any);
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  vi.spyOn(api, 'getLatestCalculationEvidence').mockResolvedValue({} as any);
+  vi.spyOn(api, 'getConstructionStages').mockResolvedValue({ stages: [], checks: [], summary: {} } as any);
+  const measured = { ...project, calculationResults: [{ id: 'measured', stageResults: [], governingValues: {}, checks: [{ ruleId: 'displacement', status: 'warning', message: '100mm > 40mm' }], checkSummary: { fail: 0, warning: 1 } }] } as unknown as Project;
+  const { container } = render(<CoreProjectWorkspace project={measured} onBack={() => undefined} onProjectChange={() => undefined} />);
+  await waitFor(() => expect(container.querySelector('.coreHeaderActions .coreGate.fail')).toHaveTextContent('Fail 1'));
+  expect(container.querySelector('.calculationEvidenceBanner')).toHaveTextContent('当前计算已完成，工程检查未通过');
+});
+
+it('opens a separate frozen section panel without creating inputs from the current project', async () => {
+  vi.restoreAllMocks();
+  vi.spyOn(api, 'getCoreDesignStatus').mockResolvedValue({ nextStage: 'calculation', summary: {} } as any);
+  vi.spyOn(api, 'listProjectTasks').mockResolvedValue([]);
+  vi.spyOn(api, 'getConstructionStages').mockResolvedValue({ stages: [], checks: [], summary: {} } as any);
+  const example = vi.spyOn(api, 'getSectionExample');
+  const freeze = vi.spyOn(api, 'freezeSection');
+  render(<CoreProjectWorkspace project={project} onBack={() => undefined} onProjectChange={() => undefined} />);
+  const toggle = await screen.findByRole('button', { name: '剖面结果验证' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: '冻结剖面验证面板' })).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(await screen.findByRole('region', { name: '冻结剖面验证面板' })).toBeInTheDocument();
+  expect(example).not.toHaveBeenCalled();
+  expect(freeze).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: '运行冻结剖面' })).toBeDisabled();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: '冻结剖面验证面板' })).not.toBeInTheDocument();
 });

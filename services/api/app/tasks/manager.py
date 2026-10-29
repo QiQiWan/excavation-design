@@ -1265,7 +1265,7 @@ class TaskManager:
             )
 
         self._stage(task, 46, "执行当前采用方案的施工阶段计算")
-        calculation_result = self._run_calculation_full(task, {"topN": 0})
+        calculation_result = self._run_calculation_full(task, {"topN": 0, "mode": "design"})
         self._check_cancel(task)
         self._memory_checkpoint(task, "施工阶段计算完成")
 
@@ -1286,7 +1286,7 @@ class TaskManager:
             rebar_recalculation_count += 1
             self._stage(task, 86 + min(rebar_recalculation_count, 3), f"第 {rebar_recalculation_count} 轮截面补强—复算—重新配筋")
             repo.save(project, action="task.core_design.rebar_section_update", summary="Applied reinforcement-driven section changes before core recalculation")
-            calculation_result = self._run_calculation_full(task, {"topN": 0})
+            calculation_result = self._run_calculation_full(task, {"topN": 0, "mode": "design"})
             project = repo.require_with_latest_calculation(task.project_id)
             rebar_scheme = apply_rebar_design_scheme(project, mode=rebar_mode)
         project.advanced_engineering = dict(project.advanced_engineering or {})
@@ -1348,7 +1348,7 @@ class TaskManager:
             del project
             _release_process_memory()
             self._memory_checkpoint(task, "配筋前补算：释放旧工程快照")
-            self._run_calculation_full(task, {"topN": 0})
+            self._run_calculation_full(task, {"topN": 0, "mode": "design"})
             project = repo.require_with_latest_calculation(project_id)
             calculation_gate = calculation_readiness(project)
         if not calculation_gate.get("valid"):
@@ -1391,7 +1391,7 @@ class TaskManager:
             del project
             _release_process_memory()
             self._memory_checkpoint(task, f"第 {recalculation_count} 轮配筋方案压缩后")
-            self._run_calculation_full(task, {"topN": 0})
+            self._run_calculation_full(task, {"topN": 0, "mode": "design"})
             project = repo.require_with_latest_calculation(project_id)
             self._stage(task, 76, "按更新后内力包络重新生成并应用配筋")
             scheme = apply_rebar_design_scheme(project, mode=mode)
@@ -1855,6 +1855,7 @@ class TaskManager:
 
         self._append_log(task, "计算前置门禁已关闭，进入验算—优化—再验算闭环。")
         calculation_payload = dict(payload)
+        calculation_payload["mode"] = "design"
         calculation_payload["forceClosure"] = True
         calculation_payload.setdefault("closureStrategy", "balanced")
         calculation_payload.setdefault("closureMaxIterations", 4)
@@ -2283,12 +2284,40 @@ class TaskManager:
         from app.calculation.engine import run_calculation, run_candidate_comparison_for_project
         from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
         from app.quality.formal_gate import build_formal_report_gate
-        from app.services.construction_stages import select_calculation_case_for_run
+        from app.services.construction_stages import select_calculation_case_for_run, select_calculation_case_for_verification
+        from app.services.calculation_assurance import apply_calculation_assurance
         from app.services.calculation_state import mark_calculation_state_current
         from app.services.wall_length_optimizer import mark_wall_length_recalculated
         from app.services.intelligent_design_closure import apply_intervention_action, run_intelligent_design_closure
+        mode = str(payload.get("mode", "verify"))
+        if mode not in {"verify", "design"}:
+            raise ValueError("mode must be verify or design")
+        requested_value = payload.get("topN") if payload.get("topN") is not None else payload.get("top_n", 0)
+        if mode == "verify" and requested_value not in (0, None, "0"):
+            raise ValueError("verify 模式要求 topN=0；候选比选和优化请显式使用 design 模式。")
         repo = self._repo()
-        project = repo.require(task.project_id)
+        expected_revision = repo.revision(task.project_id) if mode == "verify" else None
+        project = repo.require_for_calculation(task.project_id, migrate=False) if mode == "verify" else repo.require(task.project_id)
+        if mode == "verify":
+            if not project.design_settings.design_basis_confirmed:
+                raise ValueError("请先确认设计基准；复算不会自动修复或替换设计输入。")
+            case, stage_selection = select_calculation_case_for_verification(
+                project, payload.get("caseId") or payload.get("case_id"))
+            self._resource_preflight(task, project, candidate_count=0)
+            self._check_cancel(task)
+            self._stage(task, 48, "按已保存工况复算，不修改设计或自动闭环")
+            result = run_calculation(project, case, auto_repair=False, mode="verify")
+            result.design_iteration_summary = dict(result.design_iteration_summary or {})
+            result.design_iteration_summary["constructionStageSelection"] = stage_selection
+            apply_calculation_assurance(project, case, result)
+            project.calculation_results.append(result)
+            mark_calculation_state_current(project, result.id)
+            self._check_cancel(task)
+            repo.save(project, expected_revision=expected_revision,
+                      action="task.calculation.verify", summary="Verified saved design without adoption or repair")
+            self._stage(task, 92, "复算结果已保存，原设计保持不变")
+            return {"projectId":project.id, "calculationResultId":result.id,
+                "candidateComparisonCount":0, "closureSummary":None, "mode":"verify", "refreshProject":True}
         self._assert_calculation_qualified(repo, project, task)
         project = repo.require(task.project_id)
         from app.services.workflow_v381 import repair_design_control_support_references
@@ -2402,6 +2431,7 @@ class TaskManager:
                 project,
                 case,
                 auto_repair=not bool(stage_selection.get("preserved")),
+                mode="design",
             )
         result.design_iteration_summary = dict(result.design_iteration_summary or {})
         result.design_iteration_summary["constructionStageSelection"] = stage_selection
@@ -2434,6 +2464,7 @@ class TaskManager:
         # Intermediate construction-case and result saves used to duplicate a
         # multi-megabyte project blob two or three times and amplify SQLite/WAL
         # memory pressure while the worker was still holding the solver arrays.
+        apply_calculation_assurance(project, case, project.calculation_results[-1])
         repo.save(project)
         self._stage(task, 92, "刷新项目成果和审查状态")
         return {
@@ -2495,6 +2526,7 @@ class TaskManager:
             try:
                 calculation_payload = {
                     "topN": 0,
+                    "mode": "design" if "auto_close_structural_checks" in automatic_codes else "verify",
                     "forceClosure": "auto_close_structural_checks" in automatic_codes,
                     "autoInterventions": "auto_close_structural_checks" in automatic_codes,
                 }
@@ -2856,7 +2888,7 @@ class TaskManager:
         project = repo.require(task.project_id)
         if not project.calculation_results:
             self._append_log(task, "工业闭环缺少当前计算，先执行完整计算与候选比选。")
-            self._run_calculation_full(task, {"topN": int(payload.get("topN") or 0)})
+            self._run_calculation_full(task, {"topN": int(payload.get("topN") or 0), "mode": "design"})
             project = repo.require(task.project_id)
         repair = project.retaining_system.support_layout_repair if project.retaining_system else None
         valid_rows = [row for row in (repair.candidate_full_calculations if repair else []) if row.get("status") not in {"failed", "error"}]
