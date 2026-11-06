@@ -1,18 +1,172 @@
 {
- "schemaVersion":"pitguard.engineering-assurance-catalog/1",
- "designIssuePolicy":"No automatic official construction issue, even with completed numerical calculations",
- "canonicalUnits":{"length":"m","waterHead":"m","stress":"kPa","force":"kN","moment":"kN.m","permeability":"m/s","reinforcementCover":"mm","crackWidth":"mm"},
- "methods":[
-  {"id":"water.appC.confined","basis":"JGJ 120-2012 C.0.1","status":"implemented_limited_formula","methodKind":"analytical","scope":"confirmed confined aquifer and overburden"},
-  {"id":"water.appC.homogeneous","basis":"JGJ 120-2012 C.0.2","status":"implemented_limited_formula","methodKind":"analytical","scope":"homogeneous seepage conditions with supported boundary"},
-  {"id":"water.heterogeneous_fvm","basis":"JGJ 120-2012 4.2.6, Chapter 7, Appendix C","status":"numerical_screening_independent_BVP_test","methodKind":"finite_volume","scope":"specified 2D equal-width steady state domain; site applicability unverified"},
-  {"id":"water.piping_internal_erosion","basis":"JGJ 120-2012 Chapter 7/Appendix C + project hydrogeology","status":"separate_criterion_required","methodKind":"site_assessment","scope":"layer-specific deformation and internal erosion criteria"},
-  {"id":"concrete.circular_bending","basis":"JGJ 120-2012 Appendix B and 4.3.2","status":"implemented_limited_method","methodKind":"section_analysis","scope":"uniform longitudinal bar arrangement, explicit material law"},
-  {"id":"concrete.circular_shear_N0","basis":"JGJ 120-2012 4.3.2","status":"implemented_limited_method","methodKind":"equivalent_rectangular_section","scope":"N=0, nonprestressed and nonseismic conditions"},
-  {"id":"concrete.circular_axial_shear","basis":"JGJ 120-2012 4.3.2 and GB/T 50010-2010 (2024 amendment)","status":"method_qualification_required","methodKind":"section_analysis","scope":"matched N-M-V and justified axial-dependent shear"},
-  {"id":"concrete.circular_crack_width","basis":"GB/T 50010-2010 (2024 amendment) Chapter 7","status":"method_qualification_required","methodKind":"serviceability","scope":"circular section, applicable grade, sustained actions and shrinkage/restraint"},
-  {"id":"luoyu.five_stage","basis":"Source project Luoyu 3-3, PDF physical pp. 32-36","status":"conditional_research_only","methodKind":"staged_analysis","scope":"site datum, crown/toe/other wall stiffness and native numerical curves must be reviewed"}
- ],
- "reviewStates":["fail_or_numerical_invalid","incomplete_site_evidence","site_engineering_review_required","failed_check","evidence_incomplete","axial_shear_method_review_required","missing_reference_curves","missing_project_conditions","model_method_not_independently_qualified"],
- "sourcePriority":"mandatory applicable GB 55003-2021; then applicable JGJ 120-2012 and GB/T 50010-2010 (2024 amendment); local project and geotechnical investigation evidence"
+  "schemaVersion": "pitguard.engineering-assurance-catalog/1",
+  "designIssuePolicy": "No automatic official construction issue, even with completed numerical calculations",
+  "canonicalUnits": {
+    "length": "m",
+    "waterHead": "m",
+    "stress": "kPa",
+    "force": "kN",
+    "moment": "kN.m",
+    "permeability": "m/s",
+    "reinforcementCover": "mm",
+    "crackWidth": "mm"
+  },
+  "methods": [
+    {
+      "id": "water.appC.confined",
+      "basis": "JGJ 120-2012 C.0.1",
+      "status": "implemented_limited_formula",
+      "methodKind": "analytical",
+      "scope": "confirmed confined aquifer and overburden"
+    },
+    {
+      "id": "water.appC.homogeneous",
+      "basis": "JGJ 120-2012 C.0.2",
+      "status": "implemented_limited_formula",
+      "methodKind": "analytical",
+      "scope": "homogeneous seepage conditions with supported boundary"
+    },
+    {
+      "id": "water.heterogeneous_fvm",
+      "basis": "JGJ 120-2012 4.2.6, Chapter 7, Appendix C",
+      "status": "numerical_screening_independent_BVP_test",
+      "methodKind": "finite_volume",
+      "scope": "specified 2D equal-width steady state domain; site applicability unverified"
+    },
+    {
+      "id": "water.piping_internal_erosion",
+      "basis": "JGJ 120-2012 Chapter 7/Appendix C + project hydrogeology",
+      "status": "separate_criterion_required",
+      "methodKind": "site_assessment",
+      "scope": "layer-specific deformation and internal erosion criteria"
+    },
+    {
+      "id": "concrete.circular_bending",
+      "basis": "JGJ 120-2012 Appendix B and 4.3.2",
+      "status": "implemented_limited_method",
+      "methodKind": "section_analysis",
+      "scope": "uniform longitudinal bar arrangement, explicit material law"
+    },
+    {
+      "id": "concrete.circular_shear_N0",
+      "basis": "JGJ 120-2012 4.3.2",
+      "status": "implemented_limited_method",
+      "methodKind": "equivalent_rectangular_section",
+      "scope": "N=0, nonprestressed and nonseismic conditions"
+    },
+    {
+      "id": "concrete.circular_axial_shear",
+      "basis": "JGJ 120-2012 4.3.2; GB/T 50010-2010 (2024 amendment) 6.3.15, 6.3.12 and 6.3.1",
+      "status": "implemented_verified_subset",
+      "methodKind": "section_analysis",
+      "scope": "nonseismic, eccentric compression N>=0, explicit ULS loading type and span ratio when concentrated; stage/depth/side matched N and V, known stirrup branches; method qualification and project provenance remain separate",
+      "requiredEngineeringInputs": [
+        "D",
+        "N_ULS",
+        "V_ULS",
+        "fc",
+        "ft",
+        "fyv",
+        "Asv",
+        "s",
+        "beta_c",
+        "loading_type",
+        "loading_basis",
+        "shear_span_ratio_for_concentrated"
+      ]
+    },
+    {
+      "id": "concrete.circular_crack_width",
+      "basis": "GB/T 50010-2010 (2024 amendment) Chapter 7",
+      "status": "method_qualification_required",
+      "methodKind": "serviceability",
+      "scope": "circular section, applicable grade, sustained actions and shrinkage/restraint"
+    },
+    {
+      "id": "luoyu.five_stage",
+      "basis": "Source project Luoyu 3-3, PDF physical pp. 32-36",
+      "status": "conditional_research_only",
+      "methodKind": "staged_analysis",
+      "scope": "site datum, crown/toe/other wall stiffness and native numerical curves must be reviewed"
+    },
+    {
+      "id": "water.darcy_invariants",
+      "basis": "Conservation and linearity of stationary Darcy flow (physical verification, not a normative issue criterion)",
+      "status": "implemented_independent_physics_checks",
+      "methodKind": "metamorphic_validation",
+      "scope": "linear steady 2D frozen boundary-value problem; no site hydrogeological certification",
+      "requiredEngineeringInputs": [
+        "frozen_hydrogeological_domain",
+        "field_evidence",
+        "mesh_parameters"
+      ]
+    },
+    {
+      "id": "luoyu.boundary_identifiability",
+      "basis": "Source Luoyu 3-3 physical pp.32-36; independent conditional sensitivity",
+      "status": "conditional_research_only",
+      "methodKind": "parameter_sensitivity",
+      "scope": "free/pinned/fixed toe and half/double crown/brace stiffness. No inference of original project boundary from moment peaks",
+      "requiredEngineeringInputs": [
+        "original_pile_toe_boundary",
+        "original_crown_mapping",
+        "opposite_wall_stiffness",
+        "native_five_stage_point_arrays"
+      ]
+    },
+    {
+      "id": "water.field_paired_heads",
+      "basis": "现场观测记录与工程师指定配对时间窗",
+      "status": "data_integrity_screening_only",
+      "methodKind": "evidence_reconciliation",
+      "scope": "same stage/time-limited well pairs; raw source and design worst case not certified"
+    },
+    {
+      "id": "water.confined_thiem",
+      "basis": "Thiem steady radial confined aquifer two-observation-well equation",
+      "status": "candidate_parameter_only",
+      "methodKind": "limited_analytical",
+      "scope": "homogeneous/isotropic/steady, fully penetrating, negligible well loss; only T and candidate K"
+    },
+    {
+      "id": "concrete.circular_crack_dual_review",
+      "basis": "two independent third-party SLS reports bound to one frozen station",
+      "status": "numerical_consistency_only",
+      "methodKind": "independent_evidence",
+      "scope": "two distinct reviewers and source hashes; requires normative method qualification"
+    },
+    {
+      "id": "concrete.euler_ideal_column",
+      "basis": "Euler elastic ideal column formula",
+      "status": "reference_screen_only",
+      "methodKind": "theoretical_screen",
+      "scope": "declared Le/EI and compression; does not model soil springs or staged support"
+    },
+    {
+      "id": "luoyu.native_numeric_zip",
+      "basis": "original-source declared S1-S5 signed full-channel point arrays",
+      "status": "numeric_arrays_authenticated_only_within_uploaded_bytes",
+      "methodKind": "source_byte_integrity",
+      "scope": "five stages, signed stations, both-side pressure, installed support reference; original publisher unverified"
+    },
+    {
+      "id": "export.working_dossier_ed25519",
+      "basis": "SHA256 double manifest and Ed25519 independently trusted key",
+      "status": "byte_integrity_and_signer_only",
+      "methodKind": "cryptographic_integrity",
+      "scope": "does not imply code compliance or professional engineering release"
+    }
+  ],
+  "reviewStates": [
+    "fail_or_numerical_invalid",
+    "incomplete_site_evidence",
+    "site_engineering_review_required",
+    "failed_check",
+    "evidence_incomplete",
+    "axial_shear_method_review_required",
+    "missing_reference_curves",
+    "missing_project_conditions",
+    "model_method_not_independently_qualified"
+  ],
+  "sourcePriority": "mandatory applicable GB 55003-2021; then applicable JGJ 120-2012 and GB/T 50010-2010 (2024 amendment); local project and geotechnical investigation evidence"
 }

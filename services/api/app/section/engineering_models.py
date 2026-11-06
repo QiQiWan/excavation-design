@@ -30,6 +30,9 @@ class CircularShearInput(EngineeringInput):
     axial_force_design_kn: float
     seismic_case: Literal['nonseismic', 'seismic', 'unknown']
     applicability_basis: str = Field(min_length=10, max_length=1000)
+    axial_shear_loading_case: Literal['uniform_loading','concentrated_load'] | None = None
+    axial_shear_loading_basis: str | None = Field(default=None, max_length=1000)
+    shear_span_ratio_a_over_h0: float | None = Field(default=None, gt=0, le=100)
 
 
 class DetailingInput(EngineeringInput):

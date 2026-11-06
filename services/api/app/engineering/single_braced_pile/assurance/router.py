@@ -1,6 +1,6 @@
 """A separate, fail-closed API for standardized engineering evidence reviews."""
 from __future__ import annotations
-from fastapi import APIRouter,HTTPException,Request
+from fastapi import APIRouter,HTTPException,Request,Query,File,Form,UploadFile
 from pathlib import Path
 import json
 from io import BytesIO
@@ -14,6 +14,13 @@ from .workflow import UnifiedAuditInput,audit_unified
 from .quality_protocol import acceptance_plan
 from .dossier import export_assurance_dossier
 from .model import Strict
+from .field_hydrology import (ObservationReviewInput, reconcile_observations,
+                              PumpingTestInterpretationInput, interpret_thiem)
+from .circular_review import (CrackCrosscheckInput, crosscheck_crack_reports,
+                              EulerSecondOrderScreenInput, screen_euler_second_order)
+from .dossier_verify import verify_review_package, MAX_HTTP_DOSSIER_BYTES
+from ..real_project.native_numeric_import import (import_native_numeric,
+                  compare_native_with_candidate, make_blank_numeric_template, MAX_ARCHIVE_BYTES)
 
 router=APIRouter(prefix='/assurance',tags=['engineering-assurance'])
 
@@ -27,7 +34,11 @@ def schema_catalog():
        'hydraulic':HydraulicAuditInput.model_json_schema(),
        'circular':CircularAuditInput.model_json_schema(),
        'luoyu':LuoyuAuditInput.model_json_schema(),
-       'unified':UnifiedAuditInput.model_json_schema()}}
+       'unified':UnifiedAuditInput.model_json_schema(),
+       'hydraulicFieldObservations':ObservationReviewInput.model_json_schema(),
+       'pumpingTestThiem':PumpingTestInterpretationInput.model_json_schema(),
+       'circularCrackCrosscheck':CrackCrosscheckInput.model_json_schema(),
+       'pileEulerReferenceScreen':EulerSecondOrderScreenInput.model_json_schema()}}
 
 @router.post('/hydraulic')
 def audit_hydraulic_model(payload:HydraulicAuditInput):
@@ -119,3 +130,100 @@ def issue_review_dossier(body:DossierInput,request:Request):
         'Content-Disposition':f'attachment; filename="P1_P4_{result["resultHash"][:12]}_review.zip"',
         'X-PitGuard-Result':result['resultHash'],'X-PitGuard-Review':review['reviewHash'],
         'X-PitGuard-Formal-Issue':'false'})
+
+
+@router.get('/luoyu-3-3/boundary-sensitivity')
+def get_luoyu_boundary_sensitivity(
+    mesh_max_m:float=Query(default=.25,ge=.1,le=.5)
+):
+    """Conditional study of toe/crown/support alternatives. No project certification."""
+    from ..real_project.boundary_sensitivity import assess_boundary_identifiability
+    try:
+        return assess_boundary_identifiability(mesh_max_m=mesh_max_m)
+    except (ValueError,KeyError,TypeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+
+async def _bounded_upload(upload: UploadFile, limit: int) -> bytes:
+    data = bytearray()
+    try:
+        while True:
+            chunk = await upload.read(min(1024 * 1024, limit + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+            if len(data) > limit:
+                raise HTTPException(413, detail='Uploaded engineering file exceeds the permitted size')
+        return bytes(data)
+    finally:
+        await upload.close()
+
+
+@router.post('/hydraulic/observations/validate')
+def validate_field_observations(payload: ObservationReviewInput):
+    return reconcile_observations(payload)
+
+
+@router.post('/hydraulic/pumping-test/interpret')
+def interpret_field_pumping_test(payload: PumpingTestInterpretationInput):
+    return interpret_thiem(payload)
+
+
+@router.post('/circular/crack-crosscheck')
+def validate_circular_crack_reports(payload: CrackCrosscheckInput):
+    try:
+        return crosscheck_crack_reports(payload, Repository().load(payload.result_hash))
+    except FileNotFoundError as exc:
+        raise HTTPException(404, detail='Frozen result missing') from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.post('/circular/second-order/reference-screen')
+def reference_second_order_screen(payload: EulerSecondOrderScreenInput):
+    return screen_euler_second_order(payload)
+
+
+@router.get('/luoyu-3-3/native-numeric/blank-template')
+def download_native_numeric_template():
+    payload = make_blank_numeric_template()
+    return StreamingResponse(BytesIO(payload), media_type='application/zip', headers={
+        'Content-Disposition':'attachment; filename="luoyu_3_3_native_numeric_blank.zip"',
+        'X-PitGuard-Formal-Issue':'false'})
+
+
+@router.post('/luoyu-3-3/native-numeric/validate')
+async def validate_native_numeric_upload(upload: UploadFile=File(...)):
+    content = await _bounded_upload(upload, MAX_ARCHIVE_BYTES)
+    try:
+        result = import_native_numeric(content)
+        # Keep payload small in the browser response. Re-parse the same ZIP
+        # when an actual comparison is requested; no unreviewed evidence is saved.
+        result.pop('nativeReference')
+        return result
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.post('/luoyu-3-3/native-numeric/compare')
+async def compare_native_numeric_upload(upload: UploadFile=File(...), candidate_json: str=Form(...)):
+    content = await _bounded_upload(upload, MAX_ARCHIVE_BYTES)
+    try:
+        if len(candidate_json)>2_000_000:
+            raise ValueError('Candidate JSON exceeds the permitted size')
+        def reject_nonfinite(word):
+            raise ValueError('Nonfinite candidate numeric values are prohibited: '+word)
+        candidate = json.loads(candidate_json,parse_constant=reject_nonfinite)
+        return compare_native_with_candidate(content, candidate)
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.post('/acceptance/verify-package')
+async def verify_review_zip_upload(upload: UploadFile=File(...)):
+    content=await _bounded_upload(upload, MAX_HTTP_DOSSIER_BYTES)
+    try:
+        return verify_review_package(content)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc

@@ -1,6 +1,6 @@
 [project]
 name = "pitguard-api"
-version = "3.87.26"
+version = "3.88.0"
 description = "FastAPI backend for PitGuard excavation design verification and review"
 requires-python = ">=3.11"
 dependencies = [

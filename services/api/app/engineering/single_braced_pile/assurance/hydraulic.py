@@ -10,6 +10,7 @@ from pydantic import Field, model_validator, ConfigDict
 from .model import Strict, EvidenceBundle, audit_required
 from ..normative.hydraulic_assurance import hydraulic_assurance
 from ..normative.seepage_fd import solve_seepage
+from ..normative.hydraulic_invariants import validate_darcy_invariants
 
 
 class HydraulicLayer(Strict):
@@ -75,6 +76,7 @@ class HydraulicAuditInput(Strict):
     failure_modes:tuple[str,...]=('boiling','piping','confined_uplift')
     adverse_head_scenarios:tuple[HeadScenario,...]=Field(default=(),alias='adverseHeadScenarios',max_length=12)
     evaluate_boundary_sensitivity:bool=Field(default=False,alias='evaluateBoundarySensitivity')
+    evaluate_physics_invariants:bool=Field(default=False,alias='evaluatePhysicsInvariants')
     @model_validator(mode='after')
     def project_match(self):
         if (self.project_id,self.section_id)!=(self.evidence.project_id,self.evidence.section_id):
@@ -172,6 +174,10 @@ def audit_hydraulic(request:HydraulicAuditInput,*, independent:bool=True)->dict:
             independent_check['status']='dependency_unavailable'
         except Exception as exc:
             independent_check.update(status='failed',reason=str(exc))
+    invariants={'status':'not_requested','formalDesignReady':False}
+    if request.evaluate_physics_invariants and numeric['status']!='solver_failure':
+        try:invariants=validate_darcy_invariants(domain)
+        except Exception as exc:invariants={'status':'failed','reason':str(exc),'formalDesignReady':False}
     # A single nominal water level is not enough for staged excavation. Adverse
     # head conditions are separate BVPs, never algebraic multipliers on output.
     scenario_runs=[]
@@ -215,7 +221,8 @@ def audit_hydraulic(request:HydraulicAuditInput,*, independent:bool=True)->dict:
             boundary_check={'status':'solver_failure','reason':str(exc),'regulatoryApproval':False}
     scenarios_failed=any(x['numericalStatus'] in ('fail_screening','solver_failure') for x in scenario_runs)
     sensitivity_failed=boundary_check['status']=='solver_failure'
-    if numeric['status'] in ('fail_screening','solver_failure') or independent_check['status']=='failed' or scenarios_failed or sensitivity_failed:
+    physics_failed=invariants['status']=='failed'
+    if numeric['status'] in ('fail_screening','solver_failure') or independent_check['status']=='failed' or scenarios_failed or sensitivity_failed or physics_failed:
         state='fail_or_numerical_invalid'
     elif evidence['status']!='metadata_confirmed' or not path_valid:
         state='incomplete_site_evidence'
@@ -234,6 +241,7 @@ def audit_hydraulic(request:HydraulicAuditInput,*, independent:bool=True)->dict:
         'numericalInvestigation':numeric,'independentNumericalCheck':independent_check,
         'adverseHeadScenarioChecks':scenario_runs,
         'farFieldBoundarySensitivity':boundary_check,
+        'darcyPhysicsInvariants':invariants,
         'failureModeChecks':{mode:{'status':'separate_criterion_required',
             'siteSpecificCriterionVerified':False} for mode in request.failure_modes},
         'normativeBasis':['JGJ 120-2012 4.2.6, 7.1.4, Appendix C',

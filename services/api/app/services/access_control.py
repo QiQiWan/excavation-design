@@ -266,6 +266,9 @@ def required_role(method: str, path: str) -> str:
     normalized = path.rstrip("/") or "/"
     if public_access_allowed(normalized):
         return "viewer"
+    # Human adoption of an isolated Agent candidate is L2, never delegated to LLM.
+    if normalized.startswith('/api/agents/runs/') and normalized.endswith('/decision'):
+        return 'checker'
     if normalized.startswith("/api/system/backup"):
         return "admin"
     if normalized in ("/api/engineering/one-strut/review", "/api/engineering/one-strut/exports"):

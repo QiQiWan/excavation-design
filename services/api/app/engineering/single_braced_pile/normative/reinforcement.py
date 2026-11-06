@@ -6,6 +6,7 @@ anchorage. All stage cases must belong to the same frozen analysis.
 from __future__ import annotations
 from app.section.engineering_rebar import check_engineering_rebar
 from app.section.engineering_models import EngineeringDesign
+from .circular_axial_shear import eccentric_compression_circular_shear
 
 
 def circular_checks(model,stages,combination):
@@ -53,10 +54,10 @@ def synchronized_combination_sections(model, explicit):
     """Simultaneously evaluate stage/depth-matched N-M-V for explicit ULS.
 
     The N-M branch uses the existing strain compatibility integrator. A
-    supported N=0, non-seismic circular shear clause is evaluated with the
-    *same* V from the same case, stage, depth and side. Nonzero axial forces
-    retain a shear outside-scope flag; peaks from different stages are never
-    combined into fabricated N-M-V design actions.
+    supported circular shear clause is evaluated with the same V and
+    matching axial force. Nonzero axial compression requires documented
+    uniform or concentrated loading per GB/T 50010 6.3.12/6.3.15; unsupported
+    types remain blocked. No unrelated stage peaks are combined.
     """
     from app.section.engineering_rebar import circular_nm_capacity
     import math
@@ -111,45 +112,67 @@ def synchronized_combination_sections(model, explicit):
                     missing.append('engineering_design.shear')
                 elif action is None:
                     row['shearStatus']='missing_input'
-                elif (shear_input.get('axial_force_design_kn')!=0
-                      or shear_input.get('loading_case')!='general_bending_nonprestressed'
-                      or shear_input.get('seismic_case')!='nonseismic'):
+                elif shear_input.get('seismic_case')!='nonseismic':
                     row['shearStatus']='outside_method_scope'
-                elif (action.axial_design_kn<0 or
-                      action.axial_design_kn*1000 >= .3*cage.concrete_design_mpa*
-                           (math.pi*(model.pile.diameter_m*500)**2)):
-                    row['shearStatus']='outside_method_scope'
-                    row['shearScopeReason']='轴拉或轴压过高，无法采用忽略轴压有利项的保守下界'
+                    row['shearScopeReason']='Seismic shear branch not validated'
                 elif cage.stirrup_spacing_mm and cage.stirrup_diameter_mm:
-                    r=model.pile.diameter_m*500;b=1.76*r;h=1.6*r
-                    ft=shear_input['concrete_tensile_design_strength_mpa']
-                    fy=shear_input['stirrup_design_strength_mpa']
                     A=shear_input['effective_hoop_area_mm2']
-                    maximum=2*math.pi*cage.stirrup_diameter_mm**2/4
+                    maximum=math.pi*cage.stirrup_diameter_mm**2/2
                     if A>maximum*(1+1e-9):
                         row['shearStatus']='outside_method_scope'
                         missing.append('shear.effective_hoop_area_mm2_consistency')
-                    else:
+                    elif action.axial_design_kn<0:
+                        row['shearStatus']='outside_method_scope'
+                        row['shearScopeReason']='Axial tension requires a separately justified 6.3.14 check'
+                    elif action.axial_design_kn>0 and shear_input.get('axial_shear_loading_case') is None:
+                        row['shearStatus']='outside_method_scope'
+                        row['shearScopeReason']='Axial compression needs explicitly documented loading type and lambda'
+                        missing.append('shear.axial_shear_loading_case')
+                    elif (shear_input['axial_force_design_kn'] not in (0,action.axial_design_kn)):
+                        row['shearStatus']='outside_method_scope'
+                        row['shearScopeReason']='Conflicting axial force declarations'
+                    elif action.axial_design_kn==0 and shear_input['loading_case']=='general_bending_nonprestressed':
+                        r=model.pile.diameter_m*500;b=1.76*r;h=1.6*r
+                        ft=shear_input['concrete_tensile_design_strength_mpa']
+                        fy=shear_input['stirrup_design_strength_mpa']
                         strength=.7*ft*b*h/1000+fy*A*h/cage.stirrup_spacing_mm/1000
                         section_limit=.25*shear_input['concrete_strength_coefficient_beta_c']*cage.concrete_design_mpa*b*h/1000
                         capacity=min(strength,section_limit)
                         row['shearCapacityKn']=capacity
                         row['shearUtilization']=abs(V)/capacity if capacity>0 else None
-                        if action.axial_design_kn==0:
-                            row['shearStatus']='pass' if abs(V)<=capacity else 'fail'
-                        else:
-                            # An independent N=0 reference is a conservative
-                            # screening lower bound only for bounded axial
-                            # compression. GB50010 6.3 axial contribution is
-                            # not extended to circular sections by assertion.
+                        row['shearStatus']='pass' if abs(V)<=capacity else 'fail'
+                        row['shearMethod']='GB/T50010 6.3.15 -> 6.3.4, N=0'
+                    elif action.axial_design_kn>0:
+                        loading=shear_input.get('axial_shear_loading_case')
+                        if shear_input.get('loading_case')=='concentrated_load' and loading!='concentrated_load':
                             row['shearStatus']='outside_method_scope'
-                            row['conservativeZeroAxialShearScreen']={
-                                'computedCapacityKn':capacity,
-                                'demandShearKn':abs(V),
-                                'satisfiesLowerBound':abs(V)<=capacity,
-                                'regulatoryShearApproval':False}
-                            row['axialCompressionIgnoredForShearKn']=action.axial_design_kn
-                            row['shearScopeReason']='正轴压N的有利抗剪项取零，仍需圆截面轴剪规范方法与独立验证'
+                            row['shearScopeReason']='Concentrated load requires the matching lambda basis'
+                        elif shear_input.get('loading_case')=='other':
+                            row['shearStatus']='outside_method_scope'
+                        else:
+                            checked=eccentric_compression_circular_shear(
+                                diameter_mm=model.pile.diameter_m*1000,
+                                axial_compression_kn=action.axial_design_kn,
+                                shear_design_kn=V,concrete_fc_mpa=cage.concrete_design_mpa,
+                                concrete_ft_mpa=shear_input['concrete_tensile_design_strength_mpa'],
+                                stirrup_fyv_mpa=shear_input['stirrup_design_strength_mpa'],
+                                circular_hoop_area_mm2=A,spacing_mm=cage.stirrup_spacing_mm,
+                                beta_c=shear_input['concrete_strength_coefficient_beta_c'],
+                                loading_type=loading,
+                                loading_basis=shear_input.get('axial_shear_loading_basis') or '',
+                                shear_span_ratio=shear_input.get('shear_span_ratio_a_over_h0'))
+                            row['axialShearVerification']=checked
+                            row['shearStatus']=checked['status']
+                            row['shearCapacityKn']=checked.get('governingCapacityKn')
+                            row['shearUtilization']=checked.get('utilization')
+                            row['shearMethod']=checked.get('method')
+                            if checked['status']=='missing_input':
+                                missing.extend(checked['requiredInputs'])
+                            elif checked['status']=='outside_method_scope':
+                                row['shearScopeReason']=checked['reason']
+                    else:
+                        row['shearStatus']='outside_method_scope'
+                        row['shearScopeReason']='Unsupported N=0 load branch'
 
                 rows.append(row)
     nm=max((r for r in rows if r['nmUtilization'] is not None),
@@ -164,5 +187,5 @@ def synchronized_combination_sections(model, explicit):
         'governingNM':nm,'governingShear':shear,'formalDesignReady':False,
         'limitations':['轴力必须提供与组合、阶段对应的设计值，不能由支撑水平反力推断',
            '同一截面取同一阶段、组合、深度及受力侧的 N-M-V，分别计算抗弯与抗剪利用率',
-           'N=0抗剪仍是方法适用边界；有限正轴压采用忽略轴压力有利项的保守下界筛查，轴拉及大轴压阻断',
+           '符合GB/T50010 6.3.12/6.3.15时可验算正轴压N的斜截面；受力类型、剪跨比、截面限值及轴力来源必须明确，轴拉和其他类型仍阻断',
            '裂缝、二阶效应、节点与施工详图仍须经过独立验证']}

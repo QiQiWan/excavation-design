@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import './one-strut.css';
 import AssuranceGatePanel from './AssuranceGatePanel';
+import AgentPilotPanel from './AgentPilotPanel';
 
 type Json = Record<string, any>;
 type Preflight = { schemaValid: boolean; engineeringEvidenceComplete?: boolean; issues: { field: string; code: string; message: string }[] };
@@ -246,6 +247,12 @@ export default function OneStrutWorkbench({ projectId }: { projectId: string }) 
       <div className="ossAck">{uniqueIssues.map(code=><label key={code}><input type="checkbox" checked={!!acknowledged[code]} onChange={e=>setAcknowledged(prev=>({...prev,[code]:e.target.checked}))}/>{code}</label>)}</div>
       <div className="ossActions"><button onClick={()=>void approve()} disabled={!!busy || result.analysisStatus!=='complete' || !allAcknowledged || !reviewer.trim() || note.trim().length<8}>确认受限复核</button><button className="secondary" onClick={()=>void exportFiles()} disabled={!!busy || !review}>下载同源工作版成果</button><button className="secondary" onClick={()=>setView('input')}>修改输入</button></div>
       {review && <div className="ossTrace">受限复核记录已保存：{review.reviewHash?.slice(0,20)}；图纸和计算书均保留未完成验算标识。</div>}
+      <AgentPilotPanel result={result} projectId={projectId} onAdoptResult={async hash => {
+        const candidate=await request<Json>('/results/'+encodeURIComponent(hash));
+        generation.current++;
+        setInput(clone(candidate.snapshot));setResult(candidate as Calculation);setReview(null);
+        setPreflight(candidate.preflight || null);setAcknowledged({});setView('results');
+      }} />
       <AssuranceGatePanel result={result} preliminaryReview={review} />
     </>}
   </section>;

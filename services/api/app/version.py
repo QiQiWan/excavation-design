@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SOFTWARE_VERSION = "3.87.26"
+SOFTWARE_VERSION = "3.88.0"
 SECTION_KERNEL_VERSION = "2.0.0-explicit-methods-history-engineering-review"
 ALGORITHM_VERSION = "3.87.16-immutable-stage-loads-final-envelopes"
 RULE_SET_VERSION = "2026.10-v3.87.16-effective-stress-passive-depth-unified-actions"

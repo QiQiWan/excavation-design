@@ -46,6 +46,8 @@ def acceptance_plan(input:UnifiedAuditInput,result:dict,review:dict|None=None,*,
                     inputs.append('independent_hydraulic_solver_or_manual_check')
                 if report.get('farFieldBoundarySensitivity',{}).get('status')=='not_requested':
                     inputs.append('far_field_boundary_sensitivity')
+                if report.get('darcyPhysicsInvariants',{}).get('status')!='passed':
+                    inputs.append('independent_Darcy_physics_invariance_tests')
             elif phase=='P2':
                 inputs=[x['key'] for x in report['evidence']['items'] if x['status']!='matched']
                 if report['strength']['axialShearUnverifiedCount']:

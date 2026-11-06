@@ -1,3 +1,32 @@
+# V3.88.0 Agent 模块与部署补充
+
+`services/api/app/agents/` 新增 `catalog.py`（8 个角色与工具权限）、`contracts.py`（强类型 API）、`store.py`（SQLite WAL 任务与人工工作选择）、`engine.py`（A5/A6 诊断与候选计算）、`model_gateway.py`（自愿启用的只读解释）、`router.py`（工程师 API）、`worker.py`（嵌入式与外部执行）。
+
+单排桩前端在 `AgentPilotPanel.tsx` 显示任务、诊断、候选和校审，候选采用后重新加载冻结结果。新增 `RUN_V3_88_0_VERIFY.bat`、`RUN_V3_88_0_AGENT_WORKER.bat`、`RUN_V3_88_0_DEMO.bat`。详细数据合同和权限见 `RELEASE_3.88.0.md`。
+
+其他六个 Agent 当前仅登记职责，没有可调用的自治工具。工作版采用不改变完整基坑项目主数据，也不允许正式施工图发行。
+
+---
+
+## V3.87.28 新增模块
+
+- `assurance/field_hydrology.py`：一对一时差水位观测匹配，Thiem 承压含水层试验解释。
+- `assurance/circular_review.py`、`normative/second_order_screen.py`：圆桩裂缝双报告一致性、欧拉理想柱参考。
+- `real_project/native_numeric_import.py`：五阶段严格原生数值 ZIP/CSV 解析、单位和散列校验；可与旧有 `complete_curve_protocol` 对接。
+- `assurance/dossier_verify.py`、`assurance/dossier_signature.py`：真实 P1-P4 工作版档案的双层内容和哈希复核，离线签名和验签；独立私钥始终留在审查者设备。
+- `assurance/router.py`：新增现场水文、圆桩、原生数值和工作版校验 HTTP 接口；主应用统一鉴权。
+- `AssuranceGatePanel.tsx`：在原有校审步骤内添加折叠专项证据入口，防止独立应用流程并存。
+
+## V3.87.27 模块增加
+
+- `normative/circular_axial_shear.py`：根据 GB/T 50010 6.3.15/6.3.12/6.3.1 的圆截面偏心受压抗剪限定方法；设计组合、荷载类型、材料和箍筋必须明确。
+- `normative/hydraulic_invariants.py`：Darcy 方程水头平移、渗透率和水头差物理不变量验证，只证明相同边界值问题的一致性。
+- `real_project/curve_adapter.py`：条件化研究模型压力站数据转换，保留原始积分合力，不能生成原工程曲线。
+- `real_project/boundary_sensitivity.py`：螺屿村桩端/冠梁/支撑刚度七组独立场景的数值敏感性，输出严格非正式状态。
+- `assurance/router.py`：新增研究只读接口 `/assurance/luoyu-3-3/boundary-sensitivity`。
+- `assurance/assets/method_catalog.json`：登记限定的轴压剪切方法与物理方法；未确认裂缝和现场水文仍阻断。
+- `verification/run_38727_validation.py`：独立验证生成器，仅在验证包提供，不包含在精简运行包。
+
 ## V3.87.26 新增统一验收与声明式阶段校审
 
 新增 `assurance/quality_protocol.py`、`dossier.py`、`source_bytes.py` 与 `real_project/complete_curve_protocol.py`。`hydraulic.py` 新增分场景水头与远场边界敏感性；`repository.py` 增加逐阶段不可变哈希记录；`AssuranceGatePanel.tsx` 在原工作台提供 P1-P4 审核入口。所有证据声明在实际来源字节和专业方法验证之前均不表示正式合格。详见 `STANDARDIZATION_AND_ACCEPTANCE_V3_87_26.md`。

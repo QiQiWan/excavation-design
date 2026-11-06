@@ -27,3 +27,14 @@
 .ossAssurance .ossTableScroll {max-width:100%;overflow:auto;}
 .ossAssurance table ul {margin:5px 0;padding-left:16px;max-width:360px;}
 .ossAssurance table td {vertical-align:top;}
+/* V3.87.28: grouped evidence tools; no extra top-level workflow. */
+.ossEvidenceTools{margin:14px 0}.ossEvidenceTools>summary{cursor:pointer;font-weight:650}
+.ossEvidenceGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,350px),1fr));gap:12px;margin:14px 0}
+.ossEvidenceCard{padding:14px;border:1px solid #d9e2ea;background:#fbfcfe;border-radius:9px;min-width:0}
+.ossEvidenceCard h4{font-size:15px;margin:0 0 8px}
+.ossEvidenceCard p{font-size:12px;color:#4f6478;line-height:1.7}
+.ossEvidenceCard .ossActions{margin:8px 0 14px}
+.ossEvidenceCard .ossActions button{padding:7px 12px;font-size:12px}
+.ossEvidenceCard textarea{min-height:76px;border-radius:6px;border:1px solid #cbd5e1}
+.ossEvidenceCard input[type=file]{font-size:12px;width:100%;min-width:0}
+.ossEvidenceNote{font-size:13px;color:#52697f;line-height:1.6}

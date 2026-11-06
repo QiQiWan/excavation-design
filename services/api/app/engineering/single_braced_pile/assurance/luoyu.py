@@ -8,6 +8,7 @@ from .model import Strict,EvidenceBundle,audit_required
 from ..real_project.boundary_evidence import luoyu_boundary_register,compare_complete_curves
 from ..normative.reference_review import luoyu_three_three
 from ..real_project.complete_curve_protocol import compare_five_stage_full_channels
+from ..real_project.curve_adapter import normalize_research_candidate
 
 
 class LuoyuAuditInput(Strict):
@@ -76,7 +77,7 @@ def audit_luoyu(request:LuoyuAuditInput)->dict:
         {x.get('id') for x in candidate.get('stages',[])}=={'S1','S2','S3','S4','S5'} and
         all(x.get('status')=='success' and x.get('curve') for x in candidate['stages']))
     if request.original_numeric_reference and candidate_complete:
-        comparison=compare_five_stage_full_channels(candidate,request.original_numeric_reference)
+        comparison=compare_five_stage_full_channels(normalize_research_candidate(candidate),request.original_numeric_reference)
     else:
         comparison={'comparisonStatus':'blocked','rmse':None,
            'requiredEvidence':['five_complete_candidate_stages','native_five_stage_curves']}

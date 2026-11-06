@@ -11,6 +11,7 @@ import shutil
 import sys
 
 from fastapi import Depends, FastAPI, Request
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -30,10 +31,26 @@ from app.tasks.manager import task_manager
 
 logger = logging.getLogger("pitguard.performance")
 
+@asynccontextmanager
+async def pitguard_lifespan(application):
+    """Optional embedded worker; external mode uses python -m app.agents.worker."""
+    from app.agents.worker import AgentWorker
+    worker = None
+    if os.getenv('PITGUARD_AGENT_WORKER','embedded').lower() == 'embedded':
+        worker = AgentWorker()
+        worker.start()
+    try:
+        yield
+    finally:
+        if worker is not None:
+            worker.stop()
+
+
 app = FastAPI(
+    lifespan=pitguard_lifespan,
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.87.26 one-strut working design, reviewed outputs and normative method toolbox, unit-safe parameter suggestions and controlled calculation agent.",
+    description="PitGuard V3.88.0 one-strut working design, reviewed outputs and normative method toolbox, unit-safe parameter suggestions and controlled calculation agent.",
 )
 
 app.add_middleware(
@@ -142,6 +159,8 @@ for _router in (
     app.include_router(_router)
 
 app.include_router(one_strut_router)
+from app.agents.router import router as agent_router
+app.include_router(agent_router)
 
 if PRODUCT_MODE == "full":
     from app.routers import (
