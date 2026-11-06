@@ -1,0 +1,56 @@
+{
+  "schema": "pitguard-transfer-engineering-evidence-template-v2",
+  "instructions": "Replace every placeholder with traceable project evidence. Upload source files through the engineering-evidence endpoint so PitGuard stores immutable artifacts and computes SHA-256. Verification must use a credential from the server-side trusted registry and a 64-character SHA-256 signature hash. Do not approve formal issue with placeholders.",
+  "geology": {
+    "investigationReportArtifactId": "REQUIRED_AFTER_UPLOAD",
+    "investigationReportSha256": "REQUIRED_64_HEX",
+    "investigationReportRevision": "REQUIRED",
+    "boreholeObjectIds": ["REQUIRED"],
+    "laboratoryTestReferences": ["REQUIRED"],
+    "parameterApprovalReference": "REQUIRED",
+    "authorizedVerifier": {
+      "licenseType": "registered_geotechnical_engineer",
+      "licenseNumber": "REQUIRED_SERVER_REGISTRY_ENTRY",
+      "holderName": "REQUIRED",
+      "jurisdiction": "CN",
+      "digitalSignatureSha256": "REQUIRED_64_HEX"
+    }
+  },
+  "groundwater": {
+    "observationArtifactIds": ["REQUIRED_AFTER_UPLOAD"],
+    "observationSha256": ["REQUIRED_64_HEX"],
+    "observationTimes": ["REQUIRED_ISO_8601"],
+    "groundwaterRecordObjectIds": ["REQUIRED"],
+    "designWaterLevelBasis": "REQUIRED",
+    "dewateringPlanReference": "REQUIRED",
+    "authorizedVerifier": {
+      "licenseType": "registered_geotechnical_engineer",
+      "licenseNumber": "REQUIRED_SERVER_REGISTRY_ENTRY",
+      "holderName": "REQUIRED",
+      "jurisdiction": "CN",
+      "digitalSignatureSha256": "REQUIRED_64_HEX"
+    }
+  },
+  "construction": {
+    "approvedMethodStatementArtifactId": "REQUIRED_AFTER_UPLOAD",
+    "approvedMethodStatementSha256": "REQUIRED_64_HEX",
+    "constructionStageObjectIds": ["REQUIRED"],
+    "supportInstallationSequenceReference": "REQUIRED",
+    "replacementAndRemovalSequenceReference": "REQUIRED",
+    "monitoringPlanReference": "REQUIRED",
+    "authorizedVerifier": {
+      "licenseType": "registered_structural_engineer",
+      "licenseNumber": "REQUIRED_SERVER_REGISTRY_ENTRY",
+      "holderName": "REQUIRED",
+      "jurisdiction": "CN",
+      "digitalSignatureSha256": "REQUIRED_64_HEX"
+    }
+  },
+  "formalApproval": {
+    "fourLevelWorkflowApproved": false,
+    "registeredStructuralEngineerLicenseNumber": "REQUIRED_SERVER_REGISTRY_ENTRY",
+    "digitalSignatureSha256": "REQUIRED_64_HEX",
+    "concaveTransferDetailingApproval": false,
+    "note": "Client-supplied verified flags are ignored. The service revalidates credentials, source artifacts, object hashes and signatures whenever formal readiness is evaluated."
+  }
+}

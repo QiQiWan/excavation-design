@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "pitguard.section-delivery-render-review/1",
+  "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+  "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+  "resultHash": "69f2e1a3a784947b6a1f2e13b31d6bd704a71597effc217a6659d2def8dbe8f9",
+  "sourceDirectory": "/workspace/scratch/fd5d8a28c64e/work/section_final_deliverables_v3_87_17/section_VERIFY-PILE-01_2223478185_69f2e1a3a7_23m97wln",
+  "qaDirectory": "/workspace/scratch/fd5d8a28c64e/work/section_final_deliverables_v3_87_17/qa_verified",
+  "pages": {
+    "calculation": 11,
+    "sectionA3": 1,
+    "envelopesA3": 2
+  },
+  "nativeEquationCount": 10,
+  "csvRows": {
+    "envelopes.csv": 328,
+    "stage_results.csv": 1968,
+    "reinforcement.csv": 1,
+    "comparison.csv": 851,
+    "input_sources.csv": 1
+  },
+  "dxf": {
+    "format": "AC1032",
+    "modelUnits": "mm",
+    "nativeDimensionsMm": [
+      700.0,
+      10000.0
+    ],
+    "scaleDenominator": 100.0,
+    "viewportLocked": true,
+    "auditErrors": 0
+  },
+  "pdfDrawing": {
+    "paperWidthMm": 419.99994506835935,
+    "paperHeightMm": 297.0000023735894,
+    "pilePrintedWidthMm": 6.999992624918619,
+    "pilePrintedLengthMm": 100.00001152886284,
+    "scaleDenominator": 100,
+    "status": "pass"
+  },
+  "checks": {
+    "sealedPairValidation": "pass",
+    "resultIdenticalToFinalRun": "pass",
+    "allPackageSha256": "pass",
+    "zipCRC": "pass",
+    "csvIdentity": "pass",
+    "copyByteIdentity": "pass"
+  },
+  "visualReview": {
+    "calculationPages": "All 11 pages reviewed; final pages 1-6 pixel-identical to reviewed render; revised worked-depth rows rechecked independently.",
+    "drawingPages": "All 3 A3 pages reviewed and final renders pixel-identical; no observed missing glyphs, clipping or overlap.",
+    "workedArithmetic": "Printed integration depth 5.91130886 m reproduces rounded segment contributions and effective stresses."
+  },
+  "comparisons": {
+    "hand": "passed",
+    "independent": "passed",
+    "mesh": "passed",
+    "original": "incomplete"
+  },
+  "engineeringStatus": "review_required",
+  "formalDesignReady": false,
+  "files": {
+    "剖面验证_计算书.docx": {
+      "bytes": 301722,
+      "sha256": "6be219fd7adc9b43aec40593713551845e5ecb88110eb15a07a4e4d610be8edc",
+      "sourceFile": "calculation.docx"
+    },
+    "剖面验证_计算书.pdf": {
+      "bytes": 878058,
+      "sha256": "b4369bf90cea198f6ffde06cc124f3b25e373773d8efca61c3a0fc282368bc99",
+      "sourceFile": "calculation.pdf"
+    },
+    "剖面验证_剖面图_A3.pdf": {
+      "bytes": 33473,
+      "sha256": "713834cac3fa8c6cf05a26c6514f678605da3994d9fd282d6b06d07cee27ef25",
+      "sourceFile": "section_A3.pdf"
+    },
+    "剖面验证_可编辑剖面.dxf": {
+      "bytes": 68149,
+      "sha256": "5bc38f0482c518f7e31bbb31a5352761e9a000375d5a23d4e4e88fa6b1b7ecf5",
+      "sourceFile": "section.dxf"
+    },
+    "剖面验证_内力位移包络_A3.pdf": {
+      "bytes": 37166,
+      "sha256": "4b43d3a6eafeafab962ee86a2671f00f1523bd6dda20fdbeef4317501b72085d",
+      "sourceFile": "envelopes_A3.pdf"
+    },
+    "剖面验证_配筋核对.csv": {
+      "bytes": 1139,
+      "sha256": "310f372e93d4a78df21ed2edbd85c57fe7d3ebe767188d3106ce954d82dc12e1",
+      "sourceFile": "reinforcement.csv"
+    },
+    "reinforcement.csv": {
+      "bytes": 1139,
+      "sha256": "310f372e93d4a78df21ed2edbd85c57fe7d3ebe767188d3106ce954d82dc12e1",
+      "sourceFile": "reinforcement.csv"
+    },
+    "剖面验证_包络数据.csv": {
+      "bytes": 146513,
+      "sha256": "aaba05f073a9f9d9f5bbae08fcb8abeee67b301689858ed83543240f6628d82d",
+      "sourceFile": "envelopes.csv"
+    },
+    "剖面验证_阶段数据.csv": {
+      "bytes": 697718,
+      "sha256": "82d757f96a30f6cff156f4055f664ea3086aac956afb146f15a2c1afc5690b35",
+      "sourceFile": "stage_results.csv"
+    },
+    "剖面验证_对照核查.csv": {
+      "bytes": 258927,
+      "sha256": "6670cdbfa921c222b56c0ecc9674a7c8de995514226a7ed81b85adc8419fa087",
+      "sourceFile": "comparison.csv"
+    },
+    "剖面验证_输入来源.csv": {
+      "bytes": 575,
+      "sha256": "8b42db26b093a0d4f126426678c1ea73170dd1e3512145a79d650ac9ef313c22",
+      "sourceFile": "input_sources.csv"
+    },
+    "剖面验证_冻结输入.json": {
+      "bytes": 5643,
+      "sha256": "0cb937a1697f8bf471eacc1f9154219781ea748f579f134e55f0a8056266981c",
+      "sourceFile": "frozen_section.json"
+    },
+    "剖面验证_封存结果.json": {
+      "bytes": 5318401,
+      "sha256": "28f4f3f43a774f878ef3192000d506d043ad3a27a9eac5696ab3f7c8918a2723",
+      "sourceFile": "section_result.json"
+    },
+    "剖面验证_最小成果包.zip": {
+      "bytes": 1299151,
+      "sha256": "e73716f114d0ef4e514fc7c0f46ba75317e32e1c3dcca1052bebd549e5377c53",
+      "sourceFile": "section_VERIFY-PILE-01_2223478185_69f2e1a3a7_23m97wln.zip"
+    },
+    "剖面验证_导出回归.txt": {
+      "bytes": 1334,
+      "sha256": "04e42c0daaba31bd347a9fba5cd2d8c61de3d89b867fb3a6fd1d78310712e320"
+    },
+    "剖面验证_交付说明.txt": {
+      "bytes": 1634,
+      "sha256": "5aedef53cb8dc5ad5ba6a9630cccf80806682d40428da47e08686ecd14361124"
+    }
+  },
+  "reviewedAt": "2026-10-25T04:07:06.515266+00:00",
+  "exportRegression": {
+    "testCount": 6,
+    "status": "passed",
+    "elapsedSeconds": 10.39,
+    "logFile": "剖面验证_导出回归.txt",
+    "scope": "frozen source and geometry, tamper gate, failed results, long-pile exact scale, simultaneous downloads, same-snapshot hand report including depth precision and F=10 kN"
+  },
+  "fontReview": {
+    "cjkPdfFontEmbedded": true,
+    "docxPreviewFontsEmbedded": true,
+    "source": "repo-bundled Noto Sans CJK SC; OFL license included in source assets"
+  },
+  "parameterDisplayReview": {
+    "page": 8,
+    "actualPdfText": "验证参数：L = 5 m，EI = 100,000 kN·m²，F = 10 kN，支撑刚度 K = 2,000 kN/m。",
+    "clipImage": "/workspace/scratch/fd5d8a28c64e/work/section_final_deliverables_v3_87_17/qa_verified/docx/page-8-parameters-pdf-clip.png",
+    "status": "pass"
+  },
+  "exportSourceSha256": {
+    "services/api/app/section/export.py": "552049cc8538e0a14cefa28e93c70a72c4321ae4c422e4df25117af0b0b1470f",
+    "services/api/app/section/render_helper.py": "a0d5f4b753d0aece1a0d4995bd81c268cef3c338ad1ba9613bd4476ad087adb5",
+    "services/api/tests/test_section_export.py": "8fd9d698e445ee5cda3c5ea58cdeb23cce8185ba297e9d9c3d6baad048c488a4"
+  }
+}

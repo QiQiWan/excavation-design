@@ -1,0 +1,35 @@
+{
+  "version": "3.87.6",
+  "release": "unified-adaptive-auto-closure",
+  "diagnosticEvidence": {
+    "source": "user-supplied runtime diagnostics",
+    "staleSupportReferenceCounts": [52, 104, 156],
+    "observedMaximumWallDisplacementMm": 90.866,
+    "observedMaximumSupportForceKn": 4836.774,
+    "rootCauses": [
+      "design-control stages retained support IDs from an earlier topology",
+      "V3.87.5 search varied sections but did not search additional support levels",
+      "task progress had no monotonic display contract and sparse intra-candidate updates"
+    ]
+  },
+  "implemented": [
+    "single calculation_auto_close operation and one primary UI button",
+    "automatic support-ID remapping for regular design-control stages",
+    "manual boundary for replacement and support-removal transfer stages",
+    "seven adaptive system-and-section candidate families",
+    "support spacing densification and one additional support-level search",
+    "canonical construction-stage rebuild after candidate adoption and before rebar feedback",
+    "explicit closed, cannot_close and needs_manual_input outcomes",
+    "monotonic task progress in backend and frontend",
+    "duplicate task submission guard",
+    "bounded candidate memory retention"
+  ],
+  "verification": {
+    "pythonCompileAll": "pass",
+    "targetedBackendTests": "34 passed",
+    "tsxTranspileParse": "pass, 0 syntax diagnostics",
+    "supportLevelTopologySmokeTest": "pass; levels 3 to 4, supports 33 to 48, final stage references 48 current supports",
+    "shellSyntax": "pass",
+    "fullFrontendBuild": "not run to completion because npm dependency installation was unavailable in the packaging environment"
+  }
+}

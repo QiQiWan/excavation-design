@@ -1,0 +1,2457 @@
+{
+  "schemaVersion": "pitguard.synthetic-method-matrix/1",
+  "purpose": "verification_fixture",
+  "originalProjectEquivalenceClaimed": false,
+  "formalDesignReady": false,
+  "scriptSha256": "f3ff5bb77f0562337b84e7cd93efdf64b40ee708599fe307bdb4568c3055ab0a",
+  "pythonVersion": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "openseesPath": "/workspace/scratch/fd5d8a28c64e/work/section_opensees",
+  "scope": "All stages: nodal u/rotation, element end M/V, soil pressures/plastic history, support reactions and installation references; same-snapshot hand checks.",
+  "parameterFitting": false,
+  "meshCampaignRun": false,
+  "cases": [
+    {
+      "historyPolicy": "carry_plastic_history_v1",
+      "status": "failed",
+      "definition": {
+        "schema_version": "pitguard.frozen-section/2",
+        "section_id": "MIXED-HISTORY-carry_plastic_history_v1",
+        "name": "Synthetic mixed-water history: carry_plastic_history_v1",
+        "purpose": "verification_fixture",
+        "source_project_id": null,
+        "source_revision": null,
+        "comparison_reference": null,
+        "datum": {
+          "label": "验证模型地面 z=0",
+          "wall_top_elevation_m": 0.0,
+          "elevation_system": "local"
+        },
+        "pile": {
+          "diameter_m": 0.7,
+          "spacing_m": 0.9,
+          "length_m": 10.0,
+          "elastic_modulus_kpa": 30000000.0,
+          "inertia_factor": 1.0,
+          "toe_boundary": "fixed"
+        },
+        "soil_effective_width_m": 0.9,
+        "soil_layers": [
+          {
+            "id": "L1",
+            "name": "验证砂土层一",
+            "top_m": 0,
+            "bottom_m": 4,
+            "gamma_unsat_kn_m3": 18,
+            "gamma_sat_kn_m3": 20,
+            "cohesion_kpa": 0,
+            "phi_deg": 30,
+            "k0": 0.5,
+            "m_inside_kn_m4": 8000,
+            "m_outside_kn_m4": 8000
+          },
+          {
+            "id": "L2",
+            "name": "Synthetic total-stress undrained layer",
+            "top_m": 4,
+            "bottom_m": 20,
+            "gamma_unsat_kn_m3": 19,
+            "gamma_sat_kn_m3": 21,
+            "cohesion_kpa": 10.0,
+            "phi_deg": 0.0,
+            "k0": 1.0,
+            "m_inside_kn_m4": 15000,
+            "m_outside_kn_m4": 15000
+          }
+        ],
+        "supports": [
+          {
+            "id": "STRUT-1",
+            "depth_m": 1.625,
+            "kind": "elastic",
+            "stiffness_kn_per_m": 29070,
+            "compression_only": true,
+            "preload_kn": 0
+          },
+          {
+            "id": "REPLACEMENT",
+            "depth_m": 4.6,
+            "kind": "rigid",
+            "stiffness_kn_per_m": null,
+            "compression_only": false,
+            "preload_kn": 0
+          }
+        ],
+        "stages": [
+          {
+            "id": "S0",
+            "name": "初始地应力平衡",
+            "event": "initial",
+            "excavation_depth_m": 0.0,
+            "water_inside_depth_m": 1.5,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S1",
+            "name": "开挖至2.05米",
+            "event": "excavate",
+            "excavation_depth_m": 2.05,
+            "water_inside_depth_m": 2.55,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S2",
+            "name": "安装第一道支撑",
+            "event": "install",
+            "excavation_depth_m": 2.05,
+            "water_inside_depth_m": 2.55,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [
+              "STRUT-1"
+            ],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S3",
+            "name": "开挖至4.9米",
+            "event": "excavate",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "HISTORY",
+            "name": "Independent history checkpoint: carry_plastic_history_v1",
+            "event": "water_or_load",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S4",
+            "name": "安装刚性换撑支点",
+            "event": "install",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [
+              "REPLACEMENT"
+            ],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S5",
+            "name": "拆除第一道支撑",
+            "event": "remove",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": [
+              "STRUT-1"
+            ]
+          }
+        ],
+        "analysis": {
+          "soil_method": "two_sided_elastoplastic_winkler_v1",
+          "pressure_method": "explicit_rankine_stress_modes_v2",
+          "max_element_size_m": 0.125,
+          "water_unit_weight_kn_m3": 9.81,
+          "design_effect_factor": 1.25,
+          "design_effect_factor_basis": "验证例显式采用1.25的特征内力效应放大系数，不代表任何实际项目规范取值"
+        },
+        "reinforcement": {
+          "longitudinal_extent": "full_length",
+          "bar_start_angle_deg": 0.0,
+          "bar_count": 16,
+          "bar_diameter_mm": 18,
+          "bar_axis_cover_mm": 59,
+          "concrete_design_strength_mpa": 14.3,
+          "concrete_peak_strain": 0.002,
+          "concrete_ultimate_strain": 0.0033,
+          "steel_design_strength_mpa": 360,
+          "steel_modulus_mpa": 200000,
+          "minimum_longitudinal_ratio": 0.006,
+          "minimum_ratio_basis": "本验证例明示的最小纵筋率，用于验证成果链，实际工程须确认采用依据",
+          "stirrup_diameter_mm": 8,
+          "stirrup_spacing_mm": 125,
+          "axial_force_kn": 0.0
+        },
+        "evidence": [
+          {
+            "parameter": "all_inputs",
+            "kind": "verification_definition",
+            "source": "PitGuard冻结剖面解析与独立求解验证集",
+            "source_sha256": null,
+            "page": null,
+            "note": "完整合成算例；阶段顺序参考A3-3事件结构，其土层、边界和几何不冒充原项目。"
+          },
+          {
+            "parameter": "mixed_layer_and_history_fixture",
+            "kind": "verification_definition",
+            "source": "scripts/validate-section-method-matrix.py",
+            "source_sha256": null,
+            "page": null,
+            "note": "L1 effective, L2 explicit total phi_u=0/cu10/K0=1, fixed toe chosen as a physical boundary; never a weak spring. Three policies differ only at HISTORY."
+          }
+        ],
+        "limitations": [
+          "Synthetic verification only; not a reconstruction of original A3-3 or FRWS settings.",
+          "L1 effective-stress sand; L2 total-stress undrained phi_u=0, cu=10 kPa, K0=1.",
+          "Fixed toe is explicitly imposed for all three cases; there is no weak-spring stabilization.",
+          "The carry checkpoint is a no-change water_or_load event because soil_reset requires a non-carry policy.",
+          "Finite rectangle remains q30 kPa, x4.3..16.3m, y-32.5..32.5m with explicit centered-position assumption.",
+          "All other original synthetic fixture parameters are unchanged; no peak matching or parameter calibration.",
+          "Engineering reinforcement groups are not selected in this numerical-method matrix."
+        ],
+        "reference_contract_hash": null,
+        "method_extensions": {
+          "schema_version": "pitguard.method-extensions/1",
+          "geometry_basis": "flat_wall_top_surface",
+          "m_law": "k_h=m*z",
+          "m_depth_reference": "current_side_surface",
+          "m_basis": "合成验证例：从各侧现地表起算k_h=m*z；每层独立m值，不推定FRWS原设置。",
+          "surface_load_method": "boussinesq_vertical_rankine_k_mapping_v1",
+          "surface_loads": [
+            {
+              "id": "Q-RECT",
+              "kind": "rectangle",
+              "q_kpa": 30.0,
+              "near_m": 4.3,
+              "far_m": 16.3,
+              "along_start_m": -32.5,
+              "along_end_m": 32.5,
+              "basis": "合成验证例：邻载尺寸参考原文；假定剖面位于65m长度中点且距离从墙轴线起算，原项目这两项未确认。"
+            }
+          ],
+          "layer_stress_modes": [
+            {
+              "layer_id": "L1",
+              "mode": "effective_separated",
+              "parameter_basis": "effective",
+              "basis": "合成砂土验证层明确采用有效应力c、phi和K0。"
+            },
+            {
+              "layer_id": "L2",
+              "mode": "total_combined",
+              "parameter_basis": "total",
+              "basis": "Synthetic total-stress phi_u=0, c_u=10 kPa and K0=1; not inferred from A3-3 effective parameters."
+            }
+          ],
+          "stage_options": [
+            {
+              "stage_id": "S0",
+              "active_load_ids": [],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S1",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S2",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S3",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "HISTORY",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "Synthetic isolated history checkpoint; geometry, water, loads and installed supports are unchanged."
+            },
+            {
+              "stage_id": "S4",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S5",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            }
+          ]
+        },
+        "engineering_design": null
+      },
+      "snapshotHash": "6e18652a8a8ff5a9de5e389681f39251f3a9116675625649895c76d047f67106",
+      "analysisHash": "bfffc0564e7b32540df059628401beaf4f60e085e5b4f16bf274cdedf4dde588",
+      "resultHash": "b781009f6f0186e87038065705e9648ce9629bfe094693467de6103f319077f9",
+      "discreteInputHash": "03c70634592060f0aab183e1ddef49a62949b9b139baf0f5c2cdc67584950b99",
+      "primaryStatus": "complete",
+      "primaryStages": [
+        {
+          "stageId": "S0",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "soilStateCount": 984,
+          "nonzeroPlasticOffsets": 0,
+          "maxAbsPlasticOffsetM": 0.0,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S1",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 6.155578157945297,
+          "maxAbsMomentKnM": 91.69004810502301,
+          "maxAbsShearKn": 46.887691778679546,
+          "soilStateCount": 882,
+          "nonzeroPlasticOffsets": 660,
+          "maxAbsPlasticOffsetM": 0.0057805778332307945,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S2",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 6.155578157945297,
+          "maxAbsMomentKnM": 91.69004810502301,
+          "maxAbsShearKn": 46.887691778679546,
+          "soilStateCount": 882,
+          "nonzeroPlasticOffsets": 660,
+          "maxAbsPlasticOffsetM": 0.0057805778332307945,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 7.16536510301461e-15
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S3",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.543432551841544,
+          "maxAbsMomentKnM": 590.0295245698888,
+          "maxAbsShearKn": 304.8354071716741,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 684,
+          "maxAbsPlasticOffsetM": 0.008235137863111022,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 109.05691653502382
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "HISTORY",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.543432551841544,
+          "maxAbsMomentKnM": 590.0295245698888,
+          "maxAbsShearKn": 304.8354071716741,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 684,
+          "maxAbsPlasticOffsetM": 0.008235137863111022,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 109.05691653502382
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S4",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.543432551841544,
+          "maxAbsMomentKnM": 590.0295245698888,
+          "maxAbsShearKn": 304.8354071716741,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 684,
+          "maxAbsPlasticOffsetM": 0.008235137863111022,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 109.05691653502382
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 7.7834436244729925,
+              "reactionCharacteristicKn": -1.2258341091329894e-09
+            }
+          ]
+        },
+        {
+          "stageId": "S5",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 17.22695513224636,
+          "maxAbsMomentKnM": 547.9534105258467,
+          "maxAbsShearKn": 300.08654761476333,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 684,
+          "maxAbsPlasticOffsetM": 0.016851954807531856,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "removed",
+              "active": false,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 0.0
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 7.7834436244729925,
+              "reactionCharacteristicKn": 266.82548249030134
+            }
+          ]
+        }
+      ],
+      "independentStatus": "failed",
+      "independentStageStatuses": [
+        {
+          "stageId": "S0",
+          "status": "success",
+          "failureReason": null
+        },
+        {
+          "stageId": "S1",
+          "status": "success",
+          "failureReason": null
+        },
+        {
+          "stageId": "S2",
+          "status": "failed",
+          "failureReason": "OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S3",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "HISTORY",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S4",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S5",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        }
+      ],
+      "independentFailureReason": "OpenSees final tangent disagrees with an interior elastic soil branch",
+      "independentDiagnostic": null,
+      "comparison": {
+        "status": "failed",
+        "reason": "OpenSees final tangent disagrees with an interior elastic soil branch",
+        "solver": "OpenSees",
+        "solverVersion": "3.8.0",
+        "discreteInputHash": "03c70634592060f0aab183e1ddef49a62949b9b139baf0f5c2cdc67584950b99"
+      },
+      "sameSnapshotHandChecks": {
+        "status": "passed",
+        "snapshotHash": "6e18652a8a8ff5a9de5e389681f39251f3a9116675625649895c76d047f67106",
+        "discreteInputHash": "03c70634592060f0aab183e1ddef49a62949b9b139baf0f5c2cdc67584950b99",
+        "stageId": "S3",
+        "checks": [
+          {
+            "id": "same_snapshot_ei",
+            "name": "本剖面单桩抗弯刚度",
+            "unit": "kN·m²",
+            "formula": "E·η·πD⁴/64",
+            "expected": 353576.4356844887,
+            "actual": 353576.4356844887,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_water_force",
+            "name": "S3 静水压力差合力",
+            "unit": "kN",
+            "formula": "分算土层区间Σ∫s·γw(z−zw)dz；合算层不再添加外水",
+            "expected": 27.590625000000003,
+            "actual": 27.590625000000003,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_water_moment",
+            "name": "S3 水力对桩顶力矩",
+            "unit": "kN·m",
+            "formula": "分算土层区间Σ∫s·γw(z−zw)·z dz",
+            "expected": 87.3703125,
+            "actual": 87.37031250000001,
+            "passed": true,
+            "maxAbsoluteDifference": 1.4210854715202004e-14,
+            "maxNormalizedError": 1.6264897834975297e-13,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_outside_effective_stress",
+            "name": "S3 坑外压力对应竖向应力",
+            "unit": "kPa",
+            "formula": "σ′v 或 σv + 均布q + 有限邻载独立积分",
+            "expected": 121.31490399191652,
+            "actual": 121.31490399191652,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_inside_effective_stress",
+            "name": "S3 坑内压力对应竖向应力",
+            "unit": "kPa",
+            "formula": "σ′v 或 σv + 均布q + 有限邻载独立积分",
+            "expected": 20.237485969610965,
+            "actual": 20.23748596961096,
+            "passed": true,
+            "maxAbsoluteDifference": 3.552713678800501e-15,
+            "maxNormalizedError": 1.7554246321266654e-13,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_zero_force_installation",
+            "name": "实际阶段新支点零力安装",
+            "unit": "kN",
+            "formula": "R=K(u−u_install)=0；刚性支点保持安装位移",
+            "expected": 0.0,
+            "actual": 1.2258341091329894e-09,
+            "passed": true,
+            "maxAbsoluteDifference": 1.2258341091329894e-09,
+            "maxNormalizedError": 0.00012258339588660814,
+            "count": 1,
+            "absoluteTolerance": 1e-05,
+            "relativeTolerance": 0.001
+          }
+        ],
+        "soilPressureWorkedRows": [
+          {
+            "side": "outside",
+            "depthM": 5.9113088556957605,
+            "materialStationId": "outside:E49:G0:N0",
+            "verticalStressSegments": [
+              {
+                "fromM": 0.0,
+                "toM": 1.5,
+                "layerId": "L1",
+                "effectiveUnitWeightKnM3": 18.0,
+                "contributionKpa": 27.0
+              },
+              {
+                "fromM": 1.5,
+                "toM": 4.0,
+                "layerId": "L1",
+                "effectiveUnitWeightKnM3": 10.19,
+                "contributionKpa": 25.474999999999998
+              },
+              {
+                "fromM": 4.0,
+                "toM": 5.9113088556957605,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 11.19,
+                "contributionKpa": 21.38754609523556
+              }
+            ],
+            "surchargeKpa": 0.0,
+            "phiDeg": 0.0,
+            "cohesionKpa": 10.0,
+            "ka": 0.9999999999999998,
+            "kp": 1.0000000000000002,
+            "k0": 1.0,
+            "expected": {
+              "sigmaKpa": 121.31490399191652,
+              "p0Kpa": 121.31490399191652,
+              "activeKpa": 101.3149039919165,
+              "passiveKpa": 141.31490399191657
+            },
+            "actual": {
+              "sigmaKpa": 121.31490399191652,
+              "p0Kpa": 121.31490399191652,
+              "activeKpa": 101.3149039919165,
+              "passiveKpa": 141.31490399191654
+            },
+            "passed": true,
+            "maxAbsoluteDifference": 2.842170943040401e-14,
+            "maxNormalizedError": 2.0112180319088333e-13,
+            "count": 4,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001,
+            "pressureBasis": "total",
+            "finiteSurchargeKpa": 4.177418022305557,
+            "porePressureKpa": 43.27493987437541,
+            "totalVerticalKpa": 117.13748596961096,
+            "finiteLoadCheckMethod": "independent quadrature of Boussinesq point kernel"
+          },
+          {
+            "side": "inside",
+            "depthM": 5.9113088556957605,
+            "materialStationId": "inside:E49:G0:N0",
+            "verticalStressSegments": [
+              {
+                "fromM": 4.9,
+                "toM": 5.4,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 19.0,
+                "contributionKpa": 9.5
+              },
+              {
+                "fromM": 5.4,
+                "toM": 5.9113088556957605,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 11.19,
+                "contributionKpa": 5.7215460952355555
+              }
+            ],
+            "surchargeKpa": 0.0,
+            "phiDeg": 0.0,
+            "cohesionKpa": 10.0,
+            "ka": 0.9999999999999998,
+            "kp": 1.0000000000000002,
+            "k0": 1.0,
+            "expected": {
+              "sigmaKpa": 20.237485969610965,
+              "p0Kpa": 20.237485969610965,
+              "activeKpa": 0.23748596961096524,
+              "passiveKpa": 40.23748596961097
+            },
+            "actual": {
+              "sigmaKpa": 20.23748596961096,
+              "p0Kpa": 20.23748596961096,
+              "activeKpa": 0.2374859696109617,
+              "passiveKpa": 40.237485969610965
+            },
+            "passed": true,
+            "maxAbsoluteDifference": 7.105427357601002e-15,
+            "maxNormalizedError": 1.4896950477195502e-11,
+            "count": 4,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001,
+            "pressureBasis": "total",
+            "finiteSurchargeKpa": 0.0,
+            "porePressureKpa": 5.015939874375407,
+            "totalVerticalKpa": 20.237485969610965,
+            "finiteLoadCheckMethod": "independent quadrature of Boussinesq point kernel"
+          }
+        ],
+        "stageEquilibrium": [
+          {
+            "stageId": "S0",
+            "forceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "forceScaleKn": 1619.634375,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0,
+            "passed": true
+          },
+          {
+            "stageId": "S1",
+            "forceResidualKn": -3.668532144729397e-11,
+            "momentResidualKnM": -1.3145040611561853e-10,
+            "forceScaleKn": 1417.9397349493297,
+            "relativeForceResidual": 2.5872271256017047e-14,
+            "relativeMomentResidual": 9.270521368125418e-15,
+            "passed": true
+          },
+          {
+            "stageId": "S2",
+            "forceResidualKn": -3.668532144729397e-11,
+            "momentResidualKnM": -1.3145040611561853e-10,
+            "forceScaleKn": 1417.9397349493297,
+            "relativeForceResidual": 2.5872271256017047e-14,
+            "relativeMomentResidual": 9.270521368125418e-15,
+            "passed": true
+          },
+          {
+            "stageId": "S3",
+            "forceResidualKn": 3.979039320256561e-13,
+            "momentResidualKnM": 1.7053025658242404e-12,
+            "forceScaleKn": 1039.819116547519,
+            "relativeForceResidual": 3.8266649044384273e-16,
+            "relativeMomentResidual": 1.6399992447593257e-16,
+            "passed": true
+          },
+          {
+            "stageId": "HISTORY",
+            "forceResidualKn": 4.547473508864641e-13,
+            "momentResidualKnM": 1.7053025658242404e-12,
+            "forceScaleKn": 1039.8191165475191,
+            "relativeForceResidual": 4.3733313193582017e-16,
+            "relativeMomentResidual": 1.6399992447593255e-16,
+            "passed": true
+          },
+          {
+            "stageId": "S4",
+            "forceResidualKn": 1.2262830750842113e-09,
+            "momentResidualKnM": 5.640572453557979e-09,
+            "forceScaleKn": 1039.8191165475191,
+            "relativeForceResidual": 1.179323456906431e-12,
+            "relativeMomentResidual": 5.424570835248929e-13,
+            "passed": true
+          },
+          {
+            "stageId": "S5",
+            "forceResidualKn": 7.389644451905042e-13,
+            "momentResidualKnM": 4.092726157978177e-12,
+            "forceScaleKn": 1127.570266910422,
+            "relativeForceResidual": 6.55359995626073e-16,
+            "relativeMomentResidual": 3.6296861296213273e-16,
+            "passed": true
+          }
+        ],
+        "equilibriumToleranceRelative": 1e-06,
+        "scope": "同一冻结剖面的手工可复核项：刚度、分层有效应力、压力界限、水力合力/力矩、零力安装及全阶段平衡；非线性整梁解另与独立求解器比较"
+      },
+      "maximumErrors": {}
+    },
+    {
+      "historyPolicy": "reset_plastic_offset_to_zero_v1",
+      "status": "failed",
+      "definition": {
+        "schema_version": "pitguard.frozen-section/2",
+        "section_id": "MIXED-HISTORY-reset_plastic_offset_to_zero_v1",
+        "name": "Synthetic mixed-water history: reset_plastic_offset_to_zero_v1",
+        "purpose": "verification_fixture",
+        "source_project_id": null,
+        "source_revision": null,
+        "comparison_reference": null,
+        "datum": {
+          "label": "验证模型地面 z=0",
+          "wall_top_elevation_m": 0.0,
+          "elevation_system": "local"
+        },
+        "pile": {
+          "diameter_m": 0.7,
+          "spacing_m": 0.9,
+          "length_m": 10.0,
+          "elastic_modulus_kpa": 30000000.0,
+          "inertia_factor": 1.0,
+          "toe_boundary": "fixed"
+        },
+        "soil_effective_width_m": 0.9,
+        "soil_layers": [
+          {
+            "id": "L1",
+            "name": "验证砂土层一",
+            "top_m": 0,
+            "bottom_m": 4,
+            "gamma_unsat_kn_m3": 18,
+            "gamma_sat_kn_m3": 20,
+            "cohesion_kpa": 0,
+            "phi_deg": 30,
+            "k0": 0.5,
+            "m_inside_kn_m4": 8000,
+            "m_outside_kn_m4": 8000
+          },
+          {
+            "id": "L2",
+            "name": "Synthetic total-stress undrained layer",
+            "top_m": 4,
+            "bottom_m": 20,
+            "gamma_unsat_kn_m3": 19,
+            "gamma_sat_kn_m3": 21,
+            "cohesion_kpa": 10.0,
+            "phi_deg": 0.0,
+            "k0": 1.0,
+            "m_inside_kn_m4": 15000,
+            "m_outside_kn_m4": 15000
+          }
+        ],
+        "supports": [
+          {
+            "id": "STRUT-1",
+            "depth_m": 1.625,
+            "kind": "elastic",
+            "stiffness_kn_per_m": 29070,
+            "compression_only": true,
+            "preload_kn": 0
+          },
+          {
+            "id": "REPLACEMENT",
+            "depth_m": 4.6,
+            "kind": "rigid",
+            "stiffness_kn_per_m": null,
+            "compression_only": false,
+            "preload_kn": 0
+          }
+        ],
+        "stages": [
+          {
+            "id": "S0",
+            "name": "初始地应力平衡",
+            "event": "initial",
+            "excavation_depth_m": 0.0,
+            "water_inside_depth_m": 1.5,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S1",
+            "name": "开挖至2.05米",
+            "event": "excavate",
+            "excavation_depth_m": 2.05,
+            "water_inside_depth_m": 2.55,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S2",
+            "name": "安装第一道支撑",
+            "event": "install",
+            "excavation_depth_m": 2.05,
+            "water_inside_depth_m": 2.55,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [
+              "STRUT-1"
+            ],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S3",
+            "name": "开挖至4.9米",
+            "event": "excavate",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "HISTORY",
+            "name": "Independent history checkpoint: reset_plastic_offset_to_zero_v1",
+            "event": "soil_reset",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S4",
+            "name": "安装刚性换撑支点",
+            "event": "install",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [
+              "REPLACEMENT"
+            ],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S5",
+            "name": "拆除第一道支撑",
+            "event": "remove",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": [
+              "STRUT-1"
+            ]
+          }
+        ],
+        "analysis": {
+          "soil_method": "two_sided_elastoplastic_winkler_v1",
+          "pressure_method": "explicit_rankine_stress_modes_v2",
+          "max_element_size_m": 0.125,
+          "water_unit_weight_kn_m3": 9.81,
+          "design_effect_factor": 1.25,
+          "design_effect_factor_basis": "验证例显式采用1.25的特征内力效应放大系数，不代表任何实际项目规范取值"
+        },
+        "reinforcement": {
+          "longitudinal_extent": "full_length",
+          "bar_start_angle_deg": 0.0,
+          "bar_count": 16,
+          "bar_diameter_mm": 18,
+          "bar_axis_cover_mm": 59,
+          "concrete_design_strength_mpa": 14.3,
+          "concrete_peak_strain": 0.002,
+          "concrete_ultimate_strain": 0.0033,
+          "steel_design_strength_mpa": 360,
+          "steel_modulus_mpa": 200000,
+          "minimum_longitudinal_ratio": 0.006,
+          "minimum_ratio_basis": "本验证例明示的最小纵筋率，用于验证成果链，实际工程须确认采用依据",
+          "stirrup_diameter_mm": 8,
+          "stirrup_spacing_mm": 125,
+          "axial_force_kn": 0.0
+        },
+        "evidence": [
+          {
+            "parameter": "all_inputs",
+            "kind": "verification_definition",
+            "source": "PitGuard冻结剖面解析与独立求解验证集",
+            "source_sha256": null,
+            "page": null,
+            "note": "完整合成算例；阶段顺序参考A3-3事件结构，其土层、边界和几何不冒充原项目。"
+          },
+          {
+            "parameter": "mixed_layer_and_history_fixture",
+            "kind": "verification_definition",
+            "source": "scripts/validate-section-method-matrix.py",
+            "source_sha256": null,
+            "page": null,
+            "note": "L1 effective, L2 explicit total phi_u=0/cu10/K0=1, fixed toe chosen as a physical boundary; never a weak spring. Three policies differ only at HISTORY."
+          }
+        ],
+        "limitations": [
+          "Synthetic verification only; not a reconstruction of original A3-3 or FRWS settings.",
+          "L1 effective-stress sand; L2 total-stress undrained phi_u=0, cu=10 kPa, K0=1.",
+          "Fixed toe is explicitly imposed for all three cases; there is no weak-spring stabilization.",
+          "The carry checkpoint is a no-change water_or_load event because soil_reset requires a non-carry policy.",
+          "Finite rectangle remains q30 kPa, x4.3..16.3m, y-32.5..32.5m with explicit centered-position assumption.",
+          "All other original synthetic fixture parameters are unchanged; no peak matching or parameter calibration.",
+          "Engineering reinforcement groups are not selected in this numerical-method matrix."
+        ],
+        "reference_contract_hash": null,
+        "method_extensions": {
+          "schema_version": "pitguard.method-extensions/1",
+          "geometry_basis": "flat_wall_top_surface",
+          "m_law": "k_h=m*z",
+          "m_depth_reference": "current_side_surface",
+          "m_basis": "合成验证例：从各侧现地表起算k_h=m*z；每层独立m值，不推定FRWS原设置。",
+          "surface_load_method": "boussinesq_vertical_rankine_k_mapping_v1",
+          "surface_loads": [
+            {
+              "id": "Q-RECT",
+              "kind": "rectangle",
+              "q_kpa": 30.0,
+              "near_m": 4.3,
+              "far_m": 16.3,
+              "along_start_m": -32.5,
+              "along_end_m": 32.5,
+              "basis": "合成验证例：邻载尺寸参考原文；假定剖面位于65m长度中点且距离从墙轴线起算，原项目这两项未确认。"
+            }
+          ],
+          "layer_stress_modes": [
+            {
+              "layer_id": "L1",
+              "mode": "effective_separated",
+              "parameter_basis": "effective",
+              "basis": "合成砂土验证层明确采用有效应力c、phi和K0。"
+            },
+            {
+              "layer_id": "L2",
+              "mode": "total_combined",
+              "parameter_basis": "total",
+              "basis": "Synthetic total-stress phi_u=0, c_u=10 kPa and K0=1; not inferred from A3-3 effective parameters."
+            }
+          ],
+          "stage_options": [
+            {
+              "stage_id": "S0",
+              "active_load_ids": [],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S1",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S2",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S3",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "HISTORY",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "reset_plastic_offset_to_zero_v1",
+              "history_basis": "Synthetic isolated history checkpoint; geometry, water, loads and installed supports are unchanged."
+            },
+            {
+              "stage_id": "S4",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S5",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            }
+          ]
+        },
+        "engineering_design": null
+      },
+      "snapshotHash": "237dade31e5e46b4304e00ec65bce60876a2306a3c687346f82c737fb6d4fc51",
+      "analysisHash": "5d63900c2cfa50af7339c4cbd63e027413b2fa2be87902853fa768ae1f26e23c",
+      "resultHash": "7ecad44402e0cf6ac88c021af2f41116ef790d702826b8e279cb318830848501",
+      "discreteInputHash": "77a3e293fd69024ec503c661169fdef65ccf614603ae7b35e4f2ad6c8355e8a2",
+      "primaryStatus": "complete",
+      "primaryStages": [
+        {
+          "stageId": "S0",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "soilStateCount": 984,
+          "nonzeroPlasticOffsets": 0,
+          "maxAbsPlasticOffsetM": 0.0,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S1",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 6.155578157945297,
+          "maxAbsMomentKnM": 91.69004810502301,
+          "maxAbsShearKn": 46.887691778679546,
+          "soilStateCount": 882,
+          "nonzeroPlasticOffsets": 660,
+          "maxAbsPlasticOffsetM": 0.0057805778332307945,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S2",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 6.155578157945297,
+          "maxAbsMomentKnM": 91.69004810502301,
+          "maxAbsShearKn": 46.887691778679546,
+          "soilStateCount": 882,
+          "nonzeroPlasticOffsets": 660,
+          "maxAbsPlasticOffsetM": 0.0057805778332307945,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 7.16536510301461e-15
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S3",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.543432551841544,
+          "maxAbsMomentKnM": 590.0295245698888,
+          "maxAbsShearKn": 304.8354071716741,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 684,
+          "maxAbsPlasticOffsetM": 0.008235137863111022,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 109.05691653502382
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "HISTORY",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.53539768779567,
+          "maxAbsMomentKnM": 589.3128749824266,
+          "maxAbsShearKn": 304.5787910938293,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 676,
+          "maxAbsPlasticOffsetM": 0.0082268621680108,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 108.88110403828914
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S4",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.53539768779567,
+          "maxAbsMomentKnM": 589.3128749824266,
+          "maxAbsShearKn": 304.5787910938293,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 676,
+          "maxAbsPlasticOffsetM": 0.0082268621680108,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 108.88110403828914
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 7.773478317537846,
+              "reactionCharacteristicKn": 1.3113740158880727e-09
+            }
+          ]
+        },
+        {
+          "stageId": "S5",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 17.208885176455315,
+          "maxAbsMomentKnM": 547.3391492557042,
+          "maxAbsShearKn": 299.85069144712463,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 676,
+          "maxAbsPlasticOffsetM": 0.016833884851740814,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "removed",
+              "active": false,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 0.0
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 7.773478317537846,
+              "reactionCharacteristicKn": 266.4315788140848
+            }
+          ]
+        }
+      ],
+      "independentStatus": "failed",
+      "independentStageStatuses": [
+        {
+          "stageId": "S0",
+          "status": "success",
+          "failureReason": null
+        },
+        {
+          "stageId": "S1",
+          "status": "success",
+          "failureReason": null
+        },
+        {
+          "stageId": "S2",
+          "status": "failed",
+          "failureReason": "OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S3",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "HISTORY",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S4",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S5",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        }
+      ],
+      "independentFailureReason": "OpenSees final tangent disagrees with an interior elastic soil branch",
+      "independentDiagnostic": null,
+      "comparison": {
+        "status": "failed",
+        "reason": "OpenSees final tangent disagrees with an interior elastic soil branch",
+        "solver": "OpenSees",
+        "solverVersion": "3.8.0",
+        "discreteInputHash": "77a3e293fd69024ec503c661169fdef65ccf614603ae7b35e4f2ad6c8355e8a2"
+      },
+      "sameSnapshotHandChecks": {
+        "status": "passed",
+        "snapshotHash": "237dade31e5e46b4304e00ec65bce60876a2306a3c687346f82c737fb6d4fc51",
+        "discreteInputHash": "77a3e293fd69024ec503c661169fdef65ccf614603ae7b35e4f2ad6c8355e8a2",
+        "stageId": "S3",
+        "checks": [
+          {
+            "id": "same_snapshot_ei",
+            "name": "本剖面单桩抗弯刚度",
+            "unit": "kN·m²",
+            "formula": "E·η·πD⁴/64",
+            "expected": 353576.4356844887,
+            "actual": 353576.4356844887,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_water_force",
+            "name": "S3 静水压力差合力",
+            "unit": "kN",
+            "formula": "分算土层区间Σ∫s·γw(z−zw)dz；合算层不再添加外水",
+            "expected": 27.590625000000003,
+            "actual": 27.590625000000003,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_water_moment",
+            "name": "S3 水力对桩顶力矩",
+            "unit": "kN·m",
+            "formula": "分算土层区间Σ∫s·γw(z−zw)·z dz",
+            "expected": 87.3703125,
+            "actual": 87.37031250000001,
+            "passed": true,
+            "maxAbsoluteDifference": 1.4210854715202004e-14,
+            "maxNormalizedError": 1.6264897834975297e-13,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_outside_effective_stress",
+            "name": "S3 坑外压力对应竖向应力",
+            "unit": "kPa",
+            "formula": "σ′v 或 σv + 均布q + 有限邻载独立积分",
+            "expected": 121.31490399191652,
+            "actual": 121.31490399191652,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_inside_effective_stress",
+            "name": "S3 坑内压力对应竖向应力",
+            "unit": "kPa",
+            "formula": "σ′v 或 σv + 均布q + 有限邻载独立积分",
+            "expected": 20.237485969610965,
+            "actual": 20.23748596961096,
+            "passed": true,
+            "maxAbsoluteDifference": 3.552713678800501e-15,
+            "maxNormalizedError": 1.7554246321266654e-13,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_zero_force_installation",
+            "name": "实际阶段新支点零力安装",
+            "unit": "kN",
+            "formula": "R=K(u−u_install)=0；刚性支点保持安装位移",
+            "expected": 0.0,
+            "actual": 1.3113740158880727e-09,
+            "passed": true,
+            "maxAbsoluteDifference": 1.3113740158880727e-09,
+            "maxNormalizedError": 0.00013113738439179143,
+            "count": 1,
+            "absoluteTolerance": 1e-05,
+            "relativeTolerance": 0.001
+          }
+        ],
+        "soilPressureWorkedRows": [
+          {
+            "side": "outside",
+            "depthM": 5.9113088556957605,
+            "materialStationId": "outside:E49:G0:N0",
+            "verticalStressSegments": [
+              {
+                "fromM": 0.0,
+                "toM": 1.5,
+                "layerId": "L1",
+                "effectiveUnitWeightKnM3": 18.0,
+                "contributionKpa": 27.0
+              },
+              {
+                "fromM": 1.5,
+                "toM": 4.0,
+                "layerId": "L1",
+                "effectiveUnitWeightKnM3": 10.19,
+                "contributionKpa": 25.474999999999998
+              },
+              {
+                "fromM": 4.0,
+                "toM": 5.9113088556957605,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 11.19,
+                "contributionKpa": 21.38754609523556
+              }
+            ],
+            "surchargeKpa": 0.0,
+            "phiDeg": 0.0,
+            "cohesionKpa": 10.0,
+            "ka": 0.9999999999999998,
+            "kp": 1.0000000000000002,
+            "k0": 1.0,
+            "expected": {
+              "sigmaKpa": 121.31490399191652,
+              "p0Kpa": 121.31490399191652,
+              "activeKpa": 101.3149039919165,
+              "passiveKpa": 141.31490399191657
+            },
+            "actual": {
+              "sigmaKpa": 121.31490399191652,
+              "p0Kpa": 121.31490399191652,
+              "activeKpa": 101.3149039919165,
+              "passiveKpa": 141.31490399191654
+            },
+            "passed": true,
+            "maxAbsoluteDifference": 2.842170943040401e-14,
+            "maxNormalizedError": 2.0112180319088333e-13,
+            "count": 4,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001,
+            "pressureBasis": "total",
+            "finiteSurchargeKpa": 4.177418022305557,
+            "porePressureKpa": 43.27493987437541,
+            "totalVerticalKpa": 117.13748596961096,
+            "finiteLoadCheckMethod": "independent quadrature of Boussinesq point kernel"
+          },
+          {
+            "side": "inside",
+            "depthM": 5.9113088556957605,
+            "materialStationId": "inside:E49:G0:N0",
+            "verticalStressSegments": [
+              {
+                "fromM": 4.9,
+                "toM": 5.4,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 19.0,
+                "contributionKpa": 9.5
+              },
+              {
+                "fromM": 5.4,
+                "toM": 5.9113088556957605,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 11.19,
+                "contributionKpa": 5.7215460952355555
+              }
+            ],
+            "surchargeKpa": 0.0,
+            "phiDeg": 0.0,
+            "cohesionKpa": 10.0,
+            "ka": 0.9999999999999998,
+            "kp": 1.0000000000000002,
+            "k0": 1.0,
+            "expected": {
+              "sigmaKpa": 20.237485969610965,
+              "p0Kpa": 20.237485969610965,
+              "activeKpa": 0.23748596961096524,
+              "passiveKpa": 40.23748596961097
+            },
+            "actual": {
+              "sigmaKpa": 20.23748596961096,
+              "p0Kpa": 20.23748596961096,
+              "activeKpa": 0.2374859696109617,
+              "passiveKpa": 40.237485969610965
+            },
+            "passed": true,
+            "maxAbsoluteDifference": 7.105427357601002e-15,
+            "maxNormalizedError": 1.4896950477195502e-11,
+            "count": 4,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001,
+            "pressureBasis": "total",
+            "finiteSurchargeKpa": 0.0,
+            "porePressureKpa": 5.015939874375407,
+            "totalVerticalKpa": 20.237485969610965,
+            "finiteLoadCheckMethod": "independent quadrature of Boussinesq point kernel"
+          }
+        ],
+        "stageEquilibrium": [
+          {
+            "stageId": "S0",
+            "forceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "forceScaleKn": 1619.634375,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0,
+            "passed": true
+          },
+          {
+            "stageId": "S1",
+            "forceResidualKn": -3.668532144729397e-11,
+            "momentResidualKnM": -1.3145040611561853e-10,
+            "forceScaleKn": 1417.9397349493297,
+            "relativeForceResidual": 2.5872271256017047e-14,
+            "relativeMomentResidual": 9.270521368125418e-15,
+            "passed": true
+          },
+          {
+            "stageId": "S2",
+            "forceResidualKn": -3.668532144729397e-11,
+            "momentResidualKnM": -1.3145040611561853e-10,
+            "forceScaleKn": 1417.9397349493297,
+            "relativeForceResidual": 2.5872271256017047e-14,
+            "relativeMomentResidual": 9.270521368125418e-15,
+            "passed": true
+          },
+          {
+            "stageId": "S3",
+            "forceResidualKn": 3.979039320256561e-13,
+            "momentResidualKnM": 1.7053025658242404e-12,
+            "forceScaleKn": 1039.819116547519,
+            "relativeForceResidual": 3.8266649044384273e-16,
+            "relativeMomentResidual": 1.6399992447593257e-16,
+            "passed": true
+          },
+          {
+            "stageId": "HISTORY",
+            "forceResidualKn": -2.0691004465334117e-11,
+            "momentResidualKnM": -1.261923898709938e-10,
+            "forceScaleKn": 1040.258399542954,
+            "relativeForceResidual": 1.9890254646753996e-14,
+            "relativeMomentResidual": 1.2130869592251064e-14,
+            "passed": true
+          },
+          {
+            "stageId": "S4",
+            "forceResidualKn": -1.3320118341653142e-09,
+            "momentResidualKnM": -6.15841599937994e-09,
+            "forceScaleKn": 1040.258399542954,
+            "relativeForceResidual": 1.2804624646631494e-12,
+            "relativeMomentResidual": 5.920082935245406e-13,
+            "passed": true
+          },
+          {
+            "stageId": "S5",
+            "forceResidualKn": 1.2505552149377763e-12,
+            "momentResidualKnM": 5.343281372915953e-12,
+            "forceScaleKn": 1127.9541292086712,
+            "relativeForceResidual": 1.1086933258669988e-15,
+            "relativeMomentResidual": 4.737144210522632e-16,
+            "passed": true
+          }
+        ],
+        "equilibriumToleranceRelative": 1e-06,
+        "scope": "同一冻结剖面的手工可复核项：刚度、分层有效应力、压力界限、水力合力/力矩、零力安装及全阶段平衡；非线性整梁解另与独立求解器比较"
+      },
+      "maximumErrors": {}
+    },
+    {
+      "historyPolicy": "rebase_soil_at_current_displacement_v1",
+      "status": "failed",
+      "definition": {
+        "schema_version": "pitguard.frozen-section/2",
+        "section_id": "MIXED-HISTORY-rebase_soil_at_current_displacement_v1",
+        "name": "Synthetic mixed-water history: rebase_soil_at_current_displacement_v1",
+        "purpose": "verification_fixture",
+        "source_project_id": null,
+        "source_revision": null,
+        "comparison_reference": null,
+        "datum": {
+          "label": "验证模型地面 z=0",
+          "wall_top_elevation_m": 0.0,
+          "elevation_system": "local"
+        },
+        "pile": {
+          "diameter_m": 0.7,
+          "spacing_m": 0.9,
+          "length_m": 10.0,
+          "elastic_modulus_kpa": 30000000.0,
+          "inertia_factor": 1.0,
+          "toe_boundary": "fixed"
+        },
+        "soil_effective_width_m": 0.9,
+        "soil_layers": [
+          {
+            "id": "L1",
+            "name": "验证砂土层一",
+            "top_m": 0,
+            "bottom_m": 4,
+            "gamma_unsat_kn_m3": 18,
+            "gamma_sat_kn_m3": 20,
+            "cohesion_kpa": 0,
+            "phi_deg": 30,
+            "k0": 0.5,
+            "m_inside_kn_m4": 8000,
+            "m_outside_kn_m4": 8000
+          },
+          {
+            "id": "L2",
+            "name": "Synthetic total-stress undrained layer",
+            "top_m": 4,
+            "bottom_m": 20,
+            "gamma_unsat_kn_m3": 19,
+            "gamma_sat_kn_m3": 21,
+            "cohesion_kpa": 10.0,
+            "phi_deg": 0.0,
+            "k0": 1.0,
+            "m_inside_kn_m4": 15000,
+            "m_outside_kn_m4": 15000
+          }
+        ],
+        "supports": [
+          {
+            "id": "STRUT-1",
+            "depth_m": 1.625,
+            "kind": "elastic",
+            "stiffness_kn_per_m": 29070,
+            "compression_only": true,
+            "preload_kn": 0
+          },
+          {
+            "id": "REPLACEMENT",
+            "depth_m": 4.6,
+            "kind": "rigid",
+            "stiffness_kn_per_m": null,
+            "compression_only": false,
+            "preload_kn": 0
+          }
+        ],
+        "stages": [
+          {
+            "id": "S0",
+            "name": "初始地应力平衡",
+            "event": "initial",
+            "excavation_depth_m": 0.0,
+            "water_inside_depth_m": 1.5,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S1",
+            "name": "开挖至2.05米",
+            "event": "excavate",
+            "excavation_depth_m": 2.05,
+            "water_inside_depth_m": 2.55,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S2",
+            "name": "安装第一道支撑",
+            "event": "install",
+            "excavation_depth_m": 2.05,
+            "water_inside_depth_m": 2.55,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [
+              "STRUT-1"
+            ],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S3",
+            "name": "开挖至4.9米",
+            "event": "excavate",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "HISTORY",
+            "name": "Independent history checkpoint: rebase_soil_at_current_displacement_v1",
+            "event": "soil_reset",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S4",
+            "name": "安装刚性换撑支点",
+            "event": "install",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [
+              "REPLACEMENT"
+            ],
+            "remove_support_ids": []
+          },
+          {
+            "id": "S5",
+            "name": "拆除第一道支撑",
+            "event": "remove",
+            "excavation_depth_m": 4.9,
+            "water_inside_depth_m": 5.4,
+            "water_outside_depth_m": 1.5,
+            "surcharge_kpa": 0,
+            "install_support_ids": [],
+            "remove_support_ids": [
+              "STRUT-1"
+            ]
+          }
+        ],
+        "analysis": {
+          "soil_method": "two_sided_elastoplastic_winkler_v1",
+          "pressure_method": "explicit_rankine_stress_modes_v2",
+          "max_element_size_m": 0.125,
+          "water_unit_weight_kn_m3": 9.81,
+          "design_effect_factor": 1.25,
+          "design_effect_factor_basis": "验证例显式采用1.25的特征内力效应放大系数，不代表任何实际项目规范取值"
+        },
+        "reinforcement": {
+          "longitudinal_extent": "full_length",
+          "bar_start_angle_deg": 0.0,
+          "bar_count": 16,
+          "bar_diameter_mm": 18,
+          "bar_axis_cover_mm": 59,
+          "concrete_design_strength_mpa": 14.3,
+          "concrete_peak_strain": 0.002,
+          "concrete_ultimate_strain": 0.0033,
+          "steel_design_strength_mpa": 360,
+          "steel_modulus_mpa": 200000,
+          "minimum_longitudinal_ratio": 0.006,
+          "minimum_ratio_basis": "本验证例明示的最小纵筋率，用于验证成果链，实际工程须确认采用依据",
+          "stirrup_diameter_mm": 8,
+          "stirrup_spacing_mm": 125,
+          "axial_force_kn": 0.0
+        },
+        "evidence": [
+          {
+            "parameter": "all_inputs",
+            "kind": "verification_definition",
+            "source": "PitGuard冻结剖面解析与独立求解验证集",
+            "source_sha256": null,
+            "page": null,
+            "note": "完整合成算例；阶段顺序参考A3-3事件结构，其土层、边界和几何不冒充原项目。"
+          },
+          {
+            "parameter": "mixed_layer_and_history_fixture",
+            "kind": "verification_definition",
+            "source": "scripts/validate-section-method-matrix.py",
+            "source_sha256": null,
+            "page": null,
+            "note": "L1 effective, L2 explicit total phi_u=0/cu10/K0=1, fixed toe chosen as a physical boundary; never a weak spring. Three policies differ only at HISTORY."
+          }
+        ],
+        "limitations": [
+          "Synthetic verification only; not a reconstruction of original A3-3 or FRWS settings.",
+          "L1 effective-stress sand; L2 total-stress undrained phi_u=0, cu=10 kPa, K0=1.",
+          "Fixed toe is explicitly imposed for all three cases; there is no weak-spring stabilization.",
+          "The carry checkpoint is a no-change water_or_load event because soil_reset requires a non-carry policy.",
+          "Finite rectangle remains q30 kPa, x4.3..16.3m, y-32.5..32.5m with explicit centered-position assumption.",
+          "All other original synthetic fixture parameters are unchanged; no peak matching or parameter calibration.",
+          "Engineering reinforcement groups are not selected in this numerical-method matrix."
+        ],
+        "reference_contract_hash": null,
+        "method_extensions": {
+          "schema_version": "pitguard.method-extensions/1",
+          "geometry_basis": "flat_wall_top_surface",
+          "m_law": "k_h=m*z",
+          "m_depth_reference": "current_side_surface",
+          "m_basis": "合成验证例：从各侧现地表起算k_h=m*z；每层独立m值，不推定FRWS原设置。",
+          "surface_load_method": "boussinesq_vertical_rankine_k_mapping_v1",
+          "surface_loads": [
+            {
+              "id": "Q-RECT",
+              "kind": "rectangle",
+              "q_kpa": 30.0,
+              "near_m": 4.3,
+              "far_m": 16.3,
+              "along_start_m": -32.5,
+              "along_end_m": 32.5,
+              "basis": "合成验证例：邻载尺寸参考原文；假定剖面位于65m长度中点且距离从墙轴线起算，原项目这两项未确认。"
+            }
+          ],
+          "layer_stress_modes": [
+            {
+              "layer_id": "L1",
+              "mode": "effective_separated",
+              "parameter_basis": "effective",
+              "basis": "合成砂土验证层明确采用有效应力c、phi和K0。"
+            },
+            {
+              "layer_id": "L2",
+              "mode": "total_combined",
+              "parameter_basis": "total",
+              "basis": "Synthetic total-stress phi_u=0, c_u=10 kPa and K0=1; not inferred from A3-3 effective parameters."
+            }
+          ],
+          "stage_options": [
+            {
+              "stage_id": "S0",
+              "active_load_ids": [],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S1",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S2",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S3",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "HISTORY",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "rebase_soil_at_current_displacement_v1",
+              "history_basis": "Synthetic isolated history checkpoint; geometry, water, loads and installed supports are unchanged."
+            },
+            {
+              "stage_id": "S4",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            },
+            {
+              "stage_id": "S5",
+              "active_load_ids": [
+                "Q-RECT"
+              ],
+              "soil_history_action": "carry_plastic_history_v1",
+              "history_basis": "合成验证例明确继承此前收敛塑性位移；FRWS9.0原项目规则待补。"
+            }
+          ]
+        },
+        "engineering_design": null
+      },
+      "snapshotHash": "75757f96652d32f7884f37c3f851b652be1c674118f1f3cbeda7d0bc613813c4",
+      "analysisHash": "c908dea1d089ce813ccfce650d669d45679fcefef3efe085bd8ed12fd40ec5b1",
+      "resultHash": "db6d7fa8d811b64086cf1326711fe4a8efebc6fbffa85437eb68bd455b5d4f4c",
+      "discreteInputHash": "2c710cf6c9b9ad8b1572cce6c587932f1217c9132c38b3c58238a994f2b19e72",
+      "primaryStatus": "complete",
+      "primaryStages": [
+        {
+          "stageId": "S0",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 0.0,
+          "maxAbsMomentKnM": 0.0,
+          "maxAbsShearKn": 0.0,
+          "soilStateCount": 984,
+          "nonzeroPlasticOffsets": 0,
+          "maxAbsPlasticOffsetM": 0.0,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S1",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 6.155578157945297,
+          "maxAbsMomentKnM": 91.69004810502301,
+          "maxAbsShearKn": 46.887691778679546,
+          "soilStateCount": 882,
+          "nonzeroPlasticOffsets": 660,
+          "maxAbsPlasticOffsetM": 0.0057805778332307945,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S2",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 6.155578157945297,
+          "maxAbsMomentKnM": 91.69004810502301,
+          "maxAbsShearKn": 46.887691778679546,
+          "soilStateCount": 882,
+          "nonzeroPlasticOffsets": 660,
+          "maxAbsPlasticOffsetM": 0.0057805778332307945,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 7.16536510301461e-15
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S3",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.543432551841544,
+          "maxAbsMomentKnM": 590.0295245698888,
+          "maxAbsShearKn": 304.8354071716741,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 684,
+          "maxAbsPlasticOffsetM": 0.008235137863111022,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 109.05691653502382
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "HISTORY",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.98372072390215,
+          "maxAbsMomentKnM": 661.9395545805888,
+          "maxAbsShearKn": 356.9611192489526,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 732,
+          "maxAbsPlasticOffsetM": 0.00868316227611992,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 118.15077886960738
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "not_installed",
+              "active": false,
+              "referenceDisplacementMm": null,
+              "reactionCharacteristicKn": null
+            }
+          ]
+        },
+        {
+          "stageId": "S4",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 8.98372072390215,
+          "maxAbsMomentKnM": 661.9395545805888,
+          "maxAbsShearKn": 356.9611192489526,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 732,
+          "maxAbsPlasticOffsetM": 0.00868316227611992,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 118.15077886960738
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 8.34095360805347,
+              "reactionCharacteristicKn": 1.1640923780475987e-09
+            }
+          ]
+        },
+        {
+          "stageId": "S5",
+          "status": "success",
+          "failureReason": null,
+          "maxAbsDisplacementMm": 18.015144457578074,
+          "maxAbsMomentKnM": 615.2186636662251,
+          "maxAbsShearKn": 351.203979162462,
+          "soilStateCount": 738,
+          "nonzeroPlasticOffsets": 732,
+          "maxAbsPlasticOffsetM": 0.01764014413286357,
+          "supports": [
+            {
+              "id": "STRUT-1",
+              "status": "removed",
+              "active": false,
+              "referenceDisplacementMm": 4.702220388338698,
+              "reactionCharacteristicKn": 0.0
+            },
+            {
+              "id": "REPLACEMENT",
+              "status": "active",
+              "active": true,
+              "referenceDisplacementMm": 8.34095360805347,
+              "reactionCharacteristicKn": 283.816583555619
+            }
+          ]
+        }
+      ],
+      "independentStatus": "failed",
+      "independentStageStatuses": [
+        {
+          "stageId": "S0",
+          "status": "success",
+          "failureReason": null
+        },
+        {
+          "stageId": "S1",
+          "status": "success",
+          "failureReason": null
+        },
+        {
+          "stageId": "S2",
+          "status": "failed",
+          "failureReason": "OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S3",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "HISTORY",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S4",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        },
+        {
+          "stageId": "S5",
+          "status": "not_calculated",
+          "failureReason": "a previous stage failed: OpenSees final tangent disagrees with an interior elastic soil branch"
+        }
+      ],
+      "independentFailureReason": "OpenSees final tangent disagrees with an interior elastic soil branch",
+      "independentDiagnostic": null,
+      "comparison": {
+        "status": "failed",
+        "reason": "OpenSees final tangent disagrees with an interior elastic soil branch",
+        "solver": "OpenSees",
+        "solverVersion": "3.8.0",
+        "discreteInputHash": "2c710cf6c9b9ad8b1572cce6c587932f1217c9132c38b3c58238a994f2b19e72"
+      },
+      "sameSnapshotHandChecks": {
+        "status": "passed",
+        "snapshotHash": "75757f96652d32f7884f37c3f851b652be1c674118f1f3cbeda7d0bc613813c4",
+        "discreteInputHash": "2c710cf6c9b9ad8b1572cce6c587932f1217c9132c38b3c58238a994f2b19e72",
+        "stageId": "HISTORY",
+        "checks": [
+          {
+            "id": "same_snapshot_ei",
+            "name": "本剖面单桩抗弯刚度",
+            "unit": "kN·m²",
+            "formula": "E·η·πD⁴/64",
+            "expected": 353576.4356844887,
+            "actual": 353576.4356844887,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_water_force",
+            "name": "HISTORY 静水压力差合力",
+            "unit": "kN",
+            "formula": "分算土层区间Σ∫s·γw(z−zw)dz；合算层不再添加外水",
+            "expected": 27.590625000000003,
+            "actual": 27.590625000000003,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_water_moment",
+            "name": "HISTORY 水力对桩顶力矩",
+            "unit": "kN·m",
+            "formula": "分算土层区间Σ∫s·γw(z−zw)·z dz",
+            "expected": 87.3703125,
+            "actual": 87.37031250000001,
+            "passed": true,
+            "maxAbsoluteDifference": 1.4210854715202004e-14,
+            "maxNormalizedError": 1.6264897834975297e-13,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_outside_effective_stress",
+            "name": "HISTORY 坑外压力对应竖向应力",
+            "unit": "kPa",
+            "formula": "σ′v 或 σv + 均布q + 有限邻载独立积分",
+            "expected": 121.31490399191652,
+            "actual": 121.31490399191652,
+            "passed": true,
+            "maxAbsoluteDifference": 0.0,
+            "maxNormalizedError": 0.0,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_inside_effective_stress",
+            "name": "HISTORY 坑内压力对应竖向应力",
+            "unit": "kPa",
+            "formula": "σ′v 或 σv + 均布q + 有限邻载独立积分",
+            "expected": 20.237485969610965,
+            "actual": 20.23748596961096,
+            "passed": true,
+            "maxAbsoluteDifference": 3.552713678800501e-15,
+            "maxNormalizedError": 1.7554246321266654e-13,
+            "count": 1,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001
+          },
+          {
+            "id": "same_snapshot_zero_force_installation",
+            "name": "实际阶段新支点零力安装",
+            "unit": "kN",
+            "formula": "R=K(u−u_install)=0；刚性支点保持安装位移",
+            "expected": 0.0,
+            "actual": 1.1640923780475987e-09,
+            "passed": true,
+            "maxAbsoluteDifference": 1.1640923780475987e-09,
+            "maxNormalizedError": 0.00011640922425365078,
+            "count": 1,
+            "absoluteTolerance": 1e-05,
+            "relativeTolerance": 0.001
+          }
+        ],
+        "soilPressureWorkedRows": [
+          {
+            "side": "outside",
+            "depthM": 5.9113088556957605,
+            "materialStationId": "outside:E49:G0:N0",
+            "verticalStressSegments": [
+              {
+                "fromM": 0.0,
+                "toM": 1.5,
+                "layerId": "L1",
+                "effectiveUnitWeightKnM3": 18.0,
+                "contributionKpa": 27.0
+              },
+              {
+                "fromM": 1.5,
+                "toM": 4.0,
+                "layerId": "L1",
+                "effectiveUnitWeightKnM3": 10.19,
+                "contributionKpa": 25.474999999999998
+              },
+              {
+                "fromM": 4.0,
+                "toM": 5.9113088556957605,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 11.19,
+                "contributionKpa": 21.38754609523556
+              }
+            ],
+            "surchargeKpa": 0.0,
+            "phiDeg": 0.0,
+            "cohesionKpa": 10.0,
+            "ka": 0.9999999999999998,
+            "kp": 1.0000000000000002,
+            "k0": 1.0,
+            "expected": {
+              "sigmaKpa": 121.31490399191652,
+              "p0Kpa": 121.31490399191652,
+              "activeKpa": 101.3149039919165,
+              "passiveKpa": 141.31490399191657
+            },
+            "actual": {
+              "sigmaKpa": 121.31490399191652,
+              "p0Kpa": 121.31490399191652,
+              "activeKpa": 101.3149039919165,
+              "passiveKpa": 141.31490399191654
+            },
+            "passed": true,
+            "maxAbsoluteDifference": 2.842170943040401e-14,
+            "maxNormalizedError": 2.0112180319088333e-13,
+            "count": 4,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001,
+            "pressureBasis": "total",
+            "finiteSurchargeKpa": 4.177418022305557,
+            "porePressureKpa": 43.27493987437541,
+            "totalVerticalKpa": 117.13748596961096,
+            "finiteLoadCheckMethod": "independent quadrature of Boussinesq point kernel"
+          },
+          {
+            "side": "inside",
+            "depthM": 5.9113088556957605,
+            "materialStationId": "inside:E49:G0:N0",
+            "verticalStressSegments": [
+              {
+                "fromM": 4.9,
+                "toM": 5.4,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 19.0,
+                "contributionKpa": 9.5
+              },
+              {
+                "fromM": 5.4,
+                "toM": 5.9113088556957605,
+                "layerId": "L2",
+                "effectiveUnitWeightKnM3": 11.19,
+                "contributionKpa": 5.7215460952355555
+              }
+            ],
+            "surchargeKpa": 0.0,
+            "phiDeg": 0.0,
+            "cohesionKpa": 10.0,
+            "ka": 0.9999999999999998,
+            "kp": 1.0000000000000002,
+            "k0": 1.0,
+            "expected": {
+              "sigmaKpa": 20.237485969610965,
+              "p0Kpa": 20.237485969610965,
+              "activeKpa": 0.23748596961096524,
+              "passiveKpa": 40.23748596961097
+            },
+            "actual": {
+              "sigmaKpa": 20.23748596961096,
+              "p0Kpa": 20.23748596961096,
+              "activeKpa": 0.2374859696109617,
+              "passiveKpa": 40.237485969610965
+            },
+            "passed": true,
+            "maxAbsoluteDifference": 7.105427357601002e-15,
+            "maxNormalizedError": 1.4896950477195502e-11,
+            "count": 4,
+            "absoluteTolerance": 1e-06,
+            "relativeTolerance": 0.001,
+            "pressureBasis": "total",
+            "finiteSurchargeKpa": 0.0,
+            "porePressureKpa": 5.015939874375407,
+            "totalVerticalKpa": 20.237485969610965,
+            "finiteLoadCheckMethod": "independent quadrature of Boussinesq point kernel"
+          }
+        ],
+        "stageEquilibrium": [
+          {
+            "stageId": "S0",
+            "forceResidualKn": 0.0,
+            "momentResidualKnM": 0.0,
+            "forceScaleKn": 1619.634375,
+            "relativeForceResidual": 0.0,
+            "relativeMomentResidual": 0.0,
+            "passed": true
+          },
+          {
+            "stageId": "S1",
+            "forceResidualKn": -3.668532144729397e-11,
+            "momentResidualKnM": -1.3145040611561853e-10,
+            "forceScaleKn": 1417.9397349493297,
+            "relativeForceResidual": 2.5872271256017047e-14,
+            "relativeMomentResidual": 9.270521368125418e-15,
+            "passed": true
+          },
+          {
+            "stageId": "S2",
+            "forceResidualKn": -3.668532144729397e-11,
+            "momentResidualKnM": -1.3145040611561853e-10,
+            "forceScaleKn": 1417.9397349493297,
+            "relativeForceResidual": 2.5872271256017047e-14,
+            "relativeMomentResidual": 9.270521368125418e-15,
+            "passed": true
+          },
+          {
+            "stageId": "S3",
+            "forceResidualKn": 3.979039320256561e-13,
+            "momentResidualKnM": 1.7053025658242404e-12,
+            "forceScaleKn": 1039.819116547519,
+            "relativeForceResidual": 3.8266649044384273e-16,
+            "relativeMomentResidual": 1.6399992447593257e-16,
+            "passed": true
+          },
+          {
+            "stageId": "HISTORY",
+            "forceResidualKn": 5.684341886080802e-14,
+            "momentResidualKnM": 1.1368683772161603e-13,
+            "forceScaleKn": 1004.6108681994781,
+            "relativeForceResidual": 5.658252429887215e-17,
+            "relativeMomentResidual": 1.131650485977443e-17,
+            "passed": true
+          },
+          {
+            "stageId": "S4",
+            "forceResidualKn": -1.1639826880127657e-09,
+            "momentResidualKnM": -5.354536369850393e-09,
+            "forceScaleKn": 1004.6108681994782,
+            "relativeForceResidual": 1.158640350068005e-12,
+            "relativeMomentResidual": 5.329960623905158e-13,
+            "passed": true
+          },
+          {
+            "stageId": "S5",
+            "forceResidualKn": -1.7053025658242404e-13,
+            "momentResidualKnM": -3.069544618483633e-12,
+            "forceScaleKn": 1092.9270578104001,
+            "relativeForceResidual": 1.5603077567140576e-16,
+            "relativeMomentResidual": 2.808553962085303e-16,
+            "passed": true
+          }
+        ],
+        "equilibriumToleranceRelative": 1e-06,
+        "scope": "同一冻结剖面的手工可复核项：刚度、分层有效应力、压力界限、水力合力/力矩、零力安装及全阶段平衡；非线性整梁解另与独立求解器比较"
+      },
+      "maximumErrors": {}
+    }
+  ],
+  "status": "failed"
+}

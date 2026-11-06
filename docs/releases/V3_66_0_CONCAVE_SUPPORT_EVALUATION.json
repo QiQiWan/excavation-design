@@ -1,0 +1,535 @@
+{
+  "version": {
+    "softwareVersion": "3.66.0",
+    "algorithmVersion": "3.66.0-concave-transfer-candidate-provenance",
+    "ruleSetVersion": "2026.07-v3.66.0-concave-transfer-gate",
+    "exportSchemaVersion": "3.66"
+  },
+  "sample": "orthogonal L-shaped excavation, top 0.0 m, bottom -16.0 m, three support levels",
+  "before": {
+    "supportCount": 36,
+    "columnCount": 14,
+    "transferBeamCount": 0,
+    "qualityStatus": "fail",
+    "qualityScore": 0.0,
+    "failCount": 9,
+    "warningCount": 2,
+    "failCategories": [
+      "wale_support_bay"
+    ],
+    "metrics": {
+      "waleSupportBayFailCount": 9,
+      "supportCrossingCount": 0,
+      "supportOutsideExcavationCount": 0,
+      "unsupportedInternalEndpointCount": 0,
+      "supportToSupportTerminalCount": 0,
+      "supportStationClusterCount": 0
+    },
+    "transferSystem": {
+      "templateId": "none",
+      "templateLabel": null,
+      "calculationReady": false,
+      "officialIssueReady": false,
+      "junctionCount": 1,
+      "coveredJunctionCount": 0,
+      "requiredFaceCount": 6,
+      "coveredFaceCountByLevel": {},
+      "faceCoverageComplete": false,
+      "ringClosed": false,
+      "ringClosureByLevel": [
+        {
+          "levelIndex": 1,
+          "closed": false,
+          "beamCount": 0,
+          "nodeCount": 0,
+          "componentCount": 0,
+          "invalidDegreeNodeCount": 0
+        },
+        {
+          "levelIndex": 2,
+          "closed": false,
+          "beamCount": 0,
+          "nodeCount": 0,
+          "componentCount": 0,
+          "invalidDegreeNodeCount": 0
+        },
+        {
+          "levelIndex": 3,
+          "closed": false,
+          "beamCount": 0,
+          "nodeCount": 0,
+          "componentCount": 0,
+          "invalidDegreeNodeCount": 0
+        }
+      ],
+      "blockingReasons": [
+        "concave_transfer_template_missing",
+        "closed_inner_ring_not_generated",
+        "radial_wall_face_coverage_incomplete"
+      ]
+    }
+  },
+  "after": {
+    "supportCount": 72,
+    "columnCount": 1,
+    "transferBeamCount": 18,
+    "qualityStatus": "warning",
+    "qualityScore": 84.0,
+    "failCount": 0,
+    "warningCount": 2,
+    "failCategories": [],
+    "metrics": {
+      "waleSupportBayFailCount": 0,
+      "supportCrossingCount": 0,
+      "supportOutsideExcavationCount": 0,
+      "unsupportedInternalEndpointCount": 0,
+      "supportToSupportTerminalCount": 0,
+      "supportStationClusterCount": 0
+    },
+    "transferSystem": {
+      "templateId": "balanced_elbow_ring",
+      "templateLabel": "均衡型异形闭合内环梁",
+      "calculationReady": true,
+      "officialIssueReady": false,
+      "junctionCount": 1,
+      "coveredJunctionCount": 1,
+      "requiredFaceCount": 6,
+      "coveredFaceCountByLevel": {
+        "1": 6,
+        "2": 6,
+        "3": 6
+      },
+      "faceCoverageComplete": true,
+      "ringClosed": true,
+      "ringClosureByLevel": [
+        {
+          "levelIndex": 1,
+          "closed": true,
+          "beamCount": 6,
+          "nodeCount": 6,
+          "componentCount": 1,
+          "invalidDegreeNodeCount": 0,
+          "invalidDegreeNodes": []
+        },
+        {
+          "levelIndex": 2,
+          "closed": true,
+          "beamCount": 6,
+          "nodeCount": 6,
+          "componentCount": 1,
+          "invalidDegreeNodeCount": 0,
+          "invalidDegreeNodes": []
+        },
+        {
+          "levelIndex": 3,
+          "closed": true,
+          "beamCount": 6,
+          "nodeCount": 6,
+          "componentCount": 1,
+          "invalidDegreeNodeCount": 0,
+          "invalidDegreeNodes": []
+        }
+      ],
+      "blockingReasons": []
+    }
+  },
+  "shapeCoverage": {
+    "L": {
+      "supportCount": 72,
+      "columnCount": 1,
+      "transferBeamCount": 18,
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "metrics": {
+        "waleSupportBayFailCount": 0,
+        "supportCrossingCount": 0,
+        "supportOutsideExcavationCount": 0,
+        "unsupportedInternalEndpointCount": 0,
+        "supportToSupportTerminalCount": 0,
+        "supportStationClusterCount": 0
+      },
+      "transferSystem": {
+        "templateId": "balanced_elbow_ring",
+        "templateLabel": "均衡型异形闭合内环梁",
+        "calculationReady": true,
+        "officialIssueReady": false,
+        "junctionCount": 1,
+        "coveredJunctionCount": 1,
+        "requiredFaceCount": 6,
+        "coveredFaceCountByLevel": {
+          "1": 6,
+          "2": 6,
+          "3": 6
+        },
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "ringClosureByLevel": [
+          {
+            "levelIndex": 1,
+            "closed": true,
+            "beamCount": 6,
+            "nodeCount": 6,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 2,
+            "closed": true,
+            "beamCount": 6,
+            "nodeCount": 6,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 3,
+            "closed": true,
+            "beamCount": 6,
+            "nodeCount": 6,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          }
+        ],
+        "blockingReasons": []
+      }
+    },
+    "U": {
+      "supportCount": 111,
+      "columnCount": 1,
+      "transferBeamCount": 24,
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "metrics": {
+        "waleSupportBayFailCount": 0,
+        "supportCrossingCount": 0,
+        "supportOutsideExcavationCount": 0,
+        "unsupportedInternalEndpointCount": 0,
+        "supportToSupportTerminalCount": 0,
+        "supportStationClusterCount": 0
+      },
+      "transferSystem": {
+        "templateId": "balanced_elbow_ring",
+        "templateLabel": "均衡型异形闭合内环梁",
+        "calculationReady": true,
+        "officialIssueReady": false,
+        "junctionCount": 2,
+        "coveredJunctionCount": 2,
+        "requiredFaceCount": 8,
+        "coveredFaceCountByLevel": {
+          "1": 8,
+          "2": 8,
+          "3": 8
+        },
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "ringClosureByLevel": [
+          {
+            "levelIndex": 1,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 2,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 3,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          }
+        ],
+        "blockingReasons": []
+      }
+    },
+    "T": {
+      "supportCount": 96,
+      "columnCount": 1,
+      "transferBeamCount": 24,
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "metrics": {
+        "waleSupportBayFailCount": 0,
+        "supportCrossingCount": 0,
+        "supportOutsideExcavationCount": 0,
+        "unsupportedInternalEndpointCount": 0,
+        "supportToSupportTerminalCount": 0,
+        "supportStationClusterCount": 0
+      },
+      "transferSystem": {
+        "templateId": "balanced_elbow_ring",
+        "templateLabel": "均衡型异形闭合内环梁",
+        "calculationReady": true,
+        "officialIssueReady": false,
+        "junctionCount": 2,
+        "coveredJunctionCount": 2,
+        "requiredFaceCount": 8,
+        "coveredFaceCountByLevel": {
+          "1": 8,
+          "2": 8,
+          "3": 8
+        },
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "ringClosureByLevel": [
+          {
+            "levelIndex": 1,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 2,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 3,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          }
+        ],
+        "blockingReasons": []
+      }
+    },
+    "Z": {
+      "supportCount": 96,
+      "columnCount": 1,
+      "transferBeamCount": 24,
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "metrics": {
+        "waleSupportBayFailCount": 0,
+        "supportCrossingCount": 0,
+        "supportOutsideExcavationCount": 0,
+        "unsupportedInternalEndpointCount": 0,
+        "supportToSupportTerminalCount": 0,
+        "supportStationClusterCount": 0
+      },
+      "transferSystem": {
+        "templateId": "balanced_elbow_ring",
+        "templateLabel": "均衡型异形闭合内环梁",
+        "calculationReady": true,
+        "officialIssueReady": false,
+        "junctionCount": 2,
+        "coveredJunctionCount": 2,
+        "requiredFaceCount": 8,
+        "coveredFaceCountByLevel": {
+          "1": 8,
+          "2": 8,
+          "3": 8
+        },
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "ringClosureByLevel": [
+          {
+            "levelIndex": 1,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 2,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 3,
+            "closed": true,
+            "beamCount": 8,
+            "nodeCount": 8,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          }
+        ],
+        "blockingReasons": []
+      }
+    },
+    "H": {
+      "supportCount": 132,
+      "columnCount": 1,
+      "transferBeamCount": 36,
+      "qualityStatus": "warning",
+      "qualityScore": 84.0,
+      "failCount": 0,
+      "warningCount": 2,
+      "failCategories": [],
+      "metrics": {
+        "waleSupportBayFailCount": 0,
+        "supportCrossingCount": 0,
+        "supportOutsideExcavationCount": 0,
+        "unsupportedInternalEndpointCount": 0,
+        "supportToSupportTerminalCount": 0,
+        "supportStationClusterCount": 0
+      },
+      "transferSystem": {
+        "templateId": "balanced_elbow_ring",
+        "templateLabel": "均衡型异形闭合内环梁",
+        "calculationReady": true,
+        "officialIssueReady": false,
+        "junctionCount": 4,
+        "coveredJunctionCount": 4,
+        "requiredFaceCount": 12,
+        "coveredFaceCountByLevel": {
+          "1": 12,
+          "2": 12,
+          "3": 12
+        },
+        "faceCoverageComplete": true,
+        "ringClosed": true,
+        "ringClosureByLevel": [
+          {
+            "levelIndex": 1,
+            "closed": true,
+            "beamCount": 12,
+            "nodeCount": 12,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 2,
+            "closed": true,
+            "beamCount": 12,
+            "nodeCount": 12,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          },
+          {
+            "levelIndex": 3,
+            "closed": true,
+            "beamCount": 12,
+            "nodeCount": 12,
+            "componentCount": 1,
+            "invalidDegreeNodeCount": 0,
+            "invalidDegreeNodes": []
+          }
+        ],
+        "blockingReasons": []
+      }
+    }
+  },
+  "candidates": [
+    {
+      "rank": 1,
+      "id": "slopt-zoned-direct-compact-elbow-ring-t5p0-c18p0-as_generated-0p0",
+      "score": 49.24,
+      "status": "warning",
+      "hardConstraintPassed": true,
+      "template": "compact_elbow_ring",
+      "templateLabel": "紧凑型异形闭合内环梁",
+      "supportCount": 72,
+      "columnCount": 1,
+      "transferBeamCount": 18,
+      "failCount": 0,
+      "warningCount": 2
+    },
+    {
+      "rank": 2,
+      "id": "slopt-zoned-direct-balanced-elbow-ring-t4p5-c18p0-as_generated-0p0",
+      "score": 47.96,
+      "status": "warning",
+      "hardConstraintPassed": true,
+      "template": "balanced_elbow_ring",
+      "templateLabel": "均衡型异形闭合内环梁",
+      "supportCount": 72,
+      "columnCount": 1,
+      "transferBeamCount": 18,
+      "failCount": 0,
+      "warningCount": 2
+    },
+    {
+      "rank": 3,
+      "id": "slopt-zoned-direct-extended-elbow-ring-t5p5-c18p0-as_generated-0p0",
+      "score": 46.38,
+      "status": "warning",
+      "hardConstraintPassed": true,
+      "template": "extended_elbow_ring",
+      "templateLabel": "延伸型异形闭合内环梁",
+      "supportCount": 72,
+      "columnCount": 1,
+      "transferBeamCount": 18,
+      "failCount": 0,
+      "warningCount": 2
+    }
+  ],
+  "fullCalculation": {
+    "elapsedSeconds": 3.969,
+    "stageCount": 42,
+    "checkSummary": {
+      "pass": 574,
+      "fail": 2,
+      "warning": 6,
+      "manualReview": 1
+    },
+    "governingValues": {
+      "maxTotalPressure": 211.399,
+      "maxSupportAxialForce": 8977.686,
+      "maxWallMoment": 605.073,
+      "maxWallShear": 361.061,
+      "maxDisplacement": 5.428,
+      "governingCheckStatus": "fail",
+      "embedmentSafetyFactorMin": 1.476,
+      "heaveSafetyFactorMin": 5.08,
+      "seepageSafetyFactorMin": null,
+      "seepageRiskIndexMax": 0.0,
+      "strengthCheckStatus": "pass",
+      "stiffnessCheckStatus": "pass",
+      "stabilityCheckStatus": "pass"
+    },
+    "supportTopologyHash": "ab6e3102efe12f489bbb",
+    "formalGateAllowed": false,
+    "formalGateBlockingCategories": [
+      "calculation_assurance",
+      "shape_transfer_detailing",
+      "calculation_check"
+    ]
+  },
+  "elapsedSeconds": 5.304
+}

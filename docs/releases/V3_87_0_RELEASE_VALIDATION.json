@@ -1,0 +1,75 @@
+{
+  "schema": "pitguard-v3.87-release-validation-v1",
+  "version": "3.87.0",
+  "releaseLabel": "engineering_preview",
+  "generatedAt": "2026-07-22",
+  "backend": {
+    "compileall": "pass",
+    "openapiImport": "pass",
+    "openapiPathCount": 138,
+    "designCorePathCount": 12,
+    "relatedTests": [
+      {
+        "file": "test_v3_70_0_planar_transfer_delivery.py",
+        "passed": 10
+      },
+      {
+        "file": "test_v3_71_0_numerical_coupling.py",
+        "passed": 6
+      },
+      {
+        "file": "test_v3_72_0_workflow_stability_results.py",
+        "passed": 7
+      },
+      {
+        "file": "test_v3_77_0_accuracy_compliance_workflow.py",
+        "passed": 7
+      },
+      {
+        "file": "test_v3_81_0_responsibility_workflow.py",
+        "passed": 15
+      },
+      {
+        "file": "test_v3_87_0_design_core_closure.py",
+        "passed": 12
+      }
+    ],
+    "relatedPassedTotal": 57,
+    "fullHistoricalSuite": "not_completed",
+    "combinedLongLivedProcess": "timeout_observed"
+  },
+  "frontend": {
+    "dependencyTree": "incomplete",
+    "vitest": "not_run",
+    "viteProductionBuild": "not_run",
+    "reason": "当前环境 node_modules 不完整；交付包将其移除，部署时必须重新 npm ci。"
+  },
+  "artifacts": {
+    "drawingGeneratedCount": 17,
+    "requiredDrawingTypeCount": 15,
+    "missingDrawingTypeCount": 0,
+    "reportPageCount": 26,
+    "reportRenderInspection": "pass",
+    "reportRequiredSectionCount": 16,
+    "reportPresentSectionCount": 16
+  },
+  "engineeringEvaluation": {
+    "syntheticProject": "L-shaped 60m x 45m, depth 16m",
+    "candidateCount": 3,
+    "fullyCalculatedCandidateCount": 3,
+    "memberEnvelopeRecordCount": 150,
+    "reinforcementClosureComponentCount": 276,
+    "calculationEngineeringStatus": "fail",
+    "formalIssueAllowed": false,
+    "expectedBehavior": "pass: synthetic project lacks verified geology/parameters and has calculation failures, therefore official issue is blocked"
+  },
+  "productionChecks": {
+    "migrationTest": "not_run",
+    "endurance100Runs": "not_run",
+    "concurrency10Projects": "not_run",
+    "externalBenchmarkBatch": "not_run",
+    "realProjectPilot": "not_run",
+    "enterprisePKI": "not_integrated"
+  },
+  "conclusion": "V3.87.0 is suitable for engineering preview, integration testing and controlled pilots; production verification is not claimed."
+}

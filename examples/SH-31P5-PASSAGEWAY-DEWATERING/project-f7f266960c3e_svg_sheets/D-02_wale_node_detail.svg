@@ -1,0 +1,22 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'>
+<rect x='0' y='0' width='1400' height='900' fill='white'/>
+<rect x='35' y='35' width='1330' height='830' fill='none' stroke='black' stroke-width='2'/>
+<style>text{font-family:Arial,'Microsoft YaHei',sans-serif;font-size:20px} .small{font-size:14px} .thin{stroke:#333;stroke-width:1;fill:none} .thick{stroke:#111;stroke-width:4;fill:none} .rebar{stroke:#111;stroke-width:3} .dim{stroke:#777;stroke-width:1;fill:none;stroke-dasharray:6 4}</style>
+<text x='80' y='85'>支撑—围檩节点详图</text>
+<rect x='180' y='300' width='760' height='120' fill='none' stroke='black' stroke-width='4'/><text x='450' y='285'>钢筋混凝土围檩</text>
+<rect x='500' y='220' width='220' height='280' fill='none' stroke='#444' stroke-width='3'/><text x='520' y='210'>承压板 / 节点刚域</text>
+<line x1='610' y1='120' x2='610' y2='640' stroke='#0b4' stroke-width='16'/><text x='635' y='160'>水平支撑</text>
+<line x1='205' y1='320' x2='915' y2='320' class='rebar'/>
+<line x1='205' y1='336' x2='915' y2='336' class='rebar'/>
+<line x1='205' y1='352' x2='915' y2='352' class='rebar'/>
+<line x1='205' y1='368' x2='915' y2='368' class='rebar'/>
+<line x1='205' y1='384' x2='915' y2='384' class='rebar'/>
+<line x1='205' y1='400' x2='915' y2='400' class='rebar'/>
+<text x='180' y='470' class='small'>围檩主筋连续通过；节点两侧 1.5h 范围箍筋加密；承压板后附加 U 形筋和抗裂分布筋。</text>
+<rect x='880' y='750' width='470' height='105' fill='none' stroke='black' stroke-width='1'/>
+<line x1='880' y1='785' x2='1350' y2='785' stroke='black'/>
+<line x1='1040' y1='750' x2='1040' y2='855' stroke='black'/>
+<text x='895' y='775' class='small'>图名</text><text x='1055' y='775' class='small'>支撑—围檩节点详图</text>
+<text x='895' y='812' class='small'>比例</text><text x='1055' y='812' class='small'>1:50</text>
+<text x='895' y='842' class='small'>阶段</text><text x='1055' y='842' class='small'>方案/施工图深化接口</text>
+</svg>

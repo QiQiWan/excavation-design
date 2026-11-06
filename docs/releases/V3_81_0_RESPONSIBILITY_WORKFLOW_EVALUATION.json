@@ -1,0 +1,118 @@
+{
+  "schema": "pitguard-v3.81-responsibility-workflow-evaluation-v1",
+  "softwareVersion": "3.81.0",
+  "migration": {
+    "migrated": true,
+    "sourceCaseId": "case-73670b057a01",
+    "stageCount": 7
+  },
+  "synchronization": {
+    "synchronized": true,
+    "caseId": "case-dc63cc2a629f",
+    "stageCount": 7,
+    "validation": {
+      "status": "pass",
+      "valid": true,
+      "stageCount": 7,
+      "failCount": 0,
+      "warningCount": 0,
+      "issues": [],
+      "semanticType": "design_control_stage"
+    }
+  },
+  "synchronizedCaseId": "case-dc63cc2a629f",
+  "designControlStageCount": 7,
+  "designScenarioCount": 63,
+  "scenariosPerStage": 9,
+  "scenarioCategories": [
+    "baseline",
+    "groundwater",
+    "member_anomaly",
+    "overexcavation",
+    "preload",
+    "stiffness",
+    "support_delay",
+    "surcharge"
+  ],
+  "scenarioApproval": {
+    "approvedCount": 9,
+    "updatedCount": 2
+  },
+  "scenarioExecution": {
+    "durationSeconds": 6.293,
+    "summary": {
+      "requestedCount": 1,
+      "completedCount": 1,
+      "failedExecutionCount": 0,
+      "skippedByLimitCount": 0,
+      "failCount": 1,
+      "warningCount": 0
+    },
+    "executedScenarioCode": "dcs-eb6bbd6ee2b8:TEMP_SURCHARGE",
+    "executedScenarioStatus": "fail",
+    "maxWallDisplacement": 581.733,
+    "maxSupportAxialForce": 8991.333,
+    "minimumSafetyFactor": 1.476
+  },
+  "scenarioEnvelope": {
+    "status": "warning",
+    "candidateResultCount": 1,
+    "pendingFormalScenarioCount": 1,
+    "maxWallDisplacement": {
+      "value": 581.733,
+      "controllingScenarioCode": "dcs-eb6bbd6ee2b8:TEMP_SURCHARGE",
+      "source": "formal_design_scenario_rerun"
+    },
+    "minSafetyFactor": {
+      "value": 1.476,
+      "controllingScenarioCode": "dcs-eb6bbd6ee2b8:TEMP_SURCHARGE",
+      "source": "formal_design_scenario_rerun"
+    }
+  },
+  "acceptablePlan": {
+    "grade": "A",
+    "status": "pass",
+    "withinDesignEnvelope": true
+  },
+  "prohibitedPlan": {
+    "grade": "E",
+    "status": "fail",
+    "prohibited": true,
+    "issueCount": 2
+  },
+  "normalFieldSnapshot": {
+    "status": "pass",
+    "withinDesignEnvelope": true,
+    "workHoldRecommended": false
+  },
+  "abnormalFieldSnapshot": {
+    "status": "fail",
+    "withinDesignEnvelope": false,
+    "workHoldRecommended": true,
+    "recalculationRequired": true,
+    "designerReviewRequired": true,
+    "eventCount": 2,
+    "criticalEventCount": 1
+  },
+  "gateSeparation": {
+    "designExplicitExclusionCount": 6,
+    "constructionPlanBlocksConstructionOnly": true,
+    "unapprovedPlanBlocksConstructionOnly": true,
+    "fieldSnapshotBlocksFieldOnly": true,
+    "responsibilityDomainCount": 3
+  },
+  "onlineDocumentation": {
+    "chapterIds": [
+      "workflow",
+      "principles",
+      "standards",
+      "accuracy",
+      "compliance",
+      "responsibility",
+      "deliverables"
+    ],
+    "roadmapLastVersion": "3.81",
+    "responsibilityDomainCount": 3
+  },
+  "boundary": "该评估验证业务对象、责任门禁和偏差闭环；不以未执行的不利情景伪造结构计算结果。"
+}

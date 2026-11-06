@@ -1,0 +1,64 @@
+{
+  "version": "3.48.0",
+  "backend": {
+    "current_release_and_runtime_regression": {"passed": 33, "failed": 0},
+    "core_visualization_and_rebar_regression": {"passed": 26, "failed": 0},
+    "total_reported_passes": 59,
+    "legacy_cad_stress_suite": "not counted; a historical full-CAD test exceeded the 180 s execution window"
+  },
+  "frontend": {
+    "test_files": 20,
+    "tests_passed": 36,
+    "tests_failed": 0,
+    "typescript_build": "passed",
+    "vite_production_build": "passed",
+    "non_blocking_warning": "lazy Three.js chunk is approximately 524 kB"
+  },
+  "smoke": {
+    "core_workflow": {
+      "status": "success",
+      "elapsed_seconds": 4.265,
+      "candidate_count": 3,
+      "support_count": 36,
+      "column_count": 4,
+      "calculation_result_count": 1,
+      "rebar_check_count": 568,
+      "fail_count": 0,
+      "warning_count": 5,
+      "payload_bytes": 1874360,
+      "workspace_bytes": 1484422,
+      "external_bytes": 708344
+    },
+    "isolated_worker": {
+      "status": "success",
+      "elapsed_seconds": 5.049,
+      "task_execution_mode": "external",
+      "task_end_effective_memory_mb": 216.85
+    },
+    "candidate_memory_230m_stepped_strip": {
+      "status": "success",
+      "elapsed_seconds": 17.079,
+      "candidate_count": 3,
+      "formal_candidate_count": 0,
+      "diagnostic_candidate_count": 3,
+      "first_candidate_support_count": 208,
+      "first_candidate_column_count": 40,
+      "current_support_count": 0,
+      "payload_mb": 1.30,
+      "workspace_mb": 0.50,
+      "peak_rss_mb": 410.60
+    },
+    "p3_engineering": {
+      "status": "success",
+      "elapsed_seconds": 29.925,
+      "formal_adverse_scenario_count": 2,
+      "individual_bar_count": 47552,
+      "coupler_count": 5952,
+      "embedded_item_count": 72,
+      "node_submodel_count": 3,
+      "engineering_fail_count": 32,
+      "engineering_warning_count": 548,
+      "note": "The task completed; fail/warning counts are engineering detailing findings and correctly block formal issue."
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "packageId": "pitguard-drawing-knowledge",
+  "version": "1.0.0",
+  "rules": [
+    {"id": "DK-001", "when": "concaveVertexCount > 0", "recommend": "D09"},
+    {"id": "DK-002", "when": "secondarySupportCount > 0", "recommend": "D08"},
+    {"id": "DK-003", "when": "calculationRootCauseCount > 0", "recommend": "diagnostic schedules"},
+    {"id": "DK-004", "when": "wallCount >= 6", "recommend": "geometry-aware wall grouping"}
+  ]
+}

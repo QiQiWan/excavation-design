@@ -1,0 +1,63 @@
+{
+  "schema": "pitguard-v3873-single-primary-flow-evaluation-v1",
+  "version": {
+    "softwareVersion": "3.87.3",
+    "algorithmVersion": "3.87.0-design-core-governance-joint-optimization-detailing-delivery",
+    "ruleSetVersion": "2026.07-v3.87.0-clause-parameter-and-design-delivery-evidence",
+    "exportSchemaVersion": "3.87",
+    "structuralKernelVersion": "3.87.0-planar-6dof-member-envelope-rebar-feedback-kernel",
+    "resultPipelineVersion": "3.87.3-single-primary-design-flow-on-demand-assurance-center"
+  },
+  "routeCount": 174,
+  "primaryWorkflow": [
+    "basis",
+    "input",
+    "scheme",
+    "calculation",
+    "reinforcement",
+    "deliverables"
+  ],
+  "evidenceGrouping": {
+    "basis": [
+      "D1_BASIS"
+    ],
+    "input": [
+      "D2_INPUT"
+    ],
+    "scheme": [
+      "D3_SCHEME_SEARCH",
+      "D4_RETAINING_DESIGN"
+    ],
+    "calculation": [
+      "D5_CALCULATION"
+    ],
+    "reinforcement": [
+      "D6_REINFORCEMENT"
+    ],
+    "deliverables": [
+      "D7_DRAWINGS",
+      "D8_REPORT",
+      "D9_REVIEW_ISSUE"
+    ]
+  },
+  "checks": {
+    "singlePrimaryNavigation": true,
+    "persistentSecondFlowRemoved": true,
+    "assuranceDrawerOnDemand": true,
+    "assuranceButtonPresent": true,
+    "assuranceTitleUpdated": true,
+    "sixQualityGroups": true,
+    "backendRoleIsAssurance": true,
+    "backendPrimaryStageCount": true,
+    "backendEvidenceDomainCount": true,
+    "drawerStylesPresent": true,
+    "onlineDocsSingleFlow": true
+  },
+  "passed": 11,
+  "total": 11,
+  "status": "pass",
+  "limitations": [
+    "当前环境未安装前端 node_modules，未执行 Vitest、tsc -b 和 Vite 生产构建。",
+    "本补丁仅调整流程信息架构和加载策略，不修改结构计算、配筋和导出算法。"
+  ]
+}

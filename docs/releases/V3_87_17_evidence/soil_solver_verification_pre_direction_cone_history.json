@@ -1,0 +1,304 @@
+{
+  "date": "2026-10-25",
+  "method": "two_sided_elastoplastic_winkler_v1",
+  "scope": "Solver unit/analytical verification and fully defined synthetic six-stage example; not original A3-3 reproduction or engineering certification",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "command": "PYTHONPATH=/tmp/pitguard-soil-opensees:. python -m pytest -q tests/test_section_independent.py tests/test_section_solver.py",
+  "exitCode": 0,
+  "testOutput": "...................................                                      [100%]\n35 passed in 0.58s\nProcess 0 Terminating\n",
+  "tests": [
+    {
+      "name": "test_fixed_toe_cantilever_matches_tip_load_solution_and_end_force_signs",
+      "status": "passed"
+    },
+    {
+      "name": "test_symmetric_two_sided_initial_stress_balances_without_a_zero_output_override",
+      "status": "passed"
+    },
+    {
+      "name": "test_soil_yield_unload_and_reverse_reload_preserves_committed_plastic_displacement",
+      "status": "passed"
+    },
+    {
+      "name": "test_excavation_parameter_update_keeps_surviving_spring_plastic_history",
+      "status": "passed"
+    },
+    {
+      "name": "test_zero_force_installation_and_removal_use_the_installed_configuration",
+      "status": "passed"
+    },
+    {
+      "name": "test_compression_only_support_can_open_and_reengage_without_plastic_reference_drift",
+      "status": "passed"
+    },
+    {
+      "name": "test_rigid_replacement_locks_the_true_install_displacement_and_receives_released_force",
+      "status": "passed"
+    },
+    {
+      "name": "test_free_unrestrained_mechanism_is_failed_and_later_stages_are_not_zero_filled",
+      "status": "passed"
+    },
+    {
+      "name": "test_capacity_exhaustion_cannot_be_hidden_by_a_fake_soil_stiffness_or_fixed_toe",
+      "status": "passed"
+    },
+    {
+      "name": "test_invalid_or_unmodelled_physics_is_rejected[nan_force]",
+      "status": "passed"
+    },
+    {
+      "name": "test_invalid_or_unmodelled_physics_is_rejected[preload]",
+      "status": "passed"
+    },
+    {
+      "name": "test_invalid_or_unmodelled_physics_is_rejected[soil_reactivation]",
+      "status": "passed"
+    },
+    {
+      "name": "test_invalid_or_unmodelled_physics_is_rejected[identity_change]",
+      "status": "passed"
+    },
+    {
+      "name": "test_invalid_or_unmodelled_physics_is_rejected[unsupported_rigid_contact]",
+      "status": "passed"
+    },
+    {
+      "name": "test_solver_never_changes_the_input_snapshot_or_previous_outputs",
+      "status": "passed"
+    },
+    {
+      "name": "test_refined_full_section_can_remove_strut_without_roundoff_stalling",
+      "status": "passed"
+    }
+  ],
+  "filesSha256": {
+    "app/section/solver.py": "9ebb9c26d218b14d729c718d45340e74c0aea8ce43d7473623c598acff2e0fd5",
+    "tests/test_section_solver.py": "81b222d047bf2246bd35222cc2477e88cb828102f2b65dc360bc65d75ef7341e",
+    "app/section/preprocess.py": "b6e4e4dba0e26bfd879bf1475ce9f2b0d157636fbd91adb06485a69c28b7a861",
+    "app/section/independent.py": "8bdcee1e899fc363edc28ab0c3baf095e9e1810fbeca3f531aff6fcc11b1d571",
+    "tests/test_section_independent.py": "2e7fe78b67a0b859108690c2d87bf628aa90c62c45b48df7f086d7c483fb9595"
+  },
+  "syntheticExample": {
+    "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+    "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+    "status": "success",
+    "elapsedSeconds": 0.07344885500060627,
+    "nodes": 83,
+    "initialSoilSpringCount": 984,
+    "stages": [
+      {
+        "id": "S0",
+        "status": "success",
+        "iterations": 0,
+        "failureReason": null,
+        "maxAbsNodalDisplacementMm": 0.0,
+        "residualInfKn": 0.0,
+        "equilibrium": {
+          "horizontalForceResidualKn": 0.0,
+          "momentResidualKnM": 0.0,
+          "relativeForceResidual": 0.0,
+          "relativeMomentResidual": 0.0
+        },
+        "supports": []
+      },
+      {
+        "id": "S1",
+        "status": "success",
+        "iterations": 4,
+        "failureReason": null,
+        "maxAbsNodalDisplacementMm": 3.94940010657668,
+        "residualInfKn": 1.525033765936712e-09,
+        "equilibrium": {
+          "horizontalForceResidualKn": -5.03670022355962e-13,
+          "momentResidualKnM": -2.7262584550991065e-12,
+          "relativeForceResidual": 1.1309690405447845e-15,
+          "relativeMomentResidual": 6.121694308543645e-16
+        },
+        "supports": []
+      },
+      {
+        "id": "S2",
+        "status": "success",
+        "iterations": 0,
+        "failureReason": null,
+        "maxAbsNodalDisplacementMm": 3.94940010657668,
+        "residualInfKn": 1.525033765936712e-09,
+        "equilibrium": {
+          "horizontalForceResidualKn": -4.991181079549989e-13,
+          "momentResidualKnM": -2.7104932881494292e-12,
+          "relativeForceResidual": 1.1207479155339716e-15,
+          "relativeMomentResidual": 6.086294314603756e-16
+        },
+        "supports": [
+          {
+            "id": "STRUT-1",
+            "node": 13,
+            "kind": "elastic",
+            "stiffnessKnPerM": 29070.0,
+            "compressionOnly": true,
+            "preloadKn": 0.0,
+            "referenceDisplacementM": 0.002782117638172135,
+            "reactionKn": 0.0,
+            "forceOnWallKn": -0.0,
+            "displacementM": 0.002782117638172135,
+            "engaged": false
+          }
+        ]
+      },
+      {
+        "id": "S3",
+        "status": "success",
+        "iterations": 4,
+        "failureReason": null,
+        "maxAbsNodalDisplacementMm": 5.32916646539723,
+        "residualInfKn": 2.9483153696219233e-09,
+        "equilibrium": {
+          "horizontalForceResidualKn": 1.0951833190331328e-11,
+          "momentResidualKnM": 7.622406698881701e-11,
+          "relativeForceResidual": 2.2427425413803666e-14,
+          "relativeMomentResidual": 1.5609346375341836e-14
+        },
+        "supports": [
+          {
+            "id": "STRUT-1",
+            "node": 13,
+            "kind": "elastic",
+            "stiffnessKnPerM": 29070.0,
+            "compressionOnly": true,
+            "preloadKn": 0.0,
+            "referenceDisplacementM": 0.002782117638172135,
+            "reactionKn": 73.38251853036977,
+            "forceOnWallKn": -73.38251853036977,
+            "displacementM": 0.005306456080909313,
+            "engaged": true
+          }
+        ]
+      },
+      {
+        "id": "S4",
+        "status": "success",
+        "iterations": 0,
+        "failureReason": null,
+        "maxAbsNodalDisplacementMm": 5.32916646539723,
+        "residualInfKn": 2.92223134579217e-09,
+        "equilibrium": {
+          "horizontalForceResidualKn": -2.9373285574674224e-09,
+          "momentResidualKnM": -1.348584183734347e-08,
+          "relativeForceResidual": 6.015131530362831e-12,
+          "relativeMomentResidual": 2.7616628804791307e-12
+        },
+        "supports": [
+          {
+            "id": "STRUT-1",
+            "node": 13,
+            "kind": "elastic",
+            "stiffnessKnPerM": 29070.0,
+            "compressionOnly": true,
+            "preloadKn": 0.0,
+            "referenceDisplacementM": 0.002782117638172135,
+            "reactionKn": 73.38251853036977,
+            "forceOnWallKn": -73.38251853036977,
+            "displacementM": 0.005306456080909313,
+            "engaged": true
+          },
+          {
+            "id": "REPLACEMENT",
+            "node": 38,
+            "kind": "rigid",
+            "stiffnessKnPerM": null,
+            "compressionOnly": false,
+            "preloadKn": 0.0,
+            "referenceDisplacementM": 0.004656233457195951,
+            "reactionKn": 2.948316035755738e-09,
+            "forceOnWallKn": -2.948316035755738e-09,
+            "displacementM": 0.004656233457195951,
+            "engaged": true
+          }
+        ]
+      },
+      {
+        "id": "S5",
+        "status": "success",
+        "iterations": 3,
+        "failureReason": null,
+        "maxAbsNodalDisplacementMm": 11.394221873648377,
+        "residualInfKn": 6.791717077625492e-09,
+        "equilibrium": {
+          "horizontalForceResidualKn": 2.407862069453426e-10,
+          "momentResidualKnM": 1.1295412227080304e-09,
+          "relativeForceResidual": 4.3174868790164335e-13,
+          "relativeMomentResidual": 2.0253566307712583e-13
+        },
+        "supports": [
+          {
+            "id": "REPLACEMENT",
+            "node": 38,
+            "kind": "rigid",
+            "stiffnessKnPerM": null,
+            "compressionOnly": false,
+            "preloadKn": 0.0,
+            "referenceDisplacementM": 0.004656233457195951,
+            "reactionKn": 180.5073286408621,
+            "forceOnWallKn": -180.5073286408621,
+            "displacementM": 0.004656233457195951,
+            "engaged": true
+          }
+        ]
+      }
+    ]
+  },
+  "additionalVerification": {
+    "snapshotAndPreprocessJointSuite": "Historical pre-refinement-change result: 31 passed in 0.32s including the original 15 solver tests; current integration rerun is owned by root.",
+    "completeBackendAttempt": {
+      "command": "timeout 30s python -m pytest -q",
+      "exitCode": 124,
+      "status": "incomplete_timeout",
+      "log": "/tmp/pitguard-section-full-pytest.log",
+      "observedOutput": "61 progress dots, no failure report before timeout",
+      "limitation": "Not a completed full backend suite; no full-suite pass claimed",
+      "observedProgressDots": 61
+    },
+    "laterJointAttempt": {
+      "status": "interrupted_at_parent_request",
+      "exitCode": 130,
+      "note": "A redundant broad section run showed two failure indicators before summary while root was replacing fixtures; no failure traceback was captured. It was stopped at parent request. No broad-suite pass or failure classification is claimed. Root owns final API/export integration verification."
+    }
+  },
+  "tddEvidence": {
+    "firstAnalyticTest": "Failed with missing solver assertion, then passed with beam implementation",
+    "historyAndFailureTests": "14 failed and 1 passed before staged soil/support implementation; all 15 passed after implementation",
+    "meshRefinementRegression": {
+      "red": "New 163-node (.0625 m) complete history test failed: status failed, S5 No equilibrium within 100 iterations.",
+      "green": "Same test passes with centered element internal-force and energy evaluation; all tolerances unchanged.",
+      "mechanism": "At S5 the old global K*d absolute row-term sum is 7.873e8, epsilon times row sum 1.748e-7 kN versus 4.234e-8 kN convergence tolerance. Same converged displacement evaluates with a 6.554e-8 kN old-versus-centered discrepancy.",
+      "physicsChange": false,
+      "toleranceChange": false,
+      "artificialStiffness": false
+    }
+  },
+  "limitations": [
+    "Independent OpenSees complete-model comparison is owned and reported by another agent; this file does not pre-claim its result.",
+    "No continuous soil constitutive model, groundwater flow, global stability or original engineering project validation."
+  ],
+  "focusedCounts": {
+    "primarySolver": 16,
+    "independentOpenSees": 19,
+    "total": 35
+  },
+  "independentStabilityReview": {
+    "backend": "OpenSees 3.8.0 / OpenSeesPy 3.8.0.0",
+    "red": "3 failed, 16 deselected in 0.10s: exact-capacity free and pinned cases incorrectly accepted nonunique zero-residual plastic plateaus; mixed installation/removal did not raise.",
+    "green": "19 independent +16 primary solver tests pass, including both platform mechanism cases and mixed-event rejection.",
+    "criterion": "Read independent material final tangent. A positive-EI beam has rigid modes y=a+b*z; two distinct lateral-restraint depths constrain both modes, or an exact fixed toe. Released yield bounds and open/just-touching compression-only contacts are excluded. No primary matrix or artificial stiffness.",
+    "newTests": [
+      "test_balanced_plastic_plateau_cannot_pass_as_a_unique_equilibrium[free]",
+      "test_balanced_plastic_plateau_cannot_pass_as_a_unique_equilibrium[pinned]",
+      "test_unsupported_or_ambiguous_history_is_rejected_before_solving[mixed_event]"
+    ]
+  },
+  "meshRefinementEvidence": "soil_mesh_refinement_centered_beam_current.json",
+  "preprocessReview": "soil_solver_review.md",
+  "currentAlgorithm": false,
+  "algorithmState": "historical_before_complementary_direction_cone_and_extended_displacement_fix"
+}

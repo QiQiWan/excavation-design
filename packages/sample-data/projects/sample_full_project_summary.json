@@ -1,0 +1,127 @@
+{
+  "project_id": "project-391a79acbfe4",
+  "stage_result_count": 16,
+  "check_count": 329,
+  "pass_count": 329,
+  "warning_count": 0,
+  "fail_count": 0,
+  "manual_review_count": 0,
+  "completion_percent": 100.0,
+  "closed_loop_complete": true,
+  "assurance": {
+    "projectId": "project-391a79acbfe4",
+    "softwareVersion": "1.1.0-usable",
+    "completionPercent": 100.0,
+    "closedLoopComplete": true,
+    "professionalReviewRequired": true,
+    "checkSummary": {
+      "pass": 329,
+      "fail": 0,
+      "warning": 0,
+      "manualReview": 0
+    },
+    "failureCount": 0,
+    "manualReviewCount": 0,
+    "acceptanceMatrix": [
+      {
+        "id": "P0",
+        "title": "monorepo, README, FastAPI health and React shell",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P1",
+        "title": "project CRUD and SQLite persistence",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P2",
+        "title": "borehole CSV/XLSX import, validation and strata parameter merge",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P3",
+        "title": "IDW geological surfaces and representative design sections",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P4",
+        "title": "VTU mesh import with field mapping and front-end selectable display",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P5",
+        "title": "excavation outline validation, area/perimeter and segment generation",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P6",
+        "title": "automatic diaphragm wall, crown/wale beam, supports and columns",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P7",
+        "title": "staged calculation, earth/water pressure, support forces and wall internal forces",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P8",
+        "title": "reinforcement design, crack/serviceability and anchorage/detailing screens",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P9",
+        "title": "IFC4 export with spatial hierarchy, elements, property sets and rebar entities",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P10",
+        "title": "DOCX calculation report with declarations, conclusions and traceability",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P11",
+        "title": "standards rule registry and project compliance/gap analysis API",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      },
+      {
+        "id": "P12",
+        "title": "complete sample project running JSON -> calculation -> IFC -> report",
+        "required": true,
+        "status": "pass",
+        "message": "已满足 V1.1 可运行验收。"
+      }
+    ],
+    "remainingBoundaryPolicy": [
+      "规范条文适用性、地方审查意见和施工图签审不由软件自动替代，而以 professionalReviewRequired 作为出图闸门保留。",
+      "对于本软件 V1.1 验收范围，所有 Phase 0-10 功能、工程级 IFC、完整样例和计算书闭环已具备可运行实现。",
+      "正式工程应用前仍需输入经审查的勘察报告、降水方案、周边环境控制指标、施工组织和监测方案。"
+    ]
+  },
+  "json": "packages\\sample-data\\projects\\sample_full_project.json",
+  "ifc": "packages\\sample-data\\projects\\sample_full_project.ifc",
+  "docx": "packages\\sample-data\\projects\\sample_full_project_calculation_report.docx"
+}

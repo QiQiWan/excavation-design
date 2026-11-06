@@ -1,0 +1,38 @@
+{
+  "caseId": "SH-56M-CIRCULAR-DOUBLE-WALL",
+  "projectId": "project-ea5d951c2a94",
+  "name": "上海 56m 深圆形/多边形竖井双墙体系规范算法回归算例",
+  "sourceTitle": "Performance of a 56 m deep circular excavation supported by diaphragm and cut-off double-wall system in Shanghai soft ground",
+  "sourceUrl": "https://www.sciencedirect.com/org/science/article/abs/pii/S0008367422000555",
+  "publicDataBasis": "公开摘要给出：56 m 深圆形基坑，内圆形地下连续墙 + 外矩形止水墙双墙体系，上海软土。",
+  "depthM": 56.0,
+  "calculationDepthM": 30.0,
+  "sourcePlanSizeM": [
+    76.0,
+    76.0
+  ],
+  "planSizeM": [
+    76.0,
+    76.0
+  ],
+  "geometryScale": 1.0,
+  "supportCount": 20,
+  "columnCount": 4,
+  "maxSupportAxialForce": 0.0,
+  "maxWallMoment": 76873.82,
+  "maxDisplacement": 6273.459,
+  "checkSummary": {
+    "pass": 1598,
+    "fail": 280,
+    "warning": 86,
+    "manualReview": 0
+  },
+  "issueSummary": {
+    "fail": 5,
+    "warning": 12,
+    "manual_review": 1,
+    "pass": 0
+  },
+  "traceCount": 1120,
+  "officialIssueAllowed": false
+}

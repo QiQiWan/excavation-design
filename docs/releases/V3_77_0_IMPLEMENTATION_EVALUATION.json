@@ -1,0 +1,119 @@
+{
+  "schema": "pitguard-v3.77-implementation-evaluation-v1",
+  "release": {
+    "softwareVersion": "3.77.0",
+    "algorithmVersion": "3.77.0-accuracy-geotech-spatial-verification-statutory",
+    "ruleSetVersion": "2026.07-v3.77.0-clause-provenance-and-statutory-workflow",
+    "exportSchemaVersion": "3.77",
+    "structuralKernelVersion": "3.77.0-planar-plus-6dof-verification-kernel",
+    "resultPipelineVersion": "3.77.0-assurance-verification-and-statutory-evidence"
+  },
+  "runtime": {
+    "python": "3.13.5",
+    "platform": "Linux-6.12.13-x86_64-with-glibc2.41",
+    "elapsedSeconds": 13.094
+  },
+  "project": {
+    "shape": "L orthogonal concave",
+    "depthM": 16.0,
+    "topologyClass": "junction_hub_frame",
+    "stageCount": 7,
+    "supportCount": 72,
+    "transferBeamCount": 30,
+    "columnCount": 22
+  },
+  "result": {
+    "engineeringStatus": "fail",
+    "deliveryStatus": "fail",
+    "transactionStatus": "committed",
+    "numericalHealthStatus": "warning",
+    "maxScaledConditionNumber": 1850.889596876959,
+    "maxRelativeResidual": 5.24637791483e-14,
+    "analysisAssuranceStatus": "fail",
+    "analysisFormalIssueEligible": false,
+    "fallbackCount": 42,
+    "lowLevelDomains": [
+      "earth_pressure",
+      "wall_soil_interaction",
+      "spatial_structure",
+      "geotechnical_stability",
+      "member_design"
+    ],
+    "geotechnicalAssuranceStatus": "fail",
+    "geotechnicalFormalUseAllowed": false,
+    "missingGeotechnicalParameters": [
+      "project.strata",
+      "project.boreholes"
+    ],
+    "spatialVerificationStatus": "warning",
+    "spatialScaledConditionNumber": 943699.5567035397,
+    "spatialRelativeResidual": 7.0010341948517475e-12,
+    "spatialMaxDifference": 0.3494646190589554,
+    "verificationMatrixStatus": "warning",
+    "externalBenchmarkStatus": "unavailable",
+    "statutoryWorkflowStatus": "fail",
+    "statutoryFormalIssueEligible": false,
+    "missingStatutoryEvidence": [
+      "archive_manifest",
+      "design_source_data",
+      "emergency_plan",
+      "expert_review_report",
+      "hazardous_work_register",
+      "monitoring_plan",
+      "special_construction_plan",
+      "stage_acceptance",
+      "supervision_review",
+      "technical_briefing"
+    ],
+    "formalGateStatus": "fail",
+    "formalIssueAllowed": false,
+    "engineeringCompletenessPercent": 74.4,
+    "engineeringReadinessPercent": 50.0,
+    "formalIssueReadinessPercent": 49.0,
+    "resultCatalogSchema": "pitguard-result-catalog-v3",
+    "resultDomainCount": 18,
+    "uncertaintyCaseCount": 4,
+    "analysisDomainCount": 8,
+    "statutoryRequirementCount": 10,
+    "resourceCleanup": {
+      "garbageCollectionCompleted": true,
+      "maxRssBeforeMb": 146.375,
+      "maxRssAfterMb": 230.703
+    },
+    "blockingCategories": [
+      "analysis_fidelity",
+      "calculation_assurance",
+      "calculation_check",
+      "geotechnical_model",
+      "shape_transfer_detailing",
+      "statutory_workflow",
+      "verification_matrix"
+    ]
+  },
+  "verification": {
+    "status": "warning",
+    "internalReferenceStatus": "pass",
+    "externalReferenceStatus": "unavailable",
+    "formalExternalBenchmarkReady": false,
+    "caseCount": 8
+  },
+  "onlineDocumentation": {
+    "version": "3.77.0",
+    "chapterIds": [
+      "workflow",
+      "principles",
+      "standards",
+      "accuracy",
+      "compliance",
+      "deliverables"
+    ],
+    "analysisLevelCount": 4,
+    "complianceSemanticCount": 5,
+    "roadmapCount": 5
+  },
+  "limitations": [
+    "Synthetic project intentionally has no verified boreholes, groundwater evidence, statutory evidence or licensed professional approval.",
+    "OpenSeesPy availability is reported by the runtime verification matrix; no unavailable external equivalence is asserted.",
+    "Nonlinear geotechnical assurance is a diagnostic and uncertainty layer and does not replace continuum finite-element analysis."
+  ]
+}

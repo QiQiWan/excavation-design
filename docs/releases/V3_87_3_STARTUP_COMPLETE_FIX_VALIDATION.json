@@ -1,0 +1,30 @@
+{
+  "version": "3.87.3",
+  "package": "PitGuard_V3.87.3_intelligent_closure_complete",
+  "scope": "full source package with intelligent closure iteration and cross-platform startup repair",
+  "rootPaths": {
+    "backend": "services/api",
+    "frontend": "apps/web"
+  },
+  "rootCause": [
+    "previous temporary launcher assumed frontend/ although the actual frontend is apps/web/",
+    "previous temporary launcher printed status text but did not execute the original API/worker/frontend lifecycle",
+    "the original launcher used Bash 4 mapfile, unavailable in macOS Bash 3.2"
+  ],
+  "validation": {
+    "bashSyntax": "pass",
+    "pythonCompileAll": "pass",
+    "bash32UnsupportedBuiltinScan": "pass: no mapfile/readarray/declare -A in startup launcher",
+    "mockPreflight": "pass",
+    "mockBackendHealth": "pass",
+    "mockWorkerHeartbeat": "pass",
+    "mockFrontendHealth": "pass",
+    "mockManagedShutdown": "pass"
+  },
+  "fileCount": 649,
+  "directoryCount": 114,
+  "notes": [
+    "The validation environment did not contain meshio and ezdxf, so the real backend was not launched there.",
+    "The user-provided environment log reports all PitGuard backend dependencies as OK; the complete lifecycle was validated with controlled process mocks."
+  ]
+}

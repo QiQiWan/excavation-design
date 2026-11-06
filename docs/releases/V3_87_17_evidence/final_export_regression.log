@@ -1,0 +1,20 @@
+Command: /workspace/scratch/fd5d8a28c64e/work/.venv/bin/python -m pytest services/api/tests/test_section_export.py -vv
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.7.0 -- /workspace/scratch/fd5d8a28c64e/work/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/scratch/fd5d8a28c64e/work/foundation_section_validation/services/api
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 6 items
+
+services/api/tests/test_section_export.py::test_package_retains_one_frozen_source_and_measurable_a3_geometry PASSED [ 16%]
+services/api/tests/test_section_export.py::test_tampered_result_is_rejected_before_any_artifact PASSED [ 33%]
+services/api/tests/test_section_export.py::test_failed_analysis_exports_failure_evidence_without_curves_or_rebar PASSED [ 50%]
+services/api/tests/test_section_export.py::test_long_pile_has_actual_dimensions_and_one_paper_space_ratio PASSED [ 66%]
+services/api/tests/test_section_export.py::test_simultaneous_downloads_keep_distinct_complete_packages PASSED [ 83%]
+services/api/tests/test_section_export.py::test_report_includes_worked_hand_checks_of_the_actual_frozen_section PASSED [100%]
+
+============================== 6 passed in 10.39s ==============================
+
+Exit code: 0

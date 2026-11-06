@@ -1,0 +1,24 @@
+.ossAgent{margin:20px 0;border:1px solid #bcd0e0;border-radius:10px;background:#fbfdff;padding:14px 16px;color:#24364b}
+.ossAgent>summary{font-size:15px;cursor:pointer;font-weight:650}
+.ossAgent>summary span{font-weight:400;font-size:12px;color:#64748b;margin-left:12px}
+.ossAgentNote{font-size:13px;color:#506780;line-height:1.7;margin:10px 0}
+.ossAgentControls{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:13px 0}
+.ossAgentControls label{display:flex;gap:7px;align-items:center;font-size:13px}
+.ossAgentControls select{max-width:260px;padding:8px;border-radius:7px;border:1px solid #cbd5e1;background:white}
+.ossAgentControls button{border:0;background:#244e74;color:#fff;border-radius:7px;padding:8px 13px;font-size:13px;cursor:pointer}
+.ossAgentControls button.secondary{background:white;border:1px solid #a8bccb;color:#244e74}
+.ossAgentControls button:disabled{opacity:.5;cursor:not-allowed}
+.ossAgentControls small{color:#64748b}
+.ossAgentRun{display:grid;grid-template-columns:1fr auto;gap:7px;font-size:13px;background:#eff5fa;padding:11px;border-radius:8px}
+.ossAgentRun progress{width:100%;height:10px;grid-column:1/-1}
+.ossAgentRun small{grid-column:1/-1;color:#657f92}
+.ossAgentTable{margin:12px 0}.ossAgentTable table{min-width:710px}
+.ossAgentSection{background:white;margin:10px 0;padding:10px 12px;border:1px solid #e0e7ef;border-radius:8px}
+.ossAgentSection summary{cursor:pointer;font-size:13px;font-weight:650}
+.ossAgentSection p{margin:7px 0;font-size:12px}
+.ossAgentReview{padding:12px;border:1px solid #cad5e1;border-radius:8px;background:white}
+.ossAgentReview>label{display:flex;flex-direction:column;gap:7px;font-size:13px}
+.ossAgentReview textarea{width:100%;min-height:68px;border-radius:6px;border:1px solid #cbd5e1;font:inherit;padding:8px;resize:vertical}
+.ossAgentReview label.ossAgentAck{flex-direction:row;align-items:center;margin:12px 0}
+.ossAgentReview h4{margin:2px 0 8px}
+@media (max-width:720px){.ossAgent{padding:11px}.ossAgentControls{align-items:stretch}.ossAgentControls label{flex:1 1 100%}}

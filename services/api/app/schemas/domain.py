@@ -1,0 +1,1644 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.contracts.storage_status import StorageStatus, normalize_storage_status
+
+
+def to_camel(value: str) -> str:
+    parts = value.split("_")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
+
+
+class DomainModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}-{uuid4().hex[:12]}"
+
+
+class UnitSystem(DomainModel):
+    length: Literal["m", "mm"] = "m"
+    force: Literal["kN", "N"] = "kN"
+    stress: Literal["kPa", "MPa", "Pa"] = "kPa"
+    angle: Literal["degree", "radian"] = "degree"
+
+
+class CoordinateSystem(DomainModel):
+    type: Literal["local", "projected", "geographic"] = "local"
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    origin_z: float = 0.0
+    epsg: str | None = None
+    elevation_datum: str | None = None
+
+
+class DesignSettings(DomainModel):
+    # Project-level design basis.  V3.46 keeps these values as an explicit first
+    # workflow step so load combinations, safety reserves and RC checks share
+    # one auditable source instead of relying on scattered defaults.
+    design_basis_confirmed: bool = False
+    project_grade: Literal["一级", "二级", "三级"] = "二级"
+    safety_grade: str = "二级"
+    excavation_safety_level: Literal["一级", "二级", "三级"] = "二级"
+    environment_grade: str = "一般"
+    site_complexity: Literal["简单", "中等", "复杂"] = "中等"
+    surrounding_environment_level: Literal["一般", "较高", "高"] = "一般"
+    design_stage: Literal["temporary", "permanent_combined"] = "temporary"
+    standard_profile: Literal["national_core", "national_plus_local", "custom_review"] = "national_core"
+    load_combination_policy: Literal["standard", "conservative", "custom"] = "standard"
+    load_gamma_g: float = Field(default=1.35, ge=0.8, le=2.0)
+    load_gamma_q: float = Field(default=1.40, ge=0.8, le=2.0)
+    load_psi: float = Field(default=1.0, ge=0.0, le=1.0)
+    importance_factor: float = Field(default=1.0, ge=0.8, le=1.5)
+    bearing_capacity_kpa: float | None = Field(default=None, gt=0.0)
+    stability_reserve_ratio: float = Field(default=0.10, ge=0.0, le=0.50)
+    default_concrete_grade: str = "C35"
+    default_rebar_grade: str = "HRB400"
+    default_cover_mm: float = Field(default=50.0, ge=20.0, le=120.0)
+    flexure_design_method: str = "GB/T 50010 正截面承载力设计"
+    shear_design_method: str = "GB/T 50010 斜截面承载力设计"
+    # V3.46 P0-P2: the confirmed design basis also owns action groups,
+    # verification targets and analysis-model fidelity.  Defaults are transparent
+    # project templates, not automatic replacements for the project design brief.
+    design_basis_template_id: str = "standard_level_2"
+    action_group_catalog: list[dict[str, Any]] = Field(default_factory=list)
+    safety_factor_overrides: dict[str, float] = Field(default_factory=dict)
+    displacement_limit_overrides_mm: dict[str, float] = Field(default_factory=dict)
+    structural_analysis_model: Literal["compact_spatial", "engineering_spatial"] = "engineering_spatial"
+    wall_cracked_stiffness_factor: float = Field(default=0.72, ge=0.25, le=1.0)
+    wale_cracked_stiffness_factor: float = Field(default=0.75, ge=0.25, le=1.0)
+    joint_translational_stiffness_factor: float = Field(default=1.0, ge=0.05, le=5.0)
+    joint_rotational_stiffness_factor: float = Field(default=0.65, ge=0.01, le=5.0)
+    rigid_zone_length_factor: float = Field(default=0.04, ge=0.0, le=0.20)
+    initial_imperfection_ratio: float = Field(default=1.0 / 1000.0, ge=0.0, le=0.02)
+    enable_long_term_effects: bool = True
+    enable_adverse_scenarios: bool = True
+    dewatering_failure_rise_m: float = Field(default=1.0, ge=0.0, le=10.0)
+    overexcavation_depth_m: float = Field(default=0.30, ge=0.0, le=3.0)
+    local_seepage_amplification: float = Field(default=1.15, ge=1.0, le=3.0)
+    confined_head_adverse_offset_m: float = Field(default=0.50, ge=0.0, le=10.0)
+    rebar_congestion_limit: float = Field(default=0.72, ge=0.30, le=0.95)
+    rebar_mechanical_coupler_diameter_mm: float = Field(default=28.0, ge=16.0, le=50.0)
+    # V3.47 P3-1 to P3-3: project-selected enterprise resources and formal
+    # adverse-scenario execution controls.  These identifiers resolve to
+    # versioned JSON libraries and remain explicit in the calculation contract.
+    enterprise_library_id: str = "pitguard_default"
+    local_standard_template_id: str = "national_core_2026"
+    node_template_library_id: str = "default_rc_support_nodes"
+    rebar_combination_library_id: str = "default_rc_rebar_combinations"
+    formal_adverse_scenario_codes: list[str] = Field(default_factory=lambda: [
+        "DEWATERING_FAILURE", "OVEREXCAVATION", "LOCAL_SEEPAGE", "CONFINED_HEAD_RISE",
+        "PRELOAD_TEMPERATURE_DEVIATION",
+    ])
+    adverse_scenario_parallelism: int = Field(default=1, ge=1, le=2)
+    require_formal_scenario_rerun_for_issue: bool = False
+    enable_rebar_spatial_coordination: bool = True
+    enable_local_node_detailing: bool = True
+    groundwater_level: float = -1.5
+    groundwater_level_inside: float | None = None
+    confined_water_head_elevation: float | None = None
+    surcharge: float = 20.0
+    minimum_segment_length: float = 0.5
+    rule_set: str = "jgj120_gb50010_engineering_v1_0"
+    pressure_method: Literal["active", "at_rest"] = "active"
+    water_soil_method: Literal["separate", "combined"] = "separate"
+    displacement_limit_ratio: float | None = None
+    auto_center_excavation_on_geology: bool = True
+    default_support_spacing: float = 5.0
+    # Optional project-defined support depths below excavation top. Empty means enterprise auto-layout.
+    support_level_depths_m: list[float] = Field(default_factory=list)
+    service_life_years: int = 50
+    relative_humidity: float = 0.75
+    sustained_load_ratio: float = 0.65
+    creep_coefficient: float = 1.6
+    shrinkage_strain: float = 0.00025
+    temperature_range_c: float = 20.0
+    seismic_grade: str = "non_seismic_temporary"
+    monitoring_calibration_enabled: bool = True
+    monitoring_threshold_source: Literal["auto_screening", "project_defined"] = "auto_screening"
+    monitoring_wall_displacement_warning_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_wall_displacement_alarm_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_settlement_warning_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_settlement_alarm_mm: float | None = Field(default=None, ge=0.0)
+    monitoring_support_force_warning_ratio: float = Field(default=0.85, ge=0.0, le=2.0)
+    monitoring_support_force_alarm_ratio: float = Field(default=1.0, ge=0.0, le=2.0)
+    monitoring_groundwater_warning_offset_m: float = Field(default=0.5, ge=0.0, le=20.0)
+    monitoring_groundwater_alarm_offset_m: float = Field(default=1.0, ge=0.0, le=20.0)
+    monitoring_projection_hours: float = Field(default=24.0, ge=1.0, le=168.0)
+    require_formal_approval_for_construction: bool = False
+    # V3.73-V3.77 model-fidelity, compliance and statutory workflow controls.
+    formal_issue_strict_mode: bool = True
+    required_formal_analysis_level: Literal["L1", "L2", "L3"] = "L2"
+    geotechnical_analysis_level: Literal["screening", "nonlinear_spring", "external_fem"] = "nonlinear_spring"
+    enable_six_dof_verification: bool = True
+    require_external_benchmark_for_issue: bool = True
+    hazardous_work_classification: Literal["unclassified", "hazardous", "large_scale_hazardous"] = "unclassified"
+    hazardous_work_basis: str | None = None
+    require_expert_review_for_large_hazard: bool = True
+    require_monitoring_feedback_before_next_stage: bool = False
+    monitoring_feedback_max_age_hours: float = Field(default=48.0, ge=1.0, le=720.0)
+    allow_empirical_soil_parameters_for_preliminary: bool = True
+    allow_default_soil_spring_for_preliminary: bool = True
+    verification_displacement_tolerance_ratio: float = Field(default=0.25, ge=0.05, le=1.0)
+    verification_force_tolerance_ratio: float = Field(default=0.25, ge=0.05, le=1.0)
+    support_wall_clearance_m: float = 1.0
+    max_direct_strut_span_m: float = 24.0
+    max_wale_support_bay_m: float = 7.5
+    hard_max_wale_support_bay_m: float = 9.0
+    auto_strength_design_enabled: bool = True
+    max_design_iterations: int = 3
+    # V3.55 turns verification from a read-only report into a bounded
+    # verification -> strengthening -> recalculation loop.  Only monotonic,
+    # traceable member strengthening is automatic; soil/water assumptions and
+    # construction sequencing are never silently changed.
+    auto_intelligent_design_closure_enabled: bool = True
+    max_intelligent_closure_iterations: int = Field(default=5, ge=1, le=8)
+    intelligent_closure_strategy: Literal["balanced", "stiffness_first", "section_first", "economic_zoned"] = "balanced"
+    # Wall-toe design is a separate strength/stability loop.  It is enabled by
+    # default because support-topology repair cannot close an embedment failure.
+    auto_wall_embedment_design_enabled: bool = True
+    wall_embedment_safety_margin: float = 0.05
+    wall_embedment_search_increment_m: float = 0.25
+    wall_embedment_max_additional_depth_m: float = 20.0
+    diagonal_brace_min_wall_length_m: float = 18.0
+    # Corner braces are wall-to-wall compression members located within a local
+    # corner influence zone. They must not terminate on another horizontal strut.
+    corner_diagonal_min_offset_m: float = 3.5
+    corner_diagonal_max_offset_m: float = 18.0
+    corner_diagonal_max_wall_fraction: float = Field(default=0.55, ge=0.15, le=0.65)
+    corner_diagonal_family_count: int = Field(default=4, ge=1, le=6)
+    corner_diagonal_family_spacing_m: float = Field(default=3.0, ge=2.5, le=6.0)
+    corner_diagonal_parallel_tolerance_deg: float = Field(default=5.0, ge=2.0, le=12.0)
+    prefer_diagonal_braces: bool = True
+    # Wale-bay repair normally uses direct wall-to-wall V/corner braces.
+    # Support-to-support T/Y repair nodes are disabled unless the engineer
+    # explicitly selects a grid/frame topology that is modelled for them.
+    allow_wale_repair_t_y_nodes: bool = False
+    replacement_slab_effective_width_m: float = 6.0
+    replacement_slab_thickness_m: float = 0.25
+    replacement_slab_elastic_modulus_mpa: float = 30000.0
+    replacement_connection_reduction: float = 0.65
+    default_workspace_mode: Literal["compact", "professional"] = "compact"
+    calculation_assurance_level: Literal["screening", "engineering", "official_issue"] = "engineering"
+    require_independent_calculation_check: bool = True
+    maximum_matrix_condition_number: float = Field(default=1.0e12, gt=0.0)
+    maximum_equilibrium_relative_residual: float = Field(default=1.0e-8, gt=0.0)
+    independent_check_warning_ratio: float = Field(default=0.25, ge=0.0, le=1.0)
+    independent_check_fail_ratio: float = Field(default=0.50, ge=0.0, le=2.0)
+
+    @model_validator(mode="after")
+    def validate_monitoring_threshold_order(self) -> "DesignSettings":
+        threshold_pairs = (
+            (self.monitoring_wall_displacement_warning_mm, self.monitoring_wall_displacement_alarm_mm, "wall displacement"),
+            (self.monitoring_settlement_warning_mm, self.monitoring_settlement_alarm_mm, "settlement"),
+            (self.monitoring_support_force_warning_ratio, self.monitoring_support_force_alarm_ratio, "support force ratio"),
+            (self.monitoring_groundwater_warning_offset_m, self.monitoring_groundwater_alarm_offset_m, "groundwater offset"),
+        )
+        for warning, alarm, label in threshold_pairs:
+            if warning is not None and alarm is not None and float(warning) > float(alarm):
+                raise ValueError(f"Monitoring {label} warning threshold cannot exceed alarm threshold")
+        if self.independent_check_warning_ratio > self.independent_check_fail_ratio:
+            raise ValueError("Independent-check warning ratio cannot exceed fail ratio")
+        if self.monitoring_threshold_source == "project_defined":
+            configured_pairs = (
+                (self.monitoring_wall_displacement_warning_mm, self.monitoring_wall_displacement_alarm_mm),
+                (self.monitoring_settlement_warning_mm, self.monitoring_settlement_alarm_mm),
+            )
+            if any((warning is None) ^ (alarm is None) for warning, alarm in configured_pairs):
+                raise ValueError("Project-defined displacement/settlement thresholds must provide warning and alarm together")
+        return self
+    # Geological model domain control.  The design model must cover the retaining
+    # wall and a surrounding influence buffer; values outside the borehole trust
+    # domain are extrapolated conservatively and flagged for review.
+    geology_minimum_plan_buffer_m: float = 10.0
+    geology_depth_buffer_ratio: float = 0.5
+    geology_max_extrapolation_distance_m: float = 60.0
+    auto_extend_geology_to_design_domain: bool = True
+    # Expert-design orchestration. Support topology, vertical wall length and
+    # reinforcement zoning are reviewed as one coupled design problem.
+    expert_design_enabled: bool = True
+    wall_vertical_length_optimization_enabled: bool = True
+    wall_vertical_zone_min_run_m: float = 20.0
+    wall_vertical_zone_max_step_m: float = 2.0
+    wall_vertical_max_zone_count: int = 3
+    wall_vertical_length_target_margin: float = 0.08
+    reinforcement_plan_zoning_enabled: bool = True
+    reinforcement_corner_zone_length_m: float = 3.0
+    reinforcement_support_node_zone_half_length_m: float = 1.8
+    reinforcement_full_geometry_max_bars: int = 60000
+    reinforcement_visualization_density_m: float = 4.0
+    # Design-institute style reserve and anti-downgrade rules for wall cages.
+    # These are project design preferences and remain subject to crack-width,
+    # joint, lifting and local-node verification.
+    wall_rebar_target_utilization: float = 0.88
+    wall_rebar_no_downgrade_existing: bool = True
+    wall_rebar_default_max_main_spacing_mm: float = 180.0
+    wall_rebar_long_wall_threshold_m: float = 40.0
+    wall_rebar_long_wall_max_main_spacing_mm: float = 150.0
+    # V3.20 design-institute workflow controls.  The support family is selected
+    # explicitly before line positioning; elongated pits default to direct short-
+    # span struts and near-square pits require an explicit frame/ring decision.
+    support_layout_family: Literal["auto", "direct_strut", "direct_with_corner", "bidirectional_frame", "ring_radial"] = "auto"
+    support_transition_zone_spacing_factor: float = 0.72
+    support_transition_zone_influence_m: float = 8.0
+    support_min_station_separation_m: float = 2.8
+    # V3.34 preliminary deep-design controls. These are transparent screening
+    # parameters used during candidate ranking; final member and node checks
+    # remain governed by the staged calculation and the project standard set.
+    support_target_utilization: float = Field(default=0.85, ge=0.40, le=1.0)
+    support_screening_slenderness_limit: float = Field(default=150.0, ge=40.0, le=300.0)
+    support_preload_ratio: float = Field(default=0.20, ge=0.0, le=0.60)
+    support_thermal_restraint_factor: float = Field(default=0.15, ge=0.0, le=1.0)
+    support_joint_gap_mm: float = Field(default=3.0, ge=0.0, le=30.0)
+    support_gap_force_factor: float = Field(default=0.10, ge=0.0, le=1.0)
+    support_installation_deviation_mm: float = Field(default=20.0, ge=0.0, le=100.0)
+    support_deep_design_required_for_candidate: bool = True
+    # A calculation wall can contain several construction panels / reinforcement
+    # cages.  Panelization is preserved through IFC, CAD and detailing exports.
+    wall_panel_target_length_m: float = 6.0
+    wall_panel_min_length_m: float = 3.0
+    wall_panel_max_length_m: float = 7.0
+    wall_toe_design_mode: Literal["uniform", "zoned", "local"] = "uniform"
+    wall_toe_allow_imported_reference_optimization: bool = False
+    rebar_cage_grid_max_lines_per_face: int = 140
+
+
+class Point2D(DomainModel):
+    x: float
+    y: float
+
+
+class Polyline2D(DomainModel):
+    points: list[Point2D]
+    closed: bool = True
+
+
+class GroundwaterRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("gw"))
+    water_level: float
+    description: str | None = None
+    observed_at: str | None = None
+    source_file: str | None = None
+    source_file_sha256: str | None = None
+    source_artifact_id: str | None = None
+    quality: Literal["verified", "provisional", "rejected"] = "provisional"
+    verified_by: str | None = None
+
+
+class BoreholeLayer(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("bhl"))
+    stratum_code: str
+    stratum_name: str
+    top_depth: float
+    bottom_depth: float
+    top_elevation: float
+    bottom_elevation: float
+    description: str | None = None
+
+
+class SoilParameters(DomainModel):
+    unit_weight: float | None = None
+    saturated_unit_weight: float | None = None
+    effective_unit_weight: float | None = None
+    cohesion: float | None = None
+    friction_angle: float | None = None
+    elastic_modulus: float | None = None
+    poisson_ratio: float | None = None
+    compression_modulus: float | None = None
+    permeability_x: float | None = None
+    permeability_y: float | None = None
+    permeability_z: float | None = None
+    k0: float | None = None
+    horizontal_subgrade_modulus: float | None = None
+
+
+class Stratum(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("stratum"))
+    code: str
+    name: str
+    color: str | None = None
+    parameters: SoilParameters = Field(default_factory=SoilParameters)
+    parameter_source: Literal["test", "empirical", "manual", "imported"] = "imported"
+    confidence: Literal["high", "medium", "low"] = "medium"
+
+
+class Borehole(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("bh"))
+    code: str
+    x: float
+    y: float
+    collar_elevation: float
+    depth: float
+    layers: list[BoreholeLayer] = Field(default_factory=list)
+    water_levels: list[GroundwaterRecord] = Field(default_factory=list)
+    source_file: str | None = None
+    source_file_sha256: str | None = None
+    source_artifact_id: str | None = None
+    source_document_revision: str | None = None
+    source_verified: bool = False
+
+
+class SurfaceGrid(DomainModel):
+    x_values: list[float]
+    y_values: list[float]
+    z_values: list[list[float]]
+
+
+class GeologicalSurface(DomainModel):
+    stratum_code: str
+    surface_type: Literal["top", "bottom"]
+    grid: SurfaceGrid
+    confidence: Literal["high", "medium", "low"] = "medium"
+
+
+class GeologicalModel(DomainModel):
+    surfaces: list[GeologicalSurface] = Field(default_factory=list)
+    # Bounded grids retained in the API workspace after full IDW surfaces are
+    # externalized.  The isolated worker rehydrates ``surfaces`` for calculation.
+    surface_previews: list[GeologicalSurface] = Field(default_factory=list)
+    volumes: list[dict[str, Any]] = Field(default_factory=list)
+    vtu_mesh: dict[str, Any] | None = None
+    warnings: list[str] = Field(default_factory=list)
+    coverage_audit: dict[str, Any] = Field(default_factory=dict)
+
+
+class GeologicalLayer(DomainModel):
+    stratum_code: str
+    stratum_name: str
+    top_elevation: float
+    bottom_elevation: float
+    thickness: float
+    parameters: SoilParameters = Field(default_factory=SoilParameters)
+
+
+class GeologicalSection(DomainModel):
+    segment_id: str
+    section_name: str
+    top_elevation: float
+    bottom_elevation: float
+    layers: list[GeologicalLayer] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ExcavationSegment(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("seg"))
+    name: str
+    start: Point2D
+    end: Point2D
+    length: float
+    outward_normal: Point2D
+    midpoint: Point2D
+    chainage: float
+    representative_section: GeologicalSection | None = None
+
+
+class LocalPit(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("localpit"))
+    name: str
+    outline: Polyline2D | None = None
+    bottom_elevation: float | None = None
+
+
+class ConstructionObstacle(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("obs"))
+    name: str
+    obstacle_type: Literal["basement_column_grid", "ramp", "muck_out_opening", "protected_zone", "center_island", "manual"] = "manual"
+    outline: Polyline2D | None = None
+    center: Point2D | None = None
+    width: float | None = None
+    length: float | None = None
+    clearance: float = 1.0
+    active: bool = True
+    note: str | None = None
+    optimization_locked: bool = False
+    optimization_lock_reason: str | None = None
+
+
+class ExcavationModel(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("exc"))
+    name: str = "Main excavation"
+    outline: Polyline2D
+    top_elevation: float
+    bottom_elevation: float
+    depth: float
+    segments: list[ExcavationSegment] = Field(default_factory=list)
+    local_pits: list[LocalPit] = Field(default_factory=list)
+    obstacles: list[ConstructionObstacle] = Field(default_factory=list)
+    drawing_layers: list[dict[str, Any]] = Field(default_factory=list)
+    support_axis_offset: float | None = None
+    basement_wall_offset: float | None = None
+    explicit_placement: bool = False
+    centered_on_geology: bool = False
+    placement_note: str | None = None
+    area: float | None = None
+    perimeter: float | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SectionDefinition(DomainModel):
+    width: float | None = None
+    height: float | None = None
+    diameter: float | None = None
+    wall_thickness: float | None = None
+    name: str | None = None
+
+
+class MaterialDefinition(DomainModel):
+    name: str
+    grade: str
+    elastic_modulus: float | None = None
+
+
+class ReinforcementGroup(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("rebar"))
+    name: str
+    bar_type: Literal["longitudinal", "stirrup", "distribution", "tie", "additional"]
+    diameter: float
+    spacing: float | None = None
+    count: int | None = None
+    grade: str
+    location_description: str
+    # Construction-detailing semantics keep support end and middle stirrups
+    # distinct after save/reload instead of collapsing into one type flag.
+    zone_type: Literal["full_length", "end_zones", "middle_zone", "node_zone", "lap_zone"] | None = None
+    zone_start_m: float | None = None
+    zone_end_m: float | None = None
+    zone_length_m: float | None = None
+    stirrup_legs: int | None = None
+    design_source: str | None = None
+    area_per_meter: float | None = None
+    required_area_per_meter: float | None = None
+    check_status: Literal["preliminary", "pass", "fail", "warning", "manual_review"] = "manual_review"
+
+
+class WallDesignResult(DomainModel):
+    max_moment: float | None = None
+    max_shear: float | None = None
+    max_displacement: float | None = None
+    max_moment_design: float | None = None
+    max_shear_design: float | None = None
+    required_reinforcement_area: float | None = None
+    provided_reinforcement_area: float | None = None
+    moment_capacity: float | None = None
+    shear_capacity: float | None = None
+    rebar_diameter: float | None = None
+    rebar_spacing: float | None = None
+    governing_rule_ids: list[str] = Field(default_factory=list)
+    formula_trace: list[str] = Field(default_factory=list)
+    check_status: Literal["preliminary", "manual_review", "pass", "fail", "warning"] = "manual_review"
+    method: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class DiaphragmWallPanel(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("dw"))
+    segment_id: str
+    panel_code: str
+    axis: Polyline2D
+    design_face_code: str | None = None
+    design_length: float | None = None
+    face_segment_ids: list[str] = Field(default_factory=list)
+    thickness: float
+    top_elevation: float
+    bottom_elevation: float
+    bottom_elevation_source: Literal[
+        "unknown", "enterprise_initial", "imported", "manual", "auto_stability"
+    ] = "unknown"
+    bottom_elevation_locked: bool = False
+    source_bottom_elevation: float | None = None
+    toe_zone_id: str | None = None
+    toe_profile_status: Literal["uniform", "zoned", "local", "reference_locked"] = "uniform"
+    construction_panels: list[dict[str, Any]] = Field(default_factory=list)
+    concrete_grade: str = "C35"
+    rebar_grade: str = "HRB400"
+    reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
+    design_results: WallDesignResult | None = None
+    professional_review_required: bool = True
+
+
+class WaleBeamInternalForcePoint(DomainModel):
+    chainage: float
+    shear: float
+    moment: float
+    deflection: float
+
+
+class WaleBeamInternalForceResult(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("waleif"))
+    wale_beam_code: str
+    face_code: str
+    level_index: int
+    elevation: float
+    stage_id: str | None = None
+    pressure_line_load: float
+    beam_length: float
+    support_node_count: int
+    points: list[WaleBeamInternalForcePoint] = Field(default_factory=list)
+    design_points: list[WaleBeamInternalForcePoint] = Field(default_factory=list)
+    load_record_id: str | None = None
+    solve_id: str | None = None
+    governing_design_stage_id: str | None = None
+    max_moment: float = 0.0
+    max_shear: float = 0.0
+    max_deflection: float = 0.0
+    max_moment_design: float | None = None
+    max_shear_design: float | None = None
+    method: str = "continuous Euler-Bernoulli wale beam with elastic strut supports"
+    warnings: list[str] = Field(default_factory=list)
+
+
+
+
+class WaleBeamEnvelopePoint(DomainModel):
+    chainage: float
+    max_positive_moment: float = 0.0
+    max_negative_moment: float = 0.0
+    max_abs_shear: float = 0.0
+    max_abs_deflection: float = 0.0
+
+
+class WaleBeamEnvelopeResult(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("waleenv"))
+    wale_beam_code: str
+    level_index: int | None = None
+    face_code: str | None = None
+    governing_stage_ids: list[str] = Field(default_factory=list)
+    points: list[WaleBeamEnvelopePoint] = Field(default_factory=list)
+    max_positive_moment: float = 0.0
+    max_negative_moment: float = 0.0
+    max_abs_shear: float = 0.0
+    max_abs_deflection: float = 0.0
+    diagram_note: str = "multi-stage envelope from wale continuous-beam internal-force points"
+
+class WaleBeamDesignResult(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("waledesign"))
+    wale_beam_code: str
+    face_code: str | None = None
+    level_index: int | None = None
+    max_moment: float = 0.0
+    max_shear: float = 0.0
+    max_deflection: float = 0.0
+    max_moment_design: float = 0.0
+    max_shear_design: float = 0.0
+    required_reinforcement_area: float | None = None
+    provided_reinforcement_area: float | None = None
+    moment_capacity: float | None = None
+    shear_capacity: float | None = None
+    concrete_shear_capacity: float | None = None
+    stirrup_shear_capacity: float | None = None
+    shear_utilization: float | None = None
+    main_bar_diameter: float | None = None
+    main_bar_spacing: float | None = None
+    stirrup_diameter: float | None = None
+    stirrup_spacing: float | None = None
+    stirrup_leg_count: int | None = None
+    shear_formula: str | None = None
+    node_additional_reinforcement_note: str | None = None
+    deflection_limit: float | None = None
+    deflection_ratio: float | None = None
+    deflection_check_status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    optimized_width: float | None = None
+    optimized_height: float | None = None
+    optimization_history: list[dict[str, Any]] = Field(default_factory=list)
+    local_bearing_spread_width: float | None = None
+    local_bearing_spread_height: float | None = None
+    wall_connection_note: str | None = None
+    envelope: WaleBeamEnvelopeResult | None = None
+    check_status: Literal["preliminary", "manual_review", "pass", "fail", "warning"] = "manual_review"
+    method: str = "GB 50010 rectangular RC wale-beam subset with node reinforcement coordination"
+    notes: list[str] = Field(default_factory=list)
+
+
+class BeamElement(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("beam"))
+    code: str
+    axis: Polyline2D
+    elevation: float
+    section: SectionDefinition
+    material: MaterialDefinition
+    beam_role: Literal[
+        "crown_beam", "wale_beam", "ring_beam", "transfer_ring_beam",
+        "transfer_frame_beam", "transfer_brace", "partition_beam",
+        "replacement_slab_edge", "manual"
+    ] = "manual"
+    design_axial_force: float | None = None
+    design_moment: float | None = None
+    design_shear: float | None = None
+    design_torsion: float | None = None
+    design_out_of_plane_moment: float | None = None
+    design_eccentric_in_plane_moment: float | None = None
+    spatial_analysis_status: Literal["missing", "proxy", "calculated", "verified", "fail"] = "missing"
+    support_level: int | None = None
+    internal_force_results: list[WaleBeamInternalForceResult] = Field(default_factory=list)
+    design_result: WaleBeamDesignResult | None = None
+    reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
+    professional_review_required: bool = True
+    transfer_system_id: str | None = None
+    transfer_zone_id: str | None = None
+    start_node_id: str | None = None
+    end_node_id: str | None = None
+    load_path_id: str | None = None
+    analysis_status: Literal["missing", "proxy", "calculated", "verified", "fail"] = "missing"
+
+
+class BearingPlateDesign(DomainModel):
+    plate_width: float
+    plate_height: float
+    plate_thickness: float
+    bearing_area: float
+    bearing_stress: float | None = None
+    bearing_capacity: float | None = None
+    check_status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    design_note: str | None = None
+
+
+class SupportWaleNode(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("node"))
+    code: str
+    support_id: str
+    support_code: str
+    level_index: int
+    elevation: float
+    location: Point2D
+    face_code: str | None = None
+    wale_beam_code: str | None = None
+    node_type: Literal["strut_to_wale", "diagonal_to_wale", "ring_strut_to_ring", "manual"] = "strut_to_wale"
+    bearing_plate: BearingPlateDesign | None = None
+    reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
+    check_status: Literal["pass", "fail", "warning", "manual_review"] = "manual_review"
+    design_note: str | None = None
+    spatial_detailing: dict[str, Any] = Field(default_factory=dict)
+
+
+class SupportElement(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("support"))
+    code: str
+    level_index: int
+    elevation: float
+    start: Point2D
+    end: Point2D
+    support_role: Literal["main_strut", "secondary_strut", "corner_diagonal", "ring_strut", "manual"] = "main_strut"
+    layout_note: str | None = None
+    span_length: float | None = None
+    bay_spacing: float | None = None
+    start_face_code: str | None = None
+    end_face_code: str | None = None
+    start_tributary_width: float | None = None
+    end_tributary_width: float | None = None
+    force_distribution_note: str | None = None
+    section_type: Literal["rc_rectangular", "steel_pipe", "h_steel"] = "rc_rectangular"
+    section: SectionDefinition = Field(default_factory=lambda: SectionDefinition(width=0.8, height=0.8, name="800x800 RC"))
+    material: MaterialDefinition = Field(default_factory=lambda: MaterialDefinition(name="Concrete", grade="C35"))
+    preload: float | None = None
+    preload_ratio: float | None = None
+    installation_stage_id: str | None = None
+    temperature_delta_c: float | None = None
+    thermal_axial_force: float | None = None
+    gap_closure_force: float | None = None
+    construction_deviation_mm: float | None = None
+    eccentricity_moment: float | None = None
+    effective_axial_force_standard: float | None = None
+    design_axial_force: float | None = None
+    construction_effect_note: str | None = None
+    raw_axial_force_standard_envelope: float | None = None
+    force_reconciliation_status: Literal["pass", "warning", "manual_review"] = "manual_review"
+    force_reconciliation_note: str | None = None
+    section_optimization_status: Literal["not_run", "pass", "section_upgraded", "topology_upgrade_required"] = "not_run"
+    section_optimization_note: str | None = None
+    lifecycle_note: str | None = None
+    preload_stage_id: str | None = None
+    removal_stage_id: str | None = None
+    preload_protocol_status: Literal["pass", "warning", "manual_review"] = "manual_review"
+    reinforcement: list[ReinforcementGroup] = Field(default_factory=list)
+    professional_review_required: bool = True
+    optimization_locked: bool = False
+    optimization_locked_start: bool = False
+    optimization_locked_end: bool = False
+    optimization_lock_reason: str | None = None
+    start_wall_connection: Point2D | None = None
+    end_wall_connection: Point2D | None = None
+    centerline_offset_m: float | None = None
+    start_wall_clearance_m: float | None = None
+    end_wall_clearance_m: float | None = None
+    topology_family: Literal[
+        "direct_grid", "hybrid_diagonal", "bidirectional_grid", "ring_radial",
+        "zoned_direct", "zoned_ring_transfer", "transfer_frame", "ring_truss",
+        "partition_wall", "center_island", "manual"
+    ] = "direct_grid"
+    design_zone: str | None = None
+    station_chainage_m: float | None = None
+    local_clear_span_m: float | None = None
+    placement_reason: str | None = None
+    load_path_class: Literal["wall_to_wall", "wall_to_ring", "supported_frame_node", "wall_to_transfer_frame", "manual"] = "wall_to_wall"
+    transfer_system_id: str | None = None
+    transfer_zone_id: str | None = None
+    start_node_id: str | None = None
+    end_node_id: str | None = None
+    load_path_id: str | None = None
+
+
+class FoundationDesign(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("fdn"))
+    code: str
+    foundation_type: Literal["temporary_spread_footing", "column_pile", "manual_review"] = "temporary_spread_footing"
+    width: float
+    length: float
+    thickness: float = 1.2
+    area: float
+    concrete_unit_weight: float = 25.0
+    foundation_self_weight: float
+    vertical_force: float
+    fa: float
+    eccentricity_factor: float = 1.05
+    average_pressure: float
+    max_pressure: float
+    pile_diameter: float | None = None
+    pile_length: float | None = None
+    pile_count: int | None = None
+    pile_capacity: float | None = None
+    pile_utilization: float | None = None
+    pile_tip_elevation: float | None = None
+    check_status: Literal["pass", "fail", "manual_review"] = "manual_review"
+    design_note: str | None = None
+
+
+class ColumnElement(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("col"))
+    code: str
+    location: Point2D
+    top_elevation: float
+    bottom_elevation: float
+    section: SectionDefinition
+    material: MaterialDefinition
+    support_codes: list[str] = Field(default_factory=list)
+    service_area_note: str | None = None
+    foundation_design: FoundationDesign | None = None
+
+
+class RetainingSystem(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("ret"))
+    type: Literal["diaphragm_wall_with_internal_bracing"] = "diaphragm_wall_with_internal_bracing"
+    diaphragm_walls: list[DiaphragmWallPanel] = Field(default_factory=list)
+    crown_beams: list[BeamElement] = Field(default_factory=list)
+    wale_beams: list[BeamElement] = Field(default_factory=list)
+    ring_beams: list[BeamElement] = Field(default_factory=list)
+    supports: list[SupportElement] = Field(default_factory=list)
+    support_nodes: list[SupportWaleNode] = Field(default_factory=list)
+    columns: list[ColumnElement] = Field(default_factory=list)
+    layout_summary: dict[str, Any] = Field(default_factory=dict)
+    optimization_locks: list[dict[str, Any]] = Field(default_factory=list)
+    support_layout_repair: SupportLayoutRepairSummary | None = None
+    rebar_design_scheme: dict[str, Any] = Field(default_factory=dict)
+    replacement_path: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ConstructionStage(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("stage"))
+    name: str
+    excavation_elevation: float
+    active_support_ids: list[str] = Field(default_factory=list)
+    deactivated_support_ids: list[str] = Field(default_factory=list)
+    active_support_levels: list[int] = Field(default_factory=list)
+    transferred_support_levels: list[int] = Field(default_factory=list)
+    support_topology_hash: str | None = None
+    stage_type: Literal["excavation", "support_installation", "bottom_slab", "replacement", "support_removal", "final"] = "excavation"
+    zone: str | None = None
+    replacement_action: str | None = None
+    slab_activation_elevation: float | None = None
+    groundwater_level_inside: float | None = None
+    groundwater_level_outside: float | None = None
+    surcharge: float = 20.0
+    source_document: str | None = None
+    source_document_sha256: str | None = None
+    source_artifact_id: str | None = None
+    approved_by: str | None = None
+    approved_at: str | None = None
+    data_status: Literal["draft", "verified", "superseded"] = "draft"
+
+
+class DesignControlStage(DomainModel):
+    """Designer-owned control envelope used by formal staged calculations.
+
+    It records the conditions under which the design is valid. Planned dates,
+    contractor resources and field observations are intentionally excluded.
+    """
+    id: str = Field(default_factory=lambda: new_id("dcs"))
+    name: str
+    design_basis_revision_id: str = "current"
+    excavation_elevation_lower: float
+    excavation_elevation_upper: float
+    required_support_ids: list[str] = Field(default_factory=list)
+    permitted_inactive_support_ids: list[str] = Field(default_factory=list)
+    # Semantic support-level lineage survives topology regeneration even when
+    # concrete support IDs change. These fields are the authoritative bridge
+    # for auditable remapping of excavation, replacement and removal stages.
+    required_support_levels: list[int] = Field(default_factory=list)
+    permitted_inactive_support_levels: list[int] = Field(default_factory=list)
+    replacement_action: str | None = None
+    transfer_path_status: Literal["not_applicable", "mapped", "provisional", "manual_review"] = "not_applicable"
+    transfer_path_source: str | None = None
+    groundwater_level_limit: float | None = None
+    surcharge_limit: float | None = None
+    preload_target: float | None = None
+    preload_lower: float | None = None
+    preload_upper: float | None = None
+    overexcavation_limit: float | None = None
+    stiffness_reduction_limit: float | None = None
+    hold_points: list[str] = Field(default_factory=list)
+    design_scenario_ids: list[str] = Field(default_factory=list)
+    source_calculation_case_id: str | None = None
+    source_stage_id: str | None = None
+    stage_type: Literal["excavation", "support_installation", "bottom_slab", "replacement", "support_removal", "final"] = "excavation"
+    zone: str | None = None
+    revision: int = Field(default=1, ge=1)
+    data_status: Literal["draft", "approved", "frozen", "superseded"] = "draft"
+    value_type: Literal["design_value", "design_limit", "design_assumption"] = "design_limit"
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class DesignScenario(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("scenario"))
+    code: str
+    name: str
+    stage_id: str | None = None
+    category: Literal["baseline", "support_delay", "overexcavation", "preload", "groundwater", "surcharge", "stiffness", "member_anomaly", "custom"] = "custom"
+    enabled: bool = True
+    parameter_overrides: dict[str, Any] = Field(default_factory=dict)
+    assumptions: list[str] = Field(default_factory=list)
+    source: Literal["auto_generated", "user_defined"] = "auto_generated"
+    approval_status: Literal["draft", "approved", "rejected"] = "draft"
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ConstructionPlanStage(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("cps"))
+    design_control_stage_id: str
+    contractor_revision: str = "A"
+    planned_start: str | None = None
+    planned_finish: str | None = None
+    planned_excavation_elevation: float | None = None
+    planned_support_ids: list[str] = Field(default_factory=list)
+    planned_preloads: dict[str, float] = Field(default_factory=dict)
+    planned_groundwater_level: float | None = None
+    planned_surcharge: float | None = None
+    method_statement_id: str | None = None
+    approval_status: Literal["draft", "submitted", "approved", "rejected", "superseded"] = "draft"
+    submitted_by: str | None = None
+    note: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class FieldExecutionSnapshot(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("field"))
+    construction_plan_stage_id: str
+    observed_at: str = Field(default_factory=now_iso)
+    actual_excavation_elevation: float | None = None
+    active_support_ids: list[str] = Field(default_factory=list)
+    measured_preloads: dict[str, float] = Field(default_factory=dict)
+    groundwater_levels: dict[str, float] = Field(default_factory=dict)
+    concrete_strengths: dict[str, float] = Field(default_factory=dict)
+    monitoring_snapshot_id: str | None = None
+    evidence_file_ids: list[str] = Field(default_factory=list)
+    quality: Literal["verified", "provisional", "rejected"] = "provisional"
+    source: str = "manual"
+    note: str | None = None
+
+
+class DeviationEvent(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("dev"))
+    deviation_type: str
+    design_control_stage_id: str | None = None
+    construction_plan_stage_id: str | None = None
+    field_snapshot_id: str | None = None
+    affected_stage_ids: list[str] = Field(default_factory=list)
+    affected_member_ids: list[str] = Field(default_factory=list)
+    design_limit: float | None = None
+    planned_value: float | None = None
+    observed_value: float | None = None
+    severity: Literal["info", "warning", "major", "critical"] = "warning"
+    work_hold_required: bool = False
+    recalculation_required: bool = False
+    designer_response_required: bool = False
+    responsible_party: str = "construction_unit"
+    status: Literal["open", "assigned", "responded", "accepted", "closed"] = "open"
+    resolution: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class ParameterProvenanceRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("param"))
+    parameter_key: str
+    display_name: str
+    value: Any = None
+    unit: str | None = None
+    source_type: Literal[
+        "survey_report", "owner_provided", "standard_value", "project_approved",
+        "enterprise_standard", "software_suggestion", "manual_estimate", "derived"
+    ] = "software_suggestion"
+    source_reference: str | None = None
+    confidence: Literal["high", "medium", "low", "unknown"] = "unknown"
+    confirmation_status: Literal["unconfirmed", "confirmed", "rejected", "superseded"] = "unconfirmed"
+    formal_design_allowed: bool = False
+    affects: list[str] = Field(default_factory=list)
+    confirmed_by: str | None = None
+    confirmed_at: str | None = None
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class ExternalCollaborationRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("collab"))
+    category: Literal["construction_reference", "field_feedback", "monitoring_report", "other"] = "other"
+    title: str
+    source_party: str | None = None
+    received_at: str = Field(default_factory=now_iso)
+    summary: str = ""
+    affected_object_ids: list[str] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list)
+    design_review_required: bool = False
+    status: Literal["received", "reviewed", "archived"] = "received"
+    created_at: str = Field(default_factory=now_iso)
+
+
+class DesignReviewRequest(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("drr"))
+    title: str
+    source_record_id: str | None = None
+    source_party: str | None = None
+    description: str = ""
+    affected_object_ids: list[str] = Field(default_factory=list)
+    original_design_condition: str | None = None
+    exceeds_design_boundary: bool | None = None
+    recalculation_required: bool = False
+    design_change_required: bool = False
+    status: Literal["open", "under_review", "responded", "closed"] = "open"
+    design_response: str | None = None
+    response_revision: int = Field(default=0, ge=0)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class DesignSnapshotManifest(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("snapshot"))
+    purpose: Literal["internal_review", "external_review", "approval", "construction"] = "internal_review"
+    status: Literal["draft", "qualified", "blocked", "issued", "superseded"] = "draft"
+    design_basis_hash: str | None = None
+    parameter_hash: str | None = None
+    topology_hash: str | None = None
+    calculation_result_hash: str | None = None
+    reinforcement_hash: str | None = None
+    drawing_hash: str | None = None
+    report_hash: str | None = None
+    ifc_hash: str | None = None
+    consistency_hash: str | None = None
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    created_by: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    issued_at: str | None = None
+
+
+class CalculationCase(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("case"))
+    name: str
+    stages: list[ConstructionStage] = Field(default_factory=list)
+    support_topology_hash: str | None = None
+    synchronization_note: str | None = None
+    source: Literal["auto_default", "user_defined", "synchronized"] = "auto_default"
+    locked: bool = False
+    revision: int = Field(default=1, ge=1)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class PressurePoint(DomainModel):
+    depth: float
+    elevation: float
+    earth_pressure: float
+    water_pressure: float
+    total_pressure: float
+    active_earth_pressure: float | None = None
+    passive_earth_pressure: float | None = None
+    outside_water_pressure: float | None = None
+    inside_water_pressure: float | None = None
+    vertical_stress_total: float | None = None
+    vertical_stress_effective: float | None = None
+    ka: float | None = None
+    kp: float | None = None
+    k0: float | None = None
+    cohesion: float | None = None
+    friction_angle: float | None = None
+    stratum_code: str | None = None
+    method: str | None = "JGJ120-Rankine-water-soil-separated"
+
+
+class PressureProfile(DomainModel):
+    points: list[PressurePoint]
+    method: str = "JGJ120-2012 Rankine active/passive earth pressure and hydrostatic water pressure"
+    standard_references: list[str] = Field(default_factory=lambda: ["JGJ120-2012 3.4.2", "JGJ120-2012 3.4.4"])
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SupportForceResult(DomainModel):
+    support_id: str | None = None
+    level_index: int
+    elevation: float
+    tributary_top: float
+    tributary_bottom: float
+    axial_force: float
+    axial_force_design: float | None = None
+    importance_factor: float | None = None
+    partial_factor: float | None = None
+    unit: str = "kN"
+    method: str = "support tributary-area integration of net lateral pressure"
+    face_code: str | None = None
+    support_endpoint: Literal["start", "end", "unknown"] = "unknown"
+    wale_beam_code: str | None = None
+    wale_chainage: float | None = None
+    tributary_width: float | None = None
+    continuous_beam_reaction: float | None = None
+    reference_axial_force: float | None = None
+    global_axial_force: float | None = None
+    force_reconciliation_ratio: float | None = None
+    force_reconciliation_status: Literal["pass", "warning", "manual_review"] | None = None
+    elastic_support_stiffness: float | None = None
+    normal_projection_factor: float | None = None
+    beam_node_count: int | None = None
+    distribution_method: str | None = None
+    distribution_note: str | None = None
+    preload_effect: float | None = None
+    thermal_effect: float | None = None
+    gap_effect: float | None = None
+    eccentricity_effect: float | None = None
+    effective_axial_force: float | None = None
+    construction_effect_note: str | None = None
+
+
+class WallInternalForcePoint(DomainModel):
+    depth: float
+    elevation: float
+    shear: float
+    moment: float
+    displacement: float | None = None
+
+
+class WallInternalForceResult(DomainModel):
+    segment_id: str
+    stage_id: str
+    points: list[WallInternalForcePoint] = Field(default_factory=list)
+    design_points: list[WallInternalForcePoint] = Field(default_factory=list)
+    load_record_id: str | None = None
+    solve_id: str | None = None
+    max_moment: float = 0.0
+    max_shear: float = 0.0
+    max_displacement: float | None = None
+    max_moment_design: float | None = None
+    max_shear_design: float | None = None
+    importance_factor: float = 1.0
+    load_combination_factor: float | None = None
+    method: str = "equivalent vertical beam from pressure profile; elastic-foundation solver reserved"
+    warnings: list[str] = Field(default_factory=list)
+
+
+
+
+class GlobalCoupledDof(DomainModel):
+    index: int
+    name: str
+    value: float | None
+    unit: str = "m"
+    dof_type: str | None = None
+    object_id: str | None = None
+    stage_status: str | None = None
+
+
+class GlobalCoupledSupportReaction(DomainModel):
+    support_id: str
+    support_code: str
+    endpoint: str
+    face_code: str
+    level_index: int
+    chainage: float
+    depth: float
+    node_displacement: float
+    spring_stiffness: float
+    node_reaction: float
+    axial_force: float
+    axial_deformation: float
+    normal_projection_factor: float
+    direction_cosine_x: float | None = None
+    direction_cosine_y: float | None = None
+    rigid_node_factor: float | None = None
+    governing_source: str | None = None
+    local_support_stiffness: float | None = None
+    transfer_far_end_stiffness: float | None = None
+    effective_series_stiffness: float | None = None
+
+
+class GlobalCoupledSystemResult(DomainModel):
+    method: str
+    stage_id: str | None = None
+    face_code: str | None = None
+    fallback: bool = False
+    reason: str | None = None
+    matrix_size: int = 0
+    condition_number: float | None = None
+    raw_condition_number: float | None = None
+    scaled_condition_number: float | None = None
+    condition_grade: dict[str, Any] = Field(default_factory=dict)
+    numerical_gate: dict[str, Any] = Field(default_factory=dict)
+    ill_conditioned_blocked: bool = False
+    equilibrium_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    dof_summary: dict[str, Any] = Field(default_factory=dict)
+    dofs: list[GlobalCoupledDof] = Field(default_factory=list)
+    wall_displacement_profile: list[dict[str, Any]] = Field(default_factory=list)
+    support_reactions: list[GlobalCoupledSupportReaction] = Field(default_factory=list)
+    column_vertical_supports: list[dict[str, Any]] = Field(default_factory=list)
+    max_wall_displacement: float | None = None
+    max_support_axial_force: float = 0.0
+    # V2.0 spatial frame fields: wall/wale rotational DOFs, support axial DOFs, column vertical DOFs and slab replacement stiffness.
+    model_dimension: str | None = None
+    spatial_matrix_size: int | None = None
+    spatial_condition_number: float | None = None
+    spatial_dof_summary: dict[str, Any] = Field(default_factory=dict)
+    wall_rotation_profile: list[dict[str, Any]] = Field(default_factory=list)
+    wale_node_profile: list[dict[str, Any]] = Field(default_factory=list)
+    support_axial_dofs: list[dict[str, Any]] = Field(default_factory=list)
+    column_vertical_dofs: list[dict[str, Any]] = Field(default_factory=list)
+    slab_replacement_stiffness: float | None = None
+    slab_replacement_status: Literal["not_active", "active", "missing", "invalid"] | None = None
+    slab_replacement_source: str | None = None
+    slab_replacement_required: bool | None = None
+    slab_replacement_components: dict[str, Any] = Field(default_factory=dict)
+    rigid_node_zones: list[dict[str, Any]] = Field(default_factory=list)
+    model_assumptions: dict[str, Any] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+    soil_spring_kn_m2: float | None = None
+    soil_spring_source: str | None = None
+    soil_spring_formal_use_allowed: bool | None = None
+    soil_spring_layer_values: list[dict[str, Any]] = Field(default_factory=list)
+
+
+
+
+class StabilityDetailedResult(DomainModel):
+    method: str = "V2.1 reviewable stability calculation package with metric semantics"
+    controlling_section_id: str | None = None
+    controlling_section_name: str | None = None
+    embedment_factor: float | None = None
+    embedment_limit: float | None = None
+    heave_factor: float | None = None
+    heave_limit: float | None = None
+    confined_uplift_factor: float | None = None
+    confined_uplift_limit: float | None = None
+    seepage_factor: float | None = None
+    seepage_limit: float | None = None
+    overall_stability_factor: float | None = None
+    overall_stability_limit: float | None = None
+    weak_layer_index: float | None = None
+    weak_layer_limit: float | None = None
+    layered_seepage_risk_index: float | None = None
+    layered_seepage_risk_limit: float | None = None
+    dewatering_control_ratio: float | None = None
+    dewatering_control_limit: float | None = None
+    min_safety_factor: float | None = None
+    controlling_mode: str | None = None
+    controlling_safety_mode: str | None = None
+    controlling_safety_factor: float | None = None
+    controlling_risk_mode: str | None = None
+    controlling_risk_utilization: float | None = None
+    metric_semantics: list[dict[str, Any]] = Field(default_factory=list)
+    circular_slip_surfaces: list[dict[str, Any]] = Field(default_factory=list)
+    seepage_paths: list[dict[str, Any]] = Field(default_factory=list)
+    drawdown_process: list[dict[str, Any]] = Field(default_factory=list)
+    dewatering_wells: list[dict[str, Any]] = Field(default_factory=list)
+    depressurization_wells: list[dict[str, Any]] = Field(default_factory=list)
+    improvement_options: list[dict[str, Any]] = Field(default_factory=list)
+    diagram_data: dict[str, Any] = Field(default_factory=dict)
+    review_notes: list[str] = Field(default_factory=list)
+
+
+class DrawingSheetResult(DomainModel):
+    sheet_id: str
+    title: str
+    scale: str = "1:100"
+    file_path: str | None = None
+    sheet_type: str = "detail"
+    model_objects: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+
+
+class QualityGateIssue(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("qgi"))
+    category: str
+    severity: Literal["pass", "warning", "fail", "manual_review"] = "warning"
+    object_id: str | None = None
+    object_type: str | None = None
+    message: str
+    recommendation: str | None = None
+    highlight_geometry: dict[str, Any] = Field(default_factory=dict)
+    related_object_ids: list[str] = Field(default_factory=list)
+    display_hint: str | None = None
+
+
+class SupportLayoutQualitySummary(DomainModel):
+    score: float = 0.0
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    summary: str = ""
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    issues: list[QualityGateIssue] = Field(default_factory=list)
+    highlights: list[dict[str, Any]] = Field(default_factory=list)
+    crossing_pairs: list[dict[str, Any]] = Field(default_factory=list)
+    checked_at: str = Field(default_factory=now_iso)
+
+
+
+
+class SupportLayoutOptimizationCandidate(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("slopt"))
+    rank: int = 0
+    score: float = 0.0
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    target_spacing: float = 5.0
+    column_max_span: float = 18.0
+    objective_terms: dict[str, float] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    hard_constraints: dict[str, Any] = Field(default_factory=dict)
+    soft_objectives: dict[str, Any] = Field(default_factory=dict)
+    variable_summary: dict[str, Any] = Field(default_factory=dict)
+    line_adjustments: list[dict[str, Any]] = Field(default_factory=list)
+    plan_geometry: dict[str, Any] = Field(default_factory=dict)
+    delta_geometry: dict[str, Any] = Field(default_factory=dict)
+    weight_summary: dict[str, Any] = Field(default_factory=dict)
+    export_readiness: dict[str, Any] = Field(default_factory=dict)
+    issue_count: int = 0
+    fail_count: int = 0
+    warning_count: int = 0
+    support_count: int = 0
+    column_count: int = 0
+    max_span_length: float | None = None
+    max_bay_spacing: float | None = None
+    crossing_count: int = 0
+    junction_count: int = 0
+    high_degree_junction_count: int = 0
+    wall_junction_count: int = 0
+    plan_intersection_complexity: float = 0.0
+    obstacle_conflict_count: int = 0
+    axial_peak_proxy: float | None = None
+    symmetry_score: float | None = None
+    muck_path_continuity_score: float | None = None
+    full_calculation: dict[str, Any] = Field(default_factory=dict)
+    constructability_note: str | None = None
+
+class SupportLayoutRepairSummary(DomainModel):
+    optimization_method: str | None = None
+    candidate_source_hash: str | None = None
+    candidate_state: Literal["not_generated", "formal_ready", "diagnostic_only", "stale"] = "not_generated"
+    formal_candidate_count: int = 0
+    controlled_candidate_count: int = 0
+    stale_candidate_count: int = 0
+    comparison_eligibility: dict[str, Any] = Field(default_factory=dict)
+    optimization_phase: str | None = None
+    hard_constraint_labels: list[str] = Field(default_factory=list)
+    soft_objective_labels: list[str] = Field(default_factory=list)
+    objective_weights: dict[str, float] = Field(default_factory=dict)
+    candidate_count: int = 0
+    best_candidate_id: str | None = None
+    selected_candidate_id: str | None = None
+    locked_support_ids: list[str] = Field(default_factory=list)
+    lock_summary: dict[str, Any] = Field(default_factory=dict)
+    candidates: list[SupportLayoutOptimizationCandidate] = Field(default_factory=list)
+    candidate_full_calculations: list[dict[str, Any]] = Field(default_factory=list)
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    score_before: float | None = None
+    score_after: float | None = None
+    raw_quality_score_before: float | None = None
+    raw_quality_score_after: float | None = None
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    unresolved_issues: list[QualityGateIssue] = Field(default_factory=list)
+    summary: str = ""
+    checked_at: str = Field(default_factory=now_iso)
+
+
+class IfcViewerProfileRisk(DomainModel):
+    viewer: str
+    status: Literal["pass", "warning", "fail", "manual_review"] = "pass"
+    risk_level: Literal["low", "medium", "high"] = "low"
+    score: float = 100.0
+    risk_items: list[str] = Field(default_factory=list)
+    recommendation: str | None = None
+
+
+class IfcCompatibilityCheckResult(DomainModel):
+    score: float = 0.0
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    summary: str = ""
+    file_path: str | None = None
+    export_mode: str | None = None
+    entity_counts: dict[str, int] = Field(default_factory=dict)
+    raw_unicode_found: bool = False
+    missing_references: list[str] = Field(default_factory=list)
+    zero_dimension_count: int = 0
+    invalid_placement_count: int = 0
+    missing_material_association_count: int = 0
+    missing_spatial_containment_count: int = 0
+    viewer_profiles: list[IfcViewerProfileRisk] = Field(default_factory=list)
+    issues: list[QualityGateIssue] = Field(default_factory=list)
+    checked_at: str = Field(default_factory=now_iso)
+
+
+class FormalReportGate(DomainModel):
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    allowed_for_official_issue: bool = False
+    headline: str = ""
+    blocking_items: list[QualityGateIssue] = Field(default_factory=list)
+    warning_items: list[QualityGateIssue] = Field(default_factory=list)
+    missing_items: list[QualityGateIssue] = Field(default_factory=list)
+    checklist_sections: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    checked_at: str = Field(default_factory=now_iso)
+
+class DesignReviewSummary(DomainModel):
+    strength_status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    stiffness_status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    stability_status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    strength_fail_count: int = 0
+    stiffness_fail_count: int = 0
+    stability_fail_count: int = 0
+    strength_warning_count: int = 0
+    stiffness_warning_count: int = 0
+    stability_warning_count: int = 0
+    max_strength_utilization: float | None = None
+    max_stiffness_utilization: float | None = None
+    min_stability_safety_factor: float | None = None
+    notes: list[str] = Field(default_factory=list)
+
+class StageCalculationResult(DomainModel):
+    stage_id: str
+    segment_id: str
+    pressure_profile: PressureProfile
+    design_pressure_profile: PressureProfile | None = None
+    load_evidence: dict[str, Any] = Field(default_factory=dict)
+    stage_state: dict[str, Any] = Field(default_factory=dict)
+    solve_id: str | None = None
+    support_forces: list[SupportForceResult] = Field(default_factory=list)
+    wale_beam_results: list[WaleBeamInternalForceResult] = Field(default_factory=list)
+    coupled_system_result: dict[str, Any] = Field(default_factory=dict)
+    global_coupled_result: GlobalCoupledSystemResult | None = None
+    design_global_coupled_result: GlobalCoupledSystemResult | None = None
+    wall_internal_force: WallInternalForceResult | None = None
+    wall_internal_force_placeholder: dict[str, Any] = Field(default_factory=dict)
+    stability_checks: list[dict[str, Any]] = Field(default_factory=list)
+    rc_checks: list[dict[str, Any]] = Field(default_factory=list)
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GoverningValues(DomainModel):
+    max_total_pressure: float = 0.0
+    max_support_axial_force: float = 0.0
+    max_wall_moment: float | None = None
+    max_wall_shear: float | None = None
+    max_displacement: float | None = None
+    governing_check_status: str | None = None
+    embedment_safety_factor_min: float | None = None
+    heave_safety_factor_min: float | None = None
+    # Legacy field retained for reading older project snapshots. Current layered seepage
+    # screening returns a risk index (smaller is safer), not a safety factor.
+    seepage_safety_factor_min: float | None = None
+    seepage_risk_index_max: float | None = None
+    strength_check_status: str | None = None
+    stiffness_check_status: str | None = None
+    stability_check_status: str | None = None
+
+
+class CalculationResult(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("calc"))
+    project_id: str
+    case_id: str
+    calculation_mode: Literal["verify", "design"] = "design"
+    input_before_hash: str | None = None
+    input_after_hash: str | None = None
+    derived_design: dict[str, Any] = Field(default_factory=dict)
+    support_topology_hash: str | None = None
+    input_snapshot_hash: str | None = None
+    adopted_design_snapshot_hash: str | None = None
+    calculation_contract_id: str | None = None
+    result_hash: str | None = None
+    calculation_assurance: dict[str, Any] = Field(default_factory=dict)
+    calculation_execution: dict[str, Any] = Field(default_factory=dict)
+    numerical_health: dict[str, Any] = Field(default_factory=dict)
+    result_completeness: dict[str, Any] = Field(default_factory=dict)
+    result_catalog: dict[str, Any] = Field(default_factory=dict)
+    delivery_readiness: dict[str, Any] = Field(default_factory=dict)
+    analysis_assurance: dict[str, Any] = Field(default_factory=dict)
+    geotechnical_assurance: dict[str, Any] = Field(default_factory=dict)
+    spatial_verification: dict[str, Any] = Field(default_factory=dict)
+    verification_matrix: dict[str, Any] = Field(default_factory=dict)
+    statutory_workflow_assurance: dict[str, Any] = Field(default_factory=dict)
+    stage_result_summary: dict[str, Any] = Field(default_factory=dict)
+    stage_results: list[StageCalculationResult] = Field(default_factory=list)
+    governing_values: GoverningValues = Field(default_factory=GoverningValues)
+    warnings: list[str] = Field(default_factory=list)
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+    check_summary: dict[str, int] = Field(default_factory=dict)
+    design_iteration_summary: dict[str, Any] = Field(default_factory=dict)
+    optimization_actions: list[dict[str, Any]] = Field(default_factory=list)
+    report_diagram_data: dict[str, Any] = Field(default_factory=dict)
+    design_review_summary: DesignReviewSummary | None = None
+    stability_detailed_result: StabilityDetailedResult | None = None
+    drawing_sheets: list[DrawingSheetResult] = Field(default_factory=list)
+    support_layout_quality: SupportLayoutQualitySummary | None = None
+    support_layout_repair: SupportLayoutRepairSummary | None = None
+    ifc_compatibility: IfcCompatibilityCheckResult | None = None
+    formal_report_gate: FormalReportGate | None = None
+    standards: list[str] = Field(default_factory=lambda: [
+        "JGJ 120-2012 建筑基坑支护技术规程",
+        "GB 55003-2021 建筑与市政地基基础通用规范",
+        "GB 55008-2021 混凝土结构通用规范",
+        "GB/T 50010-2010（2024年局部修订）混凝土结构设计标准",
+        "GB 50009-2012 建筑结构荷载规范",
+        "GB 50007-2011 建筑地基基础设计规范",
+    ])
+    professional_review_required: bool = True
+    calculated_at: str = Field(default_factory=now_iso)
+
+
+
+
+class MonitoringRecord(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("mon"))
+    record_type: Literal["wall_displacement", "support_axial_force", "groundwater", "settlement"]
+    object_id: str | None = None
+    object_code: str | None = None
+    stage_id: str | None = None
+    timestamp: str = Field(default_factory=now_iso)
+    measured_value: float
+    unit: str
+    elevation: float | None = None
+    x: float | None = None
+    y: float | None = None
+    quality: Literal["verified", "provisional", "rejected"] = "verified"
+    source: str = "manual"
+    note: str | None = None
+
+
+class CalibrationRun(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("calib"))
+    status: Literal["pass", "warning", "fail", "manual_review"] = "manual_review"
+    sample_count: int = 0
+    wall_stiffness_factor: float = 1.0
+    support_stiffness_factor: float = 1.0
+    soil_modulus_factor: float = 1.0
+    groundwater_offset_m: float = 0.0
+    objective_before: float | None = None
+    objective_after: float | None = None
+    confidence: Literal["high", "medium", "low"] = "low"
+    applied: bool = False
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ProfessionalCredential(DomainModel):
+    license_type: Literal[
+        "registered_structural_engineer",
+        "registered_geotechnical_engineer",
+        "registered_civil_engineer",
+        "other"
+    ]
+    license_number: str
+    holder_name: str
+    jurisdiction: str = "CN"
+    organization: str | None = None
+    valid_until: str | None = None
+    verified: bool = False
+    verification_source: str | None = None
+    verification_reference: str | None = None
+
+
+class ReviewAction(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("review"))
+    role: Literal["designer", "checker", "reviewer", "approver"]
+    actor: str
+    action: Literal["submit", "accept", "reject", "reopen", "approve"]
+    comment: str | None = None
+    snapshot_hash: str
+    credential: ProfessionalCredential | None = None
+    digital_signature_hash: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ReviewWorkflow(DomainModel):
+    status: Literal["draft", "submitted", "checked", "reviewed", "approved", "rejected", "stale"] = "draft"
+    current_role: Literal["designer", "checker", "reviewer", "approver"] = "designer"
+    approved_snapshot_hash: str | None = None
+    actions: list[ReviewAction] = Field(default_factory=list)
+    required_roles: list[str] = Field(default_factory=lambda: ["designer", "checker", "reviewer", "approver"])
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class DrawingRevision(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("rev"))
+    revision: str = "A"
+    description: str
+    sheet_numbers: list[str] = Field(default_factory=list)
+    author: str = "AI-DRAFT"
+    snapshot_hash: str
+    issue_status: Literal["review", "construction", "superseded"] = "review"
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ProjectSummary(DomainModel):
+    id: str
+    revision: int = 0
+    name: str
+    location: str | None = None
+    created_at: str | None = None
+    updated_at: str
+    has_excavation: bool = False
+    has_retaining_system: bool = False
+    calculation_case_count: int = 0
+    calculation_result_count: int = 0
+    latest_calculation_id: str | None = None
+    governing_status: str | None = None
+    geometry_consistent: bool | None = None
+    payload_bytes: int = 0
+    workspace_bytes: int = 0
+    external_bytes: int = 0
+    artifact_count: int = 0
+    storage_status: StorageStatus = "normal"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_storage_status(cls, value: Any) -> Any:
+        """Keep project-list startup resilient across storage policy upgrades.
+
+        V3.37 introduced ``workspace_only`` from the adaptive resource policy,
+        while the response schema still accepted only the three legacy values.
+        A single large project could therefore make ``GET /api/projects`` fail
+        for the entire installation.  Normalize legacy/unknown persisted values
+        at the API boundary so future policy additions degrade safely instead of
+        taking down the initial project list.
+        """
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        raw = data.get("storage_status", data.get("storageStatus", "normal"))
+        data["storage_status"] = normalize_storage_status(raw)
+        data.pop("storageStatus", None)
+        return data
+
+
+class Project(DomainModel):
+    id: str = Field(default_factory=lambda: new_id("project"))
+    name: str
+    location: str | None = None
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+    unit_system: UnitSystem = Field(default_factory=UnitSystem)
+    coordinate_system: CoordinateSystem = Field(default_factory=CoordinateSystem)
+    design_settings: DesignSettings = Field(default_factory=DesignSettings)
+    boreholes: list[Borehole] = Field(default_factory=list)
+    strata: list[Stratum] = Field(default_factory=list)
+    geological_model: GeologicalModel | None = None
+    excavation: ExcavationModel | None = None
+    retaining_system: RetainingSystem | None = None
+    calculation_cases: list[CalculationCase] = Field(default_factory=list)
+    # V3.78-V3.81 separates designer-owned control stages, contractor plans and
+    # field observations. Legacy CalculationCase remains the numerical engine
+    # contract and is synchronized from design_control_stages before a run.
+    design_control_stages: list[DesignControlStage] = Field(default_factory=list)
+    design_scenarios: list[DesignScenario] = Field(default_factory=list)
+    construction_plan_stages: list[ConstructionPlanStage] = Field(default_factory=list)
+    field_execution_snapshots: list[FieldExecutionSnapshot] = Field(default_factory=list)
+    deviation_events: list[DeviationEvent] = Field(default_factory=list)
+    # V3.82-V3.87 design-core records. Detailed construction and field objects
+    # remain backward compatible, while the primary designer workflow consumes
+    # only external references and explicit design review requests.
+    parameter_provenance: list[ParameterProvenanceRecord] = Field(default_factory=list)
+    external_collaboration_records: list[ExternalCollaborationRecord] = Field(default_factory=list)
+    design_review_requests: list[DesignReviewRequest] = Field(default_factory=list)
+    design_snapshots: list[DesignSnapshotManifest] = Field(default_factory=list)
+    calculation_results: list[CalculationResult] = Field(default_factory=list)
+    cad_template: dict[str, Any] = Field(default_factory=dict)
+    drawing_rule_set: dict[str, Any] = Field(default_factory=dict)
+    monitoring_records: list[MonitoringRecord] = Field(default_factory=list)
+    calibration_runs: list[CalibrationRun] = Field(default_factory=list)
+    review_workflow: ReviewWorkflow = Field(default_factory=ReviewWorkflow)
+    drawing_revisions: list[DrawingRevision] = Field(default_factory=list)
+    advanced_engineering: dict[str, Any] = Field(default_factory=dict)
+    messages: list[str] = Field(default_factory=list)

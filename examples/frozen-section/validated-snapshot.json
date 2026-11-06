@@ -1,0 +1,187 @@
+{
+  "schemaVersion": "pitguard.frozen-section/1",
+  "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+  "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+  "input": {
+    "analysis": {
+      "design_effect_factor": 1.25,
+      "design_effect_factor_basis": "验证例显式采用1.25的特征内力效应放大系数，不代表任何实际项目规范取值",
+      "max_element_size_m": 0.125,
+      "pressure_method": "effective_rankine_bounds_k0_v1",
+      "soil_method": "two_sided_elastoplastic_winkler_v1",
+      "water_unit_weight_kn_m3": 9.81
+    },
+    "comparison_reference": "uploaded_A3_3",
+    "datum": {
+      "elevation_system": "local",
+      "label": "验证模型地面 z=0",
+      "wall_top_elevation_m": 0.0
+    },
+    "evidence": [
+      {
+        "kind": "verification_definition",
+        "note": "完整合成算例；阶段顺序参考A3-3事件结构，其土层、边界和几何不冒充原项目。",
+        "page": null,
+        "parameter": "all_inputs",
+        "source": "PitGuard冻结剖面解析与独立求解验证集",
+        "source_sha256": null
+      }
+    ],
+    "limitations": [
+      "这是完整定义的合成验证例，不能作为原A3-3项目重建模型。",
+      "平地垂直排桩，分层有效应力与静水压力；不含坡台、有限宽邻载、渗流及土水合算。"
+    ],
+    "name": "二维排桩阶段分析验证例",
+    "pile": {
+      "diameter_m": 0.7,
+      "elastic_modulus_kpa": 30000000.0,
+      "inertia_factor": 1.0,
+      "length_m": 10.0,
+      "spacing_m": 0.9,
+      "toe_boundary": "free"
+    },
+    "purpose": "verification_fixture",
+    "reinforcement": {
+      "axial_force_kn": 0.0,
+      "bar_axis_cover_mm": 59.0,
+      "bar_count": 16,
+      "bar_diameter_mm": 18.0,
+      "bar_start_angle_deg": 0.0,
+      "concrete_design_strength_mpa": 14.3,
+      "concrete_peak_strain": 0.002,
+      "concrete_ultimate_strain": 0.0033,
+      "longitudinal_extent": "full_length",
+      "minimum_longitudinal_ratio": 0.006,
+      "minimum_ratio_basis": "本验证例明示的最小纵筋率，用于验证成果链，实际工程须确认采用依据",
+      "steel_design_strength_mpa": 360.0,
+      "steel_modulus_mpa": 200000.0,
+      "stirrup_diameter_mm": 8.0,
+      "stirrup_spacing_mm": 125.0
+    },
+    "schema_version": "pitguard.frozen-section/1",
+    "section_id": "VERIFY-PILE-01",
+    "soil_effective_width_m": 0.9,
+    "soil_layers": [
+      {
+        "bottom_m": 4.0,
+        "cohesion_kpa": 0.0,
+        "gamma_sat_kn_m3": 20.0,
+        "gamma_unsat_kn_m3": 18.0,
+        "id": "L1",
+        "k0": 0.5,
+        "m_inside_kn_m4": 8000.0,
+        "m_outside_kn_m4": 8000.0,
+        "name": "验证砂土层一",
+        "phi_deg": 30.0,
+        "top_m": 0.0
+      },
+      {
+        "bottom_m": 20.0,
+        "cohesion_kpa": 0.0,
+        "gamma_sat_kn_m3": 21.0,
+        "gamma_unsat_kn_m3": 19.0,
+        "id": "L2",
+        "k0": 0.44,
+        "m_inside_kn_m4": 15000.0,
+        "m_outside_kn_m4": 15000.0,
+        "name": "验证砂土层二",
+        "phi_deg": 34.0,
+        "top_m": 4.0
+      }
+    ],
+    "source_project_id": null,
+    "source_revision": null,
+    "stages": [
+      {
+        "event": "initial",
+        "excavation_depth_m": 0.0,
+        "id": "S0",
+        "install_support_ids": [],
+        "name": "初始地应力平衡",
+        "remove_support_ids": [],
+        "surcharge_kpa": 0.0,
+        "water_inside_depth_m": 1.5,
+        "water_outside_depth_m": 1.5
+      },
+      {
+        "event": "excavate",
+        "excavation_depth_m": 2.05,
+        "id": "S1",
+        "install_support_ids": [],
+        "name": "开挖至2.05米",
+        "remove_support_ids": [],
+        "surcharge_kpa": 0.0,
+        "water_inside_depth_m": 2.55,
+        "water_outside_depth_m": 1.5
+      },
+      {
+        "event": "install",
+        "excavation_depth_m": 2.05,
+        "id": "S2",
+        "install_support_ids": [
+          "STRUT-1"
+        ],
+        "name": "安装第一道支撑",
+        "remove_support_ids": [],
+        "surcharge_kpa": 0.0,
+        "water_inside_depth_m": 2.55,
+        "water_outside_depth_m": 1.5
+      },
+      {
+        "event": "excavate",
+        "excavation_depth_m": 4.9,
+        "id": "S3",
+        "install_support_ids": [],
+        "name": "开挖至4.9米",
+        "remove_support_ids": [],
+        "surcharge_kpa": 0.0,
+        "water_inside_depth_m": 5.4,
+        "water_outside_depth_m": 1.5
+      },
+      {
+        "event": "install",
+        "excavation_depth_m": 4.9,
+        "id": "S4",
+        "install_support_ids": [
+          "REPLACEMENT"
+        ],
+        "name": "安装刚性换撑支点",
+        "remove_support_ids": [],
+        "surcharge_kpa": 0.0,
+        "water_inside_depth_m": 5.4,
+        "water_outside_depth_m": 1.5
+      },
+      {
+        "event": "remove",
+        "excavation_depth_m": 4.9,
+        "id": "S5",
+        "install_support_ids": [],
+        "name": "拆除第一道支撑",
+        "remove_support_ids": [
+          "STRUT-1"
+        ],
+        "surcharge_kpa": 0.0,
+        "water_inside_depth_m": 5.4,
+        "water_outside_depth_m": 1.5
+      }
+    ],
+    "supports": [
+      {
+        "compression_only": true,
+        "depth_m": 1.625,
+        "id": "STRUT-1",
+        "kind": "elastic",
+        "preload_kn": 0.0,
+        "stiffness_kn_per_m": 29070.0
+      },
+      {
+        "compression_only": false,
+        "depth_m": 4.6,
+        "id": "REPLACEMENT",
+        "kind": "rigid",
+        "preload_kn": 0.0,
+        "stiffness_kn_per_m": null
+      }
+    ]
+  }
+}

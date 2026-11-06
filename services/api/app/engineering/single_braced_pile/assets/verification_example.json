@@ -1,0 +1,95 @@
+{
+  "schema_version": "pitguard.one-strut/1",
+  "project_id": "NUMERICAL-VERIFICATION",
+  "section_id": "ONE-STRUT-01",
+  "project_region": "验证数据-非工程项目",
+  "design_date": "2026-10-26",
+  "purpose": "verification_example",
+  "pile": {
+    "diameter_m": 0.7,
+    "spacing_m": 0.9,
+    "length_m": 10.0,
+    "elastic_modulus_kpa": 30000000.0,
+    "inertia_factor": 1.0,
+    "toe_boundary": "free"
+  },
+  "layers": [
+    {
+      "id": "L1",
+      "label": "验证砂土层一",
+      "top_m": 0,
+      "bottom_m": 4,
+      "gamma_natural_kn_m3": 18,
+      "gamma_sat_kn_m3": 20,
+      "c_effective_kpa": 0,
+      "phi_effective_deg": 30,
+      "m_kn_m4": 8000
+    },
+    {
+      "id": "L2",
+      "label": "验证砂土层二",
+      "top_m": 4,
+      "bottom_m": 20,
+      "gamma_natural_kn_m3": 19,
+      "gamma_sat_kn_m3": 21,
+      "c_effective_kpa": 0,
+      "phi_effective_deg": 34,
+      "m_kn_m4": 15000
+    }
+  ],
+  "strut": {
+    "id": "STRUT-1",
+    "depth_m": 1.625,
+    "stiffness_kn_m": 29070,
+    "spacing_along_wall_m": 0.9
+  },
+  "stages": [
+    {
+      "id": "S0",
+      "event": "initial",
+      "excavation_depth_m": 0,
+      "water_outside_depth_m": 1.5,
+      "water_inside_depth_m": 1.5,
+      "surcharge_kpa": 0
+    },
+    {
+      "id": "S1",
+      "event": "excavate",
+      "excavation_depth_m": 2.05,
+      "water_outside_depth_m": 1.5,
+      "water_inside_depth_m": 2.55,
+      "surcharge_kpa": 0
+    },
+    {
+      "id": "S2",
+      "event": "install_strut",
+      "excavation_depth_m": 2.05,
+      "water_outside_depth_m": 1.5,
+      "water_inside_depth_m": 2.55,
+      "surcharge_kpa": 0
+    },
+    {
+      "id": "S3",
+      "event": "excavate",
+      "excavation_depth_m": 4.9,
+      "water_outside_depth_m": 1.5,
+      "water_inside_depth_m": 5.4,
+      "surcharge_kpa": 0
+    }
+  ],
+  "cage": {
+    "bar_count": 16,
+    "bar_diameter_mm": 18,
+    "bar_axis_cover_mm": 59,
+    "minimum_ratio": 0.006,
+    "concrete_design_mpa": 14.3,
+    "steel_design_mpa": 360,
+    "stirrup_diameter_mm": 8,
+    "stirrup_spacing_mm": 125
+  },
+  "mesh_max_m": 0.25,
+  "displacement_limit_mm": 45,
+  "gamma0": 1.0,
+  "design_effect_factor": 1.25,
+  "sources": []
+}

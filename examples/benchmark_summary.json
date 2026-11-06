@@ -1,0 +1,201 @@
+{
+  "benchmarkVersion": "V2.3.0-public-paper-derived-normative-regression",
+  "caseCount": 5,
+  "cases": [
+    {
+      "caseId": "HZ-30M-SOFT-CLAY-9310",
+      "projectId": "project-58903334d264",
+      "name": "杭州软土 30.2m 深大型地下室基坑规范算法回归算例",
+      "sourceTitle": "Observed performance / Performance of diaphragm walls in a 30.2 m deep Hangzhou soft-clay basement excavation",
+      "sourceUrl": "https://link.springer.com/article/10.1007/s11204-022-09797-5",
+      "publicDataBasis": "公开摘要给出：约 9310 m2、开挖深度 30.2 m、地连墙约 51/52 m、六道混凝土支撑。",
+      "depthM": 30.2,
+      "calculationDepthM": 28.0,
+      "sourcePlanSizeM": [
+        122.0,
+        76.0
+      ],
+      "planSizeM": [
+        90.0,
+        56.066
+      ],
+      "geometryScale": 0.7377,
+      "supportCount": 110,
+      "columnCount": 66,
+      "maxSupportAxialForce": 0.0,
+      "maxWallMoment": 64267.719,
+      "maxDisplacement": 5021.407,
+      "checkSummary": {
+        "pass": 1428,
+        "fail": 250,
+        "warning": 46,
+        "manualReview": 0
+      },
+      "issueSummary": {
+        "fail": 115,
+        "warning": 11,
+        "manual_review": 1,
+        "pass": 0
+      },
+      "traceCount": 592,
+      "officialIssueAllowed": false
+    },
+    {
+      "caseId": "SH-ULTRA-LARGE-ZONED-70500",
+      "projectId": "project-f70b8019e189",
+      "name": "上海软土超大面积分区开挖基坑规范算法回归算例",
+      "sourceTitle": "Observed Performance of an Ultra Large Deep Excavation in Shanghai Soft Clay",
+      "sourceUrl": "https://link.springer.com/chapter/10.1007/978-981-13-0011-0_18",
+      "publicDataBasis": "公开摘要给出：约 70500 m2、约 340 m × 200 m、开挖深度 10.3–15.9 m、三分区开挖。",
+      "depthM": 15.9,
+      "calculationDepthM": 15.9,
+      "sourcePlanSizeM": [
+        340.0,
+        200.0
+      ],
+      "planSizeM": [
+        90.0,
+        52.941
+      ],
+      "geometryScale": 0.2647,
+      "supportCount": 60,
+      "columnCount": 40,
+      "maxSupportAxialForce": 0.0,
+      "maxWallMoment": 12808.301,
+      "maxDisplacement": 582.22,
+      "checkSummary": {
+        "pass": 850,
+        "fail": 156,
+        "warning": 27,
+        "manualReview": 0
+      },
+      "issueSummary": {
+        "fail": 67,
+        "warning": 11,
+        "manual_review": 1,
+        "pass": 0
+      },
+      "traceCount": 400,
+      "officialIssueAllowed": false
+    },
+    {
+      "caseId": "SH-31P5-PASSAGEWAY-DEWATERING",
+      "projectId": "project-f7f266960c3e",
+      "name": "上海 31.5m 超深通道基坑降水耦合作用回归算例",
+      "sourceTitle": "Field tests on performance of diaphragm wall for a 31.5 m-deep passageway excavation in Shanghai downtown",
+      "sourceUrl": "https://cgejournal.com/en/article/doi/10.11779/CJGE20230760",
+      "publicDataBasis": "公开摘要给出：31.5 m 深通道工程，长深比和长宽比较小，坑角效应和超前预降水影响显著。",
+      "depthM": 31.5,
+      "calculationDepthM": 28.0,
+      "sourcePlanSizeM": [
+        72.0,
+        28.0
+      ],
+      "planSizeM": [
+        72.0,
+        28.0
+      ],
+      "geometryScale": 1.0,
+      "supportCount": 90,
+      "columnCount": 14,
+      "maxSupportAxialForce": 0.0,
+      "maxWallMoment": 61858.003,
+      "maxDisplacement": 4575.58,
+      "checkSummary": {
+        "pass": 1204,
+        "fail": 140,
+        "warning": 65,
+        "manualReview": 0
+      },
+      "issueSummary": {
+        "fail": 5,
+        "warning": 12,
+        "manual_review": 1,
+        "pass": 0
+      },
+      "traceCount": 592,
+      "officialIssueAllowed": false
+    },
+    {
+      "caseId": "SH-56M-CIRCULAR-DOUBLE-WALL",
+      "projectId": "project-ea5d951c2a94",
+      "name": "上海 56m 深圆形/多边形竖井双墙体系规范算法回归算例",
+      "sourceTitle": "Performance of a 56 m deep circular excavation supported by diaphragm and cut-off double-wall system in Shanghai soft ground",
+      "sourceUrl": "https://www.sciencedirect.com/org/science/article/abs/pii/S0008367422000555",
+      "publicDataBasis": "公开摘要给出：56 m 深圆形基坑，内圆形地下连续墙 + 外矩形止水墙双墙体系，上海软土。",
+      "depthM": 56.0,
+      "calculationDepthM": 30.0,
+      "sourcePlanSizeM": [
+        76.0,
+        76.0
+      ],
+      "planSizeM": [
+        76.0,
+        76.0
+      ],
+      "geometryScale": 1.0,
+      "supportCount": 20,
+      "columnCount": 4,
+      "maxSupportAxialForce": 0.0,
+      "maxWallMoment": 76873.82,
+      "maxDisplacement": 6273.459,
+      "checkSummary": {
+        "pass": 1598,
+        "fail": 280,
+        "warning": 86,
+        "manualReview": 0
+      },
+      "issueSummary": {
+        "fail": 5,
+        "warning": 12,
+        "manual_review": 1,
+        "pass": 0
+      },
+      "traceCount": 1120,
+      "officialIssueAllowed": false
+    },
+    {
+      "caseId": "URBAN-TOPDOWN-32M-WALL-5SUPPORT",
+      "projectId": "project-1e5db1ce0e04",
+      "name": "邻近建筑影响的 32m 地连墙五道支撑顶顺结合基坑算例",
+      "sourceTitle": "Evaluating the Effects of Deep Excavation on Nearby Structures",
+      "sourceUrl": "https://www.mdpi.com/2076-3417/14/21/10002",
+      "publicDataBasis": "公开摘要给出：32 m 深、0.8 m 厚地下连续墙，顶顺结合法，六次开挖五道支撑。",
+      "depthM": 26.0,
+      "calculationDepthM": 26.0,
+      "sourcePlanSizeM": [
+        96.0,
+        48.0
+      ],
+      "planSizeM": [
+        90.0,
+        45.0
+      ],
+      "geometryScale": 0.9375,
+      "supportCount": 110,
+      "columnCount": 44,
+      "maxSupportAxialForce": 0.0,
+      "maxWallMoment": 39716.113,
+      "maxDisplacement": 3701.077,
+      "checkSummary": {
+        "pass": 1388,
+        "fail": 136,
+        "warning": 155,
+        "manualReview": 0
+      },
+      "issueSummary": {
+        "fail": 4,
+        "warning": 23,
+        "manual_review": 1,
+        "pass": 0
+      },
+      "traceCount": 592,
+      "officialIssueAllowed": false
+    }
+  ],
+  "notes": [
+    "Cases are public-paper-derived regression examples for normative-algorithm workflow coverage; they are not original project drawings.",
+    "Finite-element solvers are intentionally not used in this benchmark set.",
+    "Geometry/depth may be normalized or capped for repeatable automated regression; source dimensions remain in metadata."
+  ]
+}

@@ -1,0 +1,2202 @@
+{
+  "created_at_utc": "2026-10-25T04:00:37.327936+00:00",
+  "method": "full-circle angular-coordinate adaptive QUADPACK integration + independent Brent root",
+  "reference_uses_product_capacity_or_neutral_axis": false,
+  "validation_target": "current product reinforcement implementation; sealed envelope supplies same-snapshot demand",
+  "sealed_result_is_current_reinforcement_implementation": true,
+  "require_current_result": true,
+  "sealed_result_comparison": {
+    "sealed_reinforcement_source_sha256": "345e1780abbe109626c06178865bcbfe2ed69e548810833d5eb3de699ecfbf4a",
+    "current_reinforcement_source_sha256": "345e1780abbe109626c06178865bcbfe2ed69e548810833d5eb3de699ecfbf4a",
+    "same_reinforcement_implementation": true,
+    "sealed_capacity_matches_current_product": true,
+    "sealed_capacity_trace": {
+      "positive": {
+        "capacityKnM": 381.69337043216717,
+        "neutralAxisMm": 161.58521547873005,
+        "axialResidualKn": 3.4924596548080445e-13,
+        "concreteForceKn": 702.8055457209773,
+        "netSteelForceKn": -702.805545720977,
+        "steelAreaMm2": 4071.5040790523717,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": 1
+      },
+      "negative": {
+        "capacityKnM": 381.69337043216706,
+        "neutralAxisMm": 161.58521547873,
+        "axialResidualKn": -1.1641532182693482e-13,
+        "concreteForceKn": 702.8055457209769,
+        "netSteelForceKn": -702.805545720977,
+        "steelAreaMm2": 4071.5040790523717,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": -1
+      }
+    },
+    "sealed_strength_required_area_mm2": 1424.33681958969
+  },
+  "dependencies": {
+    "scipy": "1.17.0"
+  },
+  "tolerances": {
+    "capacity_relative": 0.001,
+    "axial_absolute_kn": 1e-06
+  },
+  "sources": {
+    "examples/frozen-section/verification-input.json": "d93cd1d60ad97059c129a2a4e6260bce65aac8189dbb473aee7feb339a2d0c0c",
+    "/workspace/scratch/fd5d8a28c64e/work/section_final_run/result.json": "d18b37c37ba7e7be2c8413b0ba3dafb8af32da1553625f0624481bec70853fbf",
+    "services/api/app/section/reinforcement.py": "345e1780abbe109626c06178865bcbfe2ed69e548810833d5eb3de699ecfbf4a"
+  },
+  "sealed_result_hash": "69f2e1a3a784947b6a1f2e13b31d6bd704a71597effc217a6659d2def8dbe8f9",
+  "geometry": {
+    "solid_circle_radius_mm": 350.0,
+    "steel_centroid_radius_mm": 291.0,
+    "gross_area_mm2": 384845.10006474965,
+    "provided_area_mm2": 4071.5040790523717,
+    "provided_ratio": 0.010579591836734693,
+    "physical_concrete_cover_mm": 50.0,
+    "adjacent_bar_centroid_distance_mm": 113.54256741338664,
+    "steel_yield_strain": 0.0018,
+    "hollow_core_present": false
+  },
+  "demand_knm": 149.21076798400665,
+  "reference_utilization": 0.3909178927001192,
+  "reference_strength_required_area_mm2": 1424.3368199399374,
+  "product_strength_required_area_mm2": 1424.33681958969,
+  "strength_required_area_relative_difference": 2.459020326120797e-10,
+  "minimum_area_mm2": 2309.070600388498,
+  "reference_required_area_cases": [
+    {
+      "capacity_knm": 149.21076798400665,
+      "signed_capacity_knm": 149.21076798400665,
+      "neutral_axis_depth_mm": 101.24940167229335,
+      "axial_residual_kn": -5.820766091346741e-14,
+      "concrete_force_kn": 357.10952463413685,
+      "net_steel_force_kn": -357.1095246341369,
+      "steel_area_mm2": 1424.3368199399374,
+      "direction": 1,
+      "quadrature_n_error_estimate_n": 3.964712165617632e-09,
+      "quadrature_m_error_estimate_nmm": 1.1883037017207589e-06,
+      "steel_states": {
+        "compression_yield": 0,
+        "elastic": 5,
+        "tension_yield": 11
+      },
+      "bars": [
+        {
+          "index": 0,
+          "physical_y_mm": 291.0,
+          "compression_oriented_z_mm": 291.0,
+          "strain": 0.0013770256733943822,
+          "steel_stress_mpa": 275.40513467887644,
+          "displaced_concrete_stress_mpa": 12.912553183495241,
+          "net_force_n": 23367.36554905976,
+          "net_moment_nmm": 6799903.37477639,
+          "state": "elastic"
+        },
+        {
+          "index": 1,
+          "physical_y_mm": 268.8489439607844,
+          "compression_oriented_z_mm": 268.8489439607844,
+          "strain": 0.0006550610620280454,
+          "steel_stress_mpa": 131.0122124056091,
+          "displaced_concrete_stress_mpa": 7.833322829928564,
+          "net_force_n": 10965.514241372344,
+          "net_moment_nmm": 2948066.923779897,
+          "state": "elastic"
+        },
+        {
+          "index": 2,
+          "physical_y_mm": 205.76807332528534,
+          "compression_oriented_z_mm": 205.76807332528534,
+          "strain": -0.0014009202046159366,
+          "steel_stress_mpa": -280.1840409231873,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -24942.27786540337,
+          "net_moment_nmm": -5132324.460707962,
+          "state": "elastic"
+        },
+        {
+          "index": 3,
+          "physical_y_mm": 111.36087881824115,
+          "compression_oriented_z_mm": 111.36087881824115,
+          "strain": -0.004477913616207613,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -3568846.500038033,
+          "state": "tension_yield"
+        },
+        {
+          "index": 4,
+          "physical_y_mm": 1.781861092759399e-14,
+          "compression_oriented_z_mm": 1.781861092759399e-14,
+          "strain": -0.008107474818846883,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -5.710433315480154e-10,
+          "state": "tension_yield"
+        },
+        {
+          "index": 5,
+          "physical_y_mm": -111.3608788182411,
+          "compression_oriented_z_mm": -111.3608788182411,
+          "strain": -0.011737036021486158,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 3568846.5000380315,
+          "state": "tension_yield"
+        },
+        {
+          "index": 6,
+          "physical_y_mm": -205.76807332528531,
+          "compression_oriented_z_mm": -205.76807332528531,
+          "strain": -0.014814029433077833,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 6594368.472119357,
+          "state": "tension_yield"
+        },
+        {
+          "index": 7,
+          "physical_y_mm": -268.8489439607844,
+          "compression_oriented_z_mm": -268.8489439607844,
+          "strain": -0.016870010699721813,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 8615957.622419568,
+          "state": "tension_yield"
+        },
+        {
+          "index": 8,
+          "physical_y_mm": -291.0,
+          "compression_oriented_z_mm": -291.0,
+          "strain": -0.017591975311088155,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 9325845.32855674,
+          "state": "tension_yield"
+        },
+        {
+          "index": 9,
+          "physical_y_mm": -268.8489439607845,
+          "compression_oriented_z_mm": -268.8489439607845,
+          "strain": -0.01687001069972182,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 8615957.62241957,
+          "state": "tension_yield"
+        },
+        {
+          "index": 10,
+          "physical_y_mm": -205.76807332528537,
+          "compression_oriented_z_mm": -205.76807332528537,
+          "strain": -0.014814029433077833,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 6594368.472119359,
+          "state": "tension_yield"
+        },
+        {
+          "index": 11,
+          "physical_y_mm": -111.36087881824129,
+          "compression_oriented_z_mm": -111.36087881824129,
+          "strain": -0.011737036021486161,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 3568846.500038037,
+          "state": "tension_yield"
+        },
+        {
+          "index": 12,
+          "physical_y_mm": -5.345583278278196e-14,
+          "compression_oriented_z_mm": -5.345583278278196e-14,
+          "strain": -0.008107474818846886,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 1.7131299946440461e-09,
+          "state": "tension_yield"
+        },
+        {
+          "index": 13,
+          "physical_y_mm": 111.36087881824119,
+          "compression_oriented_z_mm": 111.36087881824119,
+          "strain": -0.004477913616207611,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -3568846.500038034,
+          "state": "tension_yield"
+        },
+        {
+          "index": 14,
+          "physical_y_mm": 205.7680733252853,
+          "compression_oriented_z_mm": 205.7680733252853,
+          "strain": -0.0014009202046159383,
+          "steel_stress_mpa": -280.18404092318764,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -24942.277865403397,
+          "net_moment_nmm": -5132324.460707966,
+          "state": "elastic"
+        },
+        {
+          "index": 15,
+          "physical_y_mm": 268.84894396078437,
+          "compression_oriented_z_mm": 268.84894396078437,
+          "strain": 0.0006550610620280436,
+          "steel_stress_mpa": 131.01221240560872,
+          "displaced_concrete_stress_mpa": 7.833322829928546,
+          "net_force_n": 10965.514241372313,
+          "net_moment_nmm": 2948066.923779888,
+          "state": "elastic"
+        }
+      ]
+    },
+    {
+      "capacity_knm": 149.21076798400665,
+      "signed_capacity_knm": -149.21076798400665,
+      "neutral_axis_depth_mm": 101.24940167229333,
+      "axial_residual_kn": 5.820766091346741e-14,
+      "concrete_force_kn": 357.10952463413685,
+      "net_steel_force_kn": -357.10952463413673,
+      "steel_area_mm2": 1424.3368199399374,
+      "direction": -1,
+      "quadrature_n_error_estimate_n": 3.964712165617632e-09,
+      "quadrature_m_error_estimate_nmm": 1.1883037017207589e-06,
+      "steel_states": {
+        "compression_yield": 0,
+        "elastic": 5,
+        "tension_yield": 11
+      },
+      "bars": [
+        {
+          "index": 0,
+          "physical_y_mm": 291.0,
+          "compression_oriented_z_mm": -291.0,
+          "strain": -0.017591975311088155,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -9325845.32855674,
+          "state": "tension_yield"
+        },
+        {
+          "index": 1,
+          "physical_y_mm": 268.8489439607844,
+          "compression_oriented_z_mm": -268.8489439607844,
+          "strain": -0.016870010699721816,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -8615957.622419568,
+          "state": "tension_yield"
+        },
+        {
+          "index": 2,
+          "physical_y_mm": 205.76807332528534,
+          "compression_oriented_z_mm": -205.76807332528534,
+          "strain": -0.014814029433077835,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -6594368.472119358,
+          "state": "tension_yield"
+        },
+        {
+          "index": 3,
+          "physical_y_mm": 111.36087881824115,
+          "compression_oriented_z_mm": -111.36087881824115,
+          "strain": -0.01173703602148616,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -3568846.500038033,
+          "state": "tension_yield"
+        },
+        {
+          "index": 4,
+          "physical_y_mm": 1.781861092759399e-14,
+          "compression_oriented_z_mm": -1.781861092759399e-14,
+          "strain": -0.008107474818846886,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -5.710433315480154e-10,
+          "state": "tension_yield"
+        },
+        {
+          "index": 5,
+          "physical_y_mm": -111.3608788182411,
+          "compression_oriented_z_mm": 111.3608788182411,
+          "strain": -0.0044779136162076145,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 3568846.5000380315,
+          "state": "tension_yield"
+        },
+        {
+          "index": 6,
+          "physical_y_mm": -205.76807332528531,
+          "compression_oriented_z_mm": 205.76807332528531,
+          "strain": -0.0014009202046159374,
+          "steel_stress_mpa": -280.18404092318747,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -24942.277865403383,
+          "net_moment_nmm": 5132324.460707964,
+          "state": "elastic"
+        },
+        {
+          "index": 7,
+          "physical_y_mm": -268.8489439607844,
+          "compression_oriented_z_mm": 268.8489439607844,
+          "strain": 0.0006550610620280455,
+          "steel_stress_mpa": 131.01221240560912,
+          "displaced_concrete_stress_mpa": 7.833322829928565,
+          "net_force_n": 10965.514241372346,
+          "net_moment_nmm": -2948066.9237798974,
+          "state": "elastic"
+        },
+        {
+          "index": 8,
+          "physical_y_mm": -291.0,
+          "compression_oriented_z_mm": 291.0,
+          "strain": 0.0013770256733943824,
+          "steel_stress_mpa": 275.4051346788765,
+          "displaced_concrete_stress_mpa": 12.912553183495241,
+          "net_force_n": 23367.365549059763,
+          "net_moment_nmm": -6799903.374776391,
+          "state": "elastic"
+        },
+        {
+          "index": 9,
+          "physical_y_mm": -268.8489439607845,
+          "compression_oriented_z_mm": 268.8489439607845,
+          "strain": 0.0006550610620280474,
+          "steel_stress_mpa": 131.0122124056095,
+          "displaced_concrete_stress_mpa": 7.833322829928583,
+          "net_force_n": 10965.514241372379,
+          "net_moment_nmm": -2948066.9237799067,
+          "state": "elastic"
+        },
+        {
+          "index": 10,
+          "physical_y_mm": -205.76807332528537,
+          "compression_oriented_z_mm": 205.76807332528537,
+          "strain": -0.001400920204615936,
+          "steel_stress_mpa": -280.1840409231872,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -24942.277865403357,
+          "net_moment_nmm": 5132324.460707961,
+          "state": "elastic"
+        },
+        {
+          "index": 11,
+          "physical_y_mm": -111.36087881824129,
+          "compression_oriented_z_mm": 111.36087881824129,
+          "strain": -0.004477913616207608,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 3568846.500038037,
+          "state": "tension_yield"
+        },
+        {
+          "index": 12,
+          "physical_y_mm": -5.345583278278196e-14,
+          "compression_oriented_z_mm": 5.345583278278196e-14,
+          "strain": -0.008107474818846884,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": 1.7131299946440461e-09,
+          "state": "tension_yield"
+        },
+        {
+          "index": 13,
+          "physical_y_mm": 111.36087881824119,
+          "compression_oriented_z_mm": -111.36087881824119,
+          "strain": -0.011737036021486161,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -3568846.500038034,
+          "state": "tension_yield"
+        },
+        {
+          "index": 14,
+          "physical_y_mm": 205.7680733252853,
+          "compression_oriented_z_mm": -205.7680733252853,
+          "strain": -0.014814029433077833,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -6594368.4721193565,
+          "state": "tension_yield"
+        },
+        {
+          "index": 15,
+          "physical_y_mm": 268.84894396078437,
+          "compression_oriented_z_mm": -268.84894396078437,
+          "strain": -0.016870010699721813,
+          "steel_stress_mpa": -360,
+          "displaced_concrete_stress_mpa": 0.0,
+          "net_force_n": -32047.578448648594,
+          "net_moment_nmm": -8615957.622419566,
+          "state": "tension_yield"
+        }
+      ]
+    }
+  ],
+  "reference_required_area_bracket": {
+    "at_99_9_percent_area_knm": 149.0776351015581,
+    "at_100_1_percent_area_knm": 149.34389007792038
+  },
+  "cases": [
+    {
+      "label": "provided",
+      "reference": {
+        "capacity_knm": 381.6933703223177,
+        "signed_capacity_knm": 381.6933703223177,
+        "neutral_axis_depth_mm": 161.585215536337,
+        "axial_residual_kn": -1.1641532182693482e-13,
+        "concrete_force_kn": 702.8055453841439,
+        "net_steel_force_kn": -702.805545384144,
+        "steel_area_mm2": 4071.5040790523717,
+        "direction": 1,
+        "quadrature_n_error_estimate_n": 7.802708983197171e-09,
+        "quadrature_m_error_estimate_nmm": 2.1084725448006e-06,
+        "steel_states": {
+          "compression_yield": 1,
+          "elastic": 6,
+          "tension_yield": 9
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0020950630300318766,
+            "steel_stress_mpa": 360,
+            "displaced_concrete_stress_mpa": 14.3,
+            "net_force_n": 87969.9350080253,
+            "net_moment_nmm": 25599251.087335363,
+            "state": "compression_yield"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0016426795326507496,
+            "steel_stress_mpa": 328.53590653014993,
+            "displaced_concrete_stress_mpa": 13.843551448917596,
+            "net_force_n": 80079.45045998968,
+            "net_moment_nmm": 21529275.689128175,
+            "state": "elastic"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": 205.76807332528534,
+            "strain": 0.00035440032711703045,
+            "steel_stress_mpa": 70.8800654234061,
+            "displaced_concrete_stress_mpa": 4.618906136871683,
+            "net_force_n": 16861.411269866487,
+            "net_moment_nmm": 3469540.11054568,
+            "state": "elastic"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": 111.36087881824115,
+            "strain": -0.0015736457558068523,
+            "steel_stress_mpa": -314.72915116137045,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -80088.81392188814,
+            "net_moment_nmm": -8918760.70185205,
+            "state": "elastic"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": 1.781861092759399e-14,
+            "strain": -0.003847931177777001,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -1.6323423091817872e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": -111.3608788182411,
+            "strain": -0.006122216599747152,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 10201641.127994824,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": -205.76807332528531,
+            "strain": -0.008050262682671035,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 18850174.87235955,
+            "state": "tension_yield"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.009338541888204753,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 24628940.369668268,
+            "state": "tension_yield"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.009790925385585882,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 26658172.957595404,
+            "state": "tension_yield"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": -268.8489439607845,
+            "strain": -0.009338541888204755,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 24628940.36966827,
+            "state": "tension_yield"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": -205.76807332528537,
+            "strain": -0.008050262682671035,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 18850174.872359555,
+            "state": "tension_yield"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": -111.36087881824129,
+            "strain": -0.006122216599747155,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 10201641.127994841,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": -5.345583278278196e-14,
+            "strain": -0.0038479311777770034,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 4.897026927545361e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": 111.36087881824119,
+            "strain": -0.0015736457558068516,
+            "steel_stress_mpa": -314.72915116137034,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -80088.81392188811,
+            "net_moment_nmm": -8918760.70185205,
+            "state": "elastic"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": 205.7680733252853,
+            "strain": 0.00035440032711702926,
+            "steel_stress_mpa": 70.88006542340585,
+            "displaced_concrete_stress_mpa": 4.618906136871669,
+            "net_force_n": 16861.41126986643,
+            "net_moment_nmm": 3469540.110545667,
+            "state": "elastic"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": 268.84894396078437,
+            "strain": 0.0016426795326507483,
+            "steel_stress_mpa": 328.53590653014965,
+            "displaced_concrete_stress_mpa": 13.84355144891759,
+            "net_force_n": 80079.4504599896,
+            "net_moment_nmm": 21529275.689128153,
+            "state": "elastic"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 381.69337043216717,
+        "neutralAxisMm": 161.58521547873005,
+        "axialResidualKn": 3.4924596548080445e-13,
+        "concreteForceKn": 702.8055457209773,
+        "netSteelForceKn": -702.805545720977,
+        "steelAreaMm2": 4071.5040790523717,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": 1
+      },
+      "capacity_relative_error": 2.877950227649989e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -6.960271857678891e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -5.760693966294639e-08
+    },
+    {
+      "label": "provided",
+      "reference": {
+        "capacity_knm": 381.6933703223178,
+        "signed_capacity_knm": -381.6933703223178,
+        "neutral_axis_depth_mm": 161.585215536337,
+        "axial_residual_kn": 1.1641532182693482e-13,
+        "concrete_force_kn": 702.8055453841439,
+        "net_steel_force_kn": -702.8055453841438,
+        "steel_area_mm2": 4071.5040790523717,
+        "direction": -1,
+        "quadrature_n_error_estimate_n": 7.802708983197171e-09,
+        "quadrature_m_error_estimate_nmm": 2.1084725448006e-06,
+        "steel_states": {
+          "compression_yield": 1,
+          "elastic": 6,
+          "tension_yield": 9
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.009790925385585882,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -26658172.957595404,
+            "state": "tension_yield"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.009338541888204753,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -24628940.369668268,
+            "state": "tension_yield"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": -205.76807332528534,
+            "strain": -0.008050262682671035,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -18850174.872359555,
+            "state": "tension_yield"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": -111.36087881824115,
+            "strain": -0.006122216599747152,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -10201641.127994828,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": -1.781861092759399e-14,
+            "strain": -0.0038479311777770025,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -1.6323423091817872e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": 111.3608788182411,
+            "strain": -0.0015736457558068533,
+            "steel_stress_mpa": -314.7291511613707,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -80088.8139218882,
+            "net_moment_nmm": 8918760.701852053,
+            "state": "elastic"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": 205.76807332528531,
+            "strain": 0.00035440032711702986,
+            "steel_stress_mpa": 70.88006542340597,
+            "displaced_concrete_stress_mpa": 4.618906136871675,
+            "net_force_n": 16861.411269866458,
+            "net_moment_nmm": -3469540.1105456734,
+            "state": "elastic"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0016426795326507496,
+            "steel_stress_mpa": 328.53590653014993,
+            "displaced_concrete_stress_mpa": 13.843551448917596,
+            "net_force_n": 80079.45045998968,
+            "net_moment_nmm": -21529275.689128175,
+            "state": "elastic"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0020950630300318766,
+            "steel_stress_mpa": 360,
+            "displaced_concrete_stress_mpa": 14.3,
+            "net_force_n": 87969.9350080253,
+            "net_moment_nmm": -25599251.087335363,
+            "state": "compression_yield"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": 268.8489439607845,
+            "strain": 0.0016426795326507507,
+            "steel_stress_mpa": 328.53590653015016,
+            "displaced_concrete_stress_mpa": 13.8435514489176,
+            "net_force_n": 80079.45045998973,
+            "net_moment_nmm": -21529275.689128198,
+            "state": "elastic"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": 205.76807332528537,
+            "strain": 0.000354400327117031,
+            "steel_stress_mpa": 70.8800654234062,
+            "displaced_concrete_stress_mpa": 4.618906136871689,
+            "net_force_n": 16861.411269866512,
+            "net_moment_nmm": -3469540.1105456855,
+            "state": "elastic"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": 111.36087881824129,
+            "strain": -0.0015736457558068494,
+            "steel_stress_mpa": -314.7291511613699,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -80088.813921888,
+            "net_moment_nmm": 8918760.701852044,
+            "state": "elastic"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": 5.345583278278196e-14,
+            "strain": -0.003847931177777001,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": 4.897026927545361e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": -111.36087881824119,
+            "strain": -0.006122216599747153,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -10201641.127994832,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": -205.7680733252853,
+            "strain": -0.008050262682671033,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -18850174.872359548,
+            "state": "tension_yield"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": -268.84894396078437,
+            "strain": -0.009338541888204752,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -91608.84177867837,
+            "net_moment_nmm": -24628940.369668264,
+            "state": "tension_yield"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 381.69337043216706,
+        "neutralAxisMm": 161.58521547873,
+        "axialResidualKn": -1.1641532182693482e-13,
+        "concreteForceKn": 702.8055457209769,
+        "netSteelForceKn": -702.805545720977,
+        "steelAreaMm2": 4071.5040790523717,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": -1
+      },
+      "capacity_relative_error": 2.8779457599209205e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -6.960274185985327e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -5.760699650636525e-08
+    },
+    {
+      "label": "sealed_strength_required",
+      "reference": {
+        "capacity_knm": 149.21076795127036,
+        "signed_capacity_knm": 149.21076795127036,
+        "neutral_axis_depth_mm": 101.2494016613452,
+        "axial_residual_kn": 5.820766091346741e-14,
+        "concrete_force_kn": 357.1095245777371,
+        "net_steel_force_kn": -357.10952457773703,
+        "steel_area_mm2": 1424.33681958969,
+        "direction": 1,
+        "quadrature_n_error_estimate_n": 3.964712164991469e-09,
+        "quadrature_m_error_estimate_nmm": 1.1883037015544406e-06,
+        "steel_states": {
+          "compression_yield": 0,
+          "elastic": 5,
+          "tension_yield": 11
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0013770256731864498,
+            "steel_stress_mpa": 275.40513463728996,
+            "displaced_concrete_stress_mpa": 12.912553182569056,
+            "net_force_n": 23367.365539694052,
+            "net_moment_nmm": 6799903.372050969,
+            "state": "elastic"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0006550610617420466,
+            "steel_stress_mpa": 131.01221234840932,
+            "displaced_concrete_stress_mpa": 7.83332282717831,
+            "net_force_n": 10965.51423382875,
+            "net_moment_nmm": 2948066.9217518093,
+            "state": "elastic"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": 205.76807332528534,
+            "strain": -0.0014009202051242493,
+            "steel_stress_mpa": -280.1840410248499,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.27786832012,
+            "net_moment_nmm": -5132324.461308137,
+            "state": "elastic"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": 111.36087881824115,
+            "strain": -0.004477913617048642,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.4991604458,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": 1.781861092759399e-14,
+            "strain": -0.00810747482008038,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -5.710433314075947e-10,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": -111.3608788182411,
+            "strain": -0.01173703602311212,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604444,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": -205.76807332528531,
+            "strain": -0.014814029435036511,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 6594368.470497788,
+            "state": "tension_yield"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.016870010701902808,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 8615957.620300885,
+            "state": "tension_yield"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.01759197531334721,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 9325845.326263495,
+            "state": "tension_yield"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": -268.8489439607845,
+            "strain": -0.016870010701902808,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 8615957.620300887,
+            "state": "tension_yield"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": -205.76807332528537,
+            "strain": -0.014814029435036511,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 6594368.47049779,
+            "state": "tension_yield"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": -111.36087881824129,
+            "strain": -0.011737036023112124,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604504,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": -5.345583278278196e-14,
+            "strain": -0.008107474820080382,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 1.713129994222784e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": 111.36087881824119,
+            "strain": -0.0044779136170486405,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.499160447,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": 205.7680733252853,
+            "strain": -0.0014009202051242513,
+            "steel_stress_mpa": -280.1840410248503,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.277868320154,
+            "net_moment_nmm": -5132324.461308142,
+            "state": "elastic"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": 268.84894396078437,
+            "strain": 0.0006550610617420448,
+            "steel_stress_mpa": 131.01221234840895,
+            "displaced_concrete_stress_mpa": 7.833322827178292,
+            "net_force_n": 10965.514233828717,
+            "net_moment_nmm": 2948066.9217518,
+            "state": "elastic"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 149.21076798417698,
+        "neutralAxisMm": 101.24940161830344,
+        "axialResidualKn": -1.1641532182693482e-13,
+        "concreteForceKn": 357.1095247012391,
+        "netSteelForceKn": -357.1095247012392,
+        "steelAreaMm2": 1424.33681958969,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": 1
+      },
+      "capacity_relative_error": 2.2053788214238707e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -3.4523330396041275e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -4.304176570713025e-08
+    },
+    {
+      "label": "sealed_strength_required",
+      "reference": {
+        "capacity_knm": 149.21076795127038,
+        "signed_capacity_knm": -149.21076795127038,
+        "neutral_axis_depth_mm": 101.24940166134517,
+        "axial_residual_kn": 1.1641532182693482e-13,
+        "concrete_force_kn": 357.1095245777371,
+        "net_steel_force_kn": -357.109524577737,
+        "steel_area_mm2": 1424.33681958969,
+        "direction": -1,
+        "quadrature_n_error_estimate_n": 3.96471216499147e-09,
+        "quadrature_m_error_estimate_nmm": 1.1883037015544406e-06,
+        "steel_states": {
+          "compression_yield": 0,
+          "elastic": 5,
+          "tension_yield": 11
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.017591975313347216,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -9325845.326263495,
+            "state": "tension_yield"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.01687001070190281,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -8615957.620300885,
+            "state": "tension_yield"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": -205.76807332528534,
+            "strain": -0.014814029435036515,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -6594368.470497789,
+            "state": "tension_yield"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": -111.36087881824115,
+            "strain": -0.011737036023112121,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.4991604458,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": -1.781861092759399e-14,
+            "strain": -0.008107474820080384,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -5.710433314075947e-10,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": 111.3608788182411,
+            "strain": -0.004477913617048645,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604444,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": 205.76807332528531,
+            "strain": -0.0014009202051242509,
+            "steel_stress_mpa": -280.18404102485016,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.277868320147,
+            "net_moment_nmm": 5132324.461308141,
+            "state": "elastic"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0006550610617420468,
+            "steel_stress_mpa": 131.01221234840935,
+            "displaced_concrete_stress_mpa": 7.833322827178312,
+            "net_force_n": 10965.514233828751,
+            "net_moment_nmm": -2948066.92175181,
+            "state": "elastic"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0013770256731864502,
+            "steel_stress_mpa": 275.40513463729,
+            "displaced_concrete_stress_mpa": 12.912553182569056,
+            "net_force_n": 23367.365539694056,
+            "net_moment_nmm": -6799903.37205097,
+            "state": "elastic"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": 268.8489439607845,
+            "strain": 0.0006550610617420486,
+            "steel_stress_mpa": 131.01221234840972,
+            "displaced_concrete_stress_mpa": 7.833322827178328,
+            "net_force_n": 10965.514233828782,
+            "net_moment_nmm": -2948066.921751819,
+            "state": "elastic"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": 205.76807332528537,
+            "strain": -0.001400920205124249,
+            "steel_stress_mpa": -280.18404102484976,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.27786832011,
+            "net_moment_nmm": 5132324.461308135,
+            "state": "elastic"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": 111.36087881824129,
+            "strain": -0.004477913617048638,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604504,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": 5.345583278278196e-14,
+            "strain": -0.00810747482008038,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 1.713129994222784e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": -111.36087881824119,
+            "strain": -0.011737036023112124,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.499160447,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": -205.7680733252853,
+            "strain": -0.014814029435036513,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -6594368.470497787,
+            "state": "tension_yield"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": -268.84894396078437,
+            "strain": -0.01687001070190281,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -8615957.620300883,
+            "state": "tension_yield"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 149.21076798417698,
+        "neutralAxisMm": 101.24940161830344,
+        "axialResidualKn": 0.0,
+        "concreteForceKn": 357.1095247012391,
+        "netSteelForceKn": -357.1095247012391,
+        "steelAreaMm2": 1424.33681958969,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": -1
+      },
+      "capacity_relative_error": 2.2053769166210322e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -3.452331875450909e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -4.304173728542082e-08
+    },
+    {
+      "label": "minimum_required",
+      "reference": {
+        "capacity_knm": 230.22196808418434,
+        "signed_capacity_knm": 230.22196808418434,
+        "neutral_axis_depth_mm": 125.43695078192744,
+        "axial_residual_kn": -1.1641532182693482e-13,
+        "concrete_force_kn": 487.7733871600849,
+        "net_steel_force_kn": -487.773387160085,
+        "steel_area_mm2": 2309.070600388498,
+        "direction": 1,
+        "quadrature_n_error_estimate_n": 5.415372452245269e-09,
+        "quadrature_m_error_estimate_nmm": 1.5588112623588402e-06,
+        "steel_states": {
+          "compression_yield": 0,
+          "elastic": 5,
+          "tension_yield": 11
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0017478257898784018,
+            "steel_stress_mpa": 349.56515797568034,
+            "displaced_concrete_stress_mpa": 14.072659199704635,
+            "net_force_n": 48417.24159840498,
+            "net_moment_nmm": 14089417.30513585,
+            "state": "elastic"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0011650749778270681,
+            "steel_stress_mpa": 233.0149955654136,
+            "displaced_concrete_stress_mpa": 11.80786824127457,
+            "net_force_n": 31923.92964378529,
+            "net_moment_nmm": 8582714.771810057,
+            "state": "elastic"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": 205.76807332528534,
+            "strain": -0.0004944589298413811,
+            "steel_stress_mpa": -98.89178596827622,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -14271.757224953652,
+            "net_moment_nmm": -2936671.987144934,
+            "state": "elastic"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": 111.36087881824115,
+            "strain": -0.0029781269393967607,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -5785652.954534104,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": 1.781861092759399e-14,
+            "strain": -0.005907813110890835,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -9.257496892350413e-10,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": -111.3608788182411,
+            "strain": -0.008837499282384911,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 5785652.954534101,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": -205.76807332528531,
+            "strain": -0.01132116729194029,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 10690492.693815023,
+            "state": "tension_yield"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.01298070119960874,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 13967801.830020197,
+            "state": "tension_yield"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.013563452011660076,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 15118639.75604369,
+            "state": "tension_yield"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": -268.8489439607845,
+            "strain": -0.012980701199608743,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 13967801.8300202,
+            "state": "tension_yield"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": -205.76807332528537,
+            "strain": -0.011321167291940291,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 10690492.693815026,
+            "state": "tension_yield"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": -111.36087881824129,
+            "strain": -0.008837499282384916,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 5785652.954534112,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": -5.345583278278196e-14,
+            "strain": -0.005907813110890838,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 2.7772490677051238e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": 111.36087881824119,
+            "strain": -0.00297812693939676,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -5785652.954534106,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": 205.7680733252853,
+            "strain": -0.0004944589298413826,
+            "steel_stress_mpa": -98.89178596827652,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -14271.757224953693,
+            "net_moment_nmm": -2936671.9871449415,
+            "state": "elastic"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": 268.84894396078437,
+            "strain": 0.0011650749778270666,
+            "steel_stress_mpa": 233.01499556541333,
+            "displaced_concrete_stress_mpa": 11.807868241274557,
+            "net_force_n": 31923.929643785254,
+            "net_moment_nmm": 8582714.771810044,
+            "state": "elastic"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 230.22196813563068,
+        "neutralAxisMm": 125.43695072715911,
+        "axialResidualKn": 0.0,
+        "concreteForceKn": 487.7733873273118,
+        "netSteelForceKn": -487.7733873273118,
+        "steelAreaMm2": 2309.070600388498,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": 1
+      },
+      "capacity_relative_error": 2.2346405783972853e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -4.760604351758957e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -5.476832143358479e-08
+    },
+    {
+      "label": "minimum_required",
+      "reference": {
+        "capacity_knm": 230.22196808418434,
+        "signed_capacity_knm": -230.22196808418434,
+        "neutral_axis_depth_mm": 125.43695078192744,
+        "axial_residual_kn": 0.0,
+        "concrete_force_kn": 487.7733871600849,
+        "net_steel_force_kn": -487.7733871600849,
+        "steel_area_mm2": 2309.070600388498,
+        "direction": -1,
+        "quadrature_n_error_estimate_n": 5.415372452245269e-09,
+        "quadrature_m_error_estimate_nmm": 1.5588112623588402e-06,
+        "steel_states": {
+          "compression_yield": 0,
+          "elastic": 5,
+          "tension_yield": 11
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.013563452011660076,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -15118639.75604369,
+            "state": "tension_yield"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.01298070119960874,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -13967801.830020197,
+            "state": "tension_yield"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": -205.76807332528534,
+            "strain": -0.01132116729194029,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -10690492.693815025,
+            "state": "tension_yield"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": -111.36087881824115,
+            "strain": -0.008837499282384913,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -5785652.954534104,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": -1.781861092759399e-14,
+            "strain": -0.005907813110890837,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -9.257496892350413e-10,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": 111.3608788182411,
+            "strain": -0.002978126939396762,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 5785652.954534101,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": 205.76807332528531,
+            "strain": -0.0004944589298413818,
+            "steel_stress_mpa": -98.89178596827635,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -14271.75722495367,
+            "net_moment_nmm": 2936671.9871449373,
+            "state": "elastic"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0011650749778270681,
+            "steel_stress_mpa": 233.0149955654136,
+            "displaced_concrete_stress_mpa": 11.80786824127457,
+            "net_force_n": 31923.92964378529,
+            "net_moment_nmm": -8582714.771810057,
+            "state": "elastic"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0017478257898784018,
+            "steel_stress_mpa": 349.56515797568034,
+            "displaced_concrete_stress_mpa": 14.072659199704635,
+            "net_force_n": 48417.24159840498,
+            "net_moment_nmm": -14089417.30513585,
+            "state": "elastic"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": 268.8489439607845,
+            "strain": 0.0011650749778270696,
+            "steel_stress_mpa": 233.01499556541393,
+            "displaced_concrete_stress_mpa": 11.807868241274576,
+            "net_force_n": 31923.929643785334,
+            "net_moment_nmm": -8582714.77181007,
+            "state": "elastic"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": 205.76807332528537,
+            "strain": -0.0004944589298413804,
+            "steel_stress_mpa": -98.89178596827607,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -14271.757224953628,
+            "net_moment_nmm": 2936671.9871449294,
+            "state": "elastic"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": 111.36087881824129,
+            "strain": -0.002978126939396757,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 5785652.954534112,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": 5.345583278278196e-14,
+            "strain": -0.005907813110890834,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": 2.7772490677051238e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": -111.36087881824119,
+            "strain": -0.008837499282384914,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -5785652.954534106,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": -205.7680733252853,
+            "strain": -0.01132116729194029,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -10690492.69381502,
+            "state": "tension_yield"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": -268.84894396078437,
+            "strain": -0.01298070119960874,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -51954.0885087412,
+            "net_moment_nmm": -13967801.830020195,
+            "state": "tension_yield"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 230.22196813563068,
+        "neutralAxisMm": 125.43695072715911,
+        "axialResidualKn": 1.1641532182693482e-13,
+        "concreteForceKn": 487.7733873273118,
+        "netSteelForceKn": -487.7733873273117,
+        "steelAreaMm2": 2309.070600388498,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": -1
+      },
+      "capacity_relative_error": 2.2346405783972853e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -4.760603187605739e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -5.476832143358479e-08
+    },
+    {
+      "label": "current_strength_required",
+      "reference": {
+        "capacity_knm": 149.21076795127036,
+        "signed_capacity_knm": 149.21076795127036,
+        "neutral_axis_depth_mm": 101.2494016613452,
+        "axial_residual_kn": 5.820766091346741e-14,
+        "concrete_force_kn": 357.1095245777371,
+        "net_steel_force_kn": -357.10952457773703,
+        "steel_area_mm2": 1424.33681958969,
+        "direction": 1,
+        "quadrature_n_error_estimate_n": 3.964712164991469e-09,
+        "quadrature_m_error_estimate_nmm": 1.1883037015544406e-06,
+        "steel_states": {
+          "compression_yield": 0,
+          "elastic": 5,
+          "tension_yield": 11
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0013770256731864498,
+            "steel_stress_mpa": 275.40513463728996,
+            "displaced_concrete_stress_mpa": 12.912553182569056,
+            "net_force_n": 23367.365539694052,
+            "net_moment_nmm": 6799903.372050969,
+            "state": "elastic"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0006550610617420466,
+            "steel_stress_mpa": 131.01221234840932,
+            "displaced_concrete_stress_mpa": 7.83332282717831,
+            "net_force_n": 10965.51423382875,
+            "net_moment_nmm": 2948066.9217518093,
+            "state": "elastic"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": 205.76807332528534,
+            "strain": -0.0014009202051242493,
+            "steel_stress_mpa": -280.1840410248499,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.27786832012,
+            "net_moment_nmm": -5132324.461308137,
+            "state": "elastic"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": 111.36087881824115,
+            "strain": -0.004477913617048642,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.4991604458,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": 1.781861092759399e-14,
+            "strain": -0.00810747482008038,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -5.710433314075947e-10,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": -111.3608788182411,
+            "strain": -0.01173703602311212,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604444,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": -205.76807332528531,
+            "strain": -0.014814029435036511,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 6594368.470497788,
+            "state": "tension_yield"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.016870010701902808,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 8615957.620300885,
+            "state": "tension_yield"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.01759197531334721,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 9325845.326263495,
+            "state": "tension_yield"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": -268.8489439607845,
+            "strain": -0.016870010701902808,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 8615957.620300887,
+            "state": "tension_yield"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": -205.76807332528537,
+            "strain": -0.014814029435036511,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 6594368.47049779,
+            "state": "tension_yield"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": -111.36087881824129,
+            "strain": -0.011737036023112124,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604504,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": -5.345583278278196e-14,
+            "strain": -0.008107474820080382,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 1.713129994222784e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": 111.36087881824119,
+            "strain": -0.0044779136170486405,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.499160447,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": 205.7680733252853,
+            "strain": -0.0014009202051242513,
+            "steel_stress_mpa": -280.1840410248503,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.277868320154,
+            "net_moment_nmm": -5132324.461308142,
+            "state": "elastic"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": 268.84894396078437,
+            "strain": 0.0006550610617420448,
+            "steel_stress_mpa": 131.01221234840895,
+            "displaced_concrete_stress_mpa": 7.833322827178292,
+            "net_force_n": 10965.514233828717,
+            "net_moment_nmm": 2948066.9217518,
+            "state": "elastic"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 149.21076798417698,
+        "neutralAxisMm": 101.24940161830344,
+        "axialResidualKn": -1.1641532182693482e-13,
+        "concreteForceKn": 357.1095247012391,
+        "netSteelForceKn": -357.1095247012392,
+        "steelAreaMm2": 1424.33681958969,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": 1
+      },
+      "capacity_relative_error": 2.2053788214238707e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -3.4523330396041275e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -4.304176570713025e-08
+    },
+    {
+      "label": "current_strength_required",
+      "reference": {
+        "capacity_knm": 149.21076795127038,
+        "signed_capacity_knm": -149.21076795127038,
+        "neutral_axis_depth_mm": 101.24940166134517,
+        "axial_residual_kn": 1.1641532182693482e-13,
+        "concrete_force_kn": 357.1095245777371,
+        "net_steel_force_kn": -357.109524577737,
+        "steel_area_mm2": 1424.33681958969,
+        "direction": -1,
+        "quadrature_n_error_estimate_n": 3.96471216499147e-09,
+        "quadrature_m_error_estimate_nmm": 1.1883037015544406e-06,
+        "steel_states": {
+          "compression_yield": 0,
+          "elastic": 5,
+          "tension_yield": 11
+        },
+        "bars": [
+          {
+            "index": 0,
+            "physical_y_mm": 291.0,
+            "compression_oriented_z_mm": -291.0,
+            "strain": -0.017591975313347216,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -9325845.326263495,
+            "state": "tension_yield"
+          },
+          {
+            "index": 1,
+            "physical_y_mm": 268.8489439607844,
+            "compression_oriented_z_mm": -268.8489439607844,
+            "strain": -0.01687001070190281,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -8615957.620300885,
+            "state": "tension_yield"
+          },
+          {
+            "index": 2,
+            "physical_y_mm": 205.76807332528534,
+            "compression_oriented_z_mm": -205.76807332528534,
+            "strain": -0.014814029435036515,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -6594368.470497789,
+            "state": "tension_yield"
+          },
+          {
+            "index": 3,
+            "physical_y_mm": 111.36087881824115,
+            "compression_oriented_z_mm": -111.36087881824115,
+            "strain": -0.011737036023112121,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.4991604458,
+            "state": "tension_yield"
+          },
+          {
+            "index": 4,
+            "physical_y_mm": 1.781861092759399e-14,
+            "compression_oriented_z_mm": -1.781861092759399e-14,
+            "strain": -0.008107474820080384,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -5.710433314075947e-10,
+            "state": "tension_yield"
+          },
+          {
+            "index": 5,
+            "physical_y_mm": -111.3608788182411,
+            "compression_oriented_z_mm": 111.3608788182411,
+            "strain": -0.004477913617048645,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604444,
+            "state": "tension_yield"
+          },
+          {
+            "index": 6,
+            "physical_y_mm": -205.76807332528531,
+            "compression_oriented_z_mm": 205.76807332528531,
+            "strain": -0.0014009202051242509,
+            "steel_stress_mpa": -280.18404102485016,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.277868320147,
+            "net_moment_nmm": 5132324.461308141,
+            "state": "elastic"
+          },
+          {
+            "index": 7,
+            "physical_y_mm": -268.8489439607844,
+            "compression_oriented_z_mm": 268.8489439607844,
+            "strain": 0.0006550610617420468,
+            "steel_stress_mpa": 131.01221234840935,
+            "displaced_concrete_stress_mpa": 7.833322827178312,
+            "net_force_n": 10965.514233828751,
+            "net_moment_nmm": -2948066.92175181,
+            "state": "elastic"
+          },
+          {
+            "index": 8,
+            "physical_y_mm": -291.0,
+            "compression_oriented_z_mm": 291.0,
+            "strain": 0.0013770256731864502,
+            "steel_stress_mpa": 275.40513463729,
+            "displaced_concrete_stress_mpa": 12.912553182569056,
+            "net_force_n": 23367.365539694056,
+            "net_moment_nmm": -6799903.37205097,
+            "state": "elastic"
+          },
+          {
+            "index": 9,
+            "physical_y_mm": -268.8489439607845,
+            "compression_oriented_z_mm": 268.8489439607845,
+            "strain": 0.0006550610617420486,
+            "steel_stress_mpa": 131.01221234840972,
+            "displaced_concrete_stress_mpa": 7.833322827178328,
+            "net_force_n": 10965.514233828782,
+            "net_moment_nmm": -2948066.921751819,
+            "state": "elastic"
+          },
+          {
+            "index": 10,
+            "physical_y_mm": -205.76807332528537,
+            "compression_oriented_z_mm": 205.76807332528537,
+            "strain": -0.001400920205124249,
+            "steel_stress_mpa": -280.18404102484976,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -24942.27786832011,
+            "net_moment_nmm": 5132324.461308135,
+            "state": "elastic"
+          },
+          {
+            "index": 11,
+            "physical_y_mm": -111.36087881824129,
+            "compression_oriented_z_mm": 111.36087881824129,
+            "strain": -0.004477913617048638,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 3568846.4991604504,
+            "state": "tension_yield"
+          },
+          {
+            "index": 12,
+            "physical_y_mm": -5.345583278278196e-14,
+            "compression_oriented_z_mm": 5.345583278278196e-14,
+            "strain": -0.00810747482008038,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": 1.713129994222784e-09,
+            "state": "tension_yield"
+          },
+          {
+            "index": 13,
+            "physical_y_mm": 111.36087881824119,
+            "compression_oriented_z_mm": -111.36087881824119,
+            "strain": -0.011737036023112124,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -3568846.499160447,
+            "state": "tension_yield"
+          },
+          {
+            "index": 14,
+            "physical_y_mm": 205.7680733252853,
+            "compression_oriented_z_mm": -205.7680733252853,
+            "strain": -0.014814029435036513,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -6594368.470497787,
+            "state": "tension_yield"
+          },
+          {
+            "index": 15,
+            "physical_y_mm": 268.84894396078437,
+            "compression_oriented_z_mm": -268.84894396078437,
+            "strain": -0.01687001070190281,
+            "steel_stress_mpa": -360,
+            "displaced_concrete_stress_mpa": 0.0,
+            "net_force_n": -32047.578440768026,
+            "net_moment_nmm": -8615957.620300883,
+            "state": "tension_yield"
+          }
+        ]
+      },
+      "product": {
+        "capacityKnM": 149.21076798417698,
+        "neutralAxisMm": 101.24940161830344,
+        "axialResidualKn": 0.0,
+        "concreteForceKn": 357.1095247012391,
+        "netSteelForceKn": -357.1095247012391,
+        "steelAreaMm2": 1424.33681958969,
+        "integrationPointsPerSegment": 384,
+        "bendingSign": -1
+      },
+      "capacity_relative_error": 2.2053769166210322e-10,
+      "capacity_within_tolerance": true,
+      "reference_axial_within_tolerance": true,
+      "product_reported_axial_within_tolerance": true,
+      "reference_axial_at_product_neutral_axis_kn": -3.452331875450909e-07,
+      "reference_axial_at_product_neutral_axis_within_tolerance": true,
+      "neutral_axis_difference_mm": -4.304173728542082e-08
+    }
+  ],
+  "checks": {
+    "demand_uses_same_frozen_input_snapshot": true,
+    "all_capacity_comparisons_pass": true,
+    "all_reference_equilibria_pass": true,
+    "all_product_reported_equilibria_pass": true,
+    "all_product_neutral_axes_pass_independent_equilibrium": true,
+    "demand_factor_applied_once": true,
+    "independent_provided_strength_pass": true,
+    "current_product_strength_pass_matches_reference": true,
+    "required_area_brackets_demand": true,
+    "current_required_area_capacity_matches_demand": true,
+    "declared_minimum_ratio_controls": true,
+    "current_required_area_is_maximum_of_strength_and_minimum": true
+  },
+  "all_checks_pass": true,
+  "overall_pass": true,
+  "scope": "Only the explicitly frozen N=0 solid circular-section material model; no code-compliance claim."
+}

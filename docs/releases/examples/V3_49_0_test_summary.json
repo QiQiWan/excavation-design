@@ -1,0 +1,51 @@
+{
+  "version": "3.49.0",
+  "backend": {
+    "relatedUniqueTestsPassed": 167,
+    "pythonCompileAll": "passed",
+    "excluded": [
+      {
+        "tests": ["test_v3_23_0_joint_clean_ifc_login.py", "test_v3_24_0_industrial_calculation_delivery.py", "test_v3_41_0_engineering_visibility.py"],
+        "reason": "Current validation environment does not have ezdxf installed; DXF-dependent test modules were not collected."
+      }
+    ]
+  },
+  "frontend": {
+    "testFilesPassed": 20,
+    "testsPassed": 36,
+    "typescript": "passed",
+    "viteProductionBuild": "passed",
+    "threeChunkWarning": "523.86 kB lazy-loaded Three.js chunk; non-blocking"
+  },
+  "fengshouSteppedStrip": {
+    "status": "success",
+    "elapsedSeconds": 16.395,
+    "candidateCount": 3,
+    "formalCandidateCount": 3,
+    "diagnosticCandidateCount": 0,
+    "supportCount": 208,
+    "columnCount": 40,
+    "payloadMb": 2.72,
+    "workspaceMb": 1.91,
+    "peakRssMb": 449.4
+  },
+  "coreWorkflow": {
+    "status": "success",
+    "elapsedSeconds": 4.629,
+    "candidateCount": 3,
+    "supportCount": 36,
+    "columnCount": 4,
+    "calculationResultCount": 1,
+    "rebarCheckCount": 568,
+    "failCount": 0,
+    "warningCount": 5,
+    "workspaceBytes": 1484472
+  },
+  "isolatedWorker": {
+    "status": "success",
+    "elapsedSeconds": 5.561,
+    "taskExecutionMode": "external",
+    "heartbeatHealthy": true,
+    "effectiveProcessMemoryMb": 213.86
+  }
+}

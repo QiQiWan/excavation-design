@@ -1,0 +1,29 @@
+{
+  "version": "3.47.0",
+  "backend": {
+    "v3_45_to_v3_47_tests": 19,
+    "v3_41_visual_report_tests": 7,
+    "status": "passed"
+  },
+  "frontend": {
+    "testFiles": 20,
+    "tests": 35,
+    "status": "passed",
+    "typescript": "passed",
+    "viteBuild": "passed"
+  },
+  "smoke": {
+    "coreWorkflowSeconds": 4.3,
+    "p3WorkflowSeconds": 31.739,
+    "formalScenarioCount": 2,
+    "formalScenarioFailedExecutions": 0,
+    "formalScenarioMinimumSafetyFactor": 0.844,
+    "p3NodeSubmodelCount": 3,
+    "p3IndividualBarCount": 47552,
+    "p3StoredArtifactBytes": 5027062
+  },
+  "notes": [
+    "P3 smoke retained real reinforcement Fail/Warning results and did not promote them to issue-ready status.",
+    "Full P3 bar and collision data were gzip-compressed and externalized; only compact summaries remained in the workspace."
+  ]
+}

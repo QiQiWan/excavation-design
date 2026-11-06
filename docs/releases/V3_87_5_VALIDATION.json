@@ -1,0 +1,21 @@
+{
+  "version": "3.87.5",
+  "scope": "relative intervention, audited recalculation and bounded multi-objective optimization search",
+  "checks": {
+    "pythonCompilation": "passed",
+    "targetedBackendRegression": {
+      "status": "passed",
+      "count": 13,
+      "files": [
+        "test_v3_87_5_optimization_search.py",
+        "test_v3_55_0_intelligent_design_closure.py",
+        "test_v3_87_4_resilient_workspace_import_recovery.py"
+      ]
+    },
+    "realCalculationSearchSmoke": "passed with two isolated candidates",
+    "tsxSyntax": "passed for CoreProjectWorkspace.tsx",
+    "startupShellSyntax": "passed",
+    "fullBackendSuite": "not claimed in packaging environment because ezdxf was unavailable from the package index"
+  },
+  "engineeringBoundary": "Search is bounded to retaining-system geometry and section strengthening. Loads, soil, groundwater, coordinates and locked stages remain manual engineering inputs."
+}

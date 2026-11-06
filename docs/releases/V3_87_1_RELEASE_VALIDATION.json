@@ -1,0 +1,62 @@
+{
+  "schema": "pitguard-release-validation-v1",
+  "version": "3.87.1",
+  "releaseType": "patch",
+  "scope": "UI layout, candidate preview topology completeness, recovery-mode root-cause removal, panel isolation",
+  "structuralKernelChanged": false,
+  "ruleSetChanged": false,
+  "checks": [
+    {
+      "name": "Python compileall",
+      "status": "passed"
+    },
+    {
+      "name": "Related backend regression",
+      "status": "passed",
+      "testCount": 65,
+      "groups": [
+        "V3.70",
+        "V3.71",
+        "V3.72",
+        "V3.77",
+        "V3.81",
+        "V3.87",
+        "V3.87.1",
+        "support topology UX"
+      ]
+    },
+    {
+      "name": "TypeScript/TSX syntax transpilation",
+      "status": "passed",
+      "fileCount": 69,
+      "errorCount": 0
+    },
+    {
+      "name": "L-shape candidate preview evaluation",
+      "status": "passed",
+      "candidateCount": 3,
+      "transferBeamCounts": [
+        18,
+        30,
+        24
+      ],
+      "previewSchema": "candidate-plan-v2"
+    },
+    {
+      "name": "API import",
+      "status": "passed",
+      "routeCount": 173
+    },
+    {
+      "name": "npm ci / Vitest / Vite production build",
+      "status": "unavailable",
+      "reason": "internal npm registry returned HTTP 503 during dependency download"
+    }
+  ],
+  "knownBoundaries": [
+    "Frontend production build must be executed in the deployment environment before release.",
+    "Legacy candidate-plan-v1 rows are rebuilt lazily on first candidate preview request.",
+    "This patch does not change structural calculation results, reinforcement calculations or formal design checks."
+  ],
+  "releaseStatus": "engineering_preview_build_required"
+}

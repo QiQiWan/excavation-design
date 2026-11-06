@@ -1,0 +1,88 @@
+{
+  "verification": "Full app TestClient HTTP, isolated cookie login and temporary immutable store",
+  "requests": [
+    {
+      "action": "unauthenticated rejection",
+      "method": "GET",
+      "path": "/api/sections/example",
+      "statusCode": 401
+    },
+    {
+      "action": "cookie login",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "statusCode": 200
+    },
+    {
+      "action": "load synthetic example",
+      "method": "GET",
+      "path": "/api/sections/example",
+      "statusCode": 200
+    },
+    {
+      "action": "invalid input validation",
+      "method": "POST",
+      "path": "/api/sections/freeze",
+      "statusCode": 422
+    },
+    {
+      "action": "freeze full input",
+      "method": "POST",
+      "path": "/api/sections/freeze",
+      "statusCode": 200
+    },
+    {
+      "action": "analyze server snapshot",
+      "method": "POST",
+      "path": "/api/sections/snapshots/2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd/analyze",
+      "statusCode": 200
+    },
+    {
+      "action": "retrieve persisted result",
+      "method": "GET",
+      "path": "/api/sections/results/016d7dbcfbba405d0e72b1576088d2cc7484bd12d683e20997cb96afe3ce4ad1",
+      "statusCode": 200
+    },
+    {
+      "action": "download same-result ZIP",
+      "method": "GET",
+      "path": "/api/sections/results/016d7dbcfbba405d0e72b1576088d2cc7484bd12d683e20997cb96afe3ce4ad1/package",
+      "statusCode": 200
+    }
+  ],
+  "status": "passed",
+  "elapsedSeconds": 8.185188212999492,
+  "snapshotHash": "2223478185afda316bc8fc9585a4998cf4900f88108b94337ef064f9f8a989fd",
+  "analysisHash": "bc4ef3904cb3669e7f72b94080fe00614d343332af6849e1c9744a8035bb052a",
+  "resultHash": "016d7dbcfbba405d0e72b1576088d2cc7484bd12d683e20997cb96afe3ce4ad1",
+  "stageCount": 6,
+  "engineeringStatus": "review_required",
+  "comparisonStatuses": {
+    "hand": "passed",
+    "independent": "passed",
+    "mesh": "passed",
+    "original": "incomplete"
+  },
+  "packageBytes": 1294259,
+  "packageSha256": "d5163d7883875dd1e845b122a5cc04b35f38a06f7a445107abf2acac9f0d38d6",
+  "packageFiles": [
+    "README.txt",
+    "SHA256SUMS.txt",
+    "calculation.docx",
+    "comparison.csv",
+    "consistency.json",
+    "envelope_characteristic.png",
+    "envelope_design.png",
+    "envelopes.csv",
+    "envelopes_A3.pdf",
+    "frozen_section.json",
+    "input_sources.csv",
+    "manifest.json",
+    "reinforcement.csv",
+    "section.dxf",
+    "section_A3.pdf",
+    "section_result.json",
+    "stage_results.csv"
+  ],
+  "manifestIdentityMatches": true
+}

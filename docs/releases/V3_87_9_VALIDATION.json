@@ -1,0 +1,40 @@
+{
+  "version": "3.87.9",
+  "scope": "reinforcement calculation-contract hydration, auto-recalculation and stale-UI recovery",
+  "validation": {
+    "backend_primary_regression": {
+      "status": "passed",
+      "tests": 27
+    },
+    "backend_rebar_worker_regression": {
+      "status": "passed",
+      "tests": 31,
+      "note": "includes 4 V3.87.9 tests also present in the primary set"
+    },
+    "python_compile": {
+      "status": "passed"
+    },
+    "typescript_transpile": {
+      "status": "passed",
+      "files": 2
+    },
+    "shell_syntax": {
+      "status": "passed"
+    },
+    "full_backend_suite": {
+      "status": "not_run",
+      "reason": "packaging environment lacks ezdxf; two CAD-dependent modules fail during test collection"
+    },
+    "vite_production_build": {
+      "status": "not_run",
+      "reason": "package does not contain node_modules; modified TSX files were transpiled with the installed TypeScript compiler"
+    }
+  },
+  "diagnostic_findings": {
+    "structural_calculation_current_in_logs": true,
+    "stage_count": 9,
+    "stage_segment_result_count": 180,
+    "observed_false_p3_blocker": "calculation result missing or expired",
+    "subsequent_rebar_task_completed": true
+  }
+}

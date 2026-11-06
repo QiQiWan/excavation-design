@@ -1,0 +1,48 @@
+{
+  "purpose": "Diagnose only the concrete-strip endpoint integration truncation. The fixed 1e-6 kN axial tolerance is unchanged. No production edits.",
+  "tolerances": {
+    "capacity_relative": 0.001,
+    "axial_absolute_kn": 1e-06
+  },
+  "reference": {
+    "capacity_knm": 381.6933703223177,
+    "neutral_axis_depth_mm": 161.585215536337,
+    "axial_residual_kn": -1.1641532182693482e-13,
+    "concrete_force_kn": 702.8055453841439,
+    "net_steel_force_kn": -702.805545384144
+  },
+  "cases": [
+    {
+      "integration_points_per_segment": 48,
+      "capacity_knm": 381.69342507738924,
+      "independent_axial_at_product_neutral_axis_kn": -0.0003468910329975188,
+      "neutral_axis_depth_mm": 161.5851868257712,
+      "independent_axial_within_fixed_tolerance": false,
+      "capacity_relative_error": 1.4345303265453096e-07
+    },
+    {
+      "integration_points_per_segment": 96,
+      "capacity_knm": 381.6933772716554,
+      "independent_axial_at_product_neutral_axis_kn": -4.4030810822732744e-05,
+      "neutral_axis_depth_mm": 161.5852118921103,
+      "independent_axial_within_fixed_tolerance": false,
+      "capacity_relative_error": 1.8206597757045367e-08
+    },
+    {
+      "integration_points_per_segment": 192,
+      "capacity_knm": 381.69337119770796,
+      "independent_axial_at_product_neutral_axis_kn": -5.54658961482346e-06,
+      "neutral_axis_depth_mm": 161.5852150772714,
+      "independent_axial_within_fixed_tolerance": false,
+      "capacity_relative_error": 2.2934384250188984e-09
+    },
+    {
+      "integration_points_per_segment": 384,
+      "capacity_knm": 381.69337043216717,
+      "independent_axial_at_product_neutral_axis_kn": -6.960271857678891e-07,
+      "neutral_axis_depth_mm": 161.58521547873005,
+      "independent_axial_within_fixed_tolerance": true,
+      "capacity_relative_error": 2.877950227649989e-10
+    }
+  ]
+}

@@ -1,0 +1,395 @@
+{
+  "schemaVersion": "pitguard.reference-curves/1",
+  "caseId": "PROJECT_A_SECTION_4_5_3_3_LONG_PILE",
+  "contractHash": "76b1bd8e73a79e513dad9c4dbdf57ef21ef09dea5cd65123d3279ada01b715eb",
+  "source": {
+    "kind": "numeric_table_transcription",
+    "sha256": "ac339cb5f33e83b5ed51407aa032fa7c309e0a57f6d8a3090b6fa9d03340bbfb",
+    "software": "同济启明星 FRWS",
+    "version": "9.0 (reported; exact build unconfirmed)"
+  },
+  "datum": {
+    "origin": "model_ground",
+    "positive": "down",
+    "offsetToWallTopM": -1.3,
+    "evidence": "Derived from PDF p32 dimension chain and p33 axes; retain original depths"
+  },
+  "forceBasis": {
+    "kind": "unconfirmed",
+    "pileSpacingM": 0.9,
+    "conversion": "unconfirmed"
+  },
+  "signs": {
+    "u": "unconfirmed",
+    "M": "unconfirmed",
+    "V": "unconfirmed",
+    "pressure": "unconfirmed",
+    "reaction": "unconfirmed"
+  },
+  "effectBasis": "unconfirmed",
+  "requiredStageIds": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5"
+  ],
+  "stages": [
+    {
+      "id": "S1",
+      "sourceStageId": "1",
+      "event": "excavate",
+      "domainM": [
+        1.3,
+        7.9
+      ],
+      "boundariesM": [
+        1.625,
+        1.8,
+        4.6,
+        7.0,
+        7.6
+      ],
+      "curves": [
+        {
+          "quantity": "u",
+          "unit": "mm",
+          "basis": "geometric",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "M",
+          "unit": "kN*m",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "V",
+          "unit": "kN",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_outside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_inside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        }
+      ],
+      "supports": [],
+      "design": null
+    },
+    {
+      "id": "S2",
+      "sourceStageId": "2",
+      "event": "install",
+      "domainM": [
+        1.3,
+        7.9
+      ],
+      "boundariesM": [
+        1.625,
+        1.8,
+        4.6,
+        7.0,
+        7.6
+      ],
+      "curves": [
+        {
+          "quantity": "u",
+          "unit": "mm",
+          "basis": "geometric",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "M",
+          "unit": "kN*m",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "V",
+          "unit": "kN",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_outside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_inside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        }
+      ],
+      "supports": [],
+      "design": null
+    },
+    {
+      "id": "S3",
+      "sourceStageId": "3",
+      "event": "excavate",
+      "domainM": [
+        1.3,
+        7.9
+      ],
+      "boundariesM": [
+        1.625,
+        1.8,
+        4.6,
+        7.0,
+        7.6
+      ],
+      "curves": [
+        {
+          "quantity": "u",
+          "unit": "mm",
+          "basis": "geometric",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "M",
+          "unit": "kN*m",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "V",
+          "unit": "kN",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_outside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_inside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        }
+      ],
+      "supports": [],
+      "design": null
+    },
+    {
+      "id": "S4",
+      "sourceStageId": "4",
+      "event": "install",
+      "domainM": [
+        1.3,
+        7.9
+      ],
+      "boundariesM": [
+        1.625,
+        1.8,
+        4.6,
+        7.0,
+        7.6
+      ],
+      "curves": [
+        {
+          "quantity": "u",
+          "unit": "mm",
+          "basis": "geometric",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "M",
+          "unit": "kN*m",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "V",
+          "unit": "kN",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_outside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_inside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        }
+      ],
+      "supports": [],
+      "design": null
+    },
+    {
+      "id": "S5",
+      "sourceStageId": "5",
+      "event": "remove",
+      "domainM": [
+        1.3,
+        7.9
+      ],
+      "boundariesM": [
+        1.625,
+        1.8,
+        4.6,
+        7.0,
+        7.6
+      ],
+      "curves": [
+        {
+          "quantity": "u",
+          "unit": "mm",
+          "basis": "geometric",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "M",
+          "unit": "kN*m",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "V",
+          "unit": "kN",
+          "basis": "unconfirmed",
+          "pressureIdentity": null,
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_outside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        },
+        {
+          "quantity": "pressure_inside",
+          "unit": "kPa",
+          "basis": "stress",
+          "pressureIdentity": {
+            "stress": "unconfirmed",
+            "composition": "unconfirmed",
+            "role": "unconfirmed"
+          },
+          "projection": "native_numeric",
+          "samples": []
+        }
+      ],
+      "supports": [],
+      "design": null
+    }
+  ],
+  "reinforcement": [],
+  "tolerances": {
+    "absolute": {
+      "u": 0.05,
+      "M": 0.1,
+      "V": 0.1,
+      "N": 0.1,
+      "pressure_outside": 0.1,
+      "pressure_inside": 0.1,
+      "support": 0.1,
+      "rebar": 1.0
+    },
+    "relative": 0.01,
+    "depthM": 1e-08
+  },
+  "bundleHash": "12e65d9a533bb7f031450a8a5f163301cbd9e13d4c23bbc6fcd5f5313ab5f4fb"
+}

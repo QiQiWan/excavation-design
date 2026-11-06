@@ -1,0 +1,56 @@
+{
+  "schema": "pitguard-release-validation-v1",
+  "release": "3.77.0",
+  "validatedAt": "2026-07-22T04:59:34.714846+00:00",
+  "backend": {
+    "compileall": "pass",
+    "v377Tests": {
+      "status": "pass",
+      "count": 7,
+      "durationSeconds": 14.19
+    },
+    "selectedCompatibilityTests": {
+      "status": "pass",
+      "count": 7,
+      "groups": {
+        "v370": 2,
+        "v371": 2,
+        "v372": 3
+      }
+    },
+    "documentationEndpoint": {
+      "status": "pass",
+      "httpStatus": 200,
+      "productMode": "core"
+    },
+    "verificationEndpoint": {
+      "status": "pass",
+      "httpStatus": 200,
+      "productMode": "full"
+    }
+  },
+  "frontend": {
+    "syntaxTranspile": {
+      "status": "pass",
+      "fileCount": 66,
+      "syntaxErrorCount": 0
+    },
+    "dependencyInstall": {
+      "status": "unavailable",
+      "reason": "configured npm registry returned HTTP 503"
+    },
+    "viteBuild": {
+      "status": "not_run",
+      "reason": "dependencies unavailable"
+    },
+    "vitest": {
+      "status": "not_run",
+      "reason": "dependencies unavailable"
+    }
+  },
+  "externalBenchmark": {
+    "openSeesPy": "unavailable",
+    "claim": "No external equivalence is asserted in this runtime."
+  },
+  "scopeBoundary": "Selected high-value regressions were executed. The complete historical backend suite was not run in one long-lived process."
+}

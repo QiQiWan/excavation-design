@@ -1,0 +1,19 @@
+{
+  "version": "3.87.8",
+  "validatedAt": "2026-07-24",
+  "scope": [
+    "isolated worker recovery",
+    "rebar memory release before recalculation",
+    "rebar host signature invalidation",
+    "support stirrup and construction bar visibility",
+    "wall axis recovery",
+    "progressive long lists"
+  ],
+  "tests": {
+    "affectedBackendRegression": {"status": "passed", "count": 40},
+    "workerAndStirrupFocused": {"status": "passed", "count": 17},
+    "pythonCompile": {"status": "passed"},
+    "tsxSyntaxTranspile": {"status": "passed"},
+    "cadDependentCollection": {"status": "not_run", "reason": "packaging environment missing ezdxf"}
+  }
+}

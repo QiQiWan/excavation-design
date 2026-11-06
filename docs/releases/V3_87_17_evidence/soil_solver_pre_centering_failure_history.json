@@ -1,0 +1,27 @@
+{
+  "algorithmState": "historical_before_centered_element_response_fix",
+  "currentAlgorithm": false,
+  "primarySolverSourceSha256BeforeFix": "e16c3fd20e71b5ff26dd33b749bd33769512e4fc9c96d0d938663aaa3900bf3f",
+  "fixture": "fully defined synthetic six-stage verification example; maximum element size 0.0625 m; 163 nodes",
+  "observedFailure": {
+    "stage": "S5",
+    "reason": "No equilibrium within 100 iterations; resistance may be exhausted",
+    "fullModelStatus": "failed"
+  },
+  "diagnosis": {
+    "activeSet": "stable: 530 springs below lower bound, none above upper bound in observed final iterates",
+    "displacementM": "approximately 0.01139723238 at the maximum; changes approximately 1e-11 m",
+    "observedResidualRangeKn": [
+      8.5e-08,
+      1.3e-07
+    ],
+    "evaluation": "global uncentered beam K @ total displacement"
+  },
+  "regressionBeforeFix": {
+    "test": "test_refined_full_section_can_remove_strut_without_roundoff_stalling",
+    "exitCode": 1,
+    "summary": "1 failed in 1.64s; expected success, got failed"
+  },
+  "replacementEvidence": "soil_mesh_refinement_centered_beam_current.json",
+  "warning": "Historical failed output is not a valid final curve or numerical acceptance result."
+}

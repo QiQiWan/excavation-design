@@ -1,0 +1,775 @@
+from __future__ import annotations
+
+from collections import Counter
+from typing import Any
+
+from app.rules.registry import list_rules
+from app.schemas.domain import Project
+from app.version import RULE_SET_VERSION, SOFTWARE_VERSION
+
+
+STANDARD_CATALOG: list[dict[str, Any]] = [
+    {
+        "id": "GB55003-2021",
+        "code": "GB 55003-2021",
+        "name": "建筑与市政地基基础通用规范",
+        "level": "mandatory_all",
+        "levelLabel": "全文强制",
+        "effectiveDate": "2022-01-01",
+        "priority": 1,
+        "appliesTo": ["boreholes", "geology", "excavation", "retaining", "calculation", "assurance"],
+        "implementedScope": "地基基础、基坑支护、地下水、环境影响与安全控制的强制性总入口和人工复核门禁。",
+        "boundary": "系统只实现可参数化子集；与其他标准不一致时应优先执行通用规范。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_761185.html",
+    },
+    {
+        "id": "GB55017-2021",
+        "code": "GB 55017-2021",
+        "name": "工程勘察通用规范",
+        "level": "mandatory_all",
+        "levelLabel": "全文强制",
+        "effectiveDate": "2022-04-01",
+        "priority": 1,
+        "appliesTo": ["boreholes", "geology", "excavation", "retaining", "calculation", "assurance"],
+        "implementedScope": "勘察资料完整性、工程地质模型、地下水、不良地质作用、勘察成果适用范围和低置信度外推区的强制性入口。",
+        "boundary": "软件可检查资料与设计域覆盖并生成低置信度外推面；外推不能替代缺失钻孔、补充勘察或注册岩土工程师判断。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_762455.html",
+    },
+    {
+        "id": "JGJ120-2012",
+        "code": "JGJ 120-2012",
+        "name": "建筑基坑支护技术规程",
+        "level": "primary_design",
+        "levelLabel": "基坑主控规程",
+        "effectiveDate": "2012-10-01",
+        "priority": 2,
+        "appliesTo": ["settings", "boreholes", "geology", "excavation", "retaining", "calculation", "assurance", "export"],
+        "implementedScope": "安全等级、水平荷载、土水压力、弹性支点法、地下连续墙、内支撑、嵌固、变形、抗隆起、渗流、整体稳定和地下水控制子集。",
+        "boundary": "条文适用条件、地区标准、复杂空间效应和专项有限元分析仍需专业复核。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/fdzdgknr/bzgg/index.html",
+    },
+    {
+        "id": "GB50007-2011",
+        "code": "GB 50007-2011",
+        "name": "建筑地基基础设计规范",
+        "level": "supporting_design",
+        "levelLabel": "地基基础设计",
+        "effectiveDate": "2012-08-01",
+        "priority": 3,
+        "appliesTo": ["boreholes", "geology", "retaining", "calculation", "assurance"],
+        "implementedScope": "地基承载力、立柱基础、软弱下卧层、变形和邻近基础影响的筛查入口。",
+        "boundary": "沉降、偏心、群桩、负摩阻、抗浮和复杂地基处理需专项计算。",
+        "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/index",
+    },
+    {
+        "id": "GB50009-2012",
+        "code": "GB 50009-2012",
+        "name": "建筑结构荷载规范",
+        "level": "supporting_design",
+        "levelLabel": "作用与组合",
+        "effectiveDate": "2012-10-01",
+        "priority": 4,
+        "appliesTo": ["settings", "excavation", "retaining", "calculation"],
+        "implementedScope": "地面超载、施工荷载、作用代表值与基本组合参数的记录和设计效应接口。",
+        "boundary": "项目专用施工荷载、车辆荷载、堆载和偶然作用应由设计人员确认。",
+        "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/index",
+    },
+    {
+        "id": "GBT50010-2010-2024",
+        "code": "GB/T 50010-2010（2024年局部修订）",
+        "name": "混凝土结构设计标准",
+        "level": "supporting_design",
+        "levelLabel": "混凝土设计",
+        "effectiveDate": "2024局部修订",
+        "priority": 5,
+        "appliesTo": ["retaining", "calculation", "assurance", "export"],
+        "implementedScope": "地连墙、冠梁、围檩、混凝土支撑和节点的受弯、受剪、轴压、最小配筋、裂缝、锚固与搭接筛查。",
+        "boundary": "复杂受力、抗震、疲劳、节点非线性、施工阶段裂缝和完整构造应按正式标准复核。",
+        "sourceUrl": "https://www.mohurd.gov.cn/cms_files/filemanager/1150240553/attach/202411/0b5a540a-06fa-4bb2-ba99-e38d235c75e1.pdf",
+    },
+    {
+        "id": "GB55008-2021",
+        "code": "GB 55008-2021",
+        "name": "混凝土结构通用规范",
+        "level": "mandatory_all",
+        "levelLabel": "全文强制",
+        "effectiveDate": "2022-04-01",
+        "priority": 1,
+        "appliesTo": ["retaining", "calculation", "assurance", "export"],
+        "implementedScope": "混凝土结构安全、耐久、承载能力和正常使用的强制性门禁。",
+        "boundary": "系统仅将已实现的计算和构造子集映射到门禁，未覆盖条文须人工复核。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_762454.html",
+    },
+    {
+        "id": "GB50017-2017",
+        "code": "GB 50017-2017",
+        "name": "钢结构设计标准",
+        "level": "supporting_design",
+        "levelLabel": "钢支撑设计",
+        "effectiveDate": "2018-07-01",
+        "priority": 5,
+        "appliesTo": ["retaining", "calculation", "assurance", "export"],
+        "implementedScope": "钢管/型钢支撑轴压强度、稳定、长细比和节点审查接口。",
+        "boundary": "连接、焊缝、局部稳定、初弯曲、残余应力和施工温度效应需完整复核。",
+        "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/index",
+    },
+    {
+        "id": "GB50068-2018",
+        "code": "GB 50068-2018",
+        "name": "建筑结构可靠性设计统一标准",
+        "level": "supporting_design",
+        "levelLabel": "可靠性与极限状态",
+        "effectiveDate": "2019-04-01",
+        "priority": 3,
+        "appliesTo": ["settings", "calculation", "assurance"],
+        "implementedScope": "安全等级、设计使用年限、极限状态和重要性系数的统一入口。",
+        "boundary": "概率校准和完整可靠指标未在当前版本内实现。",
+        "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/index",
+    },
+    {
+        "id": "GB55030-2022",
+        "code": "GB 55030-2022",
+        "name": "建筑与市政工程防水通用规范",
+        "level": "mandatory_all",
+        "levelLabel": "全文强制",
+        "effectiveDate": "2023-04-01",
+        "priority": 1,
+        "appliesTo": ["retaining", "assurance", "export"],
+        "implementedScope": "地下连续墙接头、止水构造、防水节点和施工图防水表达的强制性入口。",
+        "boundary": "具体防水等级、接头工法、材料体系、施工检验和渗漏处置应结合项目防水设计与施工组织确定。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2022/art_17339_768499.html",
+    },
+    {
+        "id": "GB55032-2022",
+        "code": "GB 55032-2022",
+        "name": "建筑与市政工程施工质量控制通用规范",
+        "level": "mandatory_all",
+        "levelLabel": "全文强制",
+        "effectiveDate": "2023-03-01",
+        "priority": 1,
+        "appliesTo": ["assurance", "export"],
+        "implementedScope": "施工图交底、材料/构件质量证明、隐蔽验收、检验批和施工质量追溯的发行门禁入口。",
+        "boundary": "系统生成检查清单和图纸要求，不替代施工单位质量计划、现场检验和法定验收记录。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2022/art_17339_767714.html",
+    },
+    {
+        "id": "GB50202-2018",
+        "code": "GB 50202-2018",
+        "name": "建筑地基基础工程施工质量验收标准",
+        "level": "supporting_delivery",
+        "levelLabel": "施工质量验收",
+        "effectiveDate": "2018-10-01",
+        "priority": 4,
+        "appliesTo": ["assurance", "export"],
+        "implementedScope": "地基基础、地下连续墙相关施工质量验收信息、隐蔽验收和图纸说明接口。",
+        "boundary": "验收项目、抽检频率和记录格式按项目合同、专项方案及当地监管要求执行。",
+        "sourceUrl": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2019/art_17339_239995.html",
+    },
+    {
+        "id": "GB50497-2019",
+        "code": "GB 50497-2019",
+        "name": "建筑基坑工程监测技术标准",
+        "level": "supporting_design",
+        "levelLabel": "监测与反馈",
+        "effectiveDate": "2020-06-01",
+        "priority": 4,
+        "appliesTo": ["calculation", "assurance", "export"],
+        "implementedScope": "监测项目、预警阈值、数据导入、趋势识别和参数反演接口。",
+        "boundary": "监测方案、测点布置、频率、报警值与应急响应应按项目条件和地方规定确定。",
+        "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/index",
+    },
+]
+
+
+PROCESS_MATRIX: list[dict[str, Any]] = [
+    {
+        "workflowStep": "settings",
+        "index": 1,
+        "title": "项目设定与设计等级",
+        "keyCalculations": ["安全等级与重要性系数", "地下水位与地面超载", "设计参数和单位完整性", "规则集版本锁定"],
+        "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50009-2012", "GB50068-2018"],
+        "clauseFocus": ["JGJ 120 基本规定与安全等级", "GB 50009 荷载分类和组合", "GB 50068 极限状态和可靠性"],
+        "outputs": ["设计设置快照", "规则集版本", "项目输入完整性清单"],
+        "implementationLevel": "implemented_with_manual_review",
+    },
+    {
+        "workflowStep": "boreholes",
+        "index": 2,
+        "title": "勘察资料与岩土参数",
+        "keyCalculations": ["钻孔与地层合并", "重度、黏聚力、内摩擦角、模量和渗透参数检查", "地下水类型与水位识别", "参数缺失与异常值诊断"],
+        "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"],
+        "clauseFocus": ["工程勘察通用规范的资料完整性和成果适用范围", "地基基础通用规范的勘察与设计资料要求", "GB 50007 岩土参数与地基基础设计资料", "JGJ 120 支护设计资料要求"],
+        "outputs": ["标准化钻孔", "地层参数表", "参数质量问题清单"],
+        "implementationLevel": "implemented_with_manual_review",
+    },
+    {
+        "workflowStep": "geology",
+        "index": 3,
+        "title": "三维地质与水文地质模型",
+        "keyCalculations": ["地层面插值", "围护结构与施工影响区设计域覆盖", "可信钻孔范围与低置信度外推区", "代表性剖面提取", "水位与承压层识别", "软弱夹层识别"],
+        "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"],
+        "clauseFocus": ["勘察成果适用范围与工程地质模型", "地基与地下水控制通用要求", "工程地质和水文地质条件", "基坑周边环境和不利地层识别"],
+        "outputs": ["三维地层面", "计算剖面", "地下水和软弱层风险"],
+        "implementationLevel": "screening_model",
+    },
+    {
+        "workflowStep": "excavation",
+        "index": 4,
+        "title": "基坑几何、边段与外部作用",
+        "keyCalculations": ["轮廓闭合与自交检查", "开挖深度和边段法向", "周边超载影响区", "出土口、坡道、保护区和邻近建构筑物约束"],
+        "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50009-2012"],
+        "clauseFocus": ["基坑支护总体设计", "水平荷载与地面超载", "周边环境安全"],
+        "outputs": ["闭合基坑轮廓", "设计边段", "荷载与障碍物模型"],
+        "implementationLevel": "implemented",
+    },
+    {
+        "workflowStep": "retaining",
+        "index": 5,
+        "title": "围护、围檩、支撑与立柱方案",
+        "keyCalculations": ["墙厚和墙深初选", "支撑层数与标高", "一般多边形主轴与凹凸性识别", "支撑线全段位于坑内", "角撑、立柱和通道避让", "A/B/C 强度预检候选", "构件截面初选"],
+        "standardIds": ["GB55003-2021", "JGJ120-2012", "GBT50010-2010-2024", "GB55008-2021", "GB50017-2017", "GB50007-2011"],
+        "clauseFocus": ["JGJ 120 第4章支护结构、地下连续墙与内支撑", "混凝土/钢构件设计与构造", "立柱基础承载力"],
+        "outputs": ["围护结构模型", "候选方案", "支撑布置质量评分", "初选截面与配筋"],
+        "implementationLevel": "preliminary_design",
+    },
+    {
+        "workflowStep": "calculation",
+        "index": 6,
+        "title": "分阶段计算、构件设计与稳定性",
+        "keyCalculations": ["主动/被动土压力和水压力", "施工阶段激活/失活", "墙体弹性地基梁", "围檩连续梁与支撑反力", "墙-围檩-支撑全局耦合", "支撑轴力及施工效应", "受弯/受剪/轴压和配筋", "嵌固、抗隆起、渗流、突涌和整体稳定", "力与弯矩平衡诊断"],
+        "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50009-2012", "GB50068-2018", "GBT50010-2010-2024", "GB55008-2021", "GB50017-2017", "GB50007-2011"],
+        "clauseFocus": ["JGJ 120 水平荷载、弹性支点法、稳定与地下水控制", "荷载组合与设计效应", "混凝土和钢构件极限状态", "地基承载力"],
+        "outputs": ["工况结果", "内力与位移包络", "构件利用率", "稳定安全系数", "规范检查台账", "计算追溯链"],
+        "implementationLevel": "calculation_subset",
+    },
+    {
+        "workflowStep": "assurance",
+        "index": 7,
+        "title": "规范审查、风险闭环与监测反馈",
+        "keyCalculations": ["规则结果聚合", "Fail/Warning/人工复核归并", "设计输入—公式—结果—图纸追溯", "监测阈值与趋势", "参数反演", "正式发行闸门"],
+        "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50497-2019", "GB55008-2021", "GB50068-2018"],
+        "clauseFocus": ["强制性通用规范优先", "基坑监测与信息化施工", "承载能力和正常使用状态", "危大工程专项复核"],
+        "outputs": ["规范流程矩阵", "问题中心", "人工复核清单", "监测反馈", "发行门禁状态"],
+        "implementationLevel": "implemented_with_signoff",
+    },
+    {
+        "workflowStep": "export",
+        "index": 8,
+        "title": "计算书、施工图、BIM 与钢筋加工交付",
+        "keyCalculations": ["结果与图纸几何一致性", "钢筋编号/BBS/分段/套筒/净距", "图纸完整性和审签", "IFC 语义和单位", "修订、哈希和交付清单"],
+        "standardIds": ["JGJ120-2012", "GBT50010-2010-2024", "GB55008-2021", "GB50017-2017", "GB50497-2019", "GB55030-2022", "GB55032-2022", "GB50202-2018"],
+        "clauseFocus": ["支护结构施工图表达", "混凝土和钢结构构造", "监测和施工阶段要求", "企业图层/图签/审签规则"],
+        "outputs": ["DOCX 计算书", "CAD/PDF 图纸包", "IFC", "钢筋深化 ZIP", "规范与计算追溯 JSON"],
+        "implementationLevel": "delivery_with_gate",
+    },
+]
+
+
+# V3.12: calculation-centric traceability. Each calculation card carries its own
+# standards, clause focus, rule evidence and output, so users do not need to
+# correlate a detached standards column with a long calculation list.
+CALCULATION_LINK_DEFINITIONS: dict[str, list[dict[str, Any]]] = {
+    "settings": [
+        {"calculation": "安全等级与重要性系数", "method": "确定支护结构安全等级、结构重要性系数和正常使用控制等级。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50068-2018"], "clauseFocus": "通用安全要求；JGJ 120 基本规定；极限状态与可靠性等级。", "output": "设计等级与重要性系数快照"},
+        {"calculation": "地下水位与地面超载", "method": "锁定设计水位、承压水位、地面均布/局部超载及施工荷载。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50009-2012"], "clauseFocus": "地下水控制、基坑水平荷载和作用取值。", "output": "水位与荷载工况表"},
+        {"calculation": "设计参数和单位完整性", "method": "检查长度、应力、刚度、重度、渗透系数和标高单位。", "standardIds": ["GB55003-2021", "JGJ120-2012"], "clauseFocus": "设计资料完整性与可追溯性。", "output": "输入质量诊断"},
+        {"calculation": "规则集版本锁定", "method": "将软件版本、规则版本和项目输入修订绑定。", "standardIds": ["GB55003-2021", "GB50068-2018"], "clauseFocus": "设计文件一致性和可靠性管理。", "output": "可复现计算快照"},
+    ],
+    "boreholes": [
+        {"calculation": "钻孔与地层合并", "method": "按钻孔坐标、层顶/层底深度和地层编号建立标准化地层柱。", "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"], "clauseFocus": "勘察资料、岩土分层和基坑设计资料要求。", "output": "标准化钻孔与地层表"},
+        {"calculation": "岩土参数质量检查", "method": "检查重度、c、φ、模量、泊松比和渗透系数的缺失、单位及异常值。", "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"], "clauseFocus": "岩土参数代表性、设计值与不利组合。", "output": "参数异常与复核清单"},
+        {"calculation": "地下水类型与水位识别", "method": "区分潜水、承压水及设计水位，形成水压力和突涌计算输入。", "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"], "clauseFocus": "水文地质条件和地下水控制。", "output": "地下水模型输入"},
+    ],
+    "geology": [
+        {"calculation": "地质设计域覆盖与受控外推", "method": "由钻孔层界面插值三维地层面；设计域取基坑、实际围护结构和施工影响缓冲的并集。钻孔可信矩形外采用最近可信边界夹持，记录最大外推距离和低置信度区。", "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"], "clauseFocus": "工程地质模型、不利地层和场地覆盖范围。", "output": "三维地层面及覆盖诊断"},
+        {"calculation": "代表性剖面与软弱层识别", "method": "沿控制边段提取剖面，识别软弱夹层、砂层和承压含水层。", "standardIds": ["GB55017-2021", "GB55003-2021", "GB50007-2011", "JGJ120-2012"], "clauseFocus": "控制剖面、不利地层和地下水风险。", "output": "计算剖面和地质风险"},
+    ],
+    "excavation": [
+        {"calculation": "轮廓闭合、自交与短边检查", "method": "验证多段线闭合、方向、自交、重复点和最小边长。", "standardIds": ["GB55003-2021", "JGJ120-2012"], "clauseFocus": "基坑总体布置、支护边界与施工可实施性。", "output": "有效基坑轮廓和边段"},
+        {"calculation": "坑深、边段法向与外部作用", "method": "计算各边段长度/法向，绑定坑顶坑底标高、超载及邻近环境。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50009-2012"], "clauseFocus": "基坑深度、水平荷载、地面超载和环境影响。", "output": "设计边段与作用模型"},
+        {"calculation": "坡道、出土口和保护区约束", "method": "将施工通道和保护区作为支撑拓扑硬约束。", "standardIds": ["GB55003-2021", "JGJ120-2012"], "clauseFocus": "施工安全、周边环境和支撑体系可实施性。", "output": "障碍与净空约束"},
+    ],
+    "retaining": [
+        {"calculation": "墙厚、墙深和嵌固初选", "method": "按坑深、地层和水位初选地连墙厚度、墙底标高和嵌固深度。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GBT50010-2010-2024", "GB55008-2021"], "clauseFocus": "地下连续墙、嵌固、结构承载力与耐久。", "output": "围护墙初选参数"},
+        {"calculation": "支撑层数、标高与施工步序", "method": "由坑深和分层开挖步距确定支撑层数、安装标高及换撑顺序。", "standardIds": ["GB55003-2021", "JGJ120-2012"], "clauseFocus": "内支撑布置、分层开挖和先撑后挖。", "output": "支撑标高与施工阶段"},
+        {"calculation": "一般多边形主轴、凹凸性与支撑拓扑", "method": "由边界加权主轴识别局部长短向，分类旋转矩形、梯形、L/U形与近圆形；每条支撑线全段采样验证位于坑内，凹角回墙补充闭合传力。", "standardIds": ["JGJ120-2012", "GB55003-2021"], "clauseFocus": "内支撑传力路径、平面布置和施工空间。", "output": "支撑平面拓扑"},
+        {"calculation": "长跨分段、临时立柱与角撑", "method": "对长支撑自动设置临时立柱/共享节点，以有效无侧向支承长度验算；角部按几何和传力路径布置斜撑。", "standardIds": ["JGJ120-2012", "GB50017-2017", "GB50007-2011"], "clauseFocus": "支撑稳定、立柱基础、节点传力与构造。", "output": "立柱服务关系和长跨处置证据"},
+        {"calculation": "A/B/C 多目标方案比选", "method": "在安全、位移、用钢量、构件数、施工净空和风险之间形成可追溯候选。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50068-2018"], "clauseFocus": "安全可靠、适用经济和方案论证。", "output": "候选方案与推荐理由"},
+    ],
+    "calculation": [
+        {"calculation": "主动/被动土压力与水压力", "method": "按分层有效应力积分形成阶段侧压力，并记录合力与作用点。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50009-2012"], "clauseFocus": "水平荷载、土压力、水压力和地面超载。", "output": "压力曲线与墙面荷载"},
+        {"calculation": "墙体弹性地基梁与阶段变形", "method": "组装墙体梁、坑内外土弹簧和支撑弹簧，计算位移、弯矩、剪力及反力。", "standardIds": ["GB55003-2021", "JGJ120-2012"], "clauseFocus": "弹性支点法、变形控制和施工阶段。", "output": "墙体内力与位移包络"},
+        {"calculation": "围檩连续梁、支撑轴力和全局耦合", "method": "围檩按连续梁、支撑按轴向杆/弹簧，与墙体自由度统一组装并执行力平衡诊断。", "standardIds": ["JGJ120-2012", "GB50017-2017", "GBT50010-2010-2024", "GB55008-2021"], "clauseFocus": "围檩和支撑内力、钢/混凝土构件设计及节点传力。", "output": "围檩M/V/挠度、支撑轴力和残差"},
+        {"calculation": "混凝土与钢构件承载力", "method": "执行受弯、受剪、轴压、稳定、长细比和最小配筋子集验算。", "standardIds": ["GB55008-2021", "GBT50010-2010-2024", "GB50017-2017", "GB50068-2018"], "clauseFocus": "承载能力极限状态、正常使用和构造要求。", "output": "构件利用率与配筋需求"},
+        {"calculation": "嵌固、抗隆起、渗流、突涌和整体稳定", "method": "搜索控制剖面和不利土层，计算各失稳模式安全系数。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB50007-2011"], "clauseFocus": "嵌固稳定、坑底稳定、地下水和地基承载。", "output": "稳定安全系数与控制模式"},
+        {"calculation": "数值求解质量与力平衡", "method": "检查K·u=F残差、矩阵条件数、对称误差、水平力和弯矩平衡。", "standardIds": [], "clauseFocus": "软件数值质量证据；不替代工程规范验算。", "output": "数值质量门禁"},
+    ],
+    "assurance": [
+        {"calculation": "规范检查聚合与问题分级", "method": "将规则结果归并为阻断、预警、人工复核和说明，并区分可自动修复项。", "standardIds": ["GB55003-2021", "GB55008-2021", "JGJ120-2012", "GB50068-2018"], "clauseFocus": "强制性要求优先、极限状态与设计复核。", "output": "统一问题中心"},
+        {"calculation": "监测阈值、趋势与反演", "method": "把监测数据与设计预测对比，识别超限趋势并形成重算触发。", "standardIds": ["GB50497-2019", "JGJ120-2012", "GB55003-2021"], "clauseFocus": "基坑监测、信息化施工和风险响应。", "output": "监测反馈与重算状态"},
+        {"calculation": "四级审签与正式发行门禁", "method": "绑定设计快照、校核、审核和批准，模型变更后自动失效。", "standardIds": ["GB55003-2021", "GB55008-2021", "GB50068-2018"], "clauseFocus": "设计文件质量、责任和安全闭环。", "output": "审签与发行状态"},
+    ],
+    "export": [
+        {"calculation": "计算—模型—图纸几何一致性", "method": "对构件编号、轴线、标高、截面、内力和配筋进行跨成果对账。", "standardIds": ["GB55003-2021", "JGJ120-2012", "GB55008-2021"], "clauseFocus": "设计文件完整性、结构构造和可实施性。", "output": "一致性检查与追溯哈希"},
+        {"calculation": "施工图表达完整性", "method": "检查平面、剖面、节点、尺寸、标高、材料、钢筋编号、说明、图签和修订。", "standardIds": ["JGJ120-2012", "GBT50010-2010-2024", "GB55008-2021", "GB50017-2017", "GB55032-2022", "GB50202-2018"], "clauseFocus": "支护结构、混凝土/钢结构构造、施工质量控制和验收信息。", "output": "CAD/PDF工程图纸包"},
+        {"calculation": "墙幅接头、止水与隐蔽验收", "method": "将墙幅接头形式、止水构造、接头刷壁、钢筋笼连接、保护层和隐蔽验收要求写入 D-06 及检查表。", "standardIds": ["GB55030-2022", "GB55032-2022", "GB50202-2018", "JGJ120-2012"], "clauseFocus": "地下工程防水强制要求、施工质量控制、地基基础验收和基坑围护施工表达。", "output": "D-06墙幅接头/止水/钢筋笼连接详图与验收清单"},
+        {"calculation": "钢筋加工、BIM与归档", "method": "输出BBS、逐根几何、IFC、项目JSON、文件清单和SHA256。", "standardIds": ["GBT50010-2010-2024", "GB55008-2021", "GB55032-2022"], "clauseFocus": "钢筋构造、加工交接、质量证明和成果可追溯。", "output": "钢筋ZIP、IFC和归档包"},
+    ],
+}
+
+
+def _flatten_checks(project: Project | None) -> list[dict[str, Any]]:
+    if project is None or not project.calculation_results:
+        return []
+    latest = project.calculation_results[-1]
+    checks = list(latest.checks or [])
+    for stage in latest.stage_results:
+        checks.extend(stage.checks or [])
+    return [item if isinstance(item, dict) else item.model_dump(mode="json", by_alias=True) for item in checks]
+
+
+def _rule_matches_standard(rule_id: str, standard_id: str) -> bool:
+    token = rule_id.upper().replace(" ", "")
+    mapping = {
+        "GB55003-2021": ("GB55003",),
+        "GB55017-2021": ("GB55017", "GEOLOG"),
+        "JGJ120-2012": ("JGJ120",),
+        "GB50007-2011": ("GB50007",),
+        "GB50009-2012": ("GB50009",),
+        "GBT50010-2010-2024": ("GB50010", "GBT50010"),
+        "GB55008-2021": ("GB55008",),
+        "GB50017-2017": ("GB50017",),
+        "GB50068-2018": ("GB50068",),
+        "GB50497-2019": ("GB50497", "MONITOR"),
+        "GB55030-2022": ("GB55030", "WATERPROOF"),
+        "GB55032-2022": ("GB55032", "QUALITY"),
+        "GB50202-2018": ("GB50202", "ACCEPTANCE"),
+    }
+    return any(prefix in token for prefix in mapping.get(standard_id, (standard_id.replace("-", ""),)))
+
+
+STEP_APPLICABLE_TARGETS: dict[str, set[str]] = {
+    "settings": {"project", "calculationcase", "calculationresult"},
+    "boreholes": {"project", "geologicallayer", "excavationmodel"},
+    "geology": {"project", "geologicallayer", "excavationmodel", "retainingsystem"},
+    "excavation": {"project", "excavationmodel", "calculationcase"},
+    "retaining": {"retainingsystem", "diaphragmwallpanel", "supportelement", "columnelement", "supportfoundation"},
+    "calculation": {"calculationcase", "calculationresult", "excavationmodel", "diaphragmwallpanel", "supportelement", "columnelement", "supportfoundation", "project", "retainingsystem"},
+    "assurance": {"calculationresult", "project", "excavationmodel", "diaphragmwallpanel", "supportelement", "columnelement", "supportfoundation", "retainingsystem"},
+    "export": {"diaphragmwallpanel", "supportelement", "columnelement", "supportfoundation", "retainingsystem", "calculationresult"},
+}
+
+
+def _rule_relevant_to_step(rule: dict[str, Any], workflow_step: str) -> bool:
+    targets = {str(item).lower() for item in rule.get("applicableTo", [])}
+    expected = STEP_APPLICABLE_TARGETS.get(workflow_step, set())
+    return bool(targets & expected)
+
+
+def _step_status(checks: list[dict[str, Any]], standard_ids: list[str], project: Project | None) -> tuple[str, dict[str, int]]:
+    matched = [c for c in checks if any(_rule_matches_standard(str(c.get("ruleId") or c.get("rule_id") or ""), sid) for sid in standard_ids)]
+    counts = Counter(str(c.get("status") or "manual_review") for c in matched)
+    if counts.get("fail"):
+        status = "fail"
+    elif counts.get("warning"):
+        status = "warning"
+    elif counts.get("manual_review"):
+        status = "manual_review"
+    elif matched:
+        status = "pass"
+    elif project and project.calculation_results:
+        status = "not_covered"
+    else:
+        status = "not_run"
+    return status, dict(counts)
+
+
+def build_standards_process_matrix(project: Project | None = None) -> dict[str, Any]:
+    checks = _flatten_checks(project)
+    catalogue = {item["id"]: item for item in STANDARD_CATALOG}
+    steps: list[dict[str, Any]] = []
+    for item in PROCESS_MATRIX:
+        status, counts = _step_status(checks, item["standardIds"], project)
+        rules = [
+            rule for rule in list_rules()
+            if any(_rule_matches_standard(str(rule.get("ruleId") or ""), sid) for sid in item["standardIds"])
+            and _rule_relevant_to_step(rule, item["workflowStep"])
+        ]
+        standards = [catalogue[sid] for sid in item["standardIds"] if sid in catalogue]
+        calculation_links: list[dict[str, Any]] = []
+        for sequence, link in enumerate(CALCULATION_LINK_DEFINITIONS.get(item["workflowStep"], []), start=1):
+            link_standard_ids = list(link.get("standardIds") or [])
+            link_status, link_counts = _step_status(checks, link_standard_ids, project) if link_standard_ids else ("quality_gate", {})
+            link_rules = [
+                rule for rule in rules
+                if any(_rule_matches_standard(str(rule.get("ruleId") or ""), sid) for sid in link_standard_ids)
+            ]
+            calculation_links.append({
+                **link,
+                "sequence": sequence,
+                "status": link_status,
+                "checkSummary": link_counts,
+                "standardRefs": [catalogue[sid] for sid in link_standard_ids if sid in catalogue],
+                "ruleCount": len(link_rules),
+                "rules": link_rules,
+            })
+        steps.append({
+            **item,
+            "status": status,
+            "checkSummary": counts,
+            "standardRefs": standards,
+            "ruleCount": len(rules),
+            "rules": rules,
+            "calculationLinks": calculation_links,
+            "highlight": "critical" if any(std["level"] == "mandatory_all" for std in standards) else "primary",
+        })
+    return {
+        "schemaVersion": "1.1",
+        "softwareVersion": SOFTWARE_VERSION,
+        "ruleSetVersion": RULE_SET_VERSION,
+        "projectId": project.id if project else None,
+        "catalog": STANDARD_CATALOG,
+        "steps": steps,
+        "precedence": [
+            "GB 55003-2021、GB 55008-2021 等全文强制性工程建设规范优先。",
+            "JGJ 120-2012 作为建筑基坑支护的主要专业规程，与通用规范不一致时执行通用规范。",
+            "GB 50007、GB 50009、GB 50010、GB 50017、GB 50068 等用于相应专业计算与构件设计。",
+            "GB 55030、GB 55032 和 GB 50202 用于防水节点、施工质量控制及验收信息的成果发行追溯。",
+            "地方标准、勘察报告、审图意见、专家论证和企业标准应在项目级规则集中补充。",
+        ],
+        "usageNote": "V3.87.3只保留设计基准、工程输入、围护方案、计算验算、配筋深化和成果交付六阶段主流程。原九个设计核心阶段调整为内部质量证据域，仅在按需打开的质量与追溯中心中分组展示，不再作为第二套流程导航。V3.87.2的参数来源门禁、candidate-plan-v3预览完整性、工作区计算摘要保留和候选几何去重继续有效；闭合环梁、转接框架和内环弦杆不会在缓存压缩后静默丢失。施工和现场信息仅作为外部设计复核资料接入。矩阵只覆盖软件已实现的规则子集，不替代标准全文。",
+    }
+
+
+def build_online_documentation() -> dict[str, Any]:
+    matrix = build_standards_process_matrix()
+    return {
+        "title": "PitGuard 在线设计与计算文档",
+        "version": SOFTWARE_VERSION,
+        "chapters": [
+            {"id": "quickstart", "title": "快速开始", "summary": "从创建项目到闭合计算、配筋和成果交付的最短操作路径。"},
+            {"id": "workflow", "title": "六阶段单一设计主流程", "summary": "按设计基准、工程输入、围护方案、计算验算、配筋深化和成果交付组织；内部证据域不再作为独立导航。"},
+            {"id": "formalization", "title": "正式化阻断与一键闭合", "summary": "解释阻断、警告、缺项和人工复核，区分可自动恢复证据与必须由责任人确认的工程事项。"},
+            {"id": "troubleshooting", "title": "故障诊断", "summary": "按错误代码、页面症状和后台日志定位计算、Worker、WebGL、部署和数据合同问题。"},
+            {"id": "principles", "title": "计算原理", "summary": "说明土水压力、弹性地基梁、围檩连续梁、全局耦合、构件承载力、稳定性和钢筋深化的输入、公式、输出及边界。"},
+            {"id": "standards", "title": "流程—规范矩阵", "summary": "每个设计步骤对应主控规范、条文关注点、已实现规则和人工复核项。"},
+            {"id": "accuracy", "title": "准确度与验证", "summary": "解释 L0-L3 分析等级、参数来源、默认值、六自由度验证、敏感性与成熟软件基准。"},
+            {"id": "compliance", "title": "合规与法定流程", "summary": "区分规范限值、企业值、项目值和算法建议值，并按设计发行、施工准备和现场放行拆分责任门禁。"},
+            {"id": "responsibility", "title": "历史责任边界兼容", "summary": "保留V3.81三域对象的数据兼容与审计读取；其施工计划、现场快照和偏差事件不参与V3.87设计主流程完成度。"},
+            {"id": "design-core", "title": "设计核心与外部协同边界", "summary": "施工计划、现场快照和偏差事件退出设计主流程；外部来文、监测报告和现场反馈以设计复核请求接入。"},
+            {"id": "deployment", "title": "部署与运行维护", "summary": "生产构建、systemd、Nginx、健康检查、日志、备份与回滚。"},
+            {"id": "deliverables", "title": "工程图纸与协同成果导出", "summary": "说明施工图体系、CAD/PDF、IFC、DOCX、钢筋深化 ZIP、项目 JSON、交付清单、哈希和审签要求。"},
+            {"id": "scheme-search", "title": "五级方案搜索与联合优化", "summary": "围护体系、支撑体系族、空间拓扑、构件尺寸和完整计算分级推进，A/B/C必须具有实质体系差异。"},
+            {"id": "rebar-closure", "title": "配筋回代与节点深化", "summary": "实际钢筋选择后更新有效高度和刚度，重新验算承载力、裂缝、锚固、净距、拥挤和节点承压。"},
+            {"id": "delivery-qc", "title": "设计院级交付质检", "summary": "施工图、计算书、IFC和钢筋表共用DesignSnapshotId，并执行图种、章节、单位、编号和模型一致性检查。"},
+            {"id": "recovery", "title": "设计界面收敛与质量追溯", "summary": "说明V3.87.3单一主流程、按需质量中心、candidate-plan-v3完整性、参数来源门禁和局部错误隔离。"},
+        ],
+        "quickStart": [
+            {"step": 1, "title": "确认设计基准", "action": "选择工程等级、规范体系、荷载组合、分析等级和材料，点击确认并保持当前工程页面。", "doneWhen": "设计基准状态为已确认。"},
+            {"step": 2, "title": "导入工程输入", "action": "导入钻孔和土层，生成地质模型，绘制闭合基坑轮廓并检查标高、水位和周边荷载。", "doneWhen": "地质域覆盖围护结构及影响范围。"},
+            {"step": 3, "title": "生成与选择围护方案", "action": "生成墙、围檩、支撑和立柱，比较A/B/C体系差异并采用满足硬约束的方案。", "doneWhen": "当前采用方案具有有效拓扑和施工阶段。"},
+            {"step": 4, "title": "一键计算、优化并闭合", "action": "运行分阶段计算；系统自动处理可审计的几何、拓扑、截面和配筋反馈问题。", "doneWhen": "结构计算闭合且当前计算合同有效。"},
+            {"step": 5, "title": "一键修复正式化阻断", "action": "刷新分析保证、验证矩阵、IFC自检和结果目录，再处理剩余人工确认事项。", "doneWhen": "阻断项为0；待人工事项均有责任人和证据。"},
+            {"step": 6, "title": "配筋深化与成果交付", "action": "生成围护墙、围檩、支撑和节点配筋，完成P3深化并导出计算书、CAD、IFC和审查成果包。", "doneWhen": "正式化闸门允许对应发行等级。"},
+        ],
+        "formalizationGuide": {
+            "definition": "正式化闸门检查当前计算是否可追溯、分析等级与参数来源是否满足项目要求、支撑和IFC质量是否闭合，以及成果目录和设计责任范围内的审签证据是否完整。",
+            "automaticBoundary": [
+                "按当前设计快照重建施工工况、计算合同、输入与结果哈希。",
+                "重算并刷新计算质量包、分析等级、支撑质量、IFC自检、内置验证矩阵和结果目录。",
+                "结构存在fail时，可进入限定边界的验算—优化—再验算闭环。",
+            ],
+            "manualBoundary": [
+                "勘察、试验、地下水和项目参数的真实来源及签署。",
+                "成熟外部结构软件基准证书和独立复核结论。",
+                "专项换撑、异形转接节点、非线性岩土及现场施工决策。",
+                "注册工程师、校核人、审核人和批准人的签章。",
+            ],
+            "statusMeaning": [
+                {"status": "阻断", "meaning": "存在硬失败或不可追溯证据，禁止正式发行。", "action": "优先执行一键修复，再按剩余控制项处理。"},
+                {"status": "警告", "meaning": "未发现硬失败，但正式提交前需要复核。", "action": "检查控制工况、参数来源和构造风险。"},
+                {"status": "缺项", "meaning": "应有证据尚未生成或未上传。", "action": "生成软件证据或补充真实资料。"},
+                {"status": "需责任人确认", "meaning": "超出自动规则责任边界。", "action": "由相应专业角色确认并留下审计记录。"},
+                {"status": "not_required", "meaning": "该专项对当前工程不适用，不计入阻断。", "action": "保存适用性判断依据即可，无需运行无关计算。"},
+            ],
+        },
+        "troubleshooting": [
+            {"code": "CALCULATION_NOT_CURRENT", "symptom": "配筋或出图提示计算结果失效。", "cause": "几何、支撑、施工阶段、截面或算法合同已变化。", "action": "按当前设计快照重新完整计算；不要沿用历史结果。"},
+            {"code": "ANALYSIS_ASSURANCE_BLOCK", "symptom": "结构计算通过但正式出图仍被阻断。", "cause": "分析等级、参数来源、代理模型或条文追溯未达到正式模式。", "action": "执行一键修复正式化阻断；随后补齐严格模式列出的真实资料。"},
+            {"code": "DESIGN_CONTROL_TRANSFER_PATH_REVIEW", "symptom": "自动闭合没有评估候选或要求确认换撑。", "cause": "冻结/自定义换撑阶段的支撑退出层级和永久结构生效条件不能由系统猜测。", "action": "进入施工阶段编辑器确认换撑传力路径，再重新计算。"},
+            {"code": "WORKER_RESTARTED", "symptom": "后台配筋或计算任务提示Worker重启。", "cause": "任务进程退出、超时、内存保护或服务重启。", "action": "查看pitguard-worker日志；确认runtime目录权限、内存和心跳后重试。"},
+            {"code": "WEBGL_CONTEXT", "symptom": "三维模型空白或Error creating WebGL context。", "cause": "浏览器GPU上下文耗尽、驱动限制或多个不可见模型同时渲染。", "action": "点击重建三维视图；关闭多余标签页，必要时启用硬件加速。"},
+            {"code": "CLOUD_RESULT_DATASET_NOT_FOUND", "symptom": "打开变形云图时进度到100%后显示Not Found。", "cause": "生产环境使用core模式时未注册计算成果分片路由，或历史计算分片已缺失。", "action": "升级到V3.87.13；系统会在core模式注册成果分片路由并静默回退到最新权威计算证据。若仍提示缺失，重新运行完整计算重建分片。"},
+            {"code": "CLOUD_WORKSPACE_LOADING_STALLED", "symptom": "云端访问在任务结束后长期停留在90%～93%，并显示多个正在加载数据。", "cause": "工程workspace、核心状态和配筋复核数据同时回读；旧版进度为时间估算，且未压缩的多MB JSON在远程链路上竞争。", "action": "升级到V3.87.14；使用shell投影、分阶段状态和按需配筋列表。检查diagnostics/http-performance.jsonl、响应字节数、Nginx gzip和代理缓冲。"},
+            {"code": "HTTP_500_CORE_STATUS_TASKS", "symptom": "远程部署页面加载到100%后仍显示500。", "cause": "runtime目录权限、Worker心跳、任务数据库或前后端版本不一致。", "action": "检查systemd状态、journalctl、PITGUARD_RUNTIME_DIR和数据库权限。"},
+            {"code": "BOREHOLE_IMPORT_TIMEOUT", "symptom": "钻孔解析长时间无响应。", "cause": "工作簿过大、合并单元格异常、资源不足或Worker未运行。", "action": "使用后台导入任务，检查行列上限和Worker日志；不要在浏览器主线程同步解析。"},
+        ],
+        "deploymentGuide": {
+            "build": ["npm ci", "npm run build", "python -m pip install -e services/api"],
+            "health": ["curl http://127.0.0.1:8002/health/ready", "systemctl status pitguard-api pitguard-worker", "nginx -t"],
+            "logs": ["journalctl -u pitguard-api -n 200 --no-pager", "journalctl -u pitguard-worker -n 200 --no-pager", "tail -n 200 /var/log/nginx/pitguard_error.log"],
+            "backup": "升级前同时备份工程目录、runtime数据库、/etc/pitguard环境配置和Nginx配置。",
+        },
+        "calculationPrinciples": [
+            {
+                "name": "设计院式八级设计—计算—深化—发行流水线",
+                "inputs": "当前项目快照、勘察和水文资料、基坑轮廓、支护体系族、施工阶段、候选计算、构件设计、配筋和审签状态",
+                "method": "下游阶段只能消费上一阶段当前快照的有效证据。几何代理不能作为计算内力，浏览器LOD不能作为加工数量，旧候选结果不能进入图纸。八级门禁通过 /api/projects/{projectId}/expert-design/pipeline 统一返回。",
+                "equations": ["S_{i+1}=f(S_i,H_{snapshot})", "H_{result}=H_{current}"],
+                "assumptions": ["每次几何、地质、支撑、墙趾或施工阶段变化都会使旧计算失效", "正式成果只从已选方案的当前计算快照生成"],
+                "outputs": "八级状态、证据、阻断原因、下一步操作和发行等级",
+                "verification": "候选完整计算、构件设计、钢筋笼深化、图纸/IFC/计算书和四级审签逐级检查，不允许跳级发行。",
+                "standards": ["PitGuard design pipeline gate（软件质量与流程证据）", "GB 55003-2021", "JGJ 120-2012"]
+            },
+            {
+                "name": "水平支撑体系族选择与变截面初选",
+                "inputs": "基坑局部主轴、长宽比、凹凸转角、局部净跨、围檩支点要求、施工通道和支撑层标高",
+                "method": "狭长基坑默认短跨直对撑并在平面突变区加密；角撑直接连接相邻墙/围檩；近方形宽大基坑才允许双向框架；环撑仅在明确选择闭合环梁—径向撑体系时生成。支撑截面按局部净跨分级初选，再由完整内力与稳定验算更新。",
+                "equations": ["s_i=s_0*eta_transition", "L_eff=max(L_between_supports)", "N_d<=R_d"],
+                "assumptions": ["普通角撑不得落在普通水平支撑跨中", "非环形普通支撑同层不得贯穿交叉", "凹形和特殊桁架需明确节点模型"],
+                "outputs": "支撑体系族、设计分区、站位里程、局部净跨、截面初选、传力路径和拓扑硬门禁",
+                "verification": "核对每根支撑两端语义、坑内包含、转角影响区、围檩支点间距、有效无侧向长度、施工净空和阶段激活。",
+                "standards": ["JGJ 120-2012", "DB11/T 940-2024（项目适用时）", "GB 50017-2017", "GB/T 50010-2010"]
+            },
+            {
+                "name": "围护墙计算段、施工槽段与钢筋笼分层表达",
+                "inputs": "基坑边段、墙厚、墙趾标高、槽段目标长度、吊装能力、双向配筋分区和节点附加筋",
+                "method": "结构计算保持可追溯墙段，施工深化按3~7 m目标槽段再分幅；每个槽段建立独立钢筋笼描述，包含坑内/坑外两面竖筋、水平分布筋、拉结筋、保护层、接头和吊装复核。三维浏览器用LineSegments钢筋笼网格LOD，选取与属性查询仍使用采样实体。",
+                "equations": ["n_p=ceil(L_wall/L_target)", "n_v=floor(L_panel/s_vertical)+1", "n_h=floor(H/s_horizontal)+1"],
+                "assumptions": ["浏览器网格是构造LOD，不替代BBS", "完整逐根数量由钢筋表、CSV和加工包控制", "墙趾分区必须有地质、水文或环境差异证据"],
+                "outputs": "施工槽段表、钢筋笼网格、完整钢筋数量估算、分区关联、IFC/CAD/BBS追溯",
+                "verification": "检查槽段长度、笼重和吊点、两面钢筋连续性、水平筋、拉结筋、接头、保护层和完整数量与采样显示的区分。",
+                "standards": ["GB 55008-2021", "GB/T 50010-2010", "JGJ 120-2012", "GB 50202-2018"]
+            },
+            {
+                "name": "一般多边形识别与支撑拓扑",
+                "inputs": "闭合基坑轮廓、边段方向、坑深、支撑目标分仓、通道/保护区和人工锁定构件",
+                "method": "采用边界加权协方差得到局部主轴，结合凹凸性、长宽比、圆形度和径向离散度进行形状分类；在局部坐标系生成主对撑、次对撑和角部传力，并对支撑中心线全段执行坑内包含检查。Step 5 一键生成后立即执行凹角回墙和围檩支点间距预检。",
+                "equations": ["C=Σl_i(p_i-p̄)(p_i-p̄)ᵀ/Σl_i", "C·v=λ·v", "segment(t)∈Ω, 0<t<1"],
+                "assumptions": ["当前几何核面向单一闭合无孔多边形", "曲线边界离散为足够密集的折线", "多基坑、带内岛/孔洞和自交轮廓需专用几何表示"],
+                "outputs": "形状诊断、局部主轴、候选支撑线、坑外穿越硬门禁、凹角回墙传力证据、围檩补撑记录和 A/B/C 拓扑候选",
+                "verification": "对旋转矩形、梯形、L形、U形和旋转方形执行回归；任何支撑中心线离开基坑多边形均为 fail；净距退让后坍缩为短伪构件的候选自动剔除。",
+                "standards": ["JGJ 120-2012", "GB 55003-2021"]
+            },
+            {
+                "name": "地质设计域覆盖与低置信度外推",
+                "inputs": "钻孔平面范围、地层面、基坑轮廓、实际围护墙/支撑/立柱范围、坑深和项目外推限值",
+                "method": "设计域取基坑、实际围护体系和施工影响缓冲范围的并集。当地质面不足时自动扩网；钻孔可信范围内采用 IDW，范围外将查询点夹持到最近可信边界，避免无界趋势外推。",
+                "equations": ["Ω_geo⊇buffer(Ω_exc∪Ω_ret, max(b_min, ηH))", "z(x)=Σw_i z_i/Σw_i", "x_out→proj_{∂Ω_trust}(x_out)"],
+                "assumptions": ["自动外扩仅用于保持模型几何连续和初步设计", "外推区置信度为 low", "超过项目允许外推距离时强制 fail 并要求补充勘察或人工地质面"],
+                "outputs": "requiredBounds、modelBounds、boreholeTrustBounds、最大外推距离、覆盖状态和低置信度警告",
+                "verification": "围护结构及影响区不得位于地质模型外；外扩成功不等同于勘察资料充分。",
+                "standards": ["GB 55017-2021", "GB 55003-2021", "GB 50007-2011", "JGJ 120-2012"]
+            },
+            {
+                "name": "计算快照、施工工况与方案状态一致性",
+                "inputs": "当前围护拓扑哈希、施工阶段支撑语义、候选方案哈希、地质/墙体/钻孔输入和既有计算结果",
+                "method": "每次计算绑定当前支撑拓扑哈希；几何、方案或构件变化后立即归档旧结果、清空候选完整计算并按阶段类型和标高重建支撑激活关系。",
+                "equations": ["H=hash(geometry, walls, supports, columns, geology, cases)", "H_result=H_current"],
+                "assumptions": ["旧结果只作为审计记录", "缺少拓扑哈希的 V3.14 及更早结果一律要求重算", "候选代理评分与完整计算指标分栏显示"],
+                "outputs": "requiresRecalculation、失效原因、归档摘要、新工况、候选计算状态和正式发行阻断",
+                "verification": "界面、计算书和出图闸门只读取当前快照结果；失效结果不得继续显示为当前最大位移、Fail 数或推荐方案。",
+                "standards": ["PitGuard snapshot consistency gate（软件质量证据）"]
+            },
+            {
+                "name": "土压力与水压力",
+                "inputs": "分层重度、黏聚力 c、内摩擦角 φ、地下水位、地面超载 q、开挖标高和水土分算设置",
+                "method": "按分层有效应力积分形成主动/被动土压力与静水压力；阶段变化后重新积分并传递到墙体和围檩。",
+                "equations": ["K_a=tan²(45°-φ/2)", "K_p=tan²(45°+φ/2)", "σ_h,a=K_a·σ'_v-2c√K_a+u", "σ_h,p=K_p·σ'_v+2c√K_p+u"],
+                "assumptions": ["朗肯型极限土压力子集", "土层按水平分层离散", "复杂墙土界面、拱效应和空间效应进入人工复核"],
+                "outputs": "压力—深度曲线、分层合力、作用点、墙面线荷载和阶段荷载快照",
+                "verification": "核对分层积分、总水平力、作用点及水压力连续性；异常负压力按规则截断并记录。",
+                "standards": ["JGJ 120-2012 3.4", "GB 55003-2021", "GB 50009-2012"]
+            },
+            {
+                "name": "墙趾嵌固稳定前置闭环",
+                "inputs": "开挖深度、当前墙趾标高、分层土参数、坑内外水位、地面超载、安全等级和墙趾来源/锁定状态",
+                "method": "在支撑与构件强度迭代前逐墙段执行嵌固稳定筛查；连续地下墙采用统一墙趾标高逐级加深。自动设计只允许加深，不缩短导入、人工或既有较深墙趾。",
+                "equations": ["K_{embed}=M_{passive,net}/M_{active}", "K_{embed}≥K_{lim}+ΔK", "z_{toe,new}≤z_{toe,old}"],
+                "assumptions": ["采用现有朗肯型净被动土抗力矩筛查子集", "连续墙各墙段使用统一墙趾标高", "被动区扰动、空间效应和复杂水土耦合需专业复核"],
+                "outputs": "调整前后墙趾标高、各墙段筛查系数、控制墙段、自动加深量、地质底界约束和硬失败状态",
+                "verification": "导入/人工锁定墙趾不得被一键生成覆盖；20 个墙段同一规则失败应归并为一个全局墙趾根因并保留逐墙证据。",
+                "standards": ["JGJ 120-2012 4.2（软件筛查子集）", "GB 55003-2021", "GB 50007-2011"]
+            },
+            {
+                "name": "墙体内力与变形",
+                "inputs": "侧压力、墙体截面 EI、坑内外土弹簧、嵌固深度、支撑标高和支撑刚度",
+                "method": "按施工阶段组装弹性地基梁方程，考虑开挖卸载、支撑激活/拆除和坑内被动区变化。",
+                "equations": ["[K_beam+K_soil+K_support]{u}={F}", "M=EI·κ", "V=dM/dz"],
+                "assumptions": ["一维平面应变条带模型", "土弹簧采用参数化水平地基反力", "复杂三维效应需外部有限元或专项复核"],
+                "outputs": "墙体位移、弯矩、剪力、支点反力、控制深度和阶段包络",
+                "verification": "检查位移形态、反力和外荷载平衡、矩阵条件数、网格敏感性及相邻阶段连续性。",
+                "standards": ["JGJ 120-2012 4.2", "GB 55003-2021"]
+            },
+            {
+                "name": "围檩、支撑与全局耦合",
+                "inputs": "墙面反力、围檩节点、支撑方向与长度、EA/EI、端部约束、预加轴力、温度和安装间隙",
+                "method": "全局墙—围檩—支撑矩阵负责变形协调；围檩构件设计采用闭合环向多跨包络，直接支撑点形成跨界，转角节点提供端部环向传力。普通对撑和角撑不得在跨中相互穿越；凸形狭长基坑的端墙补强优先采用两端直接落在墙/围檩上的 V 形次支撑。凹形回墙或明确近方形双向网格在墙—墙路径不可行时，才允许带临时立柱的受控 T/Y 节点。仅明确的环梁—径向撑体系按环撑节点规则处理。拆换撑阶段保留楼板或换撑标高参与竖向压力分带。",
+                "equations": ["[K_wall+K_wale+K_strut]{u}={F}", "R_i=q·l_i", "M_+=qL²/8", "M_-=q(L_1²+L_2²)/12", "N=k_a·Δ+N_0+EA·α·ΔT/L"],
+                "assumptions": ["闭合围檩转角节点具备可靠刚性连接和构造措施", "支撑拆除后楼板/换撑构件在对应标高形成有效侧向传力", "支撑初弯曲、偏心和局部节点通过施工效应或人工复核补充"],
+                "outputs": "围檩 M/V/挠度、支撑轴力、节点反力、传力路径、支点间距审计和平衡残差",
+                "verification": "检查围檩有效支点间距、闭合转角节点、非环形支撑零穿越、T/Y 节点立柱、拆换撑激活状态、支撑反力总和、数量级审计和局部异常定位。",
+                "standards": ["JGJ 120-2012", "GB 50017-2017", "GB/T 50010-2010（2024年局部修订）"]
+            },
+            {
+                "name": "强度驱动的方案—构件联合迭代",
+                "inputs": "支撑拓扑、围檩支点间距、各阶段压力带、墙/围檩/支撑控制内力、截面与配筋上限",
+                "method": "在 Step 5 先执行墙趾嵌固、传力路径、支点间距、坑内包含、非环形支撑零穿越和净距可施工性硬门禁，再组装工况并计算内力；凸形端墙补撑优先形成直接墙—墙 V 形路径，禁止自动落在普通支撑跨中。凹形或双向网格的受控 T/Y 节点必须设置明确竖向承托。对可修复的墙深、拓扑、截面和配筋按限定次数自动迭代，仍不满足时保留 fail 并阻断施工图发行。",
+                "equations": ["L_bay≤L_target", "E_d≤R_d", "δ_max≤δ_lim", "iteration≤N_max"],
+                "assumptions": ["拓扑修复仅增补必要支撑，不删除人工锁定构件", "自动扩截面受项目最大尺寸和施工净空约束", "局部节点、施工顺序和障碍避让仍需专业复核"],
+                "outputs": "修复前后支点间距、增补支撑清单、截面优化历史、剩余 fail、计算诊断与发行状态",
+                "verification": "检查修复构件的节点、立柱、净空、施工顺序和设计内力；两端退让后的净距和剩余长度必须通过门禁；禁止用自动修复隐藏无法闭环的承载力问题。",
+                "standards": ["JGJ 120-2012", "GB 55003-2021", "GB 55008-2021", "GB/T 50010-2010（2024年局部修订）", "GB 50017-2017"]
+            },
+            {
+                "name": "数值求解质量与平衡诊断",
+                "inputs": "全局刚度矩阵 K、荷载向量 F、位移向量 u、矩阵条件数、正则化参数和构件反力",
+                "method": "对 K·u=F 计算有效矩阵残差、原始矩阵残差、矩阵对称误差和条件数；将软件数值质量与工程规范验算分开记录。",
+                "equations": ["r=K·u-F", "η_r=||r||₂/max(||F||₂,1)", "η_s=||K-Kᵀ||_F/max(||K||_F,1)"],
+                "assumptions": ["残差合格仅证明线性方程求解一致性", "正则化求解一律进入人工复核", "条件数阈值属于软件质量控制参数，不冒充规范条文"],
+                "outputs": "相对残差、最大残差、矩阵对称误差、条件数、正则化状态和数值质量门禁结论",
+                "verification": "数值质量门禁通过后仍需逐项执行土压力、稳定、承载力、变形和构造等规范验算。",
+                "standards": ["PitGuard numerical quality gate（软件质量证据）"]
+            },
+            {
+                "name": "混凝土与钢构件承载力",
+                "inputs": "设计内力、截面尺寸、材料强度、保护层、有效高度、计算长度和连接条件",
+                "method": "对墙、冠梁、围檩、混凝土支撑和钢支撑执行受弯、受剪、轴压、稳定和最小配筋筛查。",
+                "equations": ["M≤α₁f_cbx(h₀-x/2)", "A_s=α₁f_cbx/f_y", "V≤V_Rd", "N≤φAf"],
+                "assumptions": ["常规截面承载力子集", "复杂双向受力、节点非线性、疲劳和抗震按专项设计复核"],
+                "outputs": "所需配筋、提供配筋、构件利用率、控制组合和构造复核项",
+                "verification": "核对设计值单位、截面有效高度、材料强度、最小/最大配筋和控制工况追溯。",
+                "standards": ["GB 55008-2021", "GB/T 50010-2010（2024年局部修订）", "GB 50017-2017"]
+            },
+            {
+                "name": "稳定性、地基与地下水",
+                "inputs": "坑深、嵌固深度、土层强度、地基承载力、水头、帷幕深度、降水阶段和软弱层",
+                "method": "对嵌固、抗隆起、渗流、承压水突涌、整体稳定和立柱基础承载力执行控制剖面搜索与筛查。",
+                "equations": ["F_s=R/S", "p=N/A±M/W≤f_a", "F_heave=R_heave/S_heave", "F_piping=R_seep/S_head"],
+                "assumptions": ["二维控制剖面与简化圆弧/水力路径", "复杂渗流场和土体非线性需专项数值分析"],
+                "outputs": "各模式安全系数、控制剖面、控制土层、风险等级和处置建议",
+                "verification": "至少复核一个不利剖面、软弱夹层、水位敏感性和降水失效工况。",
+                "standards": ["GB 55003-2021", "JGJ 120-2012 4.2/7", "GB 50007-2011"]
+            },
+            {
+                "name": "钢筋分区、逐根几何与加工深化",
+                "inputs": "构件包络内力、截面、材料、保护层、分区边界、运输长度、接头和弯曲规则",
+                "method": "由配筋需求生成分区钢筋组，再展开为逐根中心线、BBS、分段、套筒、钢筋笼和吊装单元。",
+                "equations": ["A_s,prov≥A_s,req", "s_clear≥s_clear,min", "l_cut=l_center+l_anchor+l_lap+l_hook"],
+                "assumptions": ["加工字段按通用格式输出", "企业弯曲表、接头工艺和设备字段需在导入前确认"],
+                "outputs": "钢筋编号表、BBS、逐根几何、分段/接头/吊装计划、净距与碰撞检查、ZIP 成套包",
+                "verification": "以 XLSX 为人工交接主文件，CSV 用于映射，JSON 用于机器语义；正式施工表达以 CAD/PDF 图纸包为准。",
+                "standards": ["GB 55008-2021", "GB/T 50010-2010（2024年局部修订）", "JGJ 120-2012 4.5"]
+            },
+        ],
+        "drawingSystem": {
+            "sheetFamilies": [
+                {"code": "G", "name": "总说明与追溯", "contents": "图纸目录、设计说明、图纸—模型—计算—规范索引"},
+                {"code": "S", "name": "结构与施工阶段", "contents": "总平面、墙幅分幅、各层支撑平面、横纵剖面和施工阶段图"},
+                {"code": "R", "name": "配筋深化", "contents": "墙、支撑、围檩配筋和钢筋笼吊装/套筒/下料索引"},
+                {"code": "D", "name": "节点详图", "contents": "支撑—围檩、角撑、立柱、墙幅接头、锚固和施工缝"},
+                {"code": "Q", "name": "质量证据", "contents": "逐图表达质量、完整性、碰撞、裂缝和发行门禁"},
+            ],
+            "perSheetGate": ["DXF可解析", "图号唯一", "关键图层", "原生尺寸", "图签与比例", "纸空间与锁定视口", "实体与文字深度"],
+            "traceability": "每张图通过 G-01 和 drawing_model_calculation_standard_matrix.csv 绑定模型对象、控制计算、直接规范和规则证据。",
+        },
+        "deliveryWorkflow": {
+            "folders": ["00_release", "10_drawings", "20_bim", "30_reports", "40_rebar", "50_data", "90_audit"],
+            "releaseControl": ["release_manifest.json", "issue_transmittal.csv", "deliverable_register.csv", "acceptance_matrix.csv", "SHA256SUMS.txt", "verify_delivery_package.py"],
+            "releaseGrades": ["development_only", "review_complete", "construction_issued"],
+        },
+        "analysisLevels": [
+            {"level": "L0", "name": "算法筛查", "use": "几何、构造和风险快速筛查；不得单独用于正式发行。"},
+            {"level": "L1", "name": "规范简化计算", "use": "按公开公式和适用条件完成方案与初步设计；需明确模型边界。"},
+            {"level": "L2", "name": "验证型工程计算", "use": "具备正式参数来源、收敛诊断、空间验证和独立基准证据。"},
+            {"level": "L3", "name": "高级专项复核", "use": "非线性有限元、渗流固结、接触、动力或成熟软件专项复核。"},
+        ],
+        "complianceSemantics": [
+            {"type": "normative_limit", "label": "规范控制值", "formalUse": True, "description": "直接追溯标准版本、条文、公式与适用条件。"},
+            {"type": "enterprise_control", "label": "企业标准值", "formalUse": True, "description": "需绑定已批准企业标准及版本。"},
+            {"type": "project_confirmed", "label": "项目控制值", "formalUse": True, "description": "需设计依据确认和项目责任人签署。"},
+            {"type": "algorithm_screening", "label": "算法建议值", "formalUse": False, "description": "用于候选生成和风险筛查，不显示为规范限值。"},
+            {"type": "template_default", "label": "待确认默认值", "formalUse": False, "description": "正式模式自动阻断。"},
+        ],
+        "statutoryWorkflow": {
+            "classification": "项目确认危大工程分类；软件筛查只用于提醒。设计单位定义设计控制边界，施工单位编制专项方案，监理、监测和现场责任方在后续阶段补充计划与实测证据。",
+            "evidence": ["设计发行：真实地质、水文与周边环境资料、设计控制工况、计算校审", "施工准备：危大工程清单、专项施工方案、监理审查、专家论证、监测方案和应急预案", "现场放行：实际开挖、支撑安装、实测预加轴力、水位、监测结果和阶段验收"],
+            "issueGate": "设计发行、施工准备和现场放行分别判断。尚未发生的现场数据不得降低设计发行就绪度；施工计划或现场状态超出设计允许域时触发复核、复算或设计变更。",
+            "references": [
+                {"title": "危险性较大的分部分项工程安全管理规定", "url": "https://www.mohurd.gov.cn/gongkai/zhengce/gzk/art/2022/art_17337_763794.html"},
+                {"title": "危险性较大的分部分项工程专项施工方案编制指南", "url": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2021/art_17339_763509.html"},
+                {"title": "危险性较大的分部分项工程专项施工方案严重缺陷清单（试行）", "url": "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2024/art_d0bab8f6afbd4bb2868b83fc0440f461.html"},
+            ],
+        },
+        "releaseRoadmap": [
+            {"version": "3.73", "focus": "分析等级、参数来源、合规语义和正式模式门禁"},
+            {"version": "3.74", "focus": "非线性地基反力、地下水敏感性和岩土保证包"},
+            {"version": "3.75", "focus": "全局六自由度空间杆系与钢支撑稳定曲线"},
+            {"version": "3.76", "focus": "验证矩阵、独立参考与成熟软件基准证书"},
+            {"version": "3.77", "focus": "危大工程法定流程、监测反馈、验收、审签和档案追溯"},
+            {"version": "3.77.1", "focus": "设计发行、施工准备、现场放行三门禁热修和责任方提示"},
+            {"version": "3.78", "focus": "设计控制工况取代含义混杂的施工阶段，计算只消费设计责任数据"},
+            {"version": "3.79", "focus": "设计不利情景、正式复算就绪台账和真实结果包络"},
+            {"version": "3.80", "focus": "施工计划符合性分级，超出设计允许域时触发复核或变更"},
+            {"version": "3.81", "focus": "现场执行快照、偏差事件、监测触发和阶段放行闭环"},
+            {"version": "3.82-3.87", "focus": "设计核心收敛、参数治理、五级方案搜索、逐构件包络、配筋回代和设计院级交付"},
+            {"version": "3.87.1", "focus": "设计主流程样式接入、异形转接体系完整预览、旧缓存自动重建和面板级故障隔离"},
+            {"version": "3.87.2", "focus": "设计核心完整性加固、参数来源门禁、候选预览V3、工作区证据保留和候选池前置去重"},
+            {"version": "3.87.3", "focus": "六阶段单一主流程、质量与追溯中心按需打开、九证据域分组映射和界面认知负担收敛"},
+            {"version": "3.87.4", "focus": "工程路由保持、地勘异步解析、计算阻断自动诊断修复与强制闭环复算"},
+        ],
+        "responsibilityWorkflow": {
+            "principle": "设计、施工准备和现场执行数据分别保存，后续业务对象不得覆盖已批准设计对象。",
+            "domains": [
+                {"id": "design", "name": "设计业务域", "owner": "设计单位", "objects": ["设计基准", "设计控制工况", "设计情景", "计算与配筋", "设计校审和设计发行"], "gate": "designIssueGate"},
+                {"id": "construction", "name": "施工准备域", "owner": "施工单位/监理单位", "objects": ["施工计划阶段", "专项施工方案", "监理审查", "专家论证", "监测方案和应急预案"], "gate": "constructionPreparationGate"},
+                {"id": "field", "name": "现场执行域", "owner": "施工单位/监理单位/监测单位", "objects": ["实际开挖状态", "支撑安装和实测预加轴力", "水位与监测快照", "偏差事件", "阶段验收"], "gate": "fieldStageReleaseGate"}
+            ],
+            "valueTypes": ["design_value", "design_limit", "design_assumption", "contractor_plan", "field_observation"],
+            "deviationLogic": "现场实际值先与施工计划比较，再与设计允许域比较。超出计划但仍在设计域内由施工侧处置；超出设计域时自动要求设计复核、复算或变更。设计控制工况须批准或冻结，施工计划须批准，现场快照须核验后才能进入对应正式门禁。"
+        },
+        "recoveryGuide": {
+            "release": "3.87.4",
+            "fixed": [
+                "设计质量证据面板样式纳入主入口，抽屉卡片、页签、表格和响应式布局正常",
+                "candidate-plan-v2预览缓存保留transferBeams、transferZones和obstacles",
+                "ResultViewer、方案比选、核心精简预览和围护评分平面统一显示转接体系",
+                "清除ResultViewer重复statusText声明，避免进入根级安全恢复模式",
+                "设计主流程、方案比选和结果可视化增加局部错误边界",
+                "设计核心聚合接口减少重复项目水合和首屏并发请求",
+                "正式参数确认增加来源资格校验，软件建议值和人工估算值不能被一键提升为正式参数",
+                "candidate-plan-v3记录预览完整性、无效构件和截断状态，并保留转接体系审计",
+                "工作区压缩保留候选完整计算摘要、数值健康和结果完整度证据",
+                "候选池在入池前按物理几何指纹去重，降低相同方案的内存占用",
+                "项目工作区仅保留六阶段主导航，质量证据面板改为按需侧栏",
+                "九个内部证据域映射到六个主阶段，不再形成竞争性流程",
+                "质量中心关闭时不加载设计核心聚合数据，减少首屏请求和视觉噪声"
+            ],
+            "deployment": [
+                "停止旧前端服务并执行npm ci及npm run build",
+                "部署新的dist目录，禁止继续使用历史dist",
+                "首次打开旧项目时由后端自动删除非candidate-plan-v3缓存并从项目快照重建",
+                "浏览器执行强制刷新，确认静态资源版本为3.87.4"
+            ],
+            "acceptance": [
+                "质量与追溯中心按六组证据卡片显示，无裸文本和大面积异常留白",
+                "L形方案A/B/C同时显示径向撑、闭合环梁/转接框架/内环弦杆和立柱",
+                "打开计算结果页不再出现Identifier statusText has already been declared",
+                "单个可视化面板异常时只显示局部重试卡片，不退出整个项目",
+                "预览被截断或含无效坐标时明确显示完整性警告，不把不完整图形解释为真实拓扑",
+                "重新打开项目后仍保留A/B/C完整计算摘要和推荐依据",
+                "软件建议参数不能直接通过批量确认进入正式设计",
+                "主页面只显示六个设计步骤，质量证据默认隐藏并通过质量与追溯按钮打开",
+                "质量中心的六组证据与主导航一一对应，点击后返回对应主步骤"
+            ]
+        },
+        "fileGuide": [
+            {"file": "协同成果交付包 ZIP", "use": "统一组织图纸、计算书、IFC、钢筋深化、项目快照、验收矩阵和离线哈希校验；优先用于完整移交。"},
+            {"file": "正式图纸发行包 ZIP", "use": "CAD/PDF 图纸、目录、图签、审签、修订和逐图质量门禁；面向正式审查和施工交付。"},
+            {"file": "钢筋加工深化包 ZIP", "use": "XLSX/CSV 供翻样、加工和复核；JSON 供 BIM、设备接口和追溯；施工图需配合 CAD 图纸包。"},
+            {"file": "DOCX 计算书", "use": "计算假定、公式、规范矩阵、工况、控制结果、问题清单和方案比选。"},
+            {"file": "IFC", "use": "三维协调、构件语义和外部 BIM 查看；不同 profile 对应轻量、分析、详细和施工可视化。"},
+            {"file": "项目完整 JSON", "use": "项目归档、迁移、二次开发和全量追溯，不作为直接施工文件。"},
+        ],
+        "standardsMatrix": matrix,
+    }

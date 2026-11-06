@@ -1,0 +1,22 @@
+
+> pitguard-web@3.87.18 test
+> npm run generate:units && vitest run src/components/FrozenSectionPanel.test.tsx src/api/client.section.test.ts src/pages/CoreProjectWorkspace.test.tsx src/viewers/RetainingSystemViewer.test.tsx src/viewers/ResultViewer.test.tsx
+
+
+> pitguard-web@3.87.18 generate:units
+> node ../../scripts/generate-unit-registry.mjs
+
+[PitGuard] generated apps/web/src/generated/engineeringUnits.ts
+
+ RUN  v4.1.9 /workspace/scratch/fd5d8a28c64e/work/foundation_section_validation/apps/web
+
+
+ Test Files  5 passed (5)
+      Tests  55 passed (55)
+   Start at  10:00:34
+   Duration  3.85s (transform 1.31s, setup 254ms, import 1.85s, tests 4.21s, environment 2.67s)
+
+
+--- stderr ---
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.

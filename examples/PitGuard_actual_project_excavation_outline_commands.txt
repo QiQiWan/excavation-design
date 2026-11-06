@@ -1,0 +1,32 @@
+# PitGuard V3.12 actual engineering case excavation outline
+# Recommended: paste the single POLY command below into Step 4 > Quick command and press Enter.
+POLY -115,-14; -99,-14; -99,-12; -39,-12; -39,-16.5; -13,-16.5; -13,-13; 98,-13; 98,-14.5; 115,-14.5; 115,14.5; 98,14.5; 98,13; -13,13; -13,16.5; -39,16.5; -39,12; -99,12; -99,14; -115,14 CLOSE
+
+# Project elevations
+TOP_ELEV 0.0
+BOTTOM_ELEV -16.6
+# Wall toe elevation is a retaining-system parameter, not an outline command:
+# WALL_BOTTOM -32.8
+
+# Fallback for V3.11 and earlier: enter each coordinate line in order, then CLOSE.
+-115,-14
+-99,-14
+-99,-12
+-39,-12
+-39,-16.5
+-13,-16.5
+-13,-13
+98,-13
+98,-14.5
+115,-14.5
+115,14.5
+98,14.5
+98,13
+-13,13
+-13,16.5
+-39,16.5
+-39,12
+-99,12
+-99,14
+-115,14
+CLOSE
