@@ -30,7 +30,7 @@ curl -s -o NUL http://127.0.0.1:5173/ >nul 2>&1
 if not errorlevel 1 goto ready
 set /a tries+=1
 if %tries% GEQ 30 goto timeout
-timeout /t 2 >nul
+ping -n 3 127.0.0.1 >nul
 goto wait
 
 :ready
@@ -45,5 +45,5 @@ echo Web server did not respond within 60 seconds.
 echo Check the two minimized console windows for errors.
 
 :end
-timeout /t 4 >nul
+ping -n 5 127.0.0.1 >nul
 endlocal
