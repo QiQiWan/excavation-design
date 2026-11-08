@@ -2227,14 +2227,14 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .coreSystemMenu a { color:#1d4ed8; }
 .compactDiagnostic { margin:10px 16px; display:flex; align-items:center; justify-content:space-between; padding:10px 14px; }
 .coreWorkspace { min-height:calc(100vh - 60px); padding:14px 20px 28px; background:#f4f6f8; color:#172033; }
-.coreHeader { max-width:1480px; margin:0 auto 12px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.coreHeader { max-width:none; margin:0 0 12px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .coreProjectIdentity,.coreHeaderActions { display:flex; align-items:center; gap:12px; }
 .coreProjectIdentity h2 { margin:0; font-size:21px; }
 .coreProjectIdentity span { color:#64748b; font-size:12px; }
 .coreGate { padding:5px 9px; border-radius:999px; font-size:12px; background:#dcfce7; color:#166534; }
 .coreGate.warning { background:#fff7d6; color:#92400e; }
 .coreGate.fail { background:#fee2e2; color:#991b1b; }
-.coreStageNav { max-width:1480px; margin:0 auto 12px; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.coreStageNav { max-width:none; margin:0 0 12px; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
 .coreStageNav button { min-height:66px; padding:10px 12px; display:flex; align-items:center; gap:10px; text-align:left; color:#334155; background:#fff; border:1px solid #dce3eb; border-radius:10px; }
 .coreStageNav button i { width:26px; height:26px; display:grid; place-items:center; flex:none; border-radius:50%; background:#eef2f7; font-style:normal; font-weight:700; }
 .coreStageNav button span { min-width:0; display:grid; gap:2px; }
@@ -2243,7 +2243,9 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .coreStageNav button.done i { background:#dcfce7; color:#166534; }
 .coreStageNav button.active { border-color:#2563eb; box-shadow:0 0 0 2px rgba(37,99,235,.10); }
 .coreStageNav button.active i { background:#2563eb; color:#fff; }
-.coreMain { max-width:1480px; min-height:620px; margin:0 auto; padding:18px; background:#fff; border:1px solid #dde4ec; border-radius:12px; }
+.coreMain { max-width:none; min-height:620px; margin:0; padding:18px; background:#fff; border:1px solid #dde4ec; border-radius:12px; }
+.coreBody { margin:0; display:grid; grid-template-columns:minmax(0,1fr); gap:14px; align-items:start; }
+.coreColumn { display:grid; gap:12px; min-width:0; }
 .coreStageHeading { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #e5eaf0; }
 .coreStageHeading span { color:#64748b; font-size:11px; }
 .coreStageHeading h3 { margin:2px 0 0; font-size:22px; }

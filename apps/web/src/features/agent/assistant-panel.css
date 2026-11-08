@@ -1,0 +1,163 @@
+/* Desktop-pet assistant: takes no layout space until opened. */
+.agentPet {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+.agentPet > * { pointer-events: auto; }
+.agentPetLauncherWrap { position: relative; width: 54px; height: 54px; flex: 0 0 auto; }
+
+.agentDock {
+  position: absolute;
+  width: min(356px, calc(100vw - 40px));
+  height: min(600px, calc(100vh - 104px));
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; overflow-y: auto; overflow-x: hidden;
+  background: #fff; border: 1px solid #dde4ec; border-radius: 14px;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, .18);
+  color: #172033;
+  animation: agentDockIn .16s ease-out;
+}
+@keyframes agentDockIn {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+.agentPet.place-above-fromRight .agentDock,
+.agentPet.place-above-fromRight .agentDockToasts { bottom: calc(100% + 10px); right: 0; }
+.agentPet.place-above-fromLeft .agentDock,
+.agentPet.place-above-fromLeft .agentDockToasts { bottom: calc(100% + 10px); left: 0; }
+.agentPet.place-below-fromRight .agentDock,
+.agentPet.place-below-fromRight .agentDockToasts { top: calc(100% + 10px); right: 0; }
+.agentPet.place-below-fromLeft .agentDock,
+.agentPet.place-below-fromLeft .agentDockToasts { top: calc(100% + 10px); left: 0; }
+.agentPet.place-below-fromRight .agentDock,
+.agentPet.place-below-fromLeft .agentDock { animation-name: agentDockInBelow; }
+@keyframes agentDockInBelow {
+  from { opacity: 0; transform: translateY(-10px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.agentDockHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex: 0 0 auto; }
+.agentDockHeader strong { display: block; font-size: 14px; }
+.agentDockHeader span { color: #64748b; font-size: 11px; }
+
+.agentDockStatusStrip {
+  flex: 0 0 auto; padding: 6px 9px; border-radius: 7px;
+  background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 11px; line-height: 1.5;
+}
+.agentDockStatusStrip b { font-size: 13px; }
+
+.agentDockToasts { position: absolute; width: min(300px, calc(100vw - 40px)); display: grid; gap: 8px; }
+.agentDockInlineNotices { flex: 0 0 auto; max-height: 132px; overflow-y: auto; display: grid; gap: 6px; }
+
+.agentNotice {
+  position: relative; display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 10px; border-radius: 9px; border: 1px solid #fecaca;
+  background: #fff7f7; color: #7f1d1d;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .12);
+  font-size: 11px; line-height: 1.55;
+  animation: agentNoticeIn .18s ease-out;
+}
+@keyframes agentNoticeIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+.agentNotice.error { background: #fef2f2; border-color: #f87171; }
+.agentNotice > div { flex: 1; min-width: 0; }
+.agentNotice strong { display: block; font-size: 12px; margin-bottom: 2px; }
+.agentNotice p {
+  margin: 0; color: inherit; opacity: .82; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.agentNoticeOpen {
+  margin-top: 5px; padding: 0; border: 0; background: none;
+  color: #b91c1c; font-size: 11px; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.agentNoticeClose {
+  flex: 0 0 auto; width: 18px; height: 18px; line-height: 16px; padding: 0;
+  border: 0; border-radius: 4px; background: rgba(127, 29, 29, .08);
+  color: #7f1d1d; font-size: 14px; cursor: pointer;
+}
+
+.agentDockRoles { flex: 0 0 auto; }
+.agentDockRoles h4 { margin: 0 0 6px; font-size: 11px; color: #64748b; font-weight: 500; }
+.agentDockRoles ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.agentDockRoles li {
+  display: flex; align-items: center; gap: 5px; padding: 4px 6px;
+  border: 1px solid #e2e8f0; border-radius: 6px; font-size: 11px; background: #f8fafc;
+}
+.agentDockRoles li b { font-size: 10px; color: #475569; }
+.agentDockRoles li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agentDockRoles li em { font-style: normal; font-size: 10px; padding: 1px 4px; border-radius: 4px; }
+.agentDockRoles li.ready { background: #f0fdf4; border-color: #86efac; }
+.agentDockRoles li.ready em { background: #dcfce7; color: #166534; }
+.agentDockRoles li.planned { background: #f8fafc; border-color: #e2e8f0; }
+.agentDockRoles li.planned em { background: #eef2f7; color: #64748b; }
+
+.agentDockThread { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; }
+.agentDockThreadBar { display: flex; gap: 6px; }
+.agentDockThreadBar select { flex: 1; min-width: 0; padding: 5px 6px; font-size: 12px; border: 1px solid #dbe3ec; border-radius: 6px; background: #fff; color: #334155; }
+
+.agentDockMessages {
+  display: grid; gap: 8px; align-content: start; flex: 1 1 auto; min-height: 120px;
+  overflow-y: auto; padding: 8px; background: #f8fafc; border: 1px solid #e5eaf0; border-radius: 8px;
+}
+.agentDockEmpty { margin: 0; color: #64748b; font-size: 12px; line-height: 1.6; }
+.agentMessage { display: grid; gap: 3px; }
+.agentMessage small { color: #94a3b8; font-size: 10px; }
+.agentMessage p { margin: 0; padding: 7px 9px; border-radius: 8px; font-size: 12px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+.agentMessage.user p { background: #e0f2fe; color: #0c4a6e; }
+.agentMessage.assistant p { background: #fff; border: 1px solid #e2e8f0; color: #334155; }
+
+.agentDockCompose { display: grid; gap: 6px; flex: 0 0 auto; }
+.agentDockCompose textarea {
+  width: 100%; resize: vertical; padding: 7px 8px; font-size: 12px; line-height: 1.6;
+  border: 1px solid #dbe3ec; border-radius: 8px; background: #fff; color: #172033; font-family: inherit;
+}
+.agentDockComposeBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.agentDockComposeBar small { color: #94a3b8; font-size: 10px; }
+.agentDockComposeBar button {
+  padding: 5px 12px; font-size: 12px; border-radius: 6px; border: 1px solid #1d4ed8;
+  background: #1d4ed8; color: #fff; cursor: pointer;
+}
+.agentDockComposeBar button:disabled { opacity: .5; cursor: default; }
+
+.agentDockError { margin: 0; padding: 6px 8px; font-size: 11px; color: #991b1b; background: #fee2e2; border-radius: 6px; }
+.agentDockNote { margin: 0; font-size: 10px; color: #94a3b8; line-height: 1.5; }
+
+.agentPetLauncher {
+  position: relative; width: 54px; height: 54px; flex: 0 0 auto;
+  display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: #e6f1fb;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .16);
+  color: #fff; cursor: grab; touch-action: none; overflow: hidden;
+  transition: transform .15s ease;
+}
+.agentPet.isDragging .agentPetLauncher { cursor: grabbing; }
+.agentPet.isDragging .agentPetLauncher:hover { transform: none; }
+.agentPet.isDragging .agentDock, .agentPet.isDragging .agentNotice { animation: none; }
+.agentPetLogo {
+  width: 100%; height: 100%; display: block; object-fit: cover;
+  border-radius: 50%; transform: scale(1.08);
+  -webkit-user-drag: none; user-select: none; -webkit-user-select: none;
+}
+.agentPetLauncher:hover { transform: translateY(-2px) scale(1.05); }
+.agentPetLauncher.isOpen { background: #334155; }
+.agentPetGlyph { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+.agentPetLauncher.isOpen .agentPetGlyph { font-size: 22px; font-weight: 400; line-height: 1; }
+.agentPetBadge {
+  position: absolute; top: -12px; right: -14px; min-width: 20px; height: 20px;
+  padding: 0 4px; display: grid; place-items: center;
+  border-radius: 10px;
+  background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; line-height: 1;
+}
+
+@media (max-width: 560px) {
+  .agentPet { right: 12px; bottom: 12px; }
+  .agentDock { width: calc(100vw - 24px); height: min(560px, calc(100vh - 96px)); }
+  .agentDockToasts { width: calc(100vw - 24px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentPetLauncher, .agentDock, .agentNotice { animation: none; transition: none; }
+}

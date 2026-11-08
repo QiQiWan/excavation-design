@@ -354,12 +354,50 @@ export type SectionReferenceComparison = {
   contractHash: string; curveBundleHash: string; comparisonHash: string; report: Record<string, unknown>;
 };
 
+export type AgentRole = {
+  id: string; name: string; capability: string;
+  implementation: 'pilot' | 'planned'; stateLabel: string; executable: boolean;
+};
+export type AgentConversation = {
+  id: string; projectId: string; actor: string; title: string;
+  status: string; messageCount: number; createdAt: string; updatedAt: string;
+};
+export type AgentMessage = {
+  id: number; conversationId: string; role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string; metadata: Record<string, unknown>; createdAt: string;
+};
+export type AgentProjectStage = { key: string; title: string; status: string; message: string };
+export type AgentProjectStatus = {
+  stages: AgentProjectStage[]; doneStages: string[]; activeStage: AgentProjectStage | null;
+  failCount: number | null; warningCount: number | null; blockers: string[];
+  wallCount: number; supportCount: number; boreholeCount: number; stratumCount: number;
+  statusUnavailable?: boolean; cachedSecondsAgo?: number;
+};
+
 const sectionRequestOptions: RequestOptions = {
   timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
   activity: { blocking: false, cacheTtlMs: 0, deduplicate: false },
 };
 
 export const api = {
+  agentRoles: () => request<{ roles: AgentRole[]; formalConstructionIssue: boolean }>('/api/agents/roles', { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentProjectStatus: (projectId: string) => request<{ digest: AgentProjectStatus; formalConstructionIssue: boolean }>(
+    `/api/agents/assistant/status?project_id=${encodeURIComponent(projectId)}`, {
+      timeoutMs: 60000, responseIdleTimeoutMs: 60000,
+      activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentConversations: (projectId: string) => request<{ conversations: AgentConversation[] }>(
+    `/api/agents/conversations?project_id=${encodeURIComponent(projectId)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  createAgentConversation: (projectId: string, title: string) => request<AgentConversation>('/api/agents/conversations', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, title }), activity: { label: '正在开启会话' } }),
+  agentConversation: (id: string) => request<{ conversation: AgentConversation; messages: AgentMessage[] }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  postAgentMessage: (id: string, content: string) => request<{ message: AgentMessage; reply: AgentMessage }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }), timeoutMs: 60000, responseIdleTimeoutMs: 60000,
+      activity: { label: '正在发送消息' } }),
+
   getNormativeMethods: () => request<Record<string, unknown>>('/api/sections/norms/catalog', sectionRequestOptions),
   getNormativeCandidates: () => request<Record<string, unknown>>('/api/sections/norms/candidates', sectionRequestOptions),
   executeNormativeMethod: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/sections/norms/calculate', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),

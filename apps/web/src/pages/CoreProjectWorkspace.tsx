@@ -11,6 +11,7 @@ import { waitForTaskWithHealth } from '../utils/taskPolling';
 import ConstructionStageEditor from '../components/ConstructionStageEditor';
 import DesignCoreWorkflowPanel, { type PrimaryDesignStageKey } from '../components/DesignCoreWorkflowPanel';
 import PanelErrorBoundary from '../app/PanelErrorBoundary';
+import AssistantPanel from '../features/agent/AssistantPanel';
 import { sanitizeCandidatePlanGeometry } from '../drawing/candidateGeometry';
 
 const GeologyViewer = lazy(() => import('../viewers/GeologyViewer'));
@@ -362,6 +363,8 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   const calculationBusy = taskLaunching || Boolean(taskState);
 
   return <main className="coreWorkspace">
+    <div className="coreBody">
+    <div className="coreColumn">
     <header className="coreHeader">
       <div className="coreProjectIdentity">
         <button className="secondary" onClick={onBack}>项目列表</button>
@@ -537,5 +540,8 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
         </div>
       </section> : null}
     </section>
+    </div>
+    </div>
+    <AssistantPanel projectId={current.id} projectName={current.name} />
   </main>;
 }

@@ -1,6 +1,6 @@
 """Strict public contracts for the V3.88 research/work-copy Agent pilot."""
 from __future__ import annotations
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 SHA256 = r'^[0-9a-f]{64}$'
@@ -15,6 +15,7 @@ class StartRun(Strict):
     max_candidates: int = Field(default=3, ge=1, le=5)
     model_mode: Literal['off', 'optional'] = 'off'
     client_request_id: str | None = Field(default=None, min_length=8, max_length=96, pattern=r'^[a-zA-Z0-9_.-]+$')
+    conversation_id: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
 
 
 class RunDecision(Strict):
@@ -27,3 +28,23 @@ class RunDecision(Strict):
 
 class OperatorNote(Strict):
     note: str = Field(min_length=12, max_length=1000)
+
+
+class ConversationCreate(Strict):
+    """Opening a session with the engineering assistant."""
+
+    project_id: str = Field(min_length=1, max_length=100)
+    title: str = Field(default='新会话', min_length=1, max_length=120)
+
+
+class MessageCreate(Strict):
+    """A designer's turn.
+
+    The public API accepts engineer turns only. Assistant, system and tool
+    turns are written server-side by the runtime, so a client can never
+    forge a message that appears to come from the assistant.
+    """
+
+    role: Literal['user'] = 'user'
+    content: str = Field(min_length=1, max_length=8000)
+    metadata: dict[str, Any] = Field(default_factory=dict)

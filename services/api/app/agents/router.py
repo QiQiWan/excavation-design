@@ -1,11 +1,12 @@
 """Authenticated, fail-closed Agent workbench API. No direct model-driven tool endpoint."""
 from __future__ import annotations
 from fastapi import APIRouter,HTTPException,Request,Query
-from .contracts import StartRun,RunDecision
+from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate
 from .store import AgentStore,ConflictError
 from .catalog import catalog
 from .engine import AgentRuntime
 from .model_gateway import configuration
+from . import assistant
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -25,6 +26,16 @@ def _check_run(request:Request,run_id:str):
     return run
 
 
+def _check_conversation(request:Request,conversation_id:str):
+    identity=_actor(request)
+    store=AgentStore()
+    try:conversation=store.get_conversation(conversation_id)
+    except KeyError as exc:raise HTTPException(404,detail='会话不存在') from exc
+    if conversation['actor']!=identity.actor and ROLE_RANK.get(identity.role,0)<ROLE_RANK['checker']:
+        raise HTTPException(403,detail='无权访问其他工程师的会话')
+    return conversation
+
+
 @router.get('/catalog')
 def get_agent_catalog():
     return catalog()
@@ -33,6 +44,19 @@ def get_agent_catalog():
 @router.get('/model/configuration')
 def model_configuration():
     return configuration()
+
+
+@router.get('/roles')
+def agent_roles():
+    """The eight professional roles and whether each one can run today."""
+    return {'roles': assistant.role_roster(),'formalConstructionIssue':False}
+
+
+@router.get('/assistant/status')
+def assistant_project_status(request:Request,project_id:str=Query(min_length=1,max_length=100)):
+    """Lightweight project state for the assistant's unattended notices."""
+    _actor(request)
+    return {'digest':assistant.project_digest(project_id),'formalConstructionIssue':False}
 
 
 @router.post('/runs',status_code=201)
@@ -136,3 +160,57 @@ def decide_agent_run(run_id:str,body:RunDecision,request:Request):
                expected_snapshot_hash=body.expected_active_snapshot_hash,
                acknowledgement=body.acknowledgement,comment=body.comment,reviewer=identity.actor)
     except (ValueError,ConflictError) as exc:raise HTTPException(409,detail=str(exc)) from exc
+
+
+# --------------------------------------------------------------------------- #
+# Assistant sessions.  A conversation records the designer's turns and the
+# engineering objects those turns referenced.  It carries no engineering
+# authority: nothing here can adopt a candidate or mark a check as passed.
+# --------------------------------------------------------------------------- #
+
+@router.post('/conversations',status_code=201)
+def create_conversation(body:ConversationCreate,request:Request):
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='开启会话要求设计人员权限')
+    return AgentStore().create_conversation(project_id=body.project_id,actor=identity.actor,
+                                             title=body.title)
+
+
+@router.get('/conversations')
+def list_conversations(request:Request,project_id:str=Query(min_length=1,max_length=100)):
+    identity=_actor(request)
+    store=AgentStore()
+    rows=store.list_conversations(project_id=project_id)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['checker']:
+        rows=[r for r in rows if r['actor']==identity.actor]
+    return {'conversations':rows,'formalConstructionIssue':False}
+
+
+@router.get('/conversations/{conversation_id}')
+def get_conversation(conversation_id:str,request:Request):
+    conversation=_check_conversation(request,conversation_id)
+    store=AgentStore()
+    return {'conversation':conversation,'messages':store.messages(conversation_id),
+            'formalConstructionIssue':False}
+
+
+@router.get('/conversations/{conversation_id}/messages')
+def list_conversation_messages(conversation_id:str,request:Request):
+    _check_conversation(request,conversation_id)
+    return {'messages':AgentStore().messages(conversation_id)}
+
+
+@router.post('/conversations/{conversation_id}/messages',status_code=201)
+def post_conversation_message(conversation_id:str,body:MessageCreate,request:Request):
+    conversation=_check_conversation(request,conversation_id)
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='发送消息要求设计人员权限')
+    store=AgentStore()
+    try:
+        message=store.append_message(conversation_id,role=body.role,content=body.content,
+                                     metadata=body.metadata)
+        reply=assistant.respond(conversation,body.content)
+    except (ValueError,KeyError) as exc:raise HTTPException(409,detail=str(exc)) from exc
+    return {'message':message,'reply':reply,'formalConstructionIssue':False}
