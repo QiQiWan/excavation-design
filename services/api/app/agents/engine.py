@@ -146,7 +146,8 @@ class AgentRuntime:
     def create(self,body,actor):
         result=self.repo.load(body.result_hash)
         return self.store.create(result=result,actor=actor,max_candidates=body.max_candidates,
-                                 model_mode=body.model_mode,client_request_id=body.client_request_id)
+                                 model_mode=body.model_mode,client_request_id=body.client_request_id,
+                                 conversation_id=getattr(body,'conversation_id',None))
 
     def _compute_with_heartbeat(self,run,owner,base,action):
         stop=Event()

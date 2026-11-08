@@ -41,7 +41,8 @@ class AgentStore:
                     error TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0,
                     pause_requested INTEGER NOT NULL DEFAULT 0,
                     lease_owner TEXT, lease_until REAL, revision INTEGER NOT NULL DEFAULT 0,
-                    client_request_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    client_request_id TEXT, conversation_id TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                     UNIQUE(actor,client_request_id));
                 CREATE INDEX IF NOT EXISTS runs_schedule ON runs(status,lease_until,created_at);
                 CREATE TABLE IF NOT EXISTS events (
@@ -64,11 +65,23 @@ class AgentStore:
                     decision TEXT NOT NULL, comment TEXT NOT NULL, reviewer TEXT NOT NULL,
                     previous_snapshot_hash TEXT NOT NULL, selected_snapshot_hash TEXT,
                     created_at TEXT NOT NULL, UNIQUE(run_id));
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor TEXT NOT NULL,
+                    title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS conversations_project ON conversations(project_id,updated_at);
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL, content TEXT NOT NULL, metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS messages_conversation ON messages(conversation_id,id);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
             if 'pause_requested' not in columns:
                 c.execute('ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0')
+            if 'conversation_id' not in columns:
+                c.execute('ALTER TABLE runs ADD COLUMN conversation_id TEXT')
 
     @contextmanager
     def connect(self):
@@ -98,10 +111,12 @@ class AgentStore:
                  'updatedAt' if k=='updated_at' else
                  'leaseOwner' if k=='lease_owner' else
                  'leaseUntil' if k=='lease_until' else
+                 'conversationId' if k=='conversation_id' else
                  'clientRequestId' if k=='client_request_id' else k):
                 bool(v) if k in ('cancel_requested','pause_requested') else v for k,v in r.items()}
 
-    def create(self,*,result,actor:str,max_candidates:int=3,model_mode:str='off',client_request_id=None):
+    def create(self,*,result,actor:str,max_candidates:int=3,model_mode:str='off',
+               client_request_id=None,conversation_id:str|None=None):
         rh=result['resultHash'];sh=result['snapshotHash'];pr=result['projectId'];sec=result['sectionId']
         rid=uuid4().hex;ts=now()
         with self.connect() as c:
@@ -110,9 +125,10 @@ class AgentStore:
                 prior=c.execute('SELECT * FROM runs WHERE actor=? AND client_request_id=?',(actor,client_request_id)).fetchone()
                 if prior:
                     if (prior['source_result_hash']!=rh or prior['candidate_limit']!=max_candidates
-                            or prior['model_mode']!=model_mode):
+                            or prior['model_mode']!=model_mode
+                            or (prior['conversation_id'] or None)!=(conversation_id or None)):
                         c.execute('ROLLBACK')
-                        raise ConflictError('幂等请求号对应不同冻结结果、模型模式或候选预算')
+                        raise ConflictError('幂等请求号对应不同冻结结果、模型模式、候选预算或会话')
                     c.execute('COMMIT')
                     return self._run(prior)
             selection=c.execute('SELECT * FROM selection WHERE project_id=? AND section_id=?',(pr,sec)).fetchone()
@@ -122,10 +138,11 @@ class AgentStore:
             if not selection:
                 c.execute('INSERT INTO selection VALUES(?,?,?,?,?,?,?)',(pr,sec,sh,rh,0,actor,ts))
             c.execute('''INSERT INTO runs(id,project_id,section_id,actor,source_result_hash,
-                source_snapshot_hash,status,step,progress,candidate_limit,model_mode,client_request_id,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                (rid,pr,sec,actor,rh,sh,'queued','diagnose',0,max_candidates,model_mode,client_request_id,ts,ts))
-            self._event(c,rid,'created','run_created',{'sourceResultHash':rh})
+                source_snapshot_hash,status,step,progress,candidate_limit,model_mode,client_request_id,conversation_id,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (rid,pr,sec,actor,rh,sh,'queued','diagnose',0,max_candidates,model_mode,client_request_id,conversation_id,ts,ts))
+            self._event(c,rid,'created','run_created',{'sourceResultHash':rh,
+                **({'conversationId':conversation_id} if conversation_id else {})})
             c.execute('COMMIT')
         return self.get(rid)
 
@@ -323,3 +340,65 @@ class AgentStore:
             self._event(c,rid,'decision','human_decision',{'decision':decision,'candidateId':candidate_id,'reviewer':reviewer})
             c.execute('COMMIT')
             return {'decisionId':receipt_id,**receipt,'formalConstructionIssue':False}
+
+    # ------------------------------------------------------------------ #
+    # Conversation and message records.
+    #
+    # A conversation is the durable transcript of a designer's session with
+    # the engineering assistant. It stores only what was said and what it
+    # referenced; it never grants a model any engineering authority.
+    # ------------------------------------------------------------------ #
+
+    def create_conversation(self,*,project_id:str,actor:str,title:str='新会话'):
+        cid=uuid4().hex;ts=now()
+        with self.connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            c.execute('INSERT INTO conversations VALUES(?,?,?,?,?,?,?)',
+                      (cid,project_id,actor,title,'active',ts,ts))
+            c.execute('COMMIT')
+        return self.get_conversation(cid)
+
+    def get_conversation(self,cid):
+        with self.connect() as c:
+            row=c.execute('''SELECT cv.*,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=cv.id)
+                             AS message_count FROM conversations cv WHERE cv.id=?''',(cid,)).fetchone()
+        if row is None:raise KeyError('Agent conversation not found')
+        r=dict(row)
+        return {'id':r['id'],'projectId':r['project_id'],'actor':r['actor'],'title':r['title'],
+                'status':r['status'],'messageCount':r['message_count'],
+                'createdAt':r['created_at'],'updatedAt':r['updated_at']}
+
+    def list_conversations(self,*,project_id:str,actor:str|None=None):
+        with self.connect() as c:
+            if actor:
+                rows=c.execute('SELECT id FROM conversations WHERE project_id=? AND actor=? '
+                               'ORDER BY updated_at DESC LIMIT 100',(project_id,actor)).fetchall()
+            else:
+                rows=c.execute('SELECT id FROM conversations WHERE project_id=? '
+                               'ORDER BY updated_at DESC LIMIT 100',(project_id,)).fetchall()
+            ids=[x['id'] for x in rows]
+        return [self.get_conversation(i) for i in ids]
+
+    def append_message(self,cid,*,role:str,content:str,metadata:dict|None=None):
+        if role not in ('user','assistant','system','tool'):
+            raise ValueError('unsupported message role')
+        ts=now()
+        with self.connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if c.execute('SELECT id FROM conversations WHERE id=?',(cid,)).fetchone() is None:
+                c.execute('ROLLBACK');raise KeyError('Agent conversation not found')
+            cur=c.execute('''INSERT INTO messages(conversation_id,role,content,metadata_json,created_at)
+                             VALUES(?,?,?,?,?)''',(cid,role,content,encode(metadata or {}),ts))
+            mid=cur.lastrowid
+            c.execute('UPDATE conversations SET updated_at=? WHERE id=?',(ts,cid))
+            c.execute('COMMIT')
+        return {'id':mid,'conversationId':cid,'role':role,'content':content,
+                'metadata':metadata or {},'createdAt':ts}
+
+    def messages(self,cid,limit:int=200):
+        with self.connect() as c:
+            rows=c.execute('SELECT * FROM messages WHERE conversation_id=? ORDER BY id ASC LIMIT ?',
+                           (cid,min(max(limit,1),1000))).fetchall()
+        return [{'id':x['id'],'conversationId':x['conversation_id'],'role':x['role'],
+                 'content':x['content'],'metadata':json.loads(x['metadata_json']),
+                 'createdAt':x['created_at']} for x in rows]
