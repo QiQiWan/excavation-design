@@ -46,6 +46,10 @@
   background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 11px; line-height: 1.5;
 }
 .agentDockStatusStrip b { font-size: 13px; }
+.agentDockRunStrip {
+  flex: 0 0 auto; padding: 5px 9px; border-radius: 7px;
+  background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 11px;
+}
 
 .agentDockToasts { position: absolute; width: min(300px, calc(100vw - 40px)); display: grid; gap: 8px; }
 .agentDockInlineNotices { flex: 0 0 auto; max-height: 132px; overflow-y: auto; display: grid; gap: 6px; }
@@ -108,6 +112,7 @@
 .agentMessage p { margin: 0; padding: 7px 9px; border-radius: 8px; font-size: 12px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
 .agentMessage.user p { background: #e0f2fe; color: #0c4a6e; }
 .agentMessage.assistant p { background: #fff; border: 1px solid #e2e8f0; color: #334155; }
+.agentMessage.tool p { background: #f1f5f9; border: 1px dashed #cbd5e1; color: #475569; font-size: 11px; }
 
 .agentDockCompose { display: grid; gap: 6px; flex: 0 0 auto; }
 .agentDockCompose textarea {

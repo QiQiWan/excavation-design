@@ -373,6 +373,10 @@ export type AgentProjectStatus = {
   wallCount: number; supportCount: number; boreholeCount: number; stratumCount: number;
   statusUnavailable?: boolean; cachedSecondsAgo?: number;
 };
+export type AgentRunBrief = {
+  id: string; status: string; step: string; progress: number;
+  projectId: string; sectionId: string; createdAt: string; updatedAt: string;
+};
 
 const sectionRequestOptions: RequestOptions = {
   timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
@@ -390,13 +394,25 @@ export const api = {
   createAgentConversation: (projectId: string, title: string) => request<AgentConversation>('/api/agents/conversations', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project_id: projectId, title }), activity: { label: '正在开启会话' } }),
-  agentConversation: (id: string) => request<{ conversation: AgentConversation; messages: AgentMessage[] }>(
+  agentConversation: (id: string) => request<{ conversation: AgentConversation; messages: AgentMessage[]; runs: AgentRunBrief[] }>(
     `/api/agents/conversations/${encodeURIComponent(id)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentConversationRuns: (id: string) => request<{ runs: AgentRunBrief[]; formalConstructionIssue: boolean }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}/runs`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentRuns: (projectId: string) => request<{ runs: Record<string, unknown>[]; formalConstructionIssue: boolean }>(
+    `/api/agents/runs?project_id=${encodeURIComponent(projectId)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentRunOverview: (runId: string) => request<Record<string, unknown>>(
+    `/api/agents/runs/${encodeURIComponent(runId)}/overview`, { activity: { quiet: true, cacheTtlMs: 0 } }),
   postAgentMessage: (id: string, content: string) => request<{ message: AgentMessage; reply: AgentMessage }>(
     `/api/agents/conversations/${encodeURIComponent(id)}/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }), timeoutMs: 60000, responseIdleTimeoutMs: 60000,
       activity: { label: '正在发送消息' } }),
+  postAgentMessageWithRun: (id: string, content: string, resultHash: string) => request<{ message: AgentMessage; reply: AgentMessage }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, metadata: { resultHash } }),
+      timeoutMs: 60000, responseIdleTimeoutMs: 60000,
+      activity: { label: '正在发起试点任务' } }),
 
   getNormativeMethods: () => request<Record<string, unknown>>('/api/sections/norms/catalog', sectionRequestOptions),
   getNormativeCandidates: () => request<Record<string, unknown>>('/api/sections/norms/candidates', sectionRequestOptions),
