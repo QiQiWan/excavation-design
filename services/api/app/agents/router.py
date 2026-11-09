@@ -192,6 +192,15 @@ def get_conversation(conversation_id:str,request:Request):
     conversation=_check_conversation(request,conversation_id)
     store=AgentStore()
     return {'conversation':conversation,'messages':store.messages(conversation_id),
+            'runs':store.runs_for_conversation(conversation_id),
+            'formalConstructionIssue':False}
+
+
+@router.get('/conversations/{conversation_id}/runs')
+def list_conversation_runs(conversation_id:str,request:Request):
+    """Runs linked to this assistant session (read-only)."""
+    _check_conversation(request,conversation_id)
+    return {'runs':AgentStore().runs_for_conversation(conversation_id),
             'formalConstructionIssue':False}
 
 
@@ -211,6 +220,6 @@ def post_conversation_message(conversation_id:str,body:MessageCreate,request:Req
     try:
         message=store.append_message(conversation_id,role=body.role,content=body.content,
                                      metadata=body.metadata)
-        reply=assistant.respond(conversation,body.content)
+        reply=assistant.respond(conversation,body.content,metadata=body.metadata)
     except (ValueError,KeyError) as exc:raise HTTPException(409,detail=str(exc)) from exc
     return {'message':message,'reply':reply,'formalConstructionIssue':False}

@@ -213,3 +213,62 @@ def test_assistant_reply_reads_the_actual_project_state(api):
     assert 'A5' in reply['content'] and 'A8' in reply['content']
     assert '可执行角色' in reply['content']
     assert '待建角色' in reply['content']
+
+
+def test_run_events_mirror_into_linked_conversation(store, baseline):
+    """Linked run events become one tool turn; the session can see the run."""
+    _, result = baseline
+    conversation = store.create_conversation(project_id=result['projectId'], actor='alice', title='联动')
+    run = store.create(result=result, actor='alice', conversation_id=conversation['id'])
+    with store.connect() as c:
+        store._event(c, run['id'], 'probe', 'diagnosis_completed', {'issueCount': 0})
+        store._event(c, run['id'], 'probe', 'diagnosis_completed', {'issueCount': 0})
+    tool_turns = [m for m in store.messages(conversation['id']) if m['role'] == 'tool']
+    created_turns = [m for m in tool_turns if m['metadata'].get('eventKey') == 'created']
+    probe_turns = [m for m in tool_turns if m['metadata'].get('eventKey') == 'probe']
+    assert len(created_turns) == 1
+    assert created_turns[0]['content'] == '试点任务已创建'
+    assert len(probe_turns) == 1
+    assert probe_turns[0]['metadata']['runId'] == run['id']
+    assert probe_turns[0]['metadata']['answerKind'] == 'run_event'
+    assert probe_turns[0]['metadata']['engineeringJudgement'] is False
+    assert [r['id'] for r in store.runs_for_conversation(conversation['id'])] == [run['id']]
+
+
+def test_unlinked_run_does_not_write_conversation_messages(store, baseline):
+    _, result = baseline
+    conversation = store.create_conversation(project_id=result['projectId'], actor='alice', title='独立')
+    run = store.create(result=result, actor='alice')
+    with store.connect() as c:
+        store._event(c, run['id'], 'probe', 'candidate_plan_created', {})
+    assert store.messages(conversation['id']) == []
+    assert store.runs_for_conversation(conversation['id']) == []
+
+
+def test_conversation_endpoints_expose_linked_runs(api):
+    client, result = api
+    cid = client.post('/api/agents/conversations', headers=headers(),
+                      json={'project_id': result['projectId'], 'title': '联动'}).json()['id']
+    run = client.post('/api/agents/runs', headers=headers(),
+                      json={'result_hash': result['resultHash'], 'conversation_id': cid}).json()
+    detail = client.get(f'/api/agents/conversations/{cid}', headers=headers()).json()
+    assert detail['runs'][0]['id'] == run['id']
+    listed = client.get(f'/api/agents/conversations/{cid}/runs', headers=headers()).json()
+    assert listed['runs'][0]['id'] == run['id']
+    reply = client.post(f'/api/agents/conversations/{cid}/messages', headers=headers(),
+                        json={'role': 'user', 'content': '状态'}).json()['reply']
+    assert reply['metadata']['linkedRunCount'] >= 1
+    assert reply['metadata']['engineeringJudgement'] is False
+
+
+def test_dispatch_requires_an_existing_frozen_result(api):
+    """A missing frozen result is reported, never silently replaced by a fake run."""
+    client, result = api
+    cid = client.post('/api/agents/conversations', headers=headers(),
+                      json={'project_id': result['projectId'], 'title': '空派单'}).json()['id']
+    reply = client.post(f'/api/agents/conversations/{cid}/messages', headers=headers(),
+                        json={'role': 'user', 'content': '跑一下',
+                              'metadata': {'resultHash': '0' * 64}}).json()['reply']
+    assert reply['metadata'].get('dispatchError')
+    assert reply['metadata']['linkedRunCount'] == 0
+    assert '任务未启动' in reply['content']

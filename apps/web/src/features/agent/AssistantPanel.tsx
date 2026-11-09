@@ -6,6 +6,7 @@ import {
   type AgentMessage,
   type AgentProjectStatus,
   type AgentRole,
+  type AgentRunBrief,
 } from '../../api/client';
 import './assistant-panel.css';
 
@@ -38,6 +39,7 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
   const [error, setError] = useState('');
   const [status, setStatus] = useState<AgentProjectStatus | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [runs, setRuns] = useState<AgentRunBrief[]>([]);
   const [petOffset, setPetOffset] = useState<{ x: number; y: number }>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(PET_POS_KEY) || 'null');
@@ -242,7 +244,11 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
     if (!activeId) return;
     let dead = false;
     api.agentConversation(activeId)
-      .then((data) => { if (!dead) setMessages(data.messages ?? []); })
+      .then((data) => {
+        if (dead) return;
+        setMessages(data.messages ?? []);
+        setRuns(data.runs ?? []);
+      })
       .catch((e) => { if (!dead) setError(String(e)); });
     return () => { dead = true; };
   }, [activeId]);
@@ -278,6 +284,11 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
     try {
       const result = await api.postAgentMessage(activeId, text);
       setMessages((prev) => [...prev, result.message, result.reply]);
+      if (result.reply.metadata?.dispatchedRunId) {
+        api.agentConversationRuns(activeId)
+          .then((data) => setRuns(data.runs ?? []))
+          .catch(() => undefined);
+      }
     } catch (e) {
       const message = String(e);
       setError(message);
@@ -342,6 +353,12 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
             </div>
           ) : null}
 
+          {runs.length ? (
+            <div className="agentDockRunStrip" role="status">
+              关联任务 {runs.length} 个 · 最近 {runs[0].status} / {runs[0].step}
+            </div>
+          ) : null}
+
           {notices.length ? <div className="agentDockInlineNotices">{renderNotices()}</div> : null}
 
           <section className="agentDockRoles" aria-label="专业角色">
@@ -377,13 +394,20 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
                   提问会完整保留。当前助手只返回状态回执，等专业执行链接入后再由它作答。
                 </p>
               ) : messages.map((message) => (
-                <article key={message.id} className={`agentMessage ${message.role}`}>
-                  <small>
-                    {message.role === 'user' ? '我' : '助手'}
-                    {' · '}{new Date(message.createdAt).toLocaleTimeString()}
-                  </small>
-                  <p>{message.content}</p>
-                </article>
+                message.role === 'tool' ? (
+                  <article key={message.id} className="agentMessage tool">
+                    <small>任务 · {new Date(message.createdAt).toLocaleTimeString()}</small>
+                    <p>{message.content}</p>
+                  </article>
+                ) : (
+                  <article key={message.id} className={`agentMessage ${message.role}`}>
+                    <small>
+                      {message.role === 'user' ? '我' : '助手'}
+                      {' · '}{new Date(message.createdAt).toLocaleTimeString()}
+                    </small>
+                    <p>{message.content}</p>
+                  </article>
+                )
               ))}
             </div>
           </section>

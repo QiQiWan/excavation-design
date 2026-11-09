@@ -82,6 +82,13 @@ class AgentStore:
                 c.execute('ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0')
             if 'conversation_id' not in columns:
                 c.execute('ALTER TABLE runs ADD COLUMN conversation_id TEXT')
+            # Run events are mirrored into the linked conversation. source_key
+            # makes the mirror idempotent; ordinary turns keep a NULL key.
+            message_columns={x[1] for x in c.execute('PRAGMA table_info(messages)')}
+            if 'source_key' not in message_columns:
+                c.execute('ALTER TABLE messages ADD COLUMN source_key TEXT')
+            c.execute('''CREATE UNIQUE INDEX IF NOT EXISTS messages_source_key
+                         ON messages(conversation_id,source_key) WHERE source_key IS NOT NULL''')
 
     @contextmanager
     def connect(self):
@@ -146,10 +153,40 @@ class AgentStore:
             c.execute('COMMIT')
         return self.get(rid)
 
+    EVENT_NOTES = {
+        'run_created': '试点任务已创建',
+        'diagnosis_completed': '诊断完成，已记录待处理问题',
+        'candidate_plan_created': '已生成有界候选方案',
+        'candidate_evaluated': '完成一个候选的完整复算',
+        'candidate_evaluation_completed': '候选复算全部完成',
+        'candidate_comparison_completed': '候选对比完成，等待人工复核',
+        'human_decision': '人工复核决策已记录',
+        'run_paused': '任务已暂停',
+        'run_cancelled': '任务已取消',
+        'run_failed': '任务执行失败',
+    }
+
     @staticmethod
     def _event(c,rid,key,kind,data):
-        c.execute('INSERT OR IGNORE INTO events(run_id,event_key,event_type,payload_json,created_at) VALUES(?,?,?,?,?)',
-                  (rid,key,kind,encode(data),now()))
+        cur=c.execute('INSERT OR IGNORE INTO events(run_id,event_key,event_type,payload_json,created_at) VALUES(?,?,?,?,?)',
+                      (rid,key,kind,encode(data),now()))
+        if not cur.rowcount:
+            return
+        row=c.execute('SELECT conversation_id FROM runs WHERE id=?',(rid,)).fetchone()
+        cid=row['conversation_id'] if row else None
+        if not cid:
+            return
+        meta={'answerKind':'run_event','runId':rid,'eventKey':key,'eventType':kind,
+              'payload':data or {},'engineeringJudgement':False}
+        try:
+            c.execute('''INSERT OR IGNORE INTO messages
+                (conversation_id,role,content,metadata_json,created_at,source_key)
+                VALUES(?,?,?,?,?,?)''',
+                (cid,'tool',AgentStore.EVENT_NOTES.get(kind,'任务状态更新'),
+                 encode(meta),now(),'run:'+rid+':'+key))
+            c.execute('UPDATE conversations SET updated_at=? WHERE id=?',(now(),cid))
+        except sqlite3.Error:
+            pass
 
     def get(self,rid):
         with self.connect() as c: return self._run(c.execute('SELECT * FROM runs WHERE id=?',(rid,)).fetchone())
@@ -402,3 +439,13 @@ class AgentStore:
         return [{'id':x['id'],'conversationId':x['conversation_id'],'role':x['role'],
                  'content':x['content'],'metadata':json.loads(x['metadata_json']),
                  'createdAt':x['created_at']} for x in rows]
+
+    def runs_for_conversation(self,cid,limit:int=10):
+        """Read-only view of the runs a conversation started or observed."""
+        with self.connect() as c:
+            rows=c.execute('''SELECT * FROM runs WHERE conversation_id=?
+                              ORDER BY created_at DESC LIMIT ?''',
+                           (cid,min(max(limit,1),50))).fetchall()
+        return [{'id':x['id'],'status':x['status'],'step':x['step'],'progress':x['progress'],
+                 'projectId':x['project_id'],'sectionId':x['section_id'],
+                 'createdAt':x['created_at'],'updatedAt':x['updated_at']} for x in rows]

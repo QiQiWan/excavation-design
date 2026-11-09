@@ -11,6 +11,7 @@ candidate, mark a check as passed, or enable construction issue.
 """
 from __future__ import annotations
 import os
+import re
 import time
 
 from .catalog import catalog
@@ -123,12 +124,40 @@ def role_roster() -> list[dict]:
     ]
 
 
-def respond(conversation: dict, content: str) -> dict:
-    """Write the assistant's reply turn for one engineer message."""
+def _try_dispatch(conversation: dict, metadata: dict) -> dict:
+    """Start a pilot run only when an explicit frozen result hash is supplied.
+
+    A missing or invalid hash is never guessed: the reply says why no run was
+    created. All engineering preconditions stay inside AgentRuntime.create.
+    """
+    requested = metadata.get('resultHash')
+    if not isinstance(requested, str) or not re.fullmatch(r'[0-9a-f]{64}', requested):
+        return {}
+    try:
+        from .contracts import StartRun
+        from .engine import AgentRuntime
+        run = AgentRuntime().create(
+            StartRun(result_hash=requested, conversation_id=conversation['id']),
+            actor=conversation['actor'])
+        return {'run': {'id': run['id'], 'status': run['status'], 'step': run['step']}}
+    except Exception as exc:
+        return {'error': type(exc).__name__ + ': ' + str(exc)[:180]}
+
+
+def respond(conversation: dict, content: str, metadata: dict | None = None) -> dict:
+    """Write the assistant's reply turn for one engineer message.
+
+    Still a status receipt: no engineering conclusion is inferred here. It can
+    link a conversation to a real pilot run and reflect that run's state, so
+    the dock shows evidence instead of a standalone chat bubble.
+    """
     store = AgentStore()
     roles = role_roster()
     executable = [r['id'] + ' ' + r['name'] for r in roles if r['executable']]
     pending = [r['id'] for r in roles if not r['executable']]
+
+    dispatch = _try_dispatch(conversation, metadata or {})
+    linked = store.runs_for_conversation(conversation['id'], limit=5)
 
     status = _project_status(conversation['projectId'])
     lines: list[str] = ['已记录本轮提问。当前为占位助手，不做工程判断。', '']
@@ -161,6 +190,21 @@ def respond(conversation: dict, content: str) -> dict:
         digest['statusUnavailable'] = True
 
     lines.append('')
+    if dispatch.get('run'):
+        run = dispatch['run']
+        lines.append(f"已发起试点任务 {run['id'][:12]}（状态：{run['status']}，步骤：{run['step']}）。")
+        digest['dispatchedRunId'] = run['id']
+    elif dispatch.get('error'):
+        lines.append(f"任务未启动：{dispatch['error']}")
+        digest['dispatchError'] = dispatch['error']
+    if linked:
+        latest = linked[0]
+        lines.append(f"本会话关联任务 {len(linked)} 个；最近一个 {latest['status']} / {latest['step']}，进度 {latest['progress']}%。")
+        digest['linkedRunCount'] = len(linked)
+        digest['latestRun'] = latest
+    else:
+        lines.append('本会话暂无关联任务；提供冻结结果标识后可发起一次单排桩试点任务。')
+        digest['linkedRunCount'] = 0
     lines.append(f"可执行角色：{'、'.join(executable) if executable else '无'}（A6 目前仅限单排桩单剖面）")
     lines.append(f"待建角色：{'、'.join(pending) if pending else '无'}")
     lines.append('')
