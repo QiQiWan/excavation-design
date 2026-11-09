@@ -507,15 +507,15 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
           </section>
 
           <footer className="agentDockCompose">
-            <textarea
+            <input
+              type="text"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); }
+                if (event.key === 'Enter') { event.preventDefault(); void send(); }
               }}
               placeholder="描述问题，例如：这批验算失败先改哪一项？"
               aria-label="向智能设计助手提问"
-              rows={3}
             />
             <div className="agentDockComposeBar">
               <small>模型未接入 · 仅状态回执</small>
