@@ -12,7 +12,7 @@
   width: min(356px, calc(100vw - 40px));
   height: min(600px, calc(100vh - 104px));
   display: flex; flex-direction: column; gap: 10px;
-  padding: 12px; overflow-y: auto; overflow-x: hidden;
+  padding: 12px; overflow: hidden;
   background: #fff; border: 1px solid #dde4ec; border-radius: 14px;
   box-shadow: 0 16px 44px rgba(15, 23, 42, .18);
   color: #172033;
@@ -119,7 +119,7 @@
 .agentDockThreadBar select { flex: 1; min-width: 0; padding: 5px 6px; font-size: 12px; border: 1px solid #dbe3ec; border-radius: 6px; background: #fff; color: #334155; }
 
 .agentDockMessages {
-  display: grid; gap: 8px; align-content: start; flex: 1 1 auto; min-height: 120px;
+  display: grid; gap: 8px; align-content: start; flex: 1 1 auto; min-height: 0;
   overflow-y: auto; padding: 8px; background: #f8fafc; border: 1px solid #e5eaf0; border-radius: 8px;
 }
 .agentDockEmpty { margin: 0; color: #64748b; font-size: 12px; line-height: 1.6; }
@@ -131,8 +131,8 @@
 .agentMessage.tool p { background: #f1f5f9; border: 1px dashed #cbd5e1; color: #475569; font-size: 11px; }
 
 .agentDockCompose { display: grid; gap: 6px; flex: 0 0 auto; }
-.agentDockCompose textarea {
-  width: 100%; resize: vertical; padding: 7px 8px; font-size: 12px; line-height: 1.6;
+.agentDockCompose input {
+  width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 12px; line-height: 1.6;
   border: 1px solid #dbe3ec; border-radius: 8px; background: #fff; color: #172033; font-family: inherit;
 }
 .agentDockComposeBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -143,8 +143,8 @@
 }
 .agentDockComposeBar button:disabled { opacity: .5; cursor: default; }
 
-.agentDockError { margin: 0; padding: 6px 8px; font-size: 11px; color: #991b1b; background: #fee2e2; border-radius: 6px; }
-.agentDockNote { margin: 0; font-size: 10px; color: #94a3b8; line-height: 1.5; }
+.agentDockError { flex: 0 0 auto; margin: 0; padding: 6px 8px; font-size: 11px; color: #991b1b; background: #fee2e2; border-radius: 6px; }
+.agentDockNote { flex: 0 0 auto; margin: 0; font-size: 10px; color: #94a3b8; line-height: 1.5; }
 
 .agentPetLauncher {
   position: relative; width: 54px; height: 54px; flex: 0 0 auto;
