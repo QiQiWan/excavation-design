@@ -377,6 +377,10 @@ export type AgentRunBrief = {
   id: string; status: string; step: string; progress: number;
   projectId: string; sectionId: string; createdAt: string; updatedAt: string;
 };
+export type AgentFrozenResult = {
+  resultHash: string; projectId: string | null; sectionId: string | null;
+  analysisStatus: string | null; createdAt: string; launchable: boolean;
+};
 
 const sectionRequestOptions: RequestOptions = {
   timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
@@ -402,6 +406,11 @@ export const api = {
     `/api/agents/runs?project_id=${encodeURIComponent(projectId)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
   agentRunOverview: (runId: string) => request<Record<string, unknown>>(
     `/api/agents/runs/${encodeURIComponent(runId)}/overview`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentFrozenResults: () => request<{ results: AgentFrozenResult[]; formalConstructionIssue: boolean }>(
+    '/api/agents/frozen-results', { activity: { quiet: true, cacheTtlMs: 0 } }),
+  advanceAgentRun: (runId: string) => request<Record<string, unknown>>(
+    `/api/agents/runs/${encodeURIComponent(runId)}/advance`, {
+      method: 'POST', activity: { label: '正在推进任务' } }),
   postAgentMessage: (id: string, content: string) => request<{ message: AgentMessage; reply: AgentMessage }>(
     `/api/agents/conversations/${encodeURIComponent(id)}/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
