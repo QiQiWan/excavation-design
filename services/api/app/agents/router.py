@@ -1,6 +1,8 @@
 """Authenticated, fail-closed Agent workbench API. No direct model-driven tool endpoint."""
 from __future__ import annotations
 from fastapi import APIRouter,HTTPException,Request,Query
+import json
+from datetime import datetime,timezone
 from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate
 from .store import AgentStore,ConflictError
 from .catalog import catalog
@@ -57,6 +59,43 @@ def assistant_project_status(request:Request,project_id:str=Query(min_length=1,m
     """Lightweight project state for the assistant's unattended notices."""
     _actor(request)
     return {'digest':assistant.project_digest(project_id),'formalConstructionIssue':False}
+
+
+@router.get('/frozen-results')
+def list_frozen_results(request:Request):
+    """Read-only list of frozen single-strut results a pilot run may start from.
+
+    A project+section holds one active working selection. Results from another
+    snapshot are rejected by AgentStore.create, so mark them up front instead
+    of offering a choice that can never start.
+    """
+    if ROLE_RANK.get(_actor(request).role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看冻结结果要求设计人员权限')
+    from app.engineering.single_braced_pile.repository import Repository
+    store=AgentStore()
+    folder=Repository().root/'results'
+    rows=[]
+    if folder.is_dir():
+        files=sorted((p for p in folder.glob('*.json') if len(p.stem)==64),
+                     key=lambda p:p.stat().st_mtime,reverse=True)[:20]
+        for path in files:
+            try:
+                data=json.loads(path.read_text(encoding='utf-8'))
+                pr,sec=data.get('projectId'),data.get('sectionId')
+                try:
+                    active=store.selection(pr,sec)
+                    launchable=active['snapshotHash']==data.get('snapshotHash')
+                except KeyError:
+                    launchable=True  # first run for this section creates the selection
+                rows.append({'resultHash':path.stem,
+                    'projectId':pr,'sectionId':sec,
+                    'analysisStatus':data.get('analysisStatus'),
+                    'launchable':launchable,
+                    'createdAt':datetime.fromtimestamp(path.stat().st_mtime,timezone.utc).isoformat()})
+            except (OSError,ValueError,TypeError):
+                continue
+    rows.sort(key=lambda r:not r['launchable'])  # stable: newest first within each group
+    return {'results':rows,'formalConstructionIssue':False}
 
 
 @router.post('/runs',status_code=201)

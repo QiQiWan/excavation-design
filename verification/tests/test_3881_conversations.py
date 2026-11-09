@@ -272,3 +272,32 @@ def test_dispatch_requires_an_existing_frozen_result(api):
     assert reply['metadata'].get('dispatchError')
     assert reply['metadata']['linkedRunCount'] == 0
     assert '任务未启动' in reply['content']
+
+
+def test_frozen_results_flag_launchable_choices(api):
+    """The panel is told which frozen results a run can actually start from."""
+    client, result = api
+    body = client.get('/api/agents/frozen-results', headers=headers()).json()
+    assert body['formalConstructionIssue'] is False
+    rows = body['results']
+    assert rows and rows[0]['resultHash'] == result['resultHash']
+    assert rows[0]['launchable'] is True
+    assert client.get('/api/agents/frozen-results', headers=headers('key-viewer')).status_code == 403
+
+
+def test_dispatch_from_panel_creates_a_linked_run(api):
+    """A hash picked from the list starts one real run and mirrors its events."""
+    client, result = api
+    cid = client.post('/api/agents/conversations', headers=headers(),
+                      json={'project_id': result['projectId'], 'title': '面板发起'}).json()['id']
+    reply = client.post(f'/api/agents/conversations/{cid}/messages', headers=headers(),
+                        json={'role': 'user', 'content': '发起一次试点任务',
+                              'metadata': {'resultHash': result['resultHash']}}).json()['reply']
+    assert '已发起试点任务' in reply['content']
+    rid = reply['metadata']['dispatchedRunId']
+    assert rid and reply['metadata']['engineeringJudgement'] is False
+    linked = client.get(f'/api/agents/conversations/{cid}/runs', headers=headers()).json()['runs']
+    assert [r['id'] for r in linked] == [rid]
+    turns = client.get(f'/api/agents/conversations/{cid}', headers=headers()).json()['messages']
+    assert any(m['role'] == 'tool' and m['metadata']['runId'] == rid
+               and m['metadata']['eventType'] == 'run_created' for m in turns)

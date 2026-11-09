@@ -7,6 +7,7 @@ import {
   type AgentProjectStatus,
   type AgentRole,
   type AgentRunBrief,
+  type AgentFrozenResult,
 } from '../../api/client';
 import './assistant-panel.css';
 
@@ -40,6 +41,9 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
   const [status, setStatus] = useState<AgentProjectStatus | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [runs, setRuns] = useState<AgentRunBrief[]>([]);
+  const [frozenResults, setFrozenResults] = useState<AgentFrozenResult[]>([]);
+  const [selectedResult, setSelectedResult] = useState('');
+  const [runBusy, setRunBusy] = useState(false);
   const [petOffset, setPetOffset] = useState<{ x: number; y: number }>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(PET_POS_KEY) || 'null');
@@ -241,6 +245,20 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
   }, [open, projectId, pushNotice]);
 
   useEffect(() => {
+    if (!open) return;
+    let dead = false;
+    api.agentFrozenResults()
+      .then((data) => {
+        if (dead) return;
+        const items = data.results ?? [];
+        setFrozenResults(items);
+        setSelectedResult((prev) => prev || items.find((item) => item.launchable)?.resultHash || '');
+      })
+      .catch(() => undefined);
+    return () => { dead = true; };
+  }, [open]);
+
+  useEffect(() => {
     if (!activeId) return;
     let dead = false;
     api.agentConversation(activeId)
@@ -296,6 +314,47 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
       pushNotice('error', '发送失败', message);
     } finally { setBusy(false); }
   }
+
+  const refreshSession = useCallback(async (id: string) => {
+    const [detail, runList] = await Promise.all([
+      api.agentConversation(id),
+      api.agentConversationRuns(id),
+    ]);
+    setMessages(detail.messages ?? []);
+    setRuns(runList.runs ?? []);
+  }, []);
+
+  const launchRun = useCallback(async () => {
+    const hash = selectedResult || frozenResults[0]?.resultHash;
+    if (!hash || !activeId || runBusy) return;
+    if (!frozenResults.find((item) => item.resultHash === hash)?.launchable) {
+      setError('所选冻结结果与当前工作版本不一致，无法发起任务');
+      return;
+    }
+    setRunBusy(true); setError('');
+    try {
+      await api.postAgentMessageWithRun(activeId, '发起一次试点任务', hash);
+      await refreshSession(activeId);
+    } catch (e) {
+      const text = String(e);
+      setError(text);
+      pushNotice('error', '发起任务失败', text);
+    } finally { setRunBusy(false); }
+  }, [selectedResult, frozenResults, activeId, runBusy, refreshSession, pushNotice]);
+
+  const advanceRun = useCallback(async () => {
+    const run = runs[0];
+    if (!run || !activeId || runBusy) return;
+    setRunBusy(true); setError('');
+    try {
+      await api.advanceAgentRun(run.id);
+      await refreshSession(activeId);
+    } catch (e) {
+      const text = String(e);
+      setError(text);
+      pushNotice('error', '推进失败', text);
+    } finally { setRunBusy(false); }
+  }, [runs, activeId, runBusy, refreshSession, pushNotice]);
 
   const failCount = status?.failCount ?? 0;
   const badge = status?.statusUnavailable || notices.some((n) => n.kind === 'error')
@@ -355,7 +414,15 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
 
           {runs.length ? (
             <div className="agentDockRunStrip" role="status">
-              关联任务 {runs.length} 个 · 最近 {runs[0].status} / {runs[0].step}
+              <span>关联任务 {runs.length} 个 · 最近 {runs[0].status} / {runs[0].step}</span>
+              <button
+                type="button"
+                className="agentDockAdvance"
+                onClick={() => void advanceRun()}
+                disabled={runBusy || !['queued', 'running'].includes(runs[0].status)}
+              >
+                推进一步
+              </button>
             </div>
           ) : null}
 
@@ -374,6 +441,33 @@ export default function AssistantPanel({ projectId, projectName }: Props) {
               {roles.length === 0 ? <li className="planned"><span>正在读取角色目录…</span></li> : null}
             </ul>
           </section>
+
+          <div className="agentDockRunLauncher" aria-label="发起试点任务">
+            <select
+              value={selectedResult}
+              onChange={(event) => setSelectedResult(event.target.value)}
+              aria-label="选择冻结剖面结果"
+              disabled={frozenResults.length === 0 || runBusy}
+            >
+              {frozenResults.length === 0 ? (
+                <option value="">暂无可用冻结结果</option>
+              ) : frozenResults.map((item) => (
+                <option key={item.resultHash} value={item.resultHash} title={item.resultHash}
+                  disabled={!item.launchable}>
+                  {item.resultHash.slice(0, 8)} · {item.sectionId || item.projectId || '单排桩剖面'}
+                  {item.launchable ? ' · 可启动' : ' · 与当前工作版本不一致'}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void launchRun()}
+              disabled={runBusy || !activeId
+                || !frozenResults.find((item) => item.resultHash === selectedResult)?.launchable}
+            >
+              {runBusy ? '处理中…' : '发起任务'}
+            </button>
+          </div>
 
           <section className="agentDockThread" aria-label="会话">
             <div className="agentDockThreadBar">
