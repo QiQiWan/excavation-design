@@ -81,6 +81,12 @@ class AgentStore:
                     params_json TEXT NOT NULL, ok INTEGER NOT NULL, result_json TEXT,
                     error TEXT, duration_ms INTEGER NOT NULL, created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS tool_calls_recent ON tool_calls(id DESC);
+                CREATE TABLE IF NOT EXISTS orchestrations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+                    conversation_id TEXT, actor TEXT NOT NULL, stage_key TEXT,
+                    gate TEXT, dispatched INTEGER NOT NULL, run_id TEXT,
+                    decision_json TEXT NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS orchestrations_project ON orchestrations(project_id,id DESC);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
@@ -481,4 +487,32 @@ class AgentStore:
                  'params':json.loads(x['params_json']),'ok':bool(x['ok']),
                  'result':json.loads(x['result_json']) if x['result_json'] else None,
                  'error':x['error'],'durationMs':x['duration_ms'],
+                 'createdAt':x['created_at']} for x in rows]
+
+    def record_orchestration(self,*,project_id:str,actor:str,conversation_id:str|None,
+                             stage_key:str|None,gate:str|None,dispatched:bool,
+                             run_id:str|None,decision:dict)->int:
+        """Persist one scheduling verdict so 'why this step' stays answerable."""
+        with self.connect() as c:
+            cur=c.execute('''INSERT INTO orchestrations(project_id,conversation_id,actor,
+                             stage_key,gate,dispatched,run_id,decision_json,created_at)
+                             VALUES(?,?,?,?,?,?,?,?,?)''',
+                          (project_id,conversation_id,actor,stage_key,gate,
+                           1 if dispatched else 0,run_id,encode(decision),now()))
+            return int(cur.lastrowid)
+
+    def orchestrations(self,*,project_id:str|None=None,limit:int=30)->list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows=c.execute('''SELECT * FROM orchestrations WHERE project_id=?
+                                  ORDER BY id DESC LIMIT ?''',
+                               (project_id,min(max(limit,1),200))).fetchall()
+            else:
+                rows=c.execute('SELECT * FROM orchestrations ORDER BY id DESC LIMIT ?',
+                               (min(max(limit,1),200),)).fetchall()
+        return [{'id':x['id'],'projectId':x['project_id'],
+                 'conversationId':x['conversation_id'],'actor':x['actor'],
+                 'stageKey':x['stage_key'],'gate':x['gate'],
+                 'dispatched':bool(x['dispatched']),'runId':x['run_id'],
+                 'decision':json.loads(x['decision_json']),
                  'createdAt':x['created_at']} for x in rows]

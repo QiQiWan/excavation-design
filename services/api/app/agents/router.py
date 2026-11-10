@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File
 import json
 from datetime import datetime,timezone
-from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate,ToolInvoke
+from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate,ToolInvoke,OrchestratorDispatch
 from .store import AgentStore,ConflictError
 from .catalog import catalog
 from .engine import AgentRuntime
@@ -11,6 +11,7 @@ from .model_gateway import configuration
 from . import assistant
 from . import document_agent
 from . import tools as tool_registry
+from . import orchestrator
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -313,3 +314,41 @@ def post_conversation_message(conversation_id:str,body:MessageCreate,request:Req
         reply=assistant.respond(conversation,body.content,metadata=body.metadata)
     except (ValueError,KeyError) as exc:raise HTTPException(409,detail=str(exc)) from exc
     return {'message':message,'reply':reply,'formalConstructionIssue':False}
+
+
+@router.get('/orchestrator/plan')
+def orchestrator_plan(request:Request,project_id:str=Query(min_length=1,max_length=100),
+                      refresh:bool=False):
+    """Six-stage scheduling plan. Read-only: it never starts or changes a run."""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看调度计划要求设计人员权限')
+    try:
+        return orchestrator.build_plan(project_id,refresh=refresh)
+    except KeyError as exc:raise HTTPException(404,detail='项目不存在或状态不可用') from exc
+
+
+@router.post('/orchestrator/dispatch')
+def orchestrator_dispatch(body:OrchestratorDispatch,request:Request):
+    """Start the next stage only when its gates are open; otherwise explain why not."""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='派单要求设计人员权限')
+    try:
+        return orchestrator.dispatch(
+            body.project_id,actor=identity.actor,conversation_id=body.conversation_id,
+            result_hash=body.result_hash,max_candidates=body.max_candidates,
+            client_request_id=body.client_request_id)
+    except KeyError as exc:raise HTTPException(404,detail='项目或会话不存在') from exc
+    except ValueError as exc:raise HTTPException(409,detail=str(exc)) from exc
+
+
+@router.get('/orchestrator/history')
+def orchestrator_history(request:Request,project_id:str|None=None,limit:int=30):
+    """Scheduling verdicts already recorded, newest first."""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看调度记录要求设计人员权限')
+    rows=orchestrator.history(project_id=project_id,limit=limit)
+    return {'schemaVersion':'pitguard.orchestration-history/1','decisions':rows,
+            'count':len(rows),'formalConstructionIssue':False}
