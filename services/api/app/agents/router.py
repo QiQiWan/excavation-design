@@ -3,13 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File
 import json
 from datetime import datetime,timezone
-from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate
+from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate,ToolInvoke
 from .store import AgentStore,ConflictError
 from .catalog import catalog
 from .engine import AgentRuntime
 from .model_gateway import configuration
 from . import assistant
 from . import document_agent
+from . import tools as tool_registry
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -112,6 +113,40 @@ async def extract_document(request:Request,file:UploadFile=File(...)):
         raise HTTPException(400,detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(422,detail='文档解析失败：'+type(exc).__name__) from exc
+
+
+@router.get('/tools')
+def list_agent_tools(request:Request):
+    """Registered Agent tools with permission grades and audit policy."""
+    _actor(request)
+    return {**tool_registry.registry(),'formalConstructionIssue':False}
+
+
+@router.post('/tools/{tool_name}/invoke')
+def invoke_agent_tool(tool_name:str,body:ToolInvoke,request:Request):
+    """Run one registered tool. L0/L1 only; L2 must go through human decision."""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='调用Agent工具要求设计人员权限')
+    try:
+        return tool_registry.invoke(tool_name,project_id=body.projectId,
+                                    actor=identity.actor,params=body.params)
+    except KeyError:
+        raise HTTPException(404,detail='工具不存在') from None
+    except PermissionError as exc:
+        raise HTTPException(403,detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(409,detail=type(exc).__name__+': '+str(exc)[:180]) from exc
+
+
+@router.get('/tool-calls')
+def list_tool_calls(request:Request,limit:int=Query(default=50,ge=1,le=200)):
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看工具调用记录要求设计人员权限')
+    return {'calls':AgentStore().tool_calls(limit=limit),'formalConstructionIssue':False}
 
 
 @router.post('/runs',status_code=201)

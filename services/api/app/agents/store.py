@@ -75,6 +75,12 @@ class AgentStore:
                     role TEXT NOT NULL, content TEXT NOT NULL, metadata_json TEXT NOT NULL,
                     created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS messages_conversation ON messages(conversation_id,id);
+                CREATE TABLE IF NOT EXISTS tool_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, tool_name TEXT NOT NULL,
+                    permission TEXT NOT NULL, actor TEXT NOT NULL, project_id TEXT,
+                    params_json TEXT NOT NULL, ok INTEGER NOT NULL, result_json TEXT,
+                    error TEXT, duration_ms INTEGER NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS tool_calls_recent ON tool_calls(id DESC);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
@@ -449,3 +455,30 @@ class AgentStore:
         return [{'id':x['id'],'status':x['status'],'step':x['step'],'progress':x['progress'],
                  'projectId':x['project_id'],'sectionId':x['section_id'],
                  'createdAt':x['created_at'],'updatedAt':x['updated_at']} for x in rows]
+
+    def record_tool_call(self,*,tool_name:str,permission:str,actor:str,project_id:str|None,
+                         params:dict|None,ok:bool,result:dict|None,error:str|None,
+                         duration_ms:int)->None:
+        """Append-only audit row for one Agent tool invocation."""
+        with self.connect() as c:
+            c.execute('''INSERT INTO tool_calls(tool_name,permission,actor,project_id,
+                         params_json,ok,result_json,error,duration_ms,created_at)
+                         VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                      (tool_name,permission,actor,project_id,encode(params or {}),
+                       1 if ok else 0,encode(result) if result is not None else None,
+                       error,int(duration_ms),now()))
+
+    def tool_calls(self,limit:int=50,project_id:str|None=None)->list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows=c.execute('''SELECT * FROM tool_calls WHERE project_id=?
+                                  ORDER BY id DESC LIMIT ?''',(project_id,min(max(limit,1),200))).fetchall()
+            else:
+                rows=c.execute('SELECT * FROM tool_calls ORDER BY id DESC LIMIT ?',
+                               (min(max(limit,1),200),)).fetchall()
+        return [{'id':x['id'],'tool':x['tool_name'],'permission':x['permission'],
+                 'actor':x['actor'],'projectId':x['project_id'],
+                 'params':json.loads(x['params_json']),'ok':bool(x['ok']),
+                 'result':json.loads(x['result_json']) if x['result_json'] else None,
+                 'error':x['error'],'durationMs':x['duration_ms'],
+                 'createdAt':x['created_at']} for x in rows]

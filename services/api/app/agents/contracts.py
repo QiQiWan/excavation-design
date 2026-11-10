@@ -48,3 +48,10 @@ class MessageCreate(Strict):
     role: Literal['user'] = 'user'
     content: str = Field(min_length=1, max_length=8000)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolInvoke(Strict):
+    """One Agent tool call. Parameter shapes are enforced by the tool registry."""
+
+    projectId: str | None = Field(default=None, max_length=100)
+    params: dict[str, Any] = Field(default_factory=dict)
