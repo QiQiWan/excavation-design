@@ -37,6 +37,21 @@ class ConversationCreate(Strict):
     title: str = Field(default='新会话', min_length=1, max_length=120)
 
 
+class OrchestratorDispatch(Strict):
+    """Ask the orchestrator to start the next ready stage, if any.
+
+    The orchestrator re-reads project state on every call; a caller cannot
+    force a stage that its gates have not opened.
+    """
+
+    project_id: str = Field(min_length=1, max_length=100)
+    conversation_id: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
+    result_hash: str | None = Field(default=None, pattern=SHA256)
+    max_candidates: int = Field(default=3, ge=1, le=5)
+    client_request_id: str | None = Field(default=None, min_length=8, max_length=96,
+                                          pattern=r'^[a-zA-Z0-9_.-]+$')
+
+
 class MessageCreate(Strict):
     """A designer's turn.
 
