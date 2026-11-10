@@ -181,7 +181,8 @@ def test_roles_endpoint_reserves_eight_positions(api):
     roles = response.json()['roles']
     assert [r['id'] for r in roles] == ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8']
     assert {r['implementation'] for r in roles} == {'pilot', 'planned'}
-    assert {r['id'] for r in roles if r['executable']} == {'A5', 'A6'}
+    # A1 文档参数提取已可执行；A5/A6 是单剖面试点。
+    assert {r['id'] for r in roles if r['executable']} == {'A1', 'A5', 'A6'}
     assert response.json()['formalConstructionIssue'] is False
 
 
@@ -301,3 +302,43 @@ def test_dispatch_from_panel_creates_a_linked_run(api):
     turns = client.get(f'/api/agents/conversations/{cid}', headers=headers()).json()['messages']
     assert any(m['role'] == 'tool' and m['metadata']['runId'] == rid
                and m['metadata']['eventType'] == 'run_created' for m in turns)
+
+
+def test_a1_extracts_design_basis_fields_with_page_evidence():
+    """A1 只给候选与页码，不写入、不下工程结论。"""
+    from app.agents import document_agent
+    pages = [
+        '1.5 基坑安全等级：定义基坑工程设计等级为三级，侧壁重要性系数 γ0=1.0。',
+        '计算中基坑周边施工荷载按 30kPa 计算。南面邻近施工荷载按 20kPa，出土口施工荷载按 35kPa。',
+        '挡土墙：混凝土等级 C30，桩径 0.7m。',
+    ]
+    fields, warnings = document_agent._collect(pages)
+    by_key = {field['key']: field for field in fields}
+    assert by_key['safetyLevel']['value'] == '三级'
+    assert by_key['safetyLevel']['page'] == 1
+    assert by_key['safetyLevel']['confidence'] == 'high'
+    assert by_key['importanceFactor']['value'] == 1.0
+    assert by_key['surchargeGeneral']['value'] == 30.0
+    assert by_key['surchargeGeneral']['page'] == 2
+    assert by_key['surchargeGeneral']['confidence'] == 'medium'
+    assert by_key['concreteGrade']['value'] == 'C30'
+    assert any('施工荷载' in warning and '多个值' in warning for warning in warnings)
+
+
+def test_a1_rejects_input_that_is_not_a_readable_pdf():
+    from app.agents import document_agent
+    with pytest.raises(ValueError):
+        document_agent.extract('notes.txt', b'plain text')
+    with pytest.raises(ValueError):
+        document_agent.extract('empty.pdf', b'')
+
+
+def test_document_extract_endpoint_rejects_non_pdf(api):
+    client, _ = api
+    bad = client.post('/api/agents/documents/extract', headers=headers(),
+                      files={'file': ('notes.txt', b'plain text', 'text/plain')})
+    assert bad.status_code == 400
+    assert 'PDF' in bad.json()['detail']
+    viewer = client.post('/api/agents/documents/extract', headers=headers('key-viewer'),
+                         files={'file': ('a.pdf', b'%PDF-1.5', 'application/pdf')})
+    assert viewer.status_code == 403

@@ -46,6 +46,9 @@ const INTAKE_RULES: Record<string, IntakeRule> = {
   },
 };
 
+/** designSettings 内部允许写入的键；路径前缀一律剥掉，避免写成未知字段被静默忽略。 */
+const INTAKE_TARGETS = new Set(['surcharge', 'excavationSafetyLevel', 'importanceFactor', 'defaultConcreteGrade']);
+
 const POLL_INTERVAL_MS = 60000;
 const NOTICE_LIFETIME_MS = 12000;
 const PET_POS_KEY = 'pitguard-agent-pet-pos-v2';
@@ -97,6 +100,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const [dragging, setDragging] = useState(false);
   const [viewport, setViewport] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const threadRef = useRef<HTMLDivElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
   const loadedRef = useRef(false);
   const noticeSeq = useRef(0);
   const lastSignature = useRef('');
@@ -401,11 +405,36 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const loadIntakeFile = useCallback(async (file: File) => {
     const name = file.name.toLowerCase();
     if (name.endsWith('.pdf')) {
-      pushNotice('alert', '需要提取结果 JSON', 'PDF 由助手读取并提取；请把助手生成的提取结果 JSON 选进来。');
+      setIntakeBusy(true); setError('');
+      try {
+        const result = await api.extractAgentDocument(file);
+        const fields: IntakeField[] = result.fields
+          .map((field) => ({ ...field, target: field.targetField.split('.').pop() ?? '' }))
+          .filter((field) => INTAKE_TARGETS.has(field.target))
+          .map((field) => ({
+            key: field.key, label: field.label, value: field.value,
+            unit: field.unit || undefined, page: field.page,
+            target: field.target, checked: true,
+          }));
+        if (!fields.length) {
+          setIntakeFields([]); setIntakeFileName('');
+          pushNotice('error', 'A1 没有抽到可填字段',
+            '这份文件里没匹配到施工荷载、安全等级、重要性系数或混凝土等级；水位、高程、土层需人工填写。');
+          return;
+        }
+        setIntakeFields(fields);
+        setIntakeFileName(file.name);
+        const warn = result.warnings.length ? ` ${result.warnings.join(' ')}` : '';
+        pushNotice('alert', `A1 从 ${result.document.pages} 页中抽出 ${fields.length} 项`,
+          `请核对页码后填入设计基准。${warn}`);
+      } catch (e) {
+        setIntakeFields([]); setIntakeFileName('');
+        pushNotice('error', 'A1 读取失败', String(e));
+      } finally { setIntakeBusy(false); }
       return;
     }
     if (!name.endsWith('.json')) {
-      pushNotice('error', '文件类型不支持', '请选择 .json 提取结果，或把 PDF 交给助手提取。');
+      pushNotice('error', '文件类型不支持', '请选择 PDF，或已有的提取结果 JSON。');
       return;
     }
     if (file.size > 2_000_000) {
@@ -443,7 +472,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   }, [pushNotice]);
 
   const applyIntake = useCallback(async () => {
-    const picked = intakeFields.filter((field) => field.checked);
+    const picked = intakeFields.filter((field) => field.checked && INTAKE_TARGETS.has(field.target));
     if (!picked.length) {
       pushNotice('error', '未选择字段', '至少勾选一项再填入。');
       return;
@@ -460,9 +489,8 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       const existing = (currentProject.designSettings ?? {}) as unknown as Record<string, unknown>;
       const mergedSettings: Record<string, unknown> = {
         ...existing,
-        ...Object.fromEntries(intakeFields.filter((f) => f.checked).map((f) => [f.target, f.value])),
+        ...Object.fromEntries(picked.map((field) => [field.target, field.value])),
       };
-      const picked = intakeFields.filter((field) => field.checked);
       await api.updateProject(projectId,
         { designSettings: mergedSettings } as unknown as Parameters<typeof api.updateProject>[1]);
       pushNotice('alert', `已填入 ${picked.length} 项`,
@@ -591,54 +619,38 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
             </button>
           </div>
 
-          <section className="agentDockIntake" aria-label="检索 Agent 参数填入">
+          {intakeFields.length ? (
+          <section className="agentDockIntake" aria-label="A1 资料与参数提取结果">
             <div className="agentDockIntakeBar">
-              <strong title={intakeFileName || undefined}>检索 Agent · 参数填入</strong>
-              <label className="agentDockIntakePick">
-                选择提取结果
-                <input
-                  type="file"
-                  accept=".json,.pdf"
-                  hidden
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void loadIntakeFile(file);
-                    event.target.value = '';
-                  }}
-                />
-              </label>
+              <strong title={intakeFileName || undefined}>A1 资料与参数 · 待填入设计基准</strong>
+              {intakeFileName ? <small className="agentDockIntakeFileName">{intakeFileName}</small> : null}
             </div>
-            {intakeFields.length ? (
-              <>
-                <ul className="agentDockIntakeList">
-                  {intakeFields.map((field) => (
-                    <li key={field.key} title={`${field.target} · 第 ${field.page ?? '?'} 页`}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={field.checked}
-                          onChange={(event) => setIntakeFields((prev) => prev.map((item) =>
-                            item.key === field.key ? { ...item, checked: event.target.checked } : item))}
-                        />
-                        <span>{field.label}</span>
-                        <b>{String(field.value)}{field.unit ? ` ${field.unit}` : ''}</b>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  className="agentDockIntakeApply"
-                  onClick={() => void applyIntake()}
-                  disabled={intakeBusy}
-                >
-                  {intakeBusy ? '填入中…' : `填入当前项目（${intakeFields.filter((f) => f.checked).length} 项）`}
-                </button>
-              </>
-            ) : (
-              <p className="agentDockIntakeHint">选入提取结果 JSON → 预览 → 填入当前项目；水位、高程、土层参数需人工确认，不自动写入。</p>
-            )}
+            <ul className="agentDockIntakeList">
+              {intakeFields.map((field) => (
+                <li key={field.key} title={`${field.target} · 第 ${field.page ?? '?'} 页`}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={field.checked}
+                      onChange={(event) => setIntakeFields((prev) => prev.map((item) =>
+                        item.key === field.key ? { ...item, checked: event.target.checked } : item))}
+                    />
+                    <span>{field.label}</span>
+                    <b>{String(field.value)}{field.unit ? ` ${field.unit}` : ''}</b>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="agentDockIntakeApply"
+              onClick={() => void applyIntake()}
+              disabled={intakeBusy}
+            >
+              {intakeBusy ? '填入中…' : `填入设计基准（${intakeFields.filter((f) => f.checked).length} 项）`}
+            </button>
           </section>
+          ) : null}
 
           <section className="agentDockThread" aria-label="会话">
             <div className="agentDockThreadBar">
@@ -678,16 +690,41 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
           </section>
 
           <footer className="agentDockCompose">
-            <input
-              type="text"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') { event.preventDefault(); void send(); }
-              }}
-              placeholder="描述问题，例如：这批验算失败先改哪一项？"
-              aria-label="向智能设计助手提问"
-            />
+            <div className="agentDockComposeInput">
+              <button
+                type="button"
+                className="agentDockAttach"
+                onClick={() => attachRef.current?.click()}
+                disabled={intakeBusy}
+                title="上传 PDF，由 A1 资料与参数读取并填入设计基准"
+                aria-label="上传 PDF 给 A1 资料与参数"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 014.24 4.24l-9.19 9.19a1 1 0 01-1.41-1.41l8.49-8.49" />
+                </svg>
+              </button>
+              <input
+                ref={attachRef}
+                type="file"
+                accept=".pdf,.json"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void loadIntakeFile(file);
+                  event.target.value = '';
+                }}
+              />
+              <input
+                type="text"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') { event.preventDefault(); void send(); }
+                }}
+                placeholder={intakeBusy ? 'A1 正在读取文档…' : '描述问题，或点回形针上传 PDF'}
+                aria-label="向智能设计助手提问"
+              />
+            </div>
             <div className="agentDockComposeBar">
               <small>模型未接入 · 仅状态回执</small>
               <button type="button" onClick={() => void send()} disabled={busy || !draft.trim()}>
