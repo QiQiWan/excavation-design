@@ -1,6 +1,6 @@
 """Authenticated, fail-closed Agent workbench API. No direct model-driven tool endpoint."""
 from __future__ import annotations
-from fastapi import APIRouter,HTTPException,Request,Query
+from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File
 import json
 from datetime import datetime,timezone
 from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate
@@ -9,6 +9,7 @@ from .catalog import catalog
 from .engine import AgentRuntime
 from .model_gateway import configuration
 from . import assistant
+from . import document_agent
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -96,6 +97,21 @@ def list_frozen_results(request:Request):
                 continue
     rows.sort(key=lambda r:not r['launchable'])  # stable: newest first within each group
     return {'results':rows,'formalConstructionIssue':False}
+
+
+@router.post('/documents/extract')
+async def extract_document(request:Request,file:UploadFile=File(...)):
+    """A1 资料与参数：读 PDF、给设计基准候选与页码依据，不写任何项目数据。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='文档提取要求设计人员权限')
+    data=await file.read()
+    try:
+        return document_agent.extract(file.filename or 'document.pdf',data)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422,detail='文档解析失败：'+type(exc).__name__) from exc
 
 
 @router.post('/runs',status_code=201)

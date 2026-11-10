@@ -41,7 +41,8 @@ def context(tmp_path,baseline):
 def test_role_and_tool_catalog():
     obj=catalog()
     assert len(obj['roles'])==8
-    assert {x['id'] for x in obj['roles'] if x['implementation']=='pilot'}=={'A5','A6'}
+    # A1 文档参数提取已可执行；A5/A6 是单剖面试点。
+    assert {x['id'] for x in obj['roles'] if x['implementation']=='pilot'}=={'A1','A5','A6'}
     assert all(x['scope']=='one_strut' for x in obj['tools'])
     assert all(x['name']!='approve_formal_issue' for x in obj['tools'])
     assert obj['formalConstructionIssue'] is False

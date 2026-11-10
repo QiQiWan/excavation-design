@@ -381,6 +381,20 @@ export type AgentFrozenResult = {
   resultHash: string; projectId: string | null; sectionId: string | null;
   analysisStatus: string | null; createdAt: string; launchable: boolean;
 };
+export type AgentDocumentField = {
+  key: string; label: string; value: string | number; unit: string;
+  page: number; raw: string; targetField: string;
+  confidence: 'high' | 'medium';
+};
+export type AgentDocumentExtraction = {
+  agent: { id: string; name: string; capability: string };
+  document: { name: string; pages: number; textChars: number; sha256: string };
+  fields: AgentDocumentField[];
+  warnings: string[];
+  notAttempted: string[];
+  requiresHumanConfirmation: boolean;
+  formalConstructionIssue: boolean;
+};
 
 const sectionRequestOptions: RequestOptions = {
   timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
@@ -408,6 +422,13 @@ export const api = {
     `/api/agents/runs/${encodeURIComponent(runId)}/overview`, { activity: { quiet: true, cacheTtlMs: 0 } }),
   agentFrozenResults: () => request<{ results: AgentFrozenResult[]; formalConstructionIssue: boolean }>(
     '/api/agents/frozen-results', { activity: { quiet: true, cacheTtlMs: 0 } }),
+  extractAgentDocument: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<AgentDocumentExtraction>('/api/agents/documents/extract', {
+      method: 'POST', body: form, timeoutMs: 120000, responseIdleTimeoutMs: 120000,
+      activity: { label: 'A1 正在读取文档' } });
+  },
   advanceAgentRun: (runId: string) => request<Record<string, unknown>>(
     `/api/agents/runs/${encodeURIComponent(runId)}/advance`, {
       method: 'POST', activity: { label: '正在推进任务' } }),

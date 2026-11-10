@@ -1,8 +1,8 @@
-"""Agent responsibilities are logical roles; only A5/A6 are executable in V3.88.0."""
+"""Agent responsibilities are logical roles; A1, A5 and A6 are executable in V3.88.0."""
 from __future__ import annotations
 
 AGENTS = (
-    ('A1','资料与参数','document_parameters','planned'),
+    ('A1','资料与参数','document_parameters','pilot'),
     ('A2','地质与场景','geotechnical_scenarios','planned'),
     ('A3','支护方案','support_layout','planned'),
     ('A4','施工阶段','stage_planning','planned'),
@@ -27,5 +27,6 @@ def catalog()->dict:
                      for n,name,cap,stage in AGENTS],
             'tools':list(TOOLS), 'formalConstructionIssue':False,
             'pilotScope':'single_row_pile_one_strut',
-            'limitations':['A1-A4/A7-A8仅注册职责，尚未建立自治执行链',
+            'limitations':['A2-A4/A7-A8仅注册职责，尚未建立自治执行链',
+                           'A1仅做文档参数提取并给出页码依据，不写入项目、不作工程判断',
                            '人工采用仅更改单剖面Agent工作选择，不修改主项目或签发施工图']}
