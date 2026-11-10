@@ -421,7 +421,7 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
       <CoreStandardGuidance standards={(status?.standards?.[active] ?? []) as any[]} />
 
       {active === 'basis' ? <section className="corePanel">
-        <DesignBasisPanel project={current} basis={status?.designBasis} onSaved={async (updated) => { setCurrent(updated); await refresh(); }} />
+        <DesignBasisPanel key={current.updatedAt} project={current} basis={status?.designBasis} onSaved={async (updated) => { setCurrent(updated); await refresh(); }} />
       </section> : null}
 
       {active === 'input' ? <section className="corePanel">
@@ -542,6 +542,6 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
     </section>
     </div>
     </div>
-    <AssistantPanel projectId={current.id} projectName={current.name} />
+    <AssistantPanel projectId={current.id} projectName={current.name} onProjectChanged={() => { void refresh(); }} />
   </main>;
 }
