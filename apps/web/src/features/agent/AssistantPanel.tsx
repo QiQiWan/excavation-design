@@ -51,6 +51,12 @@ const NOTICE_LIFETIME_MS = 12000;
 const PET_POS_KEY = 'pitguard-agent-pet-pos-v2';
 
 /**
+ * 角色目录（A1~A8）保留在代码与后端目录里，但不在前台展示。
+ * 需要恢复时把这里改成 true，前端不用改别的地方。
+ */
+const SHOW_ROLE_ROSTER = false;
+
+/**
  * Desktop-pet style assistant.
  *
  * The dock is hidden until the launcher is clicked, so it takes no layout
@@ -542,6 +548,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
 
           {notices.length ? <div className="agentDockInlineNotices">{renderNotices()}</div> : null}
 
+          {SHOW_ROLE_ROSTER ? (
           <section className="agentDockRoles" aria-label="专业角色">
             <h4>专业角色</h4>
             <ul>
@@ -555,6 +562,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
               {roles.length === 0 ? <li className="planned"><span>正在读取角色目录…</span></li> : null}
             </ul>
           </section>
+          ) : null}
 
           <div className="agentDockRunLauncher" aria-label="发起试点任务">
             <select
