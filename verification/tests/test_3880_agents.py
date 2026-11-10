@@ -482,3 +482,52 @@ def test_embedded_worker_autorun_to_human_review(tmp_path,monkeypatch,baseline):
             time.sleep(.1)
         assert state['status']=='awaiting_review'
         assert len(client.get('/api/agents/runs/'+rid+'/overview').json()['candidates'])==2
+
+
+def test_tool_registry_hides_formal_issue_and_marks_l2_manual():
+    from app.agents import tools
+    reg=tools.registry()
+    names={t['name'] for t in reg['tools']}
+    assert len(names)==8
+    assert 'approve_formal_issue' not in names
+    assert reg['approveFormalIssue']['registered'] is False
+    adopt=next(t for t in reg['tools'] if t['name']=='adopt_design_candidate')
+    assert adopt['permission']=='L2' and adopt['autoInvocable'] is False
+    assert all(t['permission'] in ('L0','L1','L2') for t in reg['tools'])
+
+
+def test_tool_invoke_guardrails_and_audit(tmp_path,monkeypatch):
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH',str(tmp_path/'tools.sqlite3'))
+    from app.agents import tools
+    with pytest.raises(PermissionError):
+        tools.invoke('adopt_design_candidate',project_id='P',actor='alice',
+                     params={'runId':'r','candidateId':'c'})
+    with pytest.raises(KeyError):
+        tools.invoke('approve_formal_issue',project_id='P',actor='alice',params={})
+    with pytest.raises(ValueError):
+        tools.invoke('generate_scheme_candidates',project_id='P',actor='alice',params={'runId':1})
+    with pytest.raises(ValueError):
+        tools.invoke('get_project_context',project_id='P',actor='alice',params={'hack':1})
+    rows=AgentStore().tool_calls(limit=10)
+    assert len(rows)>=4
+    assert all(row['ok'] is False for row in rows)
+    assert {row['permission'] for row in rows}>={'L0','L1','L2'}
+    assert any(row['permission']=='-' for row in rows)
+
+
+def test_tool_endpoints_registry_and_guards(api):
+    client,_=api
+    reg=client.get('/api/agents/tools',headers=headers()).json()
+    assert reg['schemaVersion']=='pitguard.agent-tools/1'
+    assert 'approve_formal_issue' not in {t['name'] for t in reg['tools']}
+    denied=client.post('/api/agents/tools/adopt_design_candidate/invoke',headers=headers(),
+                       json={'projectId':'P','params':{'runId':'r','candidateId':'c'}})
+    assert denied.status_code==403
+    unknown=client.post('/api/agents/tools/approve_formal_issue/invoke',headers=headers(),
+                        json={'params':{}})
+    assert unknown.status_code==404
+    bad=client.post('/api/agents/tools/generate_scheme_candidates/invoke',headers=headers(),
+                    json={'params':{'runId':123}})
+    assert bad.status_code==400
+    rows=client.get('/api/agents/tool-calls?limit=5',headers=headers()).json()['calls']
+    assert rows and rows[0]['ok'] is False
