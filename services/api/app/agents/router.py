@@ -1,6 +1,6 @@
 """Authenticated, fail-closed Agent workbench API. No direct model-driven tool endpoint."""
 from __future__ import annotations
-from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File
+from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File,Form
 import json
 from datetime import datetime,timezone
 from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate,ToolInvoke,OrchestratorDispatch
@@ -12,6 +12,7 @@ from . import assistant
 from . import document_agent
 from . import tools as tool_registry
 from . import orchestrator
+from . import design_basis_intake as intake
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -114,6 +115,61 @@ async def extract_document(request:Request,file:UploadFile=File(...)):
         raise HTTPException(400,detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(422,detail='文档解析失败：'+type(exc).__name__) from exc
+
+
+@router.post('/design-basis/ingest')
+async def ingest_design_basis(request:Request,project_id:str=Form(...),
+                              text:str|None=Form(None),
+                              conversation_id:str|None=Form(None),
+                              provider:str=Form('auto'),
+                              file:UploadFile|None=File(None)):
+    """一段话或一份文件 → 自动填入设计基准 → 返回还缺什么。
+
+    模型接入点已预留：provider=model 且未配置 API 时明确回退规则，不伪造输出。
+    """
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='设计基准录入要求设计人员权限')
+    if provider not in ('auto','rules','model'):
+        raise HTTPException(400,detail='provider 只能是 auto / rules / model')
+    if conversation_id:
+        try:
+            conversation=AgentStore().get_conversation(conversation_id)
+        except KeyError as exc:raise HTTPException(404,detail='会话不存在') from exc
+        if conversation['projectId']!=project_id:
+            raise HTTPException(409,detail='会话与项目不匹配')
+
+    filename=None;data=None;raw_fields=None
+    if file is not None:
+        filename=file.filename or 'document.pdf'
+        data=await file.read()
+        if filename.lower().endswith('.json'):
+            try:
+                raw_fields=intake.parse_extraction_json(data.decode('utf-8'))
+            except (ValueError,UnicodeDecodeError) as exc:
+                raise HTTPException(400,detail='提取结果 JSON 解析失败：'+str(exc)[:120]) from exc
+            data=None
+    if not text and data is None and raw_fields is None:
+        raise HTTPException(400,detail='需要提供一段文本、一份 PDF 或提取结果 JSON')
+    try:
+        return intake.ingest(project_id=project_id,actor=identity.actor,text=text,
+                             filename=filename,data=data,raw_fields=raw_fields,
+                             conversation_id=conversation_id,provider_requested=provider)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.get('/design-basis/missing')
+def design_basis_missing(request:Request,project_id:str=Query(min_length=1,max_length=100)):
+    """当前设计基准还缺哪些字段，用于桌宠的常驻提示。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看设计基准缺项要求设计人员权限')
+    try:
+        return intake.missing(project_id,actor=identity.actor)
+    except KeyError as exc:raise HTTPException(404,detail='项目不存在') from exc
 
 
 @router.get('/tools')

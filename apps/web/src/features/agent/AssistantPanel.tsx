@@ -5,6 +5,7 @@ import {
   type AgentMessage,
   type AgentPlan,
   type AgentProjectStatus,
+  type DesignBasisIngestResult,
 } from '../../api/client';
 import './assistant-panel.css';
 
@@ -14,38 +15,7 @@ type Props = {
   onProjectChanged?: () => void;
 };
 type Notice = { id: number; kind: 'alert' | 'error'; title: string; text: string };
-type IntakeField = {
-  key: string; label: string; value: string | number; unit?: string;
-  page?: number; target: string; checked: boolean;
-};
-type IntakeRule = { target: string; label: string; validate: (value: unknown) => boolean };
 type Gap = { text: string; items: string[]; tone: 'ok' | 'warn' | 'error' };
-
-/**
- * Only unambiguous scalars may be written. Water levels, elevations and soil
- * parameters need a datum / 折减值 decision first, so they are never auto-filled.
- */
-const INTAKE_RULES: Record<string, IntakeRule> = {
-  surchargeGeneral: {
-    target: 'surcharge', label: '施工荷载',
-    validate: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
-  },
-  safetyLevel: {
-    target: 'excavationSafetyLevel', label: '基坑安全等级',
-    validate: (v) => ['一级', '二级', '三级'].includes(String(v)),
-  },
-  importanceFactor: {
-    target: 'importanceFactor', label: '侧壁重要性系数',
-    validate: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.8 && v <= 1.5,
-  },
-  concreteGrade: {
-    target: 'defaultConcreteGrade', label: '混凝土等级',
-    validate: (v) => typeof v === 'string' && /^C\d{2,3}$/.test(v),
-  },
-};
-
-/** designSettings 内部允许写入的键；路径前缀一律剥掉，避免写成未知字段被静默忽略。 */
-const INTAKE_TARGETS = new Set(['surcharge', 'excavationSafetyLevel', 'importanceFactor', 'defaultConcreteGrade']);
 
 const POLL_INTERVAL_MS = 60000;
 const NOTICE_LIFETIME_MS = 12000;
@@ -100,9 +70,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const [status, setStatus] = useState<AgentProjectStatus | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [gap, setGap] = useState<Gap>({ text: '正在读取缺项…', items: [], tone: 'ok' });
-  const [intakeFields, setIntakeFields] = useState<IntakeField[]>([]);
-  const [intakeFileName, setIntakeFileName] = useState('');
-  const [intakeBusy, setIntakeBusy] = useState(false);
+  const [attachBusy, setAttachBusy] = useState(false);
   const [petOffset, setPetOffset] = useState<{ x: number; y: number }>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(PET_POS_KEY) || 'null');
@@ -278,6 +246,11 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
 
   const refreshGap = useCallback(async () => {
     try {
+      const basis = await api.designBasisMissing(projectId);
+      if (basis.count > 0) {
+        setGap({ text: basis.text, items: basis.items.map((item) => item.label), tone: 'warn' });
+        return;
+      }
       const plan = await api.agentPlan(projectId);
       setGap(describeGap(plan));
     } catch (e) {
@@ -338,126 +311,60 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
+  const reloadMessages = useCallback(async () => {
+    if (!activeId) return;
+    const data = await api.agentConversation(activeId);
+    setMessages(data.messages ?? []);
+  }, [activeId]);
+
+  const reportIngest = useCallback((result: DesignBasisIngestResult) => {
+    if (result.mode === 'filled') {
+      pushNotice('alert', `已填入 ${result.applied.length} 项设计基准`,
+        result.remaining.text
+        + (result.requiresRecalculation ? '；原计算结果已失效，请重新验算。' : '')
+        + (result.modelStatus === 'not_configured' ? '（模型未接入，按确定性规则抽取）' : ''));
+      onProjectChanged?.();
+    } else {
+      pushNotice('alert', '未识别到可填字段', result.remaining.text);
+    }
+    if (result.warnings?.length) {
+      pushNotice('alert', '录入提示', result.warnings.join(' '));
+    }
+  }, [pushNotice, onProjectChanged]);
+
   async function send() {
     const text = draft.trim();
     if (!text || !activeId || busy) return;
     setBusy(true); setError('');
     setDraft('');
     try {
-      const result = await api.postAgentMessage(activeId, text);
-      setMessages((prev) => [...prev, result.message, result.reply]);
-      void refreshGap();
+      const result = await api.ingestDesignBasis(projectId, { text, conversationId: activeId });
+      await reloadMessages();
+      await refreshGap();
+      reportIngest(result);
     } catch (e) {
       const message = String(e);
       setError(message);
       setDraft(text);
-      pushNotice('error', '发送失败', message);
+      pushNotice('error', '录入失败', message);
     } finally { setBusy(false); }
   }
 
-  /** Read the A1-produced extraction JSON or upload a PDF to A1. */
-  const loadIntakeFile = useCallback(async (file: File) => {
-    const name = file.name.toLowerCase();
-    if (name.endsWith('.pdf')) {
-      setIntakeBusy(true); setError('');
-      try {
-        const result = await api.extractAgentDocument(file);
-        const fields: IntakeField[] = result.fields
-          .map((field) => ({ ...field, target: field.targetField.split('.').pop() ?? '' }))
-          .filter((field) => INTAKE_TARGETS.has(field.target))
-          .map((field) => ({
-            key: field.key, label: field.label, value: field.value,
-            unit: field.unit || undefined, page: field.page,
-            target: field.target, checked: true,
-          }));
-        if (!fields.length) {
-          setIntakeFields([]); setIntakeFileName('');
-          pushNotice('error', 'A1 没有抽到可填字段',
-            '这份文件里没匹配到施工荷载、安全等级、重要性系数或混凝土等级；水位、高程、土层需人工填写。');
-          return;
-        }
-        setIntakeFields(fields);
-        setIntakeFileName(file.name);
-        const warn = result.warnings.length ? ` ${result.warnings.join(' ')}` : '';
-        pushNotice('alert', `A1 从 ${result.document.pages} 页中抽出 ${fields.length} 项`,
-          `请核对页码后填入设计基准。${warn}`);
-      } catch (e) {
-        setIntakeFields([]); setIntakeFileName('');
-        pushNotice('error', 'A1 读取失败', String(e));
-      } finally { setIntakeBusy(false); }
-      return;
-    }
-    if (!name.endsWith('.json')) {
-      pushNotice('error', '文件类型不支持', '请选择 PDF，或已有的提取结果 JSON。');
-      return;
-    }
-    if (file.size > 2_000_000) {
-      pushNotice('error', '提取结果过大', '文件超过 2 MB，请只保留提取结果 JSON。');
-      return;
-    }
+  const ingestFile = useCallback(async (file: File) => {
+    setAttachBusy(true); setError('');
     try {
-      const data = JSON.parse(await file.text()) as { scalarParameters?: Array<Record<string, unknown>> };
-      const rows = data.scalarParameters;
-      if (!Array.isArray(rows)) throw new Error('文件里没有 scalarParameters 数组，不是有效的提取结果。');
-      const fields: IntakeField[] = [];
-      for (const row of rows) {
-        const rule = INTAKE_RULES[String(row.key ?? '')];
-        if (!rule || !rule.validate(row.value)) continue;
-        fields.push({
-          key: String(row.key), label: rule.label, value: row.value as string | number,
-          unit: row.unit == null ? undefined : String(row.unit),
-          page: Number(row.page) || undefined, target: rule.target, checked: true,
-        });
-      }
-      if (!fields.length) {
-        setIntakeFields([]); setIntakeFileName('');
-        pushNotice('error', '没有可写入的字段',
-          '提取结果里没有命中白名单的参数；水位、高程、土层参数需人工确认后另行填入。');
-        return;
-      }
-      setIntakeFields(fields);
-      setIntakeFileName(file.name);
-      setError('');
-      pushNotice('alert', `读出 ${fields.length} 项可填参数`, `来自 ${file.name}；请核对后点「填入设计基准」。`);
-    } catch (e) {
-      setIntakeFields([]); setIntakeFileName('');
-      pushNotice('error', '提取结果读取失败', String(e));
-    }
-  }, [pushNotice]);
-
-  const applyIntake = useCallback(async () => {
-    const picked = intakeFields.filter((field) => field.checked && INTAKE_TARGETS.has(field.target));
-    if (!picked.length) {
-      pushNotice('error', '未选择字段', '至少勾选一项再填入。');
-      return;
-    }
-    if (!projectId) {
-      pushNotice('error', '项目未打开', '请先打开一个项目，再填入提取结果。');
-      return;
-    }
-    setIntakeBusy(true); setError('');
-    try {
-      // Merge into the existing settings: sending a partial object would let
-      // the backend re-default every untouched design parameter.
-      const currentProject = await api.getProject(projectId);
-      const existing = (currentProject.designSettings ?? {}) as unknown as Record<string, unknown>;
-      const mergedSettings: Record<string, unknown> = {
-        ...existing,
-        ...Object.fromEntries(picked.map((field) => [field.target, field.value])),
-      };
-      await api.updateProject(projectId,
-        { designSettings: mergedSettings } as unknown as Parameters<typeof api.updateProject>[1]);
-      pushNotice('alert', `已填入 ${picked.length} 项`,
-        '已写入当前项目；设计输入变更会作废旧计算结果，请重新建立工况并验算。');
-      setIntakeFields([]); setIntakeFileName('');
-      onProjectChanged?.();
-      void refreshGap();
+      const result = await api.ingestDesignBasis(projectId, {
+        file, conversationId: activeId || undefined,
+      });
+      await reloadMessages();
+      await refreshGap();
+      reportIngest(result);
     } catch (e) {
       const text = String(e);
       setError(text);
-      pushNotice('error', '填入失败', text);
-    } finally { setIntakeBusy(false); }
-  }, [intakeFields, projectId, onProjectChanged, pushNotice, refreshGap]);
+      pushNotice('error', '文件录入失败', text);
+    } finally { setAttachBusy(false); }
+  }, [projectId, activeId, reloadMessages, refreshGap, reportIngest, pushNotice]);
 
   const failCount = status?.failCount ?? 0;
   const badge = status?.statusUnavailable || notices.some((n) => n.kind === 'error')
@@ -515,7 +422,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
           <div className="agentDockMessages" ref={threadRef}>
             {messages.length === 0 ? (
               <p className="agentDockEmpty">
-                问一句，或点回形针上传 PDF。回答只基于项目真实状态，不作工程判断。
+                贴一段参数（如「施工荷载 30kPa，基坑安全等级三级」）或上传 PDF，会自动填入设计基准并反馈还缺什么。
               </p>
             ) : messages.map((message) => (
               message.role === 'tool' ? (
@@ -535,47 +442,14 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
             ))}
           </div>
 
-          {intakeFields.length ? (
-            <section className="agentDockIntake" aria-label="A1 资料与参数提取结果">
-              <div className="agentDockIntakeBar">
-                <strong title={intakeFileName || undefined}>待填入设计基准</strong>
-                <small className="agentDockIntakeFileName">{intakeFileName}</small>
-              </div>
-              <ul className="agentDockIntakeList">
-                {intakeFields.map((field) => (
-                  <li key={field.key} title={`${field.target} · 第 ${field.page ?? '?'} 页`}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={field.checked}
-                        onChange={(event) => setIntakeFields((prev) => prev.map((item) =>
-                          item.key === field.key ? { ...item, checked: event.target.checked } : item))}
-                      />
-                      <span>{field.label}</span>
-                      <b>{String(field.value)}{field.unit ? ` ${field.unit}` : ''}</b>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                className="agentDockIntakeApply"
-                onClick={() => void applyIntake()}
-                disabled={intakeBusy}
-              >
-                {intakeBusy ? '填入中…' : `填入设计基准（${intakeFields.filter((f) => f.checked).length} 项）`}
-              </button>
-            </section>
-          ) : null}
-
           <footer className="agentDockCompose agentDockComposeSlim">
             <button
               type="button"
               className="agentDockAttach"
               onClick={() => attachRef.current?.click()}
-              disabled={intakeBusy}
-              title="上传 PDF，由 A1 资料与参数读取并填入设计基准"
-              aria-label="上传 PDF 给 A1 资料与参数"
+              disabled={attachBusy}
+              title="上传 PDF 或提取结果 JSON，自动填入设计基准"
+              aria-label="上传文件自动填入设计基准"
             >
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 014.24 4.24l-9.19 9.19a1 1 0 01-1.41-1.41l8.49-8.49" />
@@ -588,7 +462,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
               hidden
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) void loadIntakeFile(file);
+                if (file) void ingestFile(file);
                 event.target.value = '';
               }}
             />
@@ -600,10 +474,10 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
               onKeyDown={(event) => {
                 if (event.key === 'Enter') { event.preventDefault(); void send(); }
               }}
-              placeholder={intakeBusy ? 'A1 正在读取文档…' : '描述问题，或上传 PDF'}
+              placeholder={attachBusy ? '正在读取文件…' : '描述问题 / 贴参数，或上传 PDF'}
               aria-label="向智能设计助手提问"
             />
-            <button type="button" onClick={() => void send()} disabled={busy || !draft.trim()}>
+            <button type="button" onClick={() => void send()} disabled={busy || attachBusy || !draft.trim()}>
               {busy ? '发送中' : '发送'}
             </button>
           </footer>

@@ -414,6 +414,32 @@ export type AgentDocumentExtraction = {
   requiresHumanConfirmation: boolean;
   formalConstructionIssue: boolean;
 };
+export type DesignBasisGap = {
+  count: number;
+  items: Array<{ key: string; label: string; reason: string }>;
+  text: string;
+  confirmed: boolean;
+  provider: string;
+  providerUsed: string;
+  modelStatus: string;
+  projectId?: string;
+  formalConstructionIssue?: boolean;
+};
+export type DesignBasisIngestResult = {
+  mode: 'filled' | 'receipt';
+  applied: Array<{
+    key: string; label: string; value: string | number; unit: string;
+    raw: string; page: number | null; target: string; confidence: string;
+  }>;
+  remaining: DesignBasisGap;
+  warnings: string[];
+  modelTried: boolean;
+  provider: string;
+  providerUsed: string;
+  modelStatus: string;
+  requiresRecalculation?: boolean;
+  formalConstructionIssue: boolean;
+};
 
 const sectionRequestOptions: RequestOptions = {
   timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
@@ -451,6 +477,23 @@ export const api = {
     return request<AgentDocumentExtraction>('/api/agents/documents/extract', {
       method: 'POST', body: form, timeoutMs: 120000, responseIdleTimeoutMs: 120000,
       activity: { label: 'A1 正在读取文档' } });
+  },
+  designBasisMissing: (projectId: string) => request<DesignBasisGap>(
+    `/api/agents/design-basis/missing?project_id=${encodeURIComponent(projectId)}`, {
+      timeoutMs: 30000, activity: { quiet: true, cacheTtlMs: 0 } }),
+  ingestDesignBasis: (
+    projectId: string,
+    input: { text?: string; file?: File; conversationId?: string; provider?: string },
+  ) => {
+    const form = new FormData();
+    form.append('project_id', projectId);
+    if (input.text) form.append('text', input.text);
+    if (input.file) form.append('file', input.file);
+    if (input.conversationId) form.append('conversation_id', input.conversationId);
+    if (input.provider) form.append('provider', input.provider);
+    return request<DesignBasisIngestResult>('/api/agents/design-basis/ingest', {
+      method: 'POST', body: form, timeoutMs: 90000, responseIdleTimeoutMs: 90000,
+      activity: { label: '正在录入设计基准' } });
   },
   advanceAgentRun: (runId: string) => request<Record<string, unknown>>(
     `/api/agents/runs/${encodeURIComponent(runId)}/advance`, {
