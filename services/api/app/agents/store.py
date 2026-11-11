@@ -20,6 +20,46 @@ def encode(value):
     return json.dumps(value,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':'))
 
 
+# WAL 只需要对每个库设置一次。每次连接都执行 PRAGMA journal_mode=WAL 会与
+# 后台 worker 的高频连接争抢写锁，在 Windows 上表现为偶发的
+# "attempt to write a readonly database"。
+_WAL_READY: set[str] = set()
+
+
+def _execute_with_retry(operation, *args):
+    """Retry only transient SQLite write contention; other errors propagate."""
+    for attempt in range(5):
+        try:
+            return operation(*args)
+        except sqlite3.OperationalError as exc:
+            message = str(exc).lower()
+            if 'readonly database' not in message and 'database is locked' not in message:
+                raise
+            if attempt == 4:
+                raise
+            time.sleep(0.12 * (attempt + 1))
+
+
+def _write_with_retry(operation):
+    return _execute_with_retry(operation)
+
+
+class _RetryingConnection:
+    """Proxy that gives every write path the same transient-failure retry."""
+
+    def __init__(self, connection):
+        object.__setattr__(self, '_connection', connection)
+
+    def execute(self, sql, *args):
+        return _execute_with_retry(self._connection.execute, sql, *args)
+
+    def executescript(self, sql):
+        return _execute_with_retry(self._connection.executescript, sql)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
 class ConflictError(ValueError):
     pass
 
@@ -87,6 +127,24 @@ class AgentStore:
                     gate TEXT, dispatched INTEGER NOT NULL, run_id TEXT,
                     decision_json TEXT NOT NULL, created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS orchestrations_project ON orchestrations(project_id,id DESC);
+                CREATE TABLE IF NOT EXISTS agent_triggers (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, conversation_id TEXT,
+                    thread_id TEXT, kind TEXT NOT NULL, payload_json TEXT NOT NULL,
+                    decision TEXT NOT NULL, reason TEXT NOT NULL,
+                    policy_provider TEXT NOT NULL, ticket_id TEXT,
+                    created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_triggers_project ON agent_triggers(project_id,created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_tickets (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, conversation_id TEXT,
+                    thread_id TEXT, role_id TEXT NOT NULL, stage_id TEXT NOT NULL,
+                    mandate_json TEXT NOT NULL, status TEXT NOT NULL,
+                    accept_mode TEXT NOT NULL, worker_run_id TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_tickets_project ON agent_tickets(project_id,created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_ticket_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_ticket_events_ticket ON agent_ticket_events(ticket_id,id);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
@@ -108,8 +166,14 @@ class AgentStore:
         c.row_factory=sqlite3.Row
         c.execute('PRAGMA busy_timeout=12000')
         c.execute('PRAGMA foreign_keys=ON')
-        c.execute('PRAGMA journal_mode=WAL')
-        try: yield c
+        key = str(self.path)
+        if key not in _WAL_READY:
+            try:
+                c.execute('PRAGMA journal_mode=WAL')
+                _WAL_READY.add(key)
+            except sqlite3.OperationalError:
+                pass
+        try: yield _RetryingConnection(c)
         finally: c.close()
 
     @staticmethod
@@ -235,19 +299,22 @@ class AgentStore:
                     'updatedBy':r['updated_by'],'formalConstructionIssue':False}
 
     def claim(self,owner:str,lease_seconds=300,run_id=None):
-        with self.connect() as c:
-            c.execute('BEGIN IMMEDIATE')
-            cond='''status IN ('queued','running') AND cancel_requested=0
-                     AND (lease_until IS NULL OR lease_until<?)'''
-            args=[time.time()]
-            if run_id:
-                cond+=' AND id=?';args.append(run_id)
-            row=c.execute('SELECT * FROM runs WHERE '+cond+' ORDER BY created_at ASC LIMIT 1',tuple(args)).fetchone()
-            if row is None: c.execute('COMMIT');return None
-            c.execute('UPDATE runs SET status=?, lease_owner=?, lease_until=?, updated_at=?, revision=revision+1 WHERE id=?',
-                      ('running',owner,time.time()+lease_seconds,now(),row['id']))
-            c.execute('COMMIT')
-            return self.get(row['id'])
+        def _do():
+            with self.connect() as c:
+                c.execute('BEGIN IMMEDIATE')
+                cond='''status IN ('queued','running') AND cancel_requested=0
+                         AND (lease_until IS NULL OR lease_until<?)'''
+                args=[time.time()]
+                if run_id:
+                    cond+=' AND id=?';args.append(run_id)
+                row=c.execute('SELECT * FROM runs WHERE '+cond+' ORDER BY created_at ASC LIMIT 1',tuple(args)).fetchone()
+                if row is None: c.execute('COMMIT');return None
+                c.execute('UPDATE runs SET status=?, lease_owner=?, lease_until=?, updated_at=?, revision=revision+1 WHERE id=?',
+                          ('running',owner,time.time()+lease_seconds,now(),row['id']))
+                c.execute('COMMIT')
+                return self.get(row['id'])
+
+        return _write_with_retry(_do)
 
     def heartbeat(self,rid,owner,lease_seconds=300):
         with self.connect() as c:
@@ -516,3 +583,122 @@ class AgentStore:
                  'dispatched':bool(x['dispatched']),'runId':x['run_id'],
                  'decision':json.loads(x['decision_json']),
                  'createdAt':x['created_at']} for x in rows]
+
+    # --- Super-agent: Router / Worker 的持久状态 ---------------------------
+    def record_trigger(self, *, project_id: str, conversation_id: str | None,
+                       thread_id: str | None, kind: str, payload: dict,
+                       decision: str, reason: str, policy_provider: str,
+                       ticket_id: str | None = None,
+                       trigger_id: str | None = None) -> dict:
+        row = {
+            'id': trigger_id or uuid4().hex, 'projectId': project_id,
+            'conversationId': conversation_id, 'threadId': thread_id,
+            'kind': kind, 'payload': payload, 'decision': decision,
+            'reason': reason, 'policyProvider': policy_provider,
+            'ticketId': ticket_id, 'createdAt': now(),
+        }
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_triggers(id,project_id,conversation_id,thread_id,
+                             kind,payload_json,decision,reason,policy_provider,ticket_id,created_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                          (row['id'], project_id, conversation_id, thread_id, kind,
+                           encode(payload), decision, reason, policy_provider,
+                           ticket_id, row['createdAt']))
+            return row
+        return _write_with_retry(_do)
+
+    def create_ticket(self, *, project_id: str, conversation_id: str | None,
+                      thread_id: str | None, role_id: str, stage_id: str,
+                      mandate: dict, status: str, accept_mode: str) -> dict:
+        row = {
+            'id': uuid4().hex, 'projectId': project_id,
+            'conversationId': conversation_id, 'threadId': thread_id,
+            'roleId': role_id, 'stageId': stage_id, 'mandate': mandate,
+            'status': status, 'acceptMode': accept_mode, 'workerRunId': None,
+            'createdAt': now(), 'updatedAt': now(),
+        }
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_tickets(id,project_id,conversation_id,thread_id,
+                             role_id,stage_id,mandate_json,status,accept_mode,worker_run_id,
+                             created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                          (row['id'], project_id, conversation_id, thread_id, role_id,
+                           stage_id, encode(mandate), status, accept_mode, None,
+                           row['createdAt'], row['updatedAt']))
+            return row
+        return _write_with_retry(_do)
+
+    def update_ticket(self, ticket_id: str, *, status: str | None = None,
+                      worker_run_id: str | None = None) -> None:
+        def _do():
+            with self.connect() as c:
+                row = c.execute('SELECT * FROM agent_tickets WHERE id=?', (ticket_id,)).fetchone()
+                if row is None:
+                    raise KeyError('Ticket not found')
+                c.execute('''UPDATE agent_tickets SET status=?, worker_run_id=?, updated_at=?
+                             WHERE id=?''',
+                          (status or row['status'],
+                           worker_run_id if worker_run_id is not None else row['worker_run_id'],
+                           now(), ticket_id))
+            return None
+        return _write_with_retry(_do)
+
+    def get_ticket(self, ticket_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_tickets WHERE id=?', (ticket_id,)).fetchone()
+        if row is None:
+            raise KeyError('Ticket not found')
+        return self._ticket(row)
+
+    @staticmethod
+    def _ticket(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'],
+            'conversationId': row['conversation_id'], 'threadId': row['thread_id'],
+            'roleId': row['role_id'], 'stageId': row['stage_id'],
+            'mandate': json.loads(row['mandate_json']),
+            'status': row['status'], 'acceptMode': row['accept_mode'],
+            'workerRunId': row['worker_run_id'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    def list_tickets(self, *, project_id: str | None = None, limit: int = 30) -> list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows = c.execute('''SELECT * FROM agent_tickets WHERE project_id=?
+                                    ORDER BY created_at DESC LIMIT ?''',
+                                 (project_id, min(max(limit, 1), 200))).fetchall()
+            else:
+                rows = c.execute('SELECT * FROM agent_tickets ORDER BY created_at DESC LIMIT ?',
+                                 (min(max(limit, 1), 200),)).fetchall()
+        return [self._ticket(row) for row in rows]
+
+    def active_ticket_for_thread(self, project_id: str, thread_id: str | None) -> dict | None:
+        if not thread_id:
+            return None
+        with self.connect() as c:
+            row = c.execute('''SELECT * FROM agent_tickets WHERE project_id=? AND thread_id=?
+                               AND status IN ('accepted','observed','running','waiting_review')
+                               ORDER BY created_at DESC LIMIT 1''',
+                            (project_id, thread_id)).fetchone()
+        return self._ticket(row) if row else None
+
+    def append_ticket_event(self, ticket_id: str, kind: str, payload: dict) -> dict:
+        row = {'ticketId': ticket_id, 'kind': kind, 'payload': payload, 'createdAt': now()}
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_ticket_events(ticket_id,kind,payload_json,created_at)
+                             VALUES(?,?,?,?)''',
+                          (ticket_id, kind, encode(payload), row['createdAt']))
+            return row
+        return _write_with_retry(_do)
+
+    def ticket_events(self, ticket_id: str, limit: int = 100) -> list[dict]:
+        with self.connect() as c:
+            rows = c.execute('''SELECT * FROM agent_ticket_events WHERE ticket_id=?
+                                ORDER BY id ASC LIMIT ?''',
+                             (ticket_id, min(max(limit, 1), 500))).fetchall()
+        return [{'ticketId': x['ticket_id'], 'kind': x['kind'],
+                 'payload': json.loads(x['payload_json']),
+                 'createdAt': x['created_at']} for x in rows]

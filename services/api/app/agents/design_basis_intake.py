@@ -362,7 +362,8 @@ def apply(project_id: str, fields: list[dict], *, actor: str,
     summary = missing_summary(updated)
 
     if conversation_id:
-        display = '输入内容' if len(source_label) > 8 else source_label
+        display = (source_label if source_label.endswith(('.pdf', '.json'))
+                   or len(source_label) <= 8 else '输入内容')
         lines = [f"已从{display}填入 {len(accepted)} 项设计基准："]
         lines.extend(f"  · {item['label']} = {item['value']}{item['unit']}" for item in accepted)
         lines.append(summary['text'] + '。设计输入变更会作废旧计算结果，请重新验算。')
@@ -397,7 +398,8 @@ def _write_turn(store: AgentStore, conversation_id: str, source_label: str, cont
 def ingest(*, project_id: str, actor: str, text: str | None = None,
            filename: str | None = None, data: bytes | None = None,
            conversation_id: str | None = None, provider_requested: str = 'auto',
-           raw_fields: list[dict] | None = None) -> dict:
+           raw_fields: list[dict] | None = None,
+           source_label: str | None = None) -> dict:
     """统一入口：文本 / PDF / 已有提取结果 JSON，都走同一条写入通道。"""
     provider = provider_status(provider_requested)
     model_tried = False
@@ -414,7 +416,7 @@ def ingest(*, project_id: str, actor: str, text: str | None = None,
 
     if raw_fields is not None:
         fields = raw_fields
-        source_label = '已有提取结果'
+        source_label = source_label or '已有提取结果'
     elif data is not None:
         parsed = interpret_file(filename or 'document.pdf', data)
         fields = parsed['fields']
