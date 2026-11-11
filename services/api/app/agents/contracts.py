@@ -70,3 +70,23 @@ class ToolInvoke(Strict):
 
     projectId: str | None = Field(default=None, max_length=100)
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class SuperTrigger(Strict):
+    """A Router-level environment event (Trigger). Fast Path validates the shape."""
+
+    projectId: str = Field(min_length=1, max_length=100)
+    kind: Literal['user_message', 'document_uploaded', 'design_input_changed',
+                  'calculation_failed', 'run_completed', 'review_requested']
+    payload: dict[str, Any] = Field(default_factory=dict)
+    conversationId: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
+    threadId: str | None = Field(default=None, min_length=1, max_length=100)
+    acceptMode: Literal['observe', 'auto'] = 'observe'
+
+
+class SuperDispatch(Strict):
+    """Execute one accepted Ticket; the Mandate cannot be widened here."""
+
+    text: str | None = Field(default=None, max_length=2000)
+    resultHash: str | None = Field(default=None, pattern=SHA256)
+    requestedTools: list[str] = Field(default_factory=list)

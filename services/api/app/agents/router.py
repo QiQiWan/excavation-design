@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File,Form
 import json
 from datetime import datetime,timezone
-from .contracts import StartRun,RunDecision,ConversationCreate,MessageCreate,ToolInvoke,OrchestratorDispatch
+from .contracts import (StartRun,RunDecision,ConversationCreate,MessageCreate,
+    ToolInvoke,OrchestratorDispatch,SuperTrigger,SuperDispatch)
 from .store import AgentStore,ConflictError
 from .catalog import catalog
 from .engine import AgentRuntime
@@ -13,6 +14,7 @@ from . import document_agent
 from . import tools as tool_registry
 from . import orchestrator
 from . import design_basis_intake as intake
+from . import super_agent
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -408,3 +410,68 @@ def orchestrator_history(request:Request,project_id:str|None=None,limit:int=30):
     rows=orchestrator.history(project_id=project_id,limit=limit)
     return {'schemaVersion':'pitguard.orchestration-history/1','decisions':rows,
             'count':len(rows),'formalConstructionIssue':False}
+
+
+@router.get('/super/blueprint')
+def super_agent_blueprint(request:Request):
+    """Router + 8 Workers 的架构蓝图与可执行状态。"""
+    _actor(request)
+    return super_agent.blueprint()
+
+
+@router.post('/super/triggers')
+def super_agent_trigger(body:SuperTrigger,request:Request):
+    """Router 入口：环境事件准入、分派、observe/auto 决策。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='提交 Trigger 要求设计人员权限')
+    if body.conversationId:
+        try:
+            conversation=AgentStore().get_conversation(body.conversationId)
+        except KeyError as exc:raise HTTPException(404,detail='会话不存在') from exc
+        if conversation['projectId']!=body.projectId:
+            raise HTTPException(409,detail='会话与项目不匹配')
+    try:
+        return super_agent.ingest_trigger(
+            project_id=body.projectId,kind=body.kind,payload=body.payload,
+            conversation_id=body.conversationId,thread_id=body.threadId,
+            accept_mode=body.acceptMode,actor=identity.actor)
+    except ValueError as exc:raise HTTPException(400,detail=str(exc)) from exc
+    except KeyError as exc:raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.get('/super/tickets')
+def super_agent_tickets(request:Request,project_id:str|None=None,limit:int=30):
+    _actor(request)
+    return {'schemaVersion':super_agent.SCHEMA,
+            'tickets':super_agent.tickets(project_id=project_id,limit=limit),
+            'formalConstructionIssue':False}
+
+
+@router.get('/super/tickets/{ticket_id}')
+def super_agent_ticket_detail(ticket_id:str,request:Request):
+    _actor(request)
+    try:return super_agent.ticket_detail(ticket_id)
+    except KeyError as exc:raise HTTPException(404,detail='Ticket 不存在') from exc
+
+
+@router.post('/super/tickets/{ticket_id}/dispatch')
+def super_agent_dispatch(ticket_id:str,body:SuperDispatch,request:Request):
+    """把 Ticket 交给 Worker；observe 模式、越权工具、未实现角色一律拒绝。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='派单要求设计人员权限')
+    try:
+        return super_agent.dispatch_ticket(
+            ticket_id,actor=identity.actor,text=body.text,
+            result_hash=body.resultHash,requested_tools=body.requestedTools)
+    except KeyError as exc:raise HTTPException(404,detail='Ticket 不存在') from exc
+
+
+@router.get('/super/watchdog')
+def super_agent_watchdog(request:Request,project_id:str=Query(min_length=1,max_length=100)):
+    """巡检卡住或失败的任务，给恢复建议。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看巡检结果要求设计人员权限')
+    return super_agent.watchdog(project_id)

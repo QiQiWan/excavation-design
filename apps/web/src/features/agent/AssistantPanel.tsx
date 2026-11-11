@@ -5,7 +5,7 @@ import {
   type AgentMessage,
   type AgentPlan,
   type AgentProjectStatus,
-  type DesignBasisIngestResult,
+  type SuperAgentTriggerResult,
 } from '../../api/client';
 import './assistant-panel.css';
 
@@ -21,6 +21,12 @@ const POLL_INTERVAL_MS = 60000;
 const NOTICE_LIFETIME_MS = 12000;
 const PET_POS_KEY = 'pitguard-agent-pet-pos-v2';
 const OPEN_KEY = 'pitguard-agent-open';
+const FIELD_KEYS: Record<string, string> = {
+  surchargeGeneral: 'surcharge',
+  safetyLevel: 'excavationSafetyLevel',
+  importanceFactor: 'importanceFactor',
+  concreteGrade: 'defaultConcreteGrade',
+};
 
 function fallbackGap(type: string, title: string): string[] {
   switch (type) {
@@ -317,18 +323,28 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     setMessages(data.messages ?? []);
   }, [activeId]);
 
-  const reportIngest = useCallback((result: DesignBasisIngestResult) => {
-    if (result.mode === 'filled') {
-      pushNotice('alert', `已填入 ${result.applied.length} 项设计基准`,
-        result.remaining.text
-        + (result.requiresRecalculation ? '；原计算结果已失效，请重新验算。' : '')
-        + (result.modelStatus === 'not_configured' ? '（模型未接入，按确定性规则抽取）' : ''));
+  const reportRouter = useCallback((result: SuperAgentTriggerResult) => {
+    const execution = result.execution;
+    if (execution && !execution.dispatched) {
+      pushNotice('error', '总控未派单', execution.reason || result.reason);
+      return;
+    }
+    const outcome = execution?.outcome;
+    if (!outcome) {
+      pushNotice('alert', '总控已记录', result.reason);
+      return;
+    }
+    if (outcome.mode === 'filled') {
+      pushNotice('alert', `已填入 ${outcome.applied.length} 项设计基准`,
+        outcome.remaining.text
+        + (outcome.requiresRecalculation ? '；原计算结果已失效，请重新验算。' : '')
+        + (outcome.modelStatus === 'not_configured' ? '（模型未接入，按确定性规则抽取）' : ''));
       onProjectChanged?.();
     } else {
-      pushNotice('alert', '未识别到可填字段', result.remaining.text);
+      pushNotice('alert', '未识别到可填字段', outcome.remaining.text);
     }
-    if (result.warnings?.length) {
-      pushNotice('alert', '录入提示', result.warnings.join(' '));
+    if (outcome.warnings?.length) {
+      pushNotice('alert', '录入提示', outcome.warnings.join(' '));
     }
   }, [pushNotice, onProjectChanged]);
 
@@ -338,10 +354,14 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     setBusy(true); setError('');
     setDraft('');
     try {
-      const result = await api.ingestDesignBasis(projectId, { text, conversationId: activeId });
+      const result = await api.superTrigger({
+        projectId, kind: 'user_message',
+        payload: { text, roleId: 'A1' },
+        conversationId: activeId, acceptMode: 'auto',
+      });
       await reloadMessages();
       await refreshGap();
-      reportIngest(result);
+      reportRouter(result);
     } catch (e) {
       const message = String(e);
       setError(message);
@@ -353,18 +373,38 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const ingestFile = useCallback(async (file: File) => {
     setAttachBusy(true); setError('');
     try {
-      const result = await api.ingestDesignBasis(projectId, {
-        file, conversationId: activeId || undefined,
+      let fields: Array<Record<string, unknown>> = [];
+      if (file.name.toLowerCase().endsWith('.json')) {
+        const parsed = JSON.parse(await file.text()) as {
+          scalarParameters?: Array<Record<string, unknown>>;
+          fields?: Array<Record<string, unknown>>;
+        };
+        fields = parsed.scalarParameters ?? parsed.fields ?? [];
+      } else {
+        const extracted = await api.extractAgentDocument(file);
+        fields = extracted.fields.map((item) => ({
+          key: FIELD_KEYS[item.key] ?? item.targetField.split('.').pop(),
+          value: item.value, raw: item.raw, page: item.page,
+        }));
+      }
+      const mapped = fields.map((item) => ({
+        ...item,
+        key: FIELD_KEYS[String(item.key)] ?? String(item.key),
+      }));
+      const result = await api.superTrigger({
+        projectId, kind: 'document_uploaded',
+        payload: { roleId: 'A1', fields: mapped, documentName: file.name },
+        conversationId: activeId || undefined, acceptMode: 'auto',
       });
       await reloadMessages();
       await refreshGap();
-      reportIngest(result);
+      reportRouter(result);
     } catch (e) {
       const text = String(e);
       setError(text);
       pushNotice('error', '文件录入失败', text);
     } finally { setAttachBusy(false); }
-  }, [projectId, activeId, reloadMessages, refreshGap, reportIngest, pushNotice]);
+  }, [projectId, activeId, reloadMessages, refreshGap, reportRouter, pushNotice]);
 
   const failCount = status?.failCount ?? 0;
   const badge = status?.statusUnavailable || notices.some((n) => n.kind === 'error')

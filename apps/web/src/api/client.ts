@@ -425,6 +425,25 @@ export type DesignBasisGap = {
   projectId?: string;
   formalConstructionIssue?: boolean;
 };
+export type SuperAgentTriggerResult = {
+  schemaVersion: string;
+  decision: 'ignored' | 'direct' | 'observed' | 'accepted';
+  reason: string;
+  ticketId: string | null;
+  ticket?: {
+    id: string; status: string; roleId: string; stageId: string;
+    mandate: Record<string, unknown>;
+  };
+  policy: { provider: string; used: boolean; note?: string };
+  acceptMode: string;
+  subscriptionDirect?: boolean;
+  execution?: {
+    dispatched: boolean; ticketId: string; roleId: string;
+    executor?: string; status?: string; reason?: string;
+    outcome?: DesignBasisIngestResult;
+  };
+  formalConstructionIssue: boolean;
+};
 export type DesignBasisIngestResult = {
   mode: 'filled' | 'receipt';
   applied: Array<{
@@ -478,6 +497,17 @@ export const api = {
       method: 'POST', body: form, timeoutMs: 120000, responseIdleTimeoutMs: 120000,
       activity: { label: 'A1 正在读取文档' } });
   },
+  superTrigger: (input: {
+    projectId: string; kind: 'user_message' | 'document_uploaded' | 'design_input_changed'
+      | 'calculation_failed' | 'run_completed' | 'review_requested';
+    payload?: Record<string, unknown>;
+    conversationId?: string;
+    threadId?: string;
+    acceptMode?: 'observe' | 'auto';
+  }) => request<SuperAgentTriggerResult>('/api/agents/super/triggers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input), timeoutMs: 90000, responseIdleTimeoutMs: 90000,
+    activity: { label: '总控正在分派任务' } }),
   designBasisMissing: (projectId: string) => request<DesignBasisGap>(
     `/api/agents/design-basis/missing?project_id=${encodeURIComponent(projectId)}`, {
       timeoutMs: 30000, activity: { quiet: true, cacheTtlMs: 0 } }),
