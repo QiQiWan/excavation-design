@@ -2,12 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import {
   api,
-  type AgentConversation,
   type AgentMessage,
+  type AgentPlan,
   type AgentProjectStatus,
-  type AgentRole,
-  type AgentRunBrief,
-  type AgentFrozenResult,
 } from '../../api/client';
 import './assistant-panel.css';
 
@@ -22,10 +19,11 @@ type IntakeField = {
   page?: number; target: string; checked: boolean;
 };
 type IntakeRule = { target: string; label: string; validate: (value: unknown) => boolean };
+type Gap = { text: string; items: string[]; tone: 'ok' | 'warn' | 'error' };
 
 /**
  * Only unambiguous scalars may be written. Water levels, elevations and soil
- * parameters need a datum /折减值 decision first, so they are never auto-filled.
+ * parameters need a datum / 折减值 decision first, so they are never auto-filled.
  */
 const INTAKE_RULES: Record<string, IntakeRule> = {
   surchargeGeneral: {
@@ -52,28 +50,48 @@ const INTAKE_TARGETS = new Set(['surcharge', 'excavationSafetyLevel', 'importanc
 const POLL_INTERVAL_MS = 60000;
 const NOTICE_LIFETIME_MS = 12000;
 const PET_POS_KEY = 'pitguard-agent-pet-pos-v2';
+const OPEN_KEY = 'pitguard-agent-open';
+
+function fallbackGap(type: string, title: string): string[] {
+  switch (type) {
+    case 'human_confirm': return ['设计基准确认'];
+    case 'needs_data': return ['工程输入资料'];
+    case 'needs_frozen_result': return ['冻结的单剖面结果'];
+    case 'role_not_ready': return [`「${title}」的执行链`];
+    case 'upstream_incomplete': return ['上一步尚未完成'];
+    default: return [];
+  }
+}
+
+function describeGap(plan: AgentPlan): Gap {
+  const next = plan.next;
+  const gate = next.gate;
+  if (gate.type === 'done') return { text: '六步都完成了', items: [], tone: 'ok' };
+  if (gate.type === 'already_in_progress') {
+    if (/awaiting_review/.test(gate.reason)) {
+      return { text: '还缺：人工复核（任务已算完，等你采用或拒绝）', items: ['人工复核'], tone: 'warn' };
+    }
+    return { text: '当前有任务在运行，暂无缺项', items: [], tone: 'ok' };
+  }
+  const items = next.missing?.length ? next.missing : fallbackGap(gate.type, next.title);
+  if (!items.length) {
+    return { text: gate.reason || '暂无缺项', items: [], tone: 'ok' };
+  }
+  return { text: `还缺：${items.join('、')}`, items, tone: 'warn' };
+}
 
 /**
- * 角色目录（A1~A8）保留在代码与后端目录里，但不在前台展示。
- * 需要恢复时把这里改成 true，前端不用改别的地方。
- */
-const SHOW_ROLE_ROSTER = false;
-
-/**
- * Desktop-pet style assistant.
- *
- * The dock is hidden until the launcher is clicked, so it takes no layout
- * space. Project state is still polled while hidden; hard failures and
- * request errors raise a toast and a badge on the launcher, so a problem is
- * never silenced just because the panel is closed.
+ * Minimal desktop-pet assistant: launcher, one conversation, one "what is
+ * missing" line. No role roster, no task launcher, no conversation switcher.
  *
  * Assistant turns remain status receipts only: no model call, no engineering
  * judgement, no authority to change a design.
  */
 export default function AssistantPanel({ projectId, projectName, onProjectChanged }: Props) {
-  const [open, setOpen] = useState(false);
-  const [roles, setRoles] = useState<AgentRole[]>([]);
-  const [conversations, setConversations] = useState<AgentConversation[]>([]);
+  // 工作区恢复数据时会重渲染外层，展开状态放 sessionStorage 才不会被重置。
+  const [open, setOpen] = useState(() => {
+    try { return sessionStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
+  });
   const [activeId, setActiveId] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -81,10 +99,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const [error, setError] = useState('');
   const [status, setStatus] = useState<AgentProjectStatus | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [runs, setRuns] = useState<AgentRunBrief[]>([]);
-  const [frozenResults, setFrozenResults] = useState<AgentFrozenResult[]>([]);
-  const [selectedResult, setSelectedResult] = useState('');
-  const [runBusy, setRunBusy] = useState(false);
+  const [gap, setGap] = useState<Gap>({ text: '正在读取缺项…', items: [], tone: 'ok' });
   const [intakeFields, setIntakeFields] = useState<IntakeField[]>([]);
   const [intakeFileName, setIntakeFileName] = useState('');
   const [intakeBusy, setIntakeBusy] = useState(false);
@@ -123,6 +138,10 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       return next.x === prev.x && next.y === prev.y ? prev : next;
     });
   }, []);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(OPEN_KEY, open ? '1' : '0'); } catch (error) { void error; }
+  }, [open]);
 
   useEffect(() => {
     const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
@@ -245,7 +264,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
           pushNotice('error', '工程状态读取失败', '未能读取当前工程状态，请检查后端服务。');
         } else if (fail > 0 || blockers.length) {
           const headline = fail > 0 ? `验算未通过 ${fail} 项` : `${blockers.length} 项待处理`;
-          const detail = blockers.length ? blockers.slice(0, 2).join('；') : '打开助手查看当前步骤与可执行角色。';
+          const detail = blockers.length ? blockers.slice(0, 2).join('；') : '打开助手查看当前缺项。';
           pushNotice('alert', headline, detail);
         }
       } catch (e) {
@@ -257,6 +276,16 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     return () => { dead = true; window.clearInterval(timer); };
   }, [projectId, pushNotice]);
 
+  const refreshGap = useCallback(async () => {
+    try {
+      const plan = await api.agentPlan(projectId);
+      setGap(describeGap(plan));
+    } catch (e) {
+      setGap({ text: '缺项读取失败', items: [], tone: 'error' });
+      void e;
+    }
+  }, [projectId]);
+
   // Conversation data is loaded on first open only.
   useEffect(() => {
     if (!open || loadedRef.current) return;
@@ -264,21 +293,15 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     let dead = false;
     (async () => {
       try {
-        const [roleData, list] = await Promise.all([
-          api.agentRoles(),
-          api.agentConversations(projectId),
-        ]);
+        const list = await api.agentConversations(projectId);
         if (dead) return;
-        setRoles(roleData.roles ?? []);
         const items = list.conversations ?? [];
         if (items.length) {
-          setConversations(items);
           setActiveId(items[0].id);
           return;
         }
         const created = await api.createAgentConversation(projectId, '设计助手会话');
         if (dead) return;
-        setConversations([created]);
         setActiveId(created.id);
       } catch (e) {
         const text = String(e);
@@ -291,27 +314,14 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
 
   useEffect(() => {
     if (!open) return;
-    let dead = false;
-    api.agentFrozenResults()
-      .then((data) => {
-        if (dead) return;
-        const items = data.results ?? [];
-        setFrozenResults(items);
-        setSelectedResult((prev) => prev || items.find((item) => item.launchable)?.resultHash || '');
-      })
-      .catch(() => undefined);
-    return () => { dead = true; };
-  }, [open]);
+    void refreshGap();
+  }, [open, refreshGap]);
 
   useEffect(() => {
     if (!activeId) return;
     let dead = false;
     api.agentConversation(activeId)
-      .then((data) => {
-        if (dead) return;
-        setMessages(data.messages ?? []);
-        setRuns(data.runs ?? []);
-      })
+      .then((data) => { if (!dead) setMessages(data.messages ?? []); })
       .catch((e) => { if (!dead) setError(String(e)); });
     return () => { dead = true; };
   }, [activeId]);
@@ -328,17 +338,6 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const startConversation = useCallback(async () => {
-    setBusy(true); setError('');
-    try {
-      const created = await api.createAgentConversation(projectId, '设计助手会话');
-      setConversations((prev) => [created, ...prev]);
-      setActiveId(created.id);
-      setMessages([]);
-    } catch (e) { setError(String(e)); }
-    finally { setBusy(false); }
-  }, [projectId]);
-
   async function send() {
     const text = draft.trim();
     if (!text || !activeId || busy) return;
@@ -347,11 +346,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     try {
       const result = await api.postAgentMessage(activeId, text);
       setMessages((prev) => [...prev, result.message, result.reply]);
-      if (result.reply.metadata?.dispatchedRunId) {
-        api.agentConversationRuns(activeId)
-          .then((data) => setRuns(data.runs ?? []))
-          .catch(() => undefined);
-      }
+      void refreshGap();
     } catch (e) {
       const message = String(e);
       setError(message);
@@ -360,48 +355,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     } finally { setBusy(false); }
   }
 
-  const refreshSession = useCallback(async (id: string) => {
-    const [detail, runList] = await Promise.all([
-      api.agentConversation(id),
-      api.agentConversationRuns(id),
-    ]);
-    setMessages(detail.messages ?? []);
-    setRuns(runList.runs ?? []);
-  }, []);
-
-  const launchRun = useCallback(async () => {
-    const hash = selectedResult || frozenResults[0]?.resultHash;
-    if (!hash || !activeId || runBusy) return;
-    if (!frozenResults.find((item) => item.resultHash === hash)?.launchable) {
-      setError('所选冻结结果与当前工作版本不一致，无法发起任务');
-      return;
-    }
-    setRunBusy(true); setError('');
-    try {
-      await api.postAgentMessageWithRun(activeId, '发起一次试点任务', hash);
-      await refreshSession(activeId);
-    } catch (e) {
-      const text = String(e);
-      setError(text);
-      pushNotice('error', '发起任务失败', text);
-    } finally { setRunBusy(false); }
-  }, [selectedResult, frozenResults, activeId, runBusy, refreshSession, pushNotice]);
-
-  const advanceRun = useCallback(async () => {
-    const run = runs[0];
-    if (!run || !activeId || runBusy) return;
-    setRunBusy(true); setError('');
-    try {
-      await api.advanceAgentRun(run.id);
-      await refreshSession(activeId);
-    } catch (e) {
-      const text = String(e);
-      setError(text);
-      pushNotice('error', '推进失败', text);
-    } finally { setRunBusy(false); }
-  }, [runs, activeId, runBusy, refreshSession, pushNotice]);
-
-  /** Read the assistant-produced extraction JSON. Never parses a PDF itself. */
+  /** Read the A1-produced extraction JSON or upload a PDF to A1. */
   const loadIntakeFile = useCallback(async (file: File) => {
     const name = file.name.toLowerCase();
     if (name.endsWith('.pdf')) {
@@ -464,7 +418,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       setIntakeFields(fields);
       setIntakeFileName(file.name);
       setError('');
-      pushNotice('alert', `读出 ${fields.length} 项可填参数`, `来自 ${file.name}；请核对后点「填入当前项目」。`);
+      pushNotice('alert', `读出 ${fields.length} 项可填参数`, `来自 ${file.name}；请核对后点「填入设计基准」。`);
     } catch (e) {
       setIntakeFields([]); setIntakeFileName('');
       pushNotice('error', '提取结果读取失败', String(e));
@@ -497,12 +451,13 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
         '已写入当前项目；设计输入变更会作废旧计算结果，请重新建立工况并验算。');
       setIntakeFields([]); setIntakeFileName('');
       onProjectChanged?.();
+      void refreshGap();
     } catch (e) {
       const text = String(e);
       setError(text);
       pushNotice('error', '填入失败', text);
     } finally { setIntakeBusy(false); }
-  }, [intakeFields, projectId, onProjectChanged, pushNotice]);
+  }, [intakeFields, projectId, onProjectChanged, pushNotice, refreshGap]);
 
   const failCount = status?.failCount ?? 0;
   const badge = status?.statusUnavailable || notices.some((n) => n.kind === 'error')
@@ -535,7 +490,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const roomLeft = ballLeft - 8;
   const panelWidth = Math.min(356, viewport.w - 40);
   const horizontal = roomRight >= panelWidth || roomRight >= roomLeft ? 'fromLeft' : 'fromRight';
-  const dockHeight = Math.max(180, Math.min(660, vertical === 'above' ? roomAbove : roomBelow));
+  const dockHeight = Math.max(240, Math.min(500, vertical === 'above' ? roomAbove : roomBelow));
   const placement = `place-${vertical}-${horizontal}`;
 
   return (
@@ -553,188 +508,107 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
             <button type="button" className="secondary" onClick={() => setOpen(false)}>收起</button>
           </header>
 
-          {status && (failCount > 0 || status.blockers?.length) ? (
-            <div className="agentDockStatusStrip" role="status">
-              验算未通过 <b>{failCount}</b> 项{status.warningCount != null ? ` · 警告 ${status.warningCount} 项` : ''}
-              {status.activeStage ? ` · 当前：${status.activeStage.title}` : ''}
-            </div>
-          ) : null}
+          <div className={`agentDockGap ${gap.tone}`} role="status" title={gap.text}>
+            {gap.text}
+          </div>
 
-          {runs.length ? (
-            <div className="agentDockRunStrip" role="status">
-              <span>关联任务 {runs.length} 个 · 最近 {runs[0].status} / {runs[0].step}</span>
-              <button
-                type="button"
-                className="agentDockAdvance"
-                onClick={() => void advanceRun()}
-                disabled={runBusy || !['queued', 'running'].includes(runs[0].status)}
-              >
-                推进一步
-              </button>
-            </div>
-          ) : null}
-
-          {notices.length ? <div className="agentDockInlineNotices">{renderNotices()}</div> : null}
-
-          {SHOW_ROLE_ROSTER ? (
-          <section className="agentDockRoles" aria-label="专业角色">
-            <h4>专业角色</h4>
-            <ul>
-              {roles.map((role) => (
-                <li key={role.id} className={role.executable ? 'ready' : 'planned'} title={role.capability}>
-                  <b>{role.id}</b>
-                  <span>{role.name}</span>
-                  <em>{role.stateLabel}</em>
-                </li>
-              ))}
-              {roles.length === 0 ? <li className="planned"><span>正在读取角色目录…</span></li> : null}
-            </ul>
-          </section>
-          ) : null}
-
-          <div className="agentDockRunLauncher" aria-label="发起试点任务">
-            <select
-              value={selectedResult}
-              onChange={(event) => setSelectedResult(event.target.value)}
-              aria-label="选择冻结剖面结果"
-              disabled={frozenResults.length === 0 || runBusy}
-            >
-              {frozenResults.length === 0 ? (
-                <option value="">暂无可用冻结结果</option>
-              ) : frozenResults.map((item) => (
-                <option key={item.resultHash} value={item.resultHash} title={item.resultHash}
-                  disabled={!item.launchable}>
-                  {item.resultHash.slice(0, 8)} · {item.sectionId || item.projectId || '单排桩剖面'}
-                  {item.launchable ? ' · 可启动' : ' · 与当前工作版本不一致'}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void launchRun()}
-              disabled={runBusy || !activeId
-                || !frozenResults.find((item) => item.resultHash === selectedResult)?.launchable}
-            >
-              {runBusy ? '处理中…' : '发起任务'}
-            </button>
+          <div className="agentDockMessages" ref={threadRef}>
+            {messages.length === 0 ? (
+              <p className="agentDockEmpty">
+                问一句，或点回形针上传 PDF。回答只基于项目真实状态，不作工程判断。
+              </p>
+            ) : messages.map((message) => (
+              message.role === 'tool' ? (
+                <article key={message.id} className="agentMessage tool">
+                  <small>任务 · {new Date(message.createdAt).toLocaleTimeString()}</small>
+                  <p>{message.content}</p>
+                </article>
+              ) : (
+                <article key={message.id} className={`agentMessage ${message.role}`}>
+                  <small>
+                    {message.role === 'user' ? '我' : '助手'}
+                    {' · '}{new Date(message.createdAt).toLocaleTimeString()}
+                  </small>
+                  <p>{message.content}</p>
+                </article>
+              )
+            ))}
           </div>
 
           {intakeFields.length ? (
-          <section className="agentDockIntake" aria-label="A1 资料与参数提取结果">
-            <div className="agentDockIntakeBar">
-              <strong title={intakeFileName || undefined}>A1 资料与参数 · 待填入设计基准</strong>
-              {intakeFileName ? <small className="agentDockIntakeFileName">{intakeFileName}</small> : null}
-            </div>
-            <ul className="agentDockIntakeList">
-              {intakeFields.map((field) => (
-                <li key={field.key} title={`${field.target} · 第 ${field.page ?? '?'} 页`}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={field.checked}
-                      onChange={(event) => setIntakeFields((prev) => prev.map((item) =>
-                        item.key === field.key ? { ...item, checked: event.target.checked } : item))}
-                    />
-                    <span>{field.label}</span>
-                    <b>{String(field.value)}{field.unit ? ` ${field.unit}` : ''}</b>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              className="agentDockIntakeApply"
-              onClick={() => void applyIntake()}
-              disabled={intakeBusy}
-            >
-              {intakeBusy ? '填入中…' : `填入设计基准（${intakeFields.filter((f) => f.checked).length} 项）`}
-            </button>
-          </section>
-          ) : null}
-
-          <section className="agentDockThread" aria-label="会话">
-            <div className="agentDockThreadBar">
-              <select
-                value={activeId}
-                onChange={(event) => setActiveId(event.target.value)}
-                aria-label="选择会话"
-              >
-                {conversations.map((item) => (
-                  <option key={item.id} value={item.id}>{item.title}</option>
+            <section className="agentDockIntake" aria-label="A1 资料与参数提取结果">
+              <div className="agentDockIntakeBar">
+                <strong title={intakeFileName || undefined}>待填入设计基准</strong>
+                <small className="agentDockIntakeFileName">{intakeFileName}</small>
+              </div>
+              <ul className="agentDockIntakeList">
+                {intakeFields.map((field) => (
+                  <li key={field.key} title={`${field.target} · 第 ${field.page ?? '?'} 页`}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={field.checked}
+                        onChange={(event) => setIntakeFields((prev) => prev.map((item) =>
+                          item.key === field.key ? { ...item, checked: event.target.checked } : item))}
+                      />
+                      <span>{field.label}</span>
+                      <b>{String(field.value)}{field.unit ? ` ${field.unit}` : ''}</b>
+                    </label>
+                  </li>
                 ))}
-              </select>
-              <button type="button" className="secondary" onClick={() => void startConversation()} disabled={busy}>新建</button>
-            </div>
-            <div className="agentDockMessages" ref={threadRef}>
-              {messages.length === 0 ? (
-                <p className="agentDockEmpty">
-                  提问会完整保留。当前助手只返回状态回执，等专业执行链接入后再由它作答。
-                </p>
-              ) : messages.map((message) => (
-                message.role === 'tool' ? (
-                  <article key={message.id} className="agentMessage tool">
-                    <small>任务 · {new Date(message.createdAt).toLocaleTimeString()}</small>
-                    <p>{message.content}</p>
-                  </article>
-                ) : (
-                  <article key={message.id} className={`agentMessage ${message.role}`}>
-                    <small>
-                      {message.role === 'user' ? '我' : '助手'}
-                      {' · '}{new Date(message.createdAt).toLocaleTimeString()}
-                    </small>
-                    <p>{message.content}</p>
-                  </article>
-                )
-              ))}
-            </div>
-          </section>
-
-          <footer className="agentDockCompose">
-            <div className="agentDockComposeInput">
+              </ul>
               <button
                 type="button"
-                className="agentDockAttach"
-                onClick={() => attachRef.current?.click()}
+                className="agentDockIntakeApply"
+                onClick={() => void applyIntake()}
                 disabled={intakeBusy}
-                title="上传 PDF，由 A1 资料与参数读取并填入设计基准"
-                aria-label="上传 PDF 给 A1 资料与参数"
               >
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 014.24 4.24l-9.19 9.19a1 1 0 01-1.41-1.41l8.49-8.49" />
-                </svg>
+                {intakeBusy ? '填入中…' : `填入设计基准（${intakeFields.filter((f) => f.checked).length} 项）`}
               </button>
-              <input
-                ref={attachRef}
-                type="file"
-                accept=".pdf,.json"
-                hidden
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void loadIntakeFile(file);
-                  event.target.value = '';
-                }}
-              />
-              <input
-                type="text"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') { event.preventDefault(); void send(); }
-                }}
-                placeholder={intakeBusy ? 'A1 正在读取文档…' : '描述问题，或点回形针上传 PDF'}
-                aria-label="向智能设计助手提问"
-              />
-            </div>
-            <div className="agentDockComposeBar">
-              <small>模型未接入 · 仅状态回执</small>
-              <button type="button" onClick={() => void send()} disabled={busy || !draft.trim()}>
-                {busy ? '发送中…' : '发送'}
-              </button>
-            </div>
+            </section>
+          ) : null}
+
+          <footer className="agentDockCompose agentDockComposeSlim">
+            <button
+              type="button"
+              className="agentDockAttach"
+              onClick={() => attachRef.current?.click()}
+              disabled={intakeBusy}
+              title="上传 PDF，由 A1 资料与参数读取并填入设计基准"
+              aria-label="上传 PDF 给 A1 资料与参数"
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 014.24 4.24l-9.19 9.19a1 1 0 01-1.41-1.41l8.49-8.49" />
+              </svg>
+            </button>
+            <input
+              ref={attachRef}
+              type="file"
+              accept=".pdf,.json"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void loadIntakeFile(file);
+                event.target.value = '';
+              }}
+            />
+            <input
+              className="agentDockInput"
+              type="text"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') { event.preventDefault(); void send(); }
+              }}
+              placeholder={intakeBusy ? 'A1 正在读取文档…' : '描述问题，或上传 PDF'}
+              aria-label="向智能设计助手提问"
+            />
+            <button type="button" onClick={() => void send()} disabled={busy || !draft.trim()}>
+              {busy ? '发送中' : '发送'}
+            </button>
           </footer>
 
           {error ? <p className="agentDockError" role="alert">{error}</p> : null}
-          <p className="agentDockNote">本助手不作工程判断，正式施工图签发始终关闭。</p>
         </aside>
       ) : (
         notices.length ? <div className="agentDockToasts">{renderNotices()}</div> : null
