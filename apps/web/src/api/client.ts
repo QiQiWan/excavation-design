@@ -381,6 +381,25 @@ export type AgentFrozenResult = {
   resultHash: string; projectId: string | null; sectionId: string | null;
   analysisStatus: string | null; createdAt: string; launchable: boolean;
 };
+export type AgentPlanGate = {
+  type: string; requiresHuman: boolean; reason: string;
+  humanAction?: Record<string, unknown>; runId?: string;
+};
+export type AgentPlanStage = {
+  stageId: string; key: string; title: string; status: string; state: string;
+  owner: string; ownerName?: string; message?: string;
+  gate: AgentPlanGate; missing?: string[];
+};
+export type AgentPlan = {
+  schemaVersion: string; projectId: string; mode: string;
+  stages: AgentPlanStage[];
+  next: {
+    stageId: string; key: string; title: string; owner: string; state: string;
+    gate: AgentPlanGate; dispatchable: boolean; missing: string[];
+  };
+  blockers: string[];
+  formalConstructionIssue: boolean;
+};
 export type AgentDocumentField = {
   key: string; label: string; value: string | number; unit: string;
   page: number; raw: string; targetField: string;
@@ -407,6 +426,10 @@ export const api = {
     `/api/agents/assistant/status?project_id=${encodeURIComponent(projectId)}`, {
       timeoutMs: 60000, responseIdleTimeoutMs: 60000,
       activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentPlan: (projectId: string) => request<AgentPlan>(
+    `/api/agents/orchestrator/plan?project_id=${encodeURIComponent(projectId)}`, {
+      timeoutMs: 45000, responseIdleTimeoutMs: 45000, retryCount: 0,
+      activity: { quiet: true, cacheTtlMs: 15000 } }),
   agentConversations: (projectId: string) => request<{ conversations: AgentConversation[] }>(
     `/api/agents/conversations?project_id=${encodeURIComponent(projectId)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
   createAgentConversation: (projectId: string, title: string) => request<AgentConversation>('/api/agents/conversations', {
