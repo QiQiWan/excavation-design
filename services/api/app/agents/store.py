@@ -9,7 +9,7 @@ from datetime import datetime,timezone
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
-import json,os,sqlite3,time
+import json,os,sqlite3,time,threading
 
 
 def now():
@@ -24,6 +24,23 @@ def encode(value):
 # 后台 worker 的高频连接争抢写锁，在 Windows 上表现为偶发的
 # "attempt to write a readonly database"。
 _WAL_READY: set[str] = set()
+
+# 同一个库文件在进程内共用一把可重入锁。SQLite 在 Windows 上由最后一个连接
+# 关闭时删除 -wal/-shm；若此刻另一线程正在打开同一个库，新连接会拿到已失效的
+# WAL 上下文，随后 BEGIN IMMEDIATE 报 "attempt to write a readonly database"。
+# 把「开连接 → 设 WAL → 用 → 关连接」整段串行化即可断根；同时避免两个线程
+# 同时执行 PRAGMA journal_mode=WAL 把对方的连接变成只读。
+_PATH_LOCKS: dict[str, object] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(key: str):
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _PATH_LOCKS[key] = lock
+        return lock
 
 
 def _execute_with_retry(operation, *args):
@@ -162,19 +179,20 @@ class AgentStore:
 
     @contextmanager
     def connect(self):
-        c=sqlite3.connect(self.path,timeout=12.0,isolation_level=None)
-        c.row_factory=sqlite3.Row
-        c.execute('PRAGMA busy_timeout=12000')
-        c.execute('PRAGMA foreign_keys=ON')
         key = str(self.path)
-        if key not in _WAL_READY:
-            try:
-                c.execute('PRAGMA journal_mode=WAL')
-                _WAL_READY.add(key)
-            except sqlite3.OperationalError:
-                pass
-        try: yield _RetryingConnection(c)
-        finally: c.close()
+        with _path_lock(key):
+            c=sqlite3.connect(self.path,timeout=12.0,isolation_level=None)
+            c.row_factory=sqlite3.Row
+            c.execute('PRAGMA busy_timeout=12000')
+            c.execute('PRAGMA foreign_keys=ON')
+            if key not in _WAL_READY:
+                try:
+                    c.execute('PRAGMA journal_mode=WAL')
+                    _WAL_READY.add(key)
+                except sqlite3.OperationalError:
+                    pass
+            try: yield _RetryingConnection(c)
+            finally: c.close()
 
     @staticmethod
     def _run(row):
@@ -312,9 +330,10 @@ class AgentStore:
                 c.execute('UPDATE runs SET status=?, lease_owner=?, lease_until=?, updated_at=?, revision=revision+1 WHERE id=?',
                           ('running',owner,time.time()+lease_seconds,now(),row['id']))
                 c.execute('COMMIT')
-                return self.get(row['id'])
+                return row['id']
 
-        return _write_with_retry(_do)
+        claimed = _write_with_retry(_do)
+        return self.get(claimed) if claimed else None
 
     def heartbeat(self,rid,owner,lease_seconds=300):
         with self.connect() as c:
