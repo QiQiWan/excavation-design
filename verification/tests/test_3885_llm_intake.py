@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 import urllib.error
 
@@ -104,6 +105,49 @@ def test_empty_content_from_thinking_model_is_reported(llm_env, monkeypatch):
     with pytest.raises(intake.ModelCallFailed) as exc:
         intake.interpret_with_model('施工荷载 30kPa')
     assert '思考过程' in str(exc.value)
+
+
+def test_model_with_no_whitelisted_fields_is_not_an_error(llm_env, monkeypatch):
+    """输入只含水位/土层时，模型正确地不产出字段，不能算调用失败。"""
+    monkeypatch.setattr(intake.urllib.request, 'urlopen',
+                        lambda request, timeout=None, context=None: _Reply(_chat_response(
+                            json.dumps({'fields': [
+                                {'key': 'groundwaterLevel', 'value': -2.3},
+                                {'key': 'soilCohesion', 'value': 12},
+                            ]}))))
+    assert intake.interpret_with_model('地下水位 -2.3m，土层 c=12kPa') == []
+
+
+def test_rate_limit_is_retried_then_succeeds(llm_env, monkeypatch):
+    calls = {'count': 0}
+    sleeps = []
+
+    def fake_urlopen(request, timeout=None, context=None):
+        calls['count'] += 1
+        if calls['count'] <= 2:
+            raise urllib.error.HTTPError(request.full_url, 429, 'Too Many Requests', {},
+                                         io.BytesIO(b''))
+        return _Reply(_chat_response(json.dumps({'fields': [
+            {'key': 'surcharge', 'value': 30}]})))
+
+    monkeypatch.setattr(intake.urllib.request, 'urlopen', fake_urlopen)
+    monkeypatch.setattr(intake.time, 'sleep', lambda seconds: sleeps.append(seconds))
+    fields = intake.interpret_with_model('施工荷载 30kPa')
+    assert calls['count'] == 3
+    assert sleeps == [2.0, 6.0]
+    assert fields[0]['value'] == 30
+
+
+def test_persistent_rate_limit_is_reported_as_rate_limit(llm_env, monkeypatch):
+    def fake_urlopen(request, timeout=None, context=None):
+        raise urllib.error.HTTPError(request.full_url, 429, 'Too Many Requests', {},
+                                     io.BytesIO(b''))
+
+    monkeypatch.setattr(intake.urllib.request, 'urlopen', fake_urlopen)
+    monkeypatch.setattr(intake.time, 'sleep', lambda seconds: None)
+    with pytest.raises(intake.ModelCallFailed) as exc:
+        intake.interpret_with_model('施工荷载 30kPa')
+    assert '限流' in str(exc.value)
 
 
 def test_model_http_failure_falls_back_honestly(llm_env, monkeypatch):

@@ -13,6 +13,7 @@ import json
 import os
 import re
 import ssl
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -104,6 +105,42 @@ def _model_settings() -> tuple[str, str, float, int]:
             max(200, min(max_tokens, 16000)))
 
 
+_RATE_LIMIT_RETRIES = 2
+_RATE_LIMIT_WAITS = (2.0, 6.0)
+
+
+def _post_model(endpoint: str, payload: bytes, key: str, timeout: float) -> bytes:
+    """调用 OpenAI 兼容 chat/completions。
+
+    429 属于平台滚动窗口限流，短重试后仍失败才回退；鉴权失败与超时不重试。
+    """
+    last_error = None
+    for attempt in range(_RATE_LIMIT_RETRIES + 1):
+        request = urllib.request.Request(endpoint, data=payload, method='POST', headers={
+            'Authorization': 'Bearer ' + key,
+            'Content-Type': 'application/json',
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=timeout,
+                                        context=ssl.create_default_context()) as reply:
+                if int(reply.headers.get('Content-Length', '0') or 0) > 200_000:
+                    raise ModelCallFailed('模型响应超过限制')
+                return reply.read(200_001)
+        except urllib.error.HTTPError as exc:
+            # 不把响应体（可能含敏感信息）写进日志。
+            if exc.code == 429:
+                exc.read(200)
+                last_error = exc
+                if attempt < _RATE_LIMIT_RETRIES:
+                    time.sleep(_RATE_LIMIT_WAITS[attempt])
+                    continue
+                raise ModelCallFailed('模型服务持续限流（HTTP 429），请稍后重试') from exc
+            raise ModelCallFailed(f'模型服务返回 HTTP {exc.code}') from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise ModelCallFailed(f'模型服务不可达：{type(exc).__name__}') from exc
+    raise ModelCallFailed('模型服务持续限流（HTTP 429），请稍后重试') from last_error
+
+
 def _parse_model_json(content: str) -> dict:
     text = (content or '').strip()
     if text.startswith('```'):
@@ -142,21 +179,7 @@ def interpret_with_model(text: str) -> list[dict]:
             {'role': 'user', 'content': text[:4000]},
         ],
     }, ensure_ascii=False).encode('utf-8')
-    request = urllib.request.Request(endpoint, data=payload, method='POST', headers={
-        'Authorization': 'Bearer ' + key,
-        'Content-Type': 'application/json',
-    })
-    try:
-        with urllib.request.urlopen(request, timeout=timeout,
-                                    context=ssl.create_default_context()) as reply:
-            if int(reply.headers.get('Content-Length', '0') or 0) > 200_000:
-                raise ModelCallFailed('模型响应超过限制')
-            raw = reply.read(200_001)
-    except urllib.error.HTTPError as exc:
-        # 不把响应体（可能含敏感信息）写进日志。
-        raise ModelCallFailed(f'模型服务返回 HTTP {exc.code}') from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise ModelCallFailed(f'模型服务不可达：{type(exc).__name__}') from exc
+    raw = _post_model(endpoint, payload, key, timeout)
     if len(raw) > 200_000:
         raise ModelCallFailed('模型响应超过限制')
     try:
@@ -193,8 +216,8 @@ def interpret_with_model(text: str) -> list[dict]:
             continue
         fields.append({'key': field_key, 'value': value,
                        'raw': str(item.get('evidence') or '')[:80]})
-    if not fields:
-        raise ModelCallFailed('模型未给出任何可写入白名单的字段')
+    # 结构合法但没有任何可写入字段，是正常结果（例如输入只含水位数、土层参数），
+    # 不算调用失败；交由调用方走「未识别到字段」的回执。
     return fields
 
 
