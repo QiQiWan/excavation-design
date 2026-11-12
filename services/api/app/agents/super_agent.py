@@ -28,6 +28,7 @@ from . import geology_agent
 from . import delivery_agent
 from . import detailing_agent
 from . import joint_flow
+from . import findings as findings_store
 from . import orchestrator
 from . import scheme_stage_agent
 from .catalog import AGENTS
@@ -133,6 +134,10 @@ _OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算'
                    '方案', '降低', '减小', '增大', '加粗', '加长')
 
 
+# 直接读已登记的发现，不重新跑诊断。
+_FINDINGS_HINTS = ('有哪些问题', '问题清单', '发现哪些', '待处理问题',
+                   '还有什么问题', '哪些没通过')
+
 # 联合流程：一次问完多个 Agent，只做只读体检。
 _JOINT_HINTS = ('全流程体检', '整体体检', '全流程检查', '联合检查',
                 '全流程走一遍', '从头到尾检查', '全部体检')
@@ -166,6 +171,8 @@ def _route_role(kind: str, payload: dict) -> str | None:
         return 'A7'
     if any(word in text for word in _DELIVERY_HINTS):
         return 'A8'
+    if any(word in text for word in _FINDINGS_HINTS):
+        return 'A5'
     if any(word in text for word in _OPTIMIZE_HINTS):
         return 'A6'
     if any(word in text for word in _DIAGNOSE_HINTS):
@@ -502,27 +509,56 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
             run_id = None
             next_status = 'waiting_review'
         elif worker['executor'] == 'agent_runtime':
-            chosen = result_hash
-            if not chosen:
-                frozen = [row for row in orchestrator._frozen_results(ticket['projectId'])
-                          if row['launchable']]
-                chosen = frozen[0]['resultHash'] if frozen else None
-            if not chosen:
-                return _blocked('没有可启动的冻结单剖面结果；'
-                                '请先在单剖面工作台完成一次计算并冻结结果')
-            run = AgentRuntime().create(
-                StartRun(result_hash=chosen,
-                         conversation_id=ticket.get('conversationId')),
-                actor=actor,
-            )
-            outcome = {'mode': 'run_created', 'run': {
-                'id': run['id'], 'status': run['status'], 'step': run['step']}}
-            run_id = run['id']
-            role_name = ROLE_META[ticket['roleId']]['name']
-            summary = (f"{ticket['roleId']} {role_name} 已受理：任务 {run['id'][:12]} "
-                       f"在后台执行（{run['step']}），诊断和候选复算结果会陆续回到这里；"
-                       f"采用候选需在人工复核端点确认。")
-            next_status = 'waiting_review'
+            if any(word in str(text or '') for word in _FINDINGS_HINTS):
+                overview = findings_store.overview(ticket['projectId'])
+                counts = overview['counts']
+                status = ('blocked' if counts['blockers']
+                          else 'incomplete' if counts['warnings'] else 'ready')
+                outcome = {
+                    'schemaVersion': overview['schemaVersion'],
+                    'mode': 'assessment', 'label': '问题清单',
+                    'projectId': ticket['projectId'], 'status': status,
+                    'counts': counts,
+                    'findings': overview['findings'][:20],
+                    'actions': overview['actions'][:20],
+                    'gaps': [],
+                    'summary': (f"当前登记 {counts['findings']} 条发现"
+                                f"（{counts['blockers']} 阻断、{counts['warnings']} 警告），"
+                                f"{counts['actions']} 条建议动作"
+                                f"（{counts['proposed']} 条待人工决策）。"),
+                    'suggestedNext': ['说「这个计算哪里失败了」可重新诊断并刷新发现'
+                                      if not counts['findings'] else
+                                      '在 /api/agents/findings 查看明细，接受建议需校审角色'],
+                    'engineeringJudgement': False,
+                    'formalConstructionIssue': False,
+                }
+                run_id = None
+                next_status = 'done'
+                summary = outcome['summary']
+                if outcome.get('suggestedNext'):
+                    summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            else:
+                chosen = result_hash
+                if not chosen:
+                    frozen = [row for row in orchestrator._frozen_results(ticket['projectId'])
+                              if row['launchable']]
+                    chosen = frozen[0]['resultHash'] if frozen else None
+                if not chosen:
+                    return _blocked('没有可启动的冻结单剖面结果；'
+                                    '请先在单剖面工作台完成一次计算并冻结结果')
+                run = AgentRuntime().create(
+                    StartRun(result_hash=chosen,
+                             conversation_id=ticket.get('conversationId')),
+                    actor=actor,
+                )
+                outcome = {'mode': 'run_created', 'run': {
+                    'id': run['id'], 'status': run['status'], 'step': run['step']}}
+                run_id = run['id']
+                role_name = ROLE_META[ticket['roleId']]['name']
+                summary = (f"{ticket['roleId']} {role_name} 已受理：任务 {run['id'][:12]} "
+                           f"在后台执行（{run['step']}），诊断和候选复算结果会陆续回到这里；"
+                           f"采用候选需在人工复核端点确认。")
+                next_status = 'waiting_review'
         else:
             return _blocked('执行器未登记')
     except Exception as exc:
