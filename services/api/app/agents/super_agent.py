@@ -256,6 +256,8 @@ def ingest_trigger(*, project_id: str, kind: str, payload: dict | None = None,
         thread_id=thread_id, role_id=role_id,
         stage_id=stage_id, mandate=mandate, status=status,
         accept_mode=accept_mode,
+        # 绑定项目版本：排队期间项目被改过就不执行，避免覆盖工程师的新修改。
+        source_project_updated_at=intake.project_version(project_id, actor),
     )
     store.append_ticket_event(ticket['id'], 'ticket_created', {
         'roleId': role_id, 'stageId': stage_id, 'gate': mandate['gateAtIssue'],
@@ -318,6 +320,11 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
         return {'dispatched': False, 'ticketId': ticket_id,
                 'roleId': ticket['roleId'], 'reason': reason,
                 'status': status, 'formalConstructionIssue': False}
+
+    bound_version = ticket.get('sourceProjectUpdatedAt')
+    current_version = intake.project_version(ticket['projectId'], actor)
+    if bound_version and current_version and bound_version != current_version:
+        return _blocked('项目在任务排队期间已被修改，为避免覆盖新改动，请重新提交', 'stale')
 
     if ticket['status'] == 'observed':
         return _blocked('observe 模式只记录会派给谁，不执行；需以 auto 重新提交', 'observed')

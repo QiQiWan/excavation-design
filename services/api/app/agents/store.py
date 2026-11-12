@@ -162,6 +162,20 @@ class AgentStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id TEXT NOT NULL,
                     kind TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS agent_ticket_events_ticket ON agent_ticket_events(ticket_id,id);
+                CREATE TABLE IF NOT EXISTS evidence_records (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, field_key TEXT NOT NULL,
+                    value_json TEXT NOT NULL, source_type TEXT NOT NULL, source_label TEXT NOT NULL,
+                    source_location TEXT, raw_text TEXT, provider TEXT NOT NULL,
+                    captured_at TEXT NOT NULL, captured_by TEXT NOT NULL,
+                    confirmed INTEGER NOT NULL DEFAULT 0);
+                CREATE INDEX IF NOT EXISTS evidence_project ON evidence_records(project_id, captured_at DESC);
+                CREATE TABLE IF NOT EXISTS model_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, purpose TEXT NOT NULL,
+                    model TEXT NOT NULL, ok INTEGER NOT NULL, status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL, duration_ms INTEGER NOT NULL,
+                    prompt_tokens INTEGER, completion_tokens INTEGER,
+                    error_type TEXT, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS model_calls_recent ON model_calls(id DESC);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
@@ -176,6 +190,10 @@ class AgentStore:
                 c.execute('ALTER TABLE messages ADD COLUMN source_key TEXT')
             c.execute('''CREATE UNIQUE INDEX IF NOT EXISTS messages_source_key
                          ON messages(conversation_id,source_key) WHERE source_key IS NOT NULL''')
+            # Ticket 绑定的项目版本：排队期间项目被改过就不允许继续执行。
+            ticket_columns={x[1] for x in c.execute('PRAGMA table_info(agent_tickets)')}
+            if 'source_project_updated_at' not in ticket_columns:
+                c.execute('ALTER TABLE agent_tickets ADD COLUMN source_project_updated_at TEXT')
 
     @contextmanager
     def connect(self):
@@ -575,6 +593,70 @@ class AgentStore:
                  'error':x['error'],'durationMs':x['duration_ms'],
                  'createdAt':x['created_at']} for x in rows]
 
+    def record_evidence(self,*,project_id:str,field_key:str,value,
+                        source_type:str,source_label:str,provider:str,
+                        source_location:str|None=None,raw_text:str|None=None,
+                        captured_by:str='system',confirmed:bool=False)->dict:
+        """One parameter-provenance row: what was written, from where, by whom."""
+        rid=uuid4().hex;ts=now()
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO evidence_records(id,project_id,field_key,value_json,
+                             source_type,source_label,source_location,raw_text,provider,
+                             captured_at,captured_by,confirmed)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                          (rid,project_id,field_key,encode(value),source_type,
+                           str(source_label)[:240],source_location,str(raw_text or '')[:400],
+                           provider,ts,captured_by,1 if confirmed else 0))
+            return None
+        _write_with_retry(_do)
+        return {'evidenceId':rid,'projectId':project_id,'fieldKey':field_key,
+                'value':value,'sourceType':source_type,'sourceLabel':source_label,
+                'sourceLocation':source_location,'rawText':raw_text,'provider':provider,
+                'capturedAt':ts,'capturedBy':captured_by,'confirmed':bool(confirmed)}
+
+    def evidence(self,*,project_id:str,limit:int=100)->list[dict]:
+        with self.connect() as c:
+            rows=c.execute('''SELECT * FROM evidence_records WHERE project_id=?
+                              ORDER BY captured_at DESC LIMIT ?''',
+                           (project_id,min(max(limit,1),500))).fetchall()
+        return [{'evidenceId':x['id'],'projectId':x['project_id'],'fieldKey':x['field_key'],
+                 'value':json.loads(x['value_json']),'sourceType':x['source_type'],
+                 'sourceLabel':x['source_label'],'sourceLocation':x['source_location'],
+                 'rawText':x['raw_text'],'provider':x['provider'],
+                 'capturedAt':x['captured_at'],'capturedBy':x['captured_by'],
+                 'confirmed':bool(x['confirmed'])} for x in rows]
+
+    def record_model_call(self,*,project_id:str|None,purpose:str,model:str,ok:bool,
+                          status:str,attempts:int,duration_ms:int,
+                          prompt_tokens:int|None=None,completion_tokens:int|None=None,
+                          error_type:str|None=None)->int:
+        def _do():
+            with self.connect() as c:
+                cur=c.execute('''INSERT INTO model_calls(project_id,purpose,model,ok,status,
+                                 attempts,duration_ms,prompt_tokens,completion_tokens,
+                                 error_type,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                              (project_id,purpose,model,1 if ok else 0,status,
+                               max(0,int(attempts)),int(duration_ms),
+                               prompt_tokens,completion_tokens,error_type,now()))
+                return int(cur.lastrowid)
+        return _write_with_retry(_do)
+
+    def model_calls(self,*,project_id:str|None=None,limit:int=50)->list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows=c.execute('''SELECT * FROM model_calls WHERE project_id=?
+                                  ORDER BY id DESC LIMIT ?''',
+                               (project_id,min(max(limit,1),200))).fetchall()
+            else:
+                rows=c.execute('SELECT * FROM model_calls ORDER BY id DESC LIMIT ?',
+                               (min(max(limit,1),200),)).fetchall()
+        return [{'id':x['id'],'projectId':x['project_id'],'purpose':x['purpose'],
+                 'model':x['model'],'ok':bool(x['ok']),'status':x['status'],
+                 'attempts':x['attempts'],'durationMs':x['duration_ms'],
+                 'promptTokens':x['prompt_tokens'],'completionTokens':x['completion_tokens'],
+                 'errorType':x['error_type'],'createdAt':x['created_at']} for x in rows]
+
     def record_orchestration(self,*,project_id:str,actor:str,conversation_id:str|None,
                              stage_key:str|None,gate:str|None,dispatched:bool,
                              run_id:str|None,decision:dict)->int:
@@ -629,22 +711,25 @@ class AgentStore:
 
     def create_ticket(self, *, project_id: str, conversation_id: str | None,
                       thread_id: str | None, role_id: str, stage_id: str,
-                      mandate: dict, status: str, accept_mode: str) -> dict:
+                      mandate: dict, status: str, accept_mode: str,
+                      source_project_updated_at: str | None = None) -> dict:
         row = {
             'id': uuid4().hex, 'projectId': project_id,
             'conversationId': conversation_id, 'threadId': thread_id,
             'roleId': role_id, 'stageId': stage_id, 'mandate': mandate,
             'status': status, 'acceptMode': accept_mode, 'workerRunId': None,
+            'sourceProjectUpdatedAt': source_project_updated_at,
             'createdAt': now(), 'updatedAt': now(),
         }
         def _do():
             with self.connect() as c:
                 c.execute('''INSERT INTO agent_tickets(id,project_id,conversation_id,thread_id,
                              role_id,stage_id,mandate_json,status,accept_mode,worker_run_id,
-                             created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                             source_project_updated_at,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                           (row['id'], project_id, conversation_id, thread_id, role_id,
                            stage_id, encode(mandate), status, accept_mode, None,
-                           row['createdAt'], row['updatedAt']))
+                           source_project_updated_at, row['createdAt'], row['updatedAt']))
             return row
         return _write_with_retry(_do)
 
@@ -679,6 +764,8 @@ class AgentStore:
             'mandate': json.loads(row['mandate_json']),
             'status': row['status'], 'acceptMode': row['accept_mode'],
             'workerRunId': row['worker_run_id'],
+            'sourceProjectUpdatedAt': (row['source_project_updated_at']
+                                       if 'source_project_updated_at' in row.keys() else None),
             'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
         }
 
