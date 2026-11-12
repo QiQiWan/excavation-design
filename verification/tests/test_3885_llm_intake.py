@@ -83,6 +83,29 @@ def test_model_output_is_whitelisted_and_coerced(llm_env, monkeypatch):
     }
 
 
+def test_numeric_value_with_unit_is_normalized(llm_env, monkeypatch):
+    monkeypatch.setattr(intake.urllib.request, 'urlopen',
+                        lambda request, timeout=None, context=None: _Reply(_chat_response(
+                            json.dumps({'fields': [
+                                {'key': 'surcharge', 'value': '66 kPa'},
+                                {'key': 'defaultCoverMm', 'value': '55 mm'},
+                                {'key': 'surcharge', 'value': '约六十多'},  # 非确定值，拒绝
+                            ]}))))
+    fields = intake.interpret_with_model('堆载 66 kPa，保护层 55 mm')
+    assert {x['key']: x['value'] for x in fields} == {'surcharge': 66, 'defaultCoverMm': 55}
+
+
+def test_empty_content_from_thinking_model_is_reported(llm_env, monkeypatch):
+    """深度思考模型把预算花光时，必须如实报错，不能当成成功。"""
+    def fake_urlopen(request, timeout=None, context=None):
+        return _Reply(_chat_response(''))
+
+    monkeypatch.setattr(intake.urllib.request, 'urlopen', fake_urlopen)
+    with pytest.raises(intake.ModelCallFailed) as exc:
+        intake.interpret_with_model('施工荷载 30kPa')
+    assert '思考过程' in str(exc.value)
+
+
 def test_model_http_failure_falls_back_honestly(llm_env, monkeypatch):
     def fake_urlopen(request, timeout=None, context=None):
         raise urllib.error.HTTPError(request.full_url, 401, 'Unauthorized', {}, None)
