@@ -583,6 +583,11 @@ export const api = {
     };
     // Rolling-upgrade compatibility with pre-V3.32 API nodes.
     const status = await request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status', { ...options, activity: { ...options.activity, quiet: true, cacheTtlMs: 0 } });
+    // 失败即拒绝：响应被代理改成非 JSON 时 loginRequired 会读成空，
+    // 绝不能据此当成本地模式放行。
+    if (typeof status?.loginRequired !== 'boolean') {
+      throw new Error('登录服务返回格式异常（缺少 loginRequired），已按需要登录处理。');
+    }
     if (!status.loginRequired) return { ...status, authenticated: false, identity: undefined };
     try {
       const current = await request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me', { ...options, activity: { ...options.activity, quiet: true, cacheTtlMs: 0 } });
