@@ -24,6 +24,7 @@ from typing import Any
 from uuid import uuid4
 
 from . import design_basis_intake as intake
+from . import geology_agent
 from . import orchestrator
 from .catalog import AGENTS
 from .contracts import StartRun
@@ -56,8 +57,9 @@ WORKERS: tuple[dict[str, Any], ...] = (
     {'id': 'A1', 'implemented': True, 'permissionCeiling': 'L1',
      'writeMode': 'design_basis_only', 'executor': 'design_basis_intake',
      'tools': ('get_project_context',)},
-    {'id': 'A2', 'implemented': False, 'permissionCeiling': 'L0',
-     'writeMode': 'read_only', 'executor': None, 'tools': ('get_project_context',)},
+    {'id': 'A2', 'implemented': True, 'permissionCeiling': 'L0',
+     'writeMode': 'read_only', 'executor': 'geology_assessment',
+     'tools': ('get_project_context',)},
     {'id': 'A3', 'implemented': False, 'permissionCeiling': 'L1',
      'writeMode': 'isolated_candidate', 'executor': None,
      'tools': ('get_project_context', 'generate_scheme_candidates')},
@@ -106,8 +108,10 @@ def _project_exists(project_id: str) -> bool:
 
 # 桌宠意图分流：先看是不是参数录入，再看诊断/优化。全部确定性关键词，
 # 不额外调模型，避免为一句普通提问付一次模型延迟。
-_PARAM_HINTS = ('施工荷载', '地面超载', '地面堆载', '混凝土', '保护层', '钢筋',
-                '等级', '重要性系数', '承载力', '水位', '高程', '土层')
+_PARAM_HINTS = ('施工荷载', '地面超载', '地面堆载', '混凝土', '保护层', '钢筋等级',
+                '重要性系数', '承载力', '安全等级', '工程等级')
+_GEOLOGY_HINTS = ('地质', '地层', '钻孔', '勘察', '地勘', '剖面', '地下水', '水位',
+                  '土层', '持力层', '覆盖')
 _DIAGNOSE_HINTS = ('诊断', '哪里失败', '为什么失败', '为什么超限', '失败原因', '超限',
                    '不满足', '验算', '校核', '过不了', '没通过', '问题在哪')
 _OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算', '复算', '重算',
@@ -123,6 +127,8 @@ def _route_role(kind: str, payload: dict) -> str | None:
         return None
     if any(word in text for word in _PARAM_HINTS):
         return 'A1'
+    if any(word in text for word in _GEOLOGY_HINTS):
+        return 'A2'
     if any(word in text for word in _OPTIMIZE_HINTS):
         return 'A6'
     if any(word in text for word in _DIAGNOSE_HINTS):
@@ -382,7 +388,14 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
     })
 
     try:
-        if worker['executor'] == 'design_basis_intake':
+        if worker['executor'] == 'geology_assessment':
+            outcome = geology_agent.assess(ticket['projectId'], actor)
+            summary = outcome['summary']
+            if outcome['suggestedNext']:
+                summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            run_id = None
+            next_status = 'done'
+        elif worker['executor'] == 'design_basis_intake':
             outcome = intake.ingest(
                 project_id=ticket['projectId'], actor=actor, text=text,
                 raw_fields=raw_fields, conversation_id=ticket.get('conversationId'),

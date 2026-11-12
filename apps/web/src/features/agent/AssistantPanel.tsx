@@ -341,6 +341,12 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
         + '诊断与候选复算结果会陆续回到这里；采用候选仍需人工复核。');
       onProjectChanged?.();
       return;
+    } else if (outcome.mode === 'assessment') {
+      // A2 地质盘点：只读，直接给现状和缺项建议。
+      pushNotice('alert', '地质资料评估',
+        outcome.summary
+        + (outcome.suggestedNext?.length ? ' 建议：' + outcome.suggestedNext.join('；') : ''));
+      return;
     } else if (outcome.mode === 'filled') {
       pushNotice('alert', `已填入 ${outcome.applied.length} 项设计基准`,
         (outcome.remaining?.text ?? '')

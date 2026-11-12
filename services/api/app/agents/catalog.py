@@ -3,7 +3,7 @@ from __future__ import annotations
 
 AGENTS = (
     ('A1','资料与参数','document_parameters','pilot'),
-    ('A2','地质与场景','geotechnical_scenarios','planned'),
+    ('A2','地质与场景','geotechnical_scenarios','pilot'),
     ('A3','支护方案','support_layout','planned'),
     ('A4','施工阶段','stage_planning','planned'),
     ('A5','计算与验算','calculation_diagnostics','pilot'),
@@ -27,6 +27,6 @@ def catalog()->dict:
                      for n,name,cap,stage in AGENTS],
             'tools':list(TOOLS), 'formalConstructionIssue':False,
             'pilotScope':'single_row_pile_one_strut',
-            'limitations':['A2-A4/A7-A8仅注册职责，尚未建立自治执行链',
+            'limitations':['A3/A4/A7-A8仅注册职责，尚未建立自治执行链；A2 目前只做只读地质盘点',
                            'A1仅做文档参数提取并给出页码依据，不写入项目、不作工程判断',
                            '人工采用仅更改单剖面Agent工作选择，不修改主项目或签发施工图']}
