@@ -177,12 +177,19 @@ class AgentRuntime:
                 found['modelExplanation']=annotation
                 # 诊断结果落成可追溯的 Finding；失败不阻断诊断本身，但要在事件里写明。
                 finding_error=None
+                context_hash=None
+                try:
+                    from . import context as engineering_context
+                    context_hash=engineering_context.build(run['projectId'])['contextHash']
+                except Exception:
+                    context_hash=None
                 try:
                     from . import findings as findings_store
                     findings_store.record_diagnosis(
                         project_id=run['projectId'],run_id=rid,issues=found['issues'],
                         evidence={'resultHash':run['sourceResultHash'],
                                   'snapshotHash':run['sourceSnapshotHash'],
+                                  'contextHash':context_hash,
                                   'analysisStatus':found.get('analysisStatus')})
                 except Exception as exc:
                     finding_error=f'{type(exc).__name__}: {str(exc)[:120]}'
