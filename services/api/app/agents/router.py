@@ -208,6 +208,29 @@ def list_tool_calls(request:Request,limit:int=Query(default=50,ge=1,le=200)):
     return {'calls':AgentStore().tool_calls(limit=limit),'formalConstructionIssue':False}
 
 
+@router.get('/evidence')
+def list_evidence(request:Request,project_id:str=Query(min_length=1,max_length=100),
+                  limit:int=Query(default=100,ge=1,le=500)):
+    """参数来源追溯：每个自动写入的设计基准值来自哪句话 / 哪一页 / 谁写入。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看参数来源要求设计人员权限')
+    return {'schemaVersion':'pitguard.evidence/1',
+            'records':AgentStore().evidence(project_id=project_id,limit=limit),
+            'formalConstructionIssue':False}
+
+
+@router.get('/model-calls')
+def list_model_calls(request:Request,project_id:str|None=None,
+                     limit:int=Query(default=50,ge=1,le=200)):
+    """模型调用审计：模型 ID、耗时、成功/回退、重试次数、token 用量。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看模型调用记录要求设计人员权限')
+    return {'calls':AgentStore().model_calls(project_id=project_id,limit=limit),
+            'formalConstructionIssue':False}
+
+
 @router.post('/runs',status_code=201)
 def create_agent_run(body:StartRun,request:Request):
     identity=_actor(request)
