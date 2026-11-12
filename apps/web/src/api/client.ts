@@ -451,6 +451,7 @@ export type AgentRunCreatedOutcome = {
 };
 export type GeologyAssessmentOutcome = {
   mode: 'assessment';
+  label?: string;
   status: 'ready' | 'incomplete' | 'blocked';
   summary: string;
   gaps: Array<{ key: string; label: string; reason: string; suggestion: string }>;
