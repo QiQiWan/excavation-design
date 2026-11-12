@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from . import context as engineering_context
 from . import delivery_agent, detailing_agent, geology_agent, scheme_stage_agent
 from .design_basis_intake import _repository, project_version
 
@@ -28,8 +29,9 @@ _RANK = {'ready': 0, 'incomplete': 1, 'blocked': 2, 'error': 3}
 
 def execute(project_id: str, actor: str, *, roles: list[str] | None = None) -> dict:
     """按依赖顺序跑一遍只读体检，返回汇总与下一步。"""
-    project = _repository(actor).require(project_id)
+    _repository(actor).require(project_id)
     version = project_version(project_id, actor)
+    start_context = engineering_context.build(project_id, actor)
     stages: list[dict[str, Any]] = []
     for role_id, label, stage_id, assessor in STAGES:
         if roles and role_id not in roles:
@@ -83,6 +85,11 @@ def execute(project_id: str, actor: str, *, roles: list[str] | None = None) -> d
         summary = (f'全流程体检：{len(stages)} 个环节，' + '、'.join(parts)
                    + f'；共 {gap_total} 项待办。')
 
+    end_context = engineering_context.build(project_id, actor)
+    stale = end_context['contextHash'] != start_context['contextHash']
+    if stale:
+        summary += ' 项目在体检期间发生变更，结论需重新核对。'
+
     return {
         'schemaVersion': SCHEMA,
         'mode': 'assessment',
@@ -90,6 +97,11 @@ def execute(project_id: str, actor: str, *, roles: list[str] | None = None) -> d
         'projectId': project_id,
         'status': overall,
         'projectVersion': version,
+        'context': {
+            'contextHash': start_context['contextHash'],
+            'projectUpdatedAt': start_context['identity']['updatedAt'],
+            'staleDuringRun': stale,
+        },
         'stageCount': len(stages),
         'stages': stages,
         'gapCount': gap_total,

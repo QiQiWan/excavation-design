@@ -16,6 +16,7 @@ from . import orchestrator
 from . import design_basis_intake as intake
 from . import super_agent
 from . import findings
+from . import context as engineering_context
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -462,6 +463,16 @@ def super_agent_trigger(body:SuperTrigger,request:Request):
             accept_mode=body.acceptMode,actor=identity.actor)
     except ValueError as exc:raise HTTPException(400,detail=str(exc)) from exc
     except KeyError as exc:raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.get('/context')
+def agent_context(request:Request,project_id:str):
+    """显式项目上下文：所有 Agent 读同一份对象与哈希。"""
+    _actor(request)
+    try:
+        return engineering_context.build(project_id)
+    except KeyError as exc:
+        raise HTTPException(404,detail='项目不存在') from exc
 
 
 @router.get('/findings')

@@ -41,33 +41,9 @@ def _count(value: Any) -> int:
 
 
 def _project_context(ctx: dict) -> dict:
-    from app.storage.repository import ProjectRepository, shared_project_store
-    repo = ProjectRepository(store=shared_project_store(os.getenv('PITGUARD_DB_PATH') or None))
-    project = repo.require_workspace(ctx['projectId'])
-    settings = project.design_settings
-    retaining = getattr(project, 'retaining_system', None)
-    excavation = getattr(project, 'excavation', None)
-    return {
-        'projectId': project.id,
-        'name': project.name,
-        'counts': {
-            'boreholes': _count(project.boreholes),
-            'strata': _count(project.strata),
-            'outlinePoints': _count(excavation.outline.points) if excavation else 0,
-            'supports': _count(getattr(retaining, 'supports', None)) if retaining else 0,
-            'calculationResults': _count(project.calculation_results),
-        },
-        'designBasis': {
-            'surcharge': settings.surcharge,
-            'groundwaterLevel': settings.groundwater_level,
-            'excavationSafetyLevel': settings.excavation_safety_level,
-            'importanceFactor': settings.importance_factor,
-            'defaultConcreteGrade': settings.default_concrete_grade,
-            'confirmed': settings.design_basis_confirmed,
-        },
-        'requiresRecalculation': bool((project.advanced_engineering or {}).get('requiresRecalculation')),
-        'formalConstructionIssue': False,
-    }
+    """Agent 读取的显式项目上下文（只读、有界、带哈希）。"""
+    from . import context as engineering_context
+    return engineering_context.build(ctx['projectId'], ctx['actor'])
 
 
 def _calculation_findings(ctx: dict) -> dict:
