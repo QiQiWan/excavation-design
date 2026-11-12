@@ -25,6 +25,8 @@ from uuid import uuid4
 
 from . import design_basis_intake as intake
 from . import geology_agent
+from . import delivery_agent
+from . import detailing_agent
 from . import orchestrator
 from . import scheme_stage_agent
 from .catalog import AGENTS
@@ -58,14 +60,17 @@ WORKERS: tuple[dict[str, Any], ...] = (
     {'id': 'A1', 'implemented': True, 'permissionCeiling': 'L1',
      'writeMode': 'design_basis_only', 'executor': 'design_basis_intake',
      'tools': ('get_project_context',)},
-    {'id': 'A2', 'implemented': True, 'permissionCeiling': 'L0',
-     'writeMode': 'read_only', 'executor': 'geology_assessment',
+    # A2 能按现有钻孔重建三维地质模型（写模型本身），但不写任何勘察参数。
+    {'id': 'A2', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'geology_model_only', 'executor': 'geology_assessment',
      'tools': ('get_project_context',)},
-    {'id': 'A3', 'implemented': True, 'permissionCeiling': 'L1',
-     'writeMode': 'isolated_candidate', 'executor': 'scheme_assessment',
+    # 生成动作会写工作版（方案候选 / 控制阶段），因此如实标 working_copy_only，
+    # 不再声称是 isolated_candidate。
+    {'id': 'A3', 'implemented': True, 'permissionCeiling': 'L2',
+     'writeMode': 'working_copy_only', 'executor': 'scheme_assessment',
      'tools': ('get_project_context', 'generate_scheme_candidates')},
-    {'id': 'A4', 'implemented': True, 'permissionCeiling': 'L1',
-     'writeMode': 'isolated_candidate', 'executor': 'stage_assessment',
+    {'id': 'A4', 'implemented': True, 'permissionCeiling': 'L2',
+     'writeMode': 'working_copy_only', 'executor': 'stage_assessment',
      'tools': ('get_calculation_findings',)},
     {'id': 'A5', 'implemented': True, 'permissionCeiling': 'L1',
      'writeMode': 'isolated_candidate', 'executor': 'agent_runtime',
@@ -75,12 +80,14 @@ WORKERS: tuple[dict[str, Any], ...] = (
      'writeMode': 'isolated_candidate', 'executor': 'agent_runtime',
      'tools': ('get_calculation_findings', 'run_stage_analysis',
                'evaluate_design_changes', 'generate_scheme_candidates')},
-    {'id': 'A7', 'implemented': False, 'permissionCeiling': 'L1',
-     'writeMode': 'isolated_candidate', 'executor': None,
-     'tools': ('get_calculation_findings',)},
-    {'id': 'A8', 'implemented': False, 'permissionCeiling': 'L1',
-     'writeMode': 'working_copy_only', 'executor': None,
-     'tools': ('prepare_delivery_package',)},
+    # A7 深化写工作版（advancedEngineering.p3DetailingClosure）。
+    {'id': 'A7', 'implemented': True, 'permissionCeiling': 'L2',
+     'writeMode': 'working_copy_only', 'executor': 'detailing_assessment',
+     'tools': ('get_calculation_findings', 'evaluate_design_changes')},
+    # A8 只出评审版成果包，正式签发不进入工具层。
+    {'id': 'A8', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'artifact_only', 'executor': 'delivery_assessment',
+     'tools': ('prepare_delivery_package', 'get_calculation_findings')},
 )
 
 WORKER_BY_ID = {row['id']: row for row in WORKERS}
@@ -115,10 +122,24 @@ _GEOLOGY_HINTS = ('地质', '地层', '钻孔', '勘察', '地勘', '剖面', '�
                   '土层', '持力层', '覆盖')
 _SCHEME_HINTS = ('支护方案', '围护', '支撑布置', '支撑体系', '比选', '候选方案')
 _STAGE_HINTS = ('施工阶段', '开挖顺序', '换撑', '拆撑', '工序', '施工组织', '工况')
+_DETAIL_HINTS = ('深化', '配筋', '钢筋', '钢筋笼', '节点', '预埋件', '套筒',
+                 '下料', '加工图', '吊装')
+_DELIVERY_HINTS = ('成果', '交付', '出图', '图纸', '校审', '审签', '归档',
+                   '成果包', '质量报告', '签发')
 _DIAGNOSE_HINTS = ('诊断', '哪里失败', '为什么失败', '为什么超限', '失败原因', '超限',
                    '不满足', '验算', '校核', '过不了', '没通过', '问题在哪')
 _OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算', '复算', '重算',
                    '方案', '降低', '减小', '增大', '加粗', '加长')
+
+
+_GENERATE_HINTS = ('生成', '建模', '建模型', '做一版', '出一版', '出几个',
+                   '来一套', '来一版', '补上', '出成果包', '导出', '打包')
+
+
+def _requested_action(text: str | None) -> str:
+    """只有明确说「生成」才写工作版；其它情况一律只盘点。"""
+    content = str(text or '')
+    return 'generate' if any(word in content for word in _GENERATE_HINTS) else 'assess'
 
 
 def _route_role(kind: str, payload: dict) -> str | None:
@@ -136,6 +157,10 @@ def _route_role(kind: str, payload: dict) -> str | None:
         return 'A3'
     if any(word in text for word in _STAGE_HINTS):
         return 'A4'
+    if any(word in text for word in _DETAIL_HINTS):
+        return 'A7'
+    if any(word in text for word in _DELIVERY_HINTS):
+        return 'A8'
     if any(word in text for word in _OPTIMIZE_HINTS):
         return 'A6'
     if any(word in text for word in _DIAGNOSE_HINTS):
@@ -395,19 +420,45 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
     })
 
     try:
-        if worker['executor'] in ('geology_assessment', 'scheme_assessment',
-                                  'stage_assessment'):
-            assessor = {
-                'geology_assessment': geology_agent.assess,
-                'scheme_assessment': scheme_stage_agent.assess_scheme,
-                'stage_assessment': scheme_stage_agent.assess_stages,
-            }[worker['executor']]
-            outcome = assessor(ticket['projectId'], actor)
+        if worker['executor'] == 'geology_assessment':
+            build = _requested_action(text) == 'generate'
+            outcome = geology_agent.assess(ticket['projectId'], actor, build=build)
             summary = outcome['summary']
             if outcome['suggestedNext']:
                 summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
             run_id = None
             next_status = 'done'
+        elif worker['executor'] in ('scheme_assessment', 'stage_assessment'):
+            generate = _requested_action(text) == 'generate'
+            if worker['executor'] == 'scheme_assessment':
+                outcome = (scheme_stage_agent.generate_scheme(ticket['projectId'], actor)
+                           if generate
+                           else scheme_stage_agent.assess_scheme(ticket['projectId'], actor))
+            else:
+                outcome = scheme_stage_agent.assess_stages(
+                    ticket['projectId'], actor, generate=generate)
+            summary = outcome['summary']
+            if outcome.get('suggestedNext'):
+                summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            run_id = outcome.get('taskId')
+            next_status = 'waiting_review' if run_id else 'done'
+        elif worker['executor'] in ('detailing_assessment', 'delivery_assessment'):
+            generate = _requested_action(text) == 'generate'
+            if worker['executor'] == 'detailing_assessment':
+                outcome = (detailing_agent.generate(ticket['projectId'], actor)
+                           if generate
+                           else detailing_agent.assess(ticket['projectId'], actor))
+            else:
+                formal = any(word in str(text or '')
+                             for word in delivery_agent.FORMAL_REQUEST_HINTS)
+                outcome = (delivery_agent.prepare(ticket['projectId'], actor, text)
+                           if (generate or formal)
+                           else delivery_agent.assess(ticket['projectId'], actor))
+            summary = outcome['summary']
+            if outcome.get('suggestedNext'):
+                summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            run_id = outcome.get('taskId')
+            next_status = 'waiting_review' if run_id else 'done'
         elif worker['executor'] == 'design_basis_intake':
             outcome = intake.ingest(
                 project_id=ticket['projectId'], actor=actor, text=text,
