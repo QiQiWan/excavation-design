@@ -279,6 +279,27 @@ class AgentStore:
     }
 
     @staticmethod
+    def _event_note(kind,data):
+        """把 run 事件翻译成工程师能看懂的一句进展，而不是笼统的「状态更新」。"""
+        data=data or {}
+        if kind=='diagnosis_completed':
+            return f"诊断完成：发现 {int(data.get('issueCount') or 0)} 个待处理问题"
+        if kind=='candidate_plan_created':
+            return f"已生成 {int(data.get('candidateCount') or 0)} 个候选修改"
+        if kind=='candidate_evaluated':
+            index=data.get('index')
+            label=(int(index)+1) if isinstance(index,int) else '?'
+            return f"候选 {label} 复算完成（{data.get('status') or 'unknown'}）"
+        if kind=='candidate_evaluation_completed':
+            return '全部候选复算完成'
+        if kind=='candidate_comparison_completed':
+            return (f"候选对比完成：共 {int(data.get('candidateCount') or 0)} 个，"
+                    f"{int(data.get('calculatedCount') or 0)} 个可计算；采用需人工复核")
+        if kind=='step_failed':
+            return f"任务失败（{data.get('step') or '未知阶段'}）：{str(data.get('errorType') or '')[:60]}"
+        return AgentStore.EVENT_NOTES.get(kind,'任务状态更新')
+
+    @staticmethod
     def _event(c,rid,key,kind,data):
         cur=c.execute('INSERT OR IGNORE INTO events(run_id,event_key,event_type,payload_json,created_at) VALUES(?,?,?,?,?)',
                       (rid,key,kind,encode(data),now()))
@@ -294,7 +315,7 @@ class AgentStore:
             c.execute('''INSERT OR IGNORE INTO messages
                 (conversation_id,role,content,metadata_json,created_at,source_key)
                 VALUES(?,?,?,?,?,?)''',
-                (cid,'tool',AgentStore.EVENT_NOTES.get(kind,'任务状态更新'),
+                (cid,'tool',AgentStore._event_note(kind,data),
                  encode(meta),now(),'run:'+rid+':'+key))
             c.execute('UPDATE conversations SET updated_at=? WHERE id=?',(now(),cid))
         except sqlite3.Error:
