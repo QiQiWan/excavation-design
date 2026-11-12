@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { vi } from 'vitest';
 import {
   beginGlobalActivity,
   finishGlobalActivity,
@@ -31,10 +32,22 @@ describe('GlobalRequestProgress page overlay', () => {
     expect(overlay).toHaveClass('done');
   });
 
-  it('uses a passive page cover for read-only loading', async () => {
-    render(<GlobalRequestProgress />);
-    act(() => { beginGlobalActivity({ label: '正在加载项目列表', blocking: false, progress: 30 }); });
-    expect(await screen.findByText('正在加载项目列表')).toBeInTheDocument();
-    expect(screen.getByRole('presentation')).toHaveClass('passive');
+  it('delays and expires passive covers so polling reads do not stick', () => {
+    vi.useFakeTimers();
+    try {
+      render(<GlobalRequestProgress />);
+      act(() => { beginGlobalActivity({ label: '正在加载项目列表', blocking: false, progress: 30 }); });
+      // 3 秒内不显示：轮询请求不应让遮罩一直闪。
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(screen.queryByText('正在加载项目列表')).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(2400); });
+      expect(screen.getByText('正在加载项目列表')).toBeInTheDocument();
+      expect(screen.getByRole('presentation')).toHaveClass('passive');
+      // 20 秒仍未结束：自动隐藏，避免长期停在某个百分比。
+      act(() => { vi.advanceTimersByTime(21000); });
+      expect(screen.queryByText('正在加载项目列表')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
