@@ -90,3 +90,10 @@ class SuperDispatch(Strict):
     text: str | None = Field(default=None, max_length=2000)
     resultHash: str | None = Field(default=None, pattern=SHA256)
     requestedTools: list[str] = Field(default_factory=list)
+
+
+class FindingDecision(Strict):
+    """人工对建议动作的决策；只记录决策，不改工程数据。"""
+
+    decision: Literal['accepted', 'rejected']
+    note: str | None = Field(default=None, max_length=500)

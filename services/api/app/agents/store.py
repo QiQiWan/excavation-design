@@ -176,6 +176,28 @@ class AgentStore:
                     prompt_tokens INTEGER, completion_tokens INTEGER,
                     error_type TEXT, created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS model_calls_recent ON model_calls(id DESC);
+                CREATE TABLE IF NOT EXISTS agent_findings (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL DEFAULT '', code TEXT NOT NULL,
+                    severity TEXT NOT NULL, category TEXT, title TEXT NOT NULL,
+                    detail TEXT, source TEXT NOT NULL, evidence_json TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS agent_findings_key
+                    ON agent_findings(project_id, code, run_id);
+                CREATE INDEX IF NOT EXISTS agent_findings_project
+                    ON agent_findings(project_id, severity, created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_actions (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL DEFAULT '', finding_id TEXT,
+                    kind TEXT NOT NULL, title TEXT NOT NULL, rationale TEXT,
+                    params_json TEXT, status TEXT NOT NULL, created_by TEXT NOT NULL,
+                    decided_by TEXT, decision_note TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS agent_actions_key
+                    ON agent_actions(project_id, run_id, title);
+                CREATE INDEX IF NOT EXISTS agent_actions_project
+                    ON agent_actions(project_id, created_at DESC);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
@@ -677,6 +699,141 @@ class AgentStore:
                  'attempts':x['attempts'],'durationMs':x['duration_ms'],
                  'promptTokens':x['prompt_tokens'],'completionTokens':x['completion_tokens'],
                  'errorType':x['error_type'],'createdAt':x['created_at']} for x in rows]
+
+    # --- EngineeringFinding / ProposedAction -----------------------------
+    @staticmethod
+    def _finding(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'], 'runId': row['run_id'],
+            'code': row['code'], 'severity': row['severity'], 'category': row['category'],
+            'title': row['title'], 'detail': row['detail'], 'source': row['source'],
+            'evidence': json.loads(row['evidence_json']) if row['evidence_json'] else {},
+            'status': row['status'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    @staticmethod
+    def _action(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'], 'runId': row['run_id'],
+            'findingId': row['finding_id'], 'kind': row['kind'], 'title': row['title'],
+            'rationale': row['rationale'],
+            'params': json.loads(row['params_json']) if row['params_json'] else {},
+            'status': row['status'], 'createdBy': row['created_by'],
+            'decidedBy': row['decided_by'], 'decisionNote': row['decision_note'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    def get_finding_by_key(self, project_id: str, code: str, run_id: str = '') -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_findings WHERE project_id=? AND code=? AND run_id=?',
+                            (project_id, code, run_id)).fetchone()
+        if not row:
+            raise KeyError(code)
+        return self._finding(row)
+
+    def get_finding(self, finding_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_findings WHERE id=?', (finding_id,)).fetchone()
+        if not row:
+            raise KeyError(finding_id)
+        return self._finding(row)
+
+    def list_findings(self, project_id: str, status: str | None = None) -> list[dict]:
+        sql = 'SELECT * FROM agent_findings WHERE project_id=?'
+        args: list = [project_id]
+        if status:
+            sql += ' AND status=?'
+            args.append(status)
+        sql += ' ORDER BY CASE severity WHEN \'blocker\' THEN 0 ELSE 1 END, created_at DESC'
+        with self.connect() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [self._finding(row) for row in rows]
+
+    def upsert_finding(self, *, project_id: str, code: str, severity: str,
+                       title: str, run_id: str = '', category: str | None = None,
+                       detail: str | None = None, source: str = 'calculation',
+                       evidence: dict | None = None) -> dict:
+        """同一 项目 + 代码 + run 幂等；重复诊断只更新内容，不刷屏。"""
+        fid = 'fnd-' + sha256(encode({'p': project_id, 'c': code, 'r': run_id}).encode()).hexdigest()[:20]
+        ts = now()
+
+        def _do():
+            with self.connect() as c:
+                c.execute("""INSERT INTO agent_findings(id,project_id,run_id,code,severity,category,
+                             title,detail,source,evidence_json,status,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,'open',?,?)
+                             ON CONFLICT(project_id,code,run_id) DO UPDATE SET
+                               severity=excluded.severity, category=excluded.category,
+                               title=excluded.title, detail=excluded.detail,
+                               source=excluded.source, evidence_json=excluded.evidence_json,
+                               updated_at=excluded.updated_at""",
+                          (fid, project_id, run_id, code, severity, category, title[:240],
+                           (detail or '')[:800], source, encode(evidence or {}), ts, ts))
+            return self.get_finding_by_key(project_id, code, run_id)
+        return _write_with_retry(_do)
+
+    def get_action_by_key(self, project_id: str, run_id: str, title: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_actions WHERE project_id=? AND run_id=? AND title=?',
+                            (project_id, run_id, title)).fetchone()
+        if not row:
+            raise KeyError(title)
+        return self._action(row)
+
+    def get_action(self, action_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_actions WHERE id=?', (action_id,)).fetchone()
+        if not row:
+            raise KeyError(action_id)
+        return self._action(row)
+
+    def create_action(self, *, project_id: str, title: str, kind: str = 'parameter_trial',
+                      run_id: str = '', finding_id: str | None = None,
+                      rationale: str | None = None, params: dict | None = None,
+                      created_by: str = 'agent') -> dict:
+        aid = 'act-' + sha256(encode({'p': project_id, 'r': run_id, 't': title}).encode()).hexdigest()[:20]
+        ts = now()
+
+        def _do():
+            with self.connect() as c:
+                c.execute("""INSERT INTO agent_actions(id,project_id,run_id,finding_id,kind,title,
+                             rationale,params_json,status,created_by,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,'proposed',?,?,?)
+                             ON CONFLICT(project_id,run_id,title) DO NOTHING""",
+                          (aid, project_id, run_id, finding_id, kind, title[:240],
+                           (rationale or '')[:800], encode(params or {}), created_by, ts, ts))
+            return self.get_action_by_key(project_id, run_id, title[:240])
+        return _write_with_retry(_do)
+
+    def list_actions(self, project_id: str, status: str | None = None) -> list[dict]:
+        sql = 'SELECT * FROM agent_actions WHERE project_id=?'
+        args: list = [project_id]
+        if status:
+            sql += ' AND status=?'
+            args.append(status)
+        sql += ' ORDER BY created_at DESC'
+        with self.connect() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [self._action(row) for row in rows]
+
+    def decide_action(self, action_id: str, *, decision: str, actor: str,
+                      note: str | None = None) -> dict:
+        """人工接受/拒绝建议；只记录决策，不修改工程数据。"""
+        if decision not in ('accepted', 'rejected'):
+            raise ValueError('decision 只能是 accepted 或 rejected')
+
+        def _do():
+            with self.connect() as c:
+                row = c.execute('SELECT * FROM agent_actions WHERE id=?', (action_id,)).fetchone()
+                if not row:
+                    raise KeyError(action_id)
+                if row['status'] != 'proposed':
+                    raise ConflictError('建议动作已决策，不重复处理')
+                c.execute('UPDATE agent_actions SET status=?,decided_by=?,decision_note=?,updated_at=? WHERE id=?',
+                          (decision, actor, (note or '')[:500], now(), action_id))
+            return self.get_action(action_id)
+        return _write_with_retry(_do)
 
     def record_orchestration(self,*,project_id:str,actor:str,conversation_id:str|None,
                              stage_key:str|None,gate:str|None,dispatched:bool,

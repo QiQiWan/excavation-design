@@ -175,16 +175,34 @@ class AgentRuntime:
                 found=diagnostics(base)
                 annotation=self.gateway.annotate(project_id=run['projectId'],issues=found['issues'],mode=run['modelMode'])
                 found['modelExplanation']=annotation
+                # 诊断结果落成可追溯的 Finding；失败不阻断诊断本身，但要在事件里写明。
+                finding_error=None
+                try:
+                    from . import findings as findings_store
+                    findings_store.record_diagnosis(
+                        project_id=run['projectId'],run_id=rid,issues=found['issues'],
+                        evidence={'resultHash':run['sourceResultHash'],
+                                  'snapshotHash':run['sourceSnapshotHash'],
+                                  'analysisStatus':found.get('analysisStatus')})
+                except Exception as exc:
+                    finding_error=f'{type(exc).__name__}: {str(exc)[:120]}'
                 return self.store.advance(rid,owner,step,status='queued',step='plan',progress=20,
                     diagnostics=found,event_key='diagnosis',event_type='diagnosis_completed',
-                    payload={'issueCount':found['unresolvedCount'],'modelStatus':annotation['status']})
+                    payload={'issueCount':found['unresolvedCount'],'modelStatus':annotation['status'],
+                             'findingsError':finding_error})
             if step=='plan':
                 actions=proposals(base,run['maxCandidates'])
                 plan={'actions':actions,'cursor':0,'sourceSnapshotHash':run['sourceSnapshotHash'],
                       'engineeringMethodValidated':False,'formalConstructionIssue':False}
+                action_error=None
+                try:
+                    from . import findings as findings_store
+                    findings_store.record_plan(project_id=run['projectId'],run_id=rid,actions=actions)
+                except Exception as exc:
+                    action_error=f'{type(exc).__name__}: {str(exc)[:120]}'
                 return self.store.advance(rid,owner,step,status='queued',step='evaluate' if actions else 'summarize',
                     progress=30,plan=plan,event_key='planned',event_type='candidate_plan_created',
-                    payload={'candidateCount':len(actions)})
+                    payload={'candidateCount':len(actions),'actionsError':action_error})
             if step=='evaluate':
                 plan=run['plan'] or {}
                 cursor=int(plan.get('cursor',0));actions=plan.get('actions') or []
