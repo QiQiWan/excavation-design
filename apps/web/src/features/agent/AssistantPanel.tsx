@@ -334,14 +334,21 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       pushNotice('alert', '总控已记录', result.reason);
       return;
     }
-    if (outcome.mode === 'filled') {
+    if (outcome.mode === 'run_created') {
+      // A5 诊断 / A6 优化：任务在后台跑，进展会作为消息回到对话框。
+      pushNotice('alert', `${execution?.roleId ?? 'Agent'} 已受理`,
+        `任务 ${String(outcome.run?.id ?? '').slice(0, 8)} 在后台执行（${outcome.run?.step ?? ''}），`
+        + '诊断与候选复算结果会陆续回到这里；采用候选仍需人工复核。');
+      onProjectChanged?.();
+      return;
+    } else if (outcome.mode === 'filled') {
       pushNotice('alert', `已填入 ${outcome.applied.length} 项设计基准`,
-        outcome.remaining.text
+        (outcome.remaining?.text ?? '')
         + (outcome.requiresRecalculation ? '；原计算结果已失效，请重新验算。' : '')
         + (outcome.modelStatus === 'not_configured' ? '（模型未接入，按确定性规则抽取）' : ''));
       onProjectChanged?.();
     } else {
-      pushNotice('alert', '未识别到可填字段', outcome.remaining.text);
+      pushNotice('alert', '未识别到可填字段', outcome.remaining?.text ?? '');
     }
     if (outcome.warnings?.length) {
       pushNotice('alert', '录入提示', outcome.warnings.join(' '));
@@ -354,9 +361,10 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     setBusy(true); setError('');
     setDraft('');
     try {
+      // 不写死角色：后端按内容分流到 A1（参数录入）/ A5（诊断）/ A6（优化）。
       const result = await api.superTrigger({
         projectId, kind: 'user_message',
-        payload: { text, roleId: 'A1' },
+        payload: { text },
         conversationId: activeId, acceptMode: 'auto',
       });
       await reloadMessages();

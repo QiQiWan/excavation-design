@@ -104,6 +104,32 @@ def _project_exists(project_id: str) -> bool:
         return False
 
 
+# 桌宠意图分流：先看是不是参数录入，再看诊断/优化。全部确定性关键词，
+# 不额外调模型，避免为一句普通提问付一次模型延迟。
+_PARAM_HINTS = ('施工荷载', '地面超载', '地面堆载', '混凝土', '保护层', '钢筋',
+                '等级', '重要性系数', '承载力', '水位', '高程', '土层')
+_DIAGNOSE_HINTS = ('诊断', '哪里失败', '为什么失败', '为什么超限', '失败原因', '超限',
+                   '不满足', '验算', '校核', '过不了', '没通过', '问题在哪')
+_OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算', '复算', '重算',
+                   '方案', '降低', '减小', '增大', '加粗', '加长')
+
+
+def _route_role(kind: str, payload: dict) -> str | None:
+    """把一句人话分给合适的 Worker；无法判断时交给总控的下一阶段。"""
+    if kind != 'user_message':
+        return None
+    text = str(payload.get('text') or '').strip()
+    if not text:
+        return None
+    if any(word in text for word in _PARAM_HINTS):
+        return 'A1'
+    if any(word in text for word in _OPTIMIZE_HINTS):
+        return 'A6'
+    if any(word in text for word in _DIAGNOSE_HINTS):
+        return 'A5'
+    return None
+
+
 def _semantic_policy(kind: str, payload: dict, plan_next: dict) -> dict:
     """Slow Path 预留：模型未配置或尚未接线时如实回退确定性规则。"""
     config = configuration()
@@ -240,7 +266,16 @@ def ingest_trigger(*, project_id: str, kind: str, payload: dict | None = None,
     policy = _semantic_policy(kind, payload, plan_next)
 
     requested_role = str(payload.get('roleId') or '')
-    role_id = requested_role if requested_role in WORKER_BY_ID else plan_next['owner']
+    intent_role = _route_role(kind, payload)
+    if requested_role and requested_role not in ('A1', 'auto'):
+        # 调用方显式指定了 A1 以外的角色，尊重它。
+        role_id = requested_role if requested_role in WORKER_BY_ID else plan_next['owner']
+    elif intent_role:
+        role_id = intent_role
+    elif requested_role in WORKER_BY_ID:
+        role_id = requested_role
+    else:
+        role_id = plan_next['owner']
     if role_id not in WORKER_BY_ID:
         role_id = TRIGGER_KINDS[kind]['defaultRole']
     worker = WORKER_BY_ID[role_id]
@@ -364,7 +399,8 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
                           if row['launchable']]
                 chosen = frozen[0]['resultHash'] if frozen else None
             if not chosen:
-                return _blocked('没有可启动的冻结单剖面结果')
+                return _blocked('没有可启动的冻结单剖面结果；'
+                                '请先在单剖面工作台完成一次计算并冻结结果')
             run = AgentRuntime().create(
                 StartRun(result_hash=chosen,
                          conversation_id=ticket.get('conversationId')),
@@ -373,8 +409,10 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
             outcome = {'mode': 'run_created', 'run': {
                 'id': run['id'], 'status': run['status'], 'step': run['step']}}
             run_id = run['id']
-            summary = (f"{ticket['roleId']} 已创建试点任务 {run['id'][:12]}"
-                       f"（{run['status']} / {run['step']}）；候选复算完成后需人工复核。")
+            role_name = ROLE_META[ticket['roleId']]['name']
+            summary = (f"{ticket['roleId']} {role_name} 已受理：任务 {run['id'][:12]} "
+                       f"在后台执行（{run['step']}），诊断和候选复算结果会陆续回到这里；"
+                       f"采用候选需在人工复核端点确认。")
             next_status = 'waiting_review'
         else:
             return _blocked('执行器未登记')

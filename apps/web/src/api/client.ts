@@ -440,9 +440,14 @@ export type SuperAgentTriggerResult = {
   execution?: {
     dispatched: boolean; ticketId: string; roleId: string;
     executor?: string; status?: string; reason?: string;
-    outcome?: DesignBasisIngestResult;
+    runId?: string | null;
+    outcome?: DesignBasisIngestResult | AgentRunCreatedOutcome;
   };
   formalConstructionIssue: boolean;
+};
+export type AgentRunCreatedOutcome = {
+  mode: 'run_created';
+  run: { id: string; status: string; step: string };
 };
 export type DesignBasisIngestResult = {
   mode: 'filled' | 'receipt';
