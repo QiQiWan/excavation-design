@@ -105,3 +105,26 @@ def test_unknown_action_and_bad_status(api):
     bad = api.get('/api/agents/findings', headers=headers(),
                   params={'project_id': 'p-demo', 'status': 'weird'})
     assert bad.status_code == 422
+
+
+def test_dock_lists_registered_findings_without_rerunning_diagnosis(api):
+    created = api.post('/api/projects', json={'name': '问题清单'}, headers=headers()).json()
+    pid = created['id']
+    findings.record_diagnosis(project_id=pid, run_id='r-demo', issues=_ISSUES)
+    findings.record_plan(project_id=pid, run_id='r-demo',
+                         actions=[{'field': 'strut.stiffness_kn_m', 'before': 1.0,
+                                   'after': 1.2, 'reason': '敏感性试算'}])
+    body = api.post('/api/agents/super/triggers', headers=headers(), json={
+        'projectId': pid, 'kind': 'user_message', 'acceptMode': 'auto',
+        'payload': {'text': '现在有哪些问题'},
+    }).json()
+    execution = body['execution']
+    assert execution['roleId'] == 'A5'
+    outcome = execution['outcome']
+    assert outcome['mode'] == 'assessment'
+    assert outcome['label'] == '问题清单'
+    assert outcome['counts']['findings'] == 2
+    assert outcome['counts']['blockers'] == 1
+    assert outcome['counts']['actions'] == 1
+    assert '1 阻断' in outcome['summary']
+    assert outcome['formalConstructionIssue'] is False
