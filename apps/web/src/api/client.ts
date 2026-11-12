@@ -441,13 +441,20 @@ export type SuperAgentTriggerResult = {
     dispatched: boolean; ticketId: string; roleId: string;
     executor?: string; status?: string; reason?: string;
     runId?: string | null;
-    outcome?: DesignBasisIngestResult | AgentRunCreatedOutcome;
+    outcome?: DesignBasisIngestResult | AgentRunCreatedOutcome | GeologyAssessmentOutcome;
   };
   formalConstructionIssue: boolean;
 };
 export type AgentRunCreatedOutcome = {
   mode: 'run_created';
   run: { id: string; status: string; step: string };
+};
+export type GeologyAssessmentOutcome = {
+  mode: 'assessment';
+  status: 'ready' | 'incomplete' | 'blocked';
+  summary: string;
+  gaps: Array<{ key: string; label: string; reason: string; suggestion: string }>;
+  suggestedNext: string[];
 };
 export type DesignBasisIngestResult = {
   mode: 'filled' | 'receipt';

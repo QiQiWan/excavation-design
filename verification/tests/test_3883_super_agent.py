@@ -40,13 +40,14 @@ def test_blueprint_exposes_router_and_eight_workers(api):
     data = api.get('/api/agents/super/blueprint', headers=headers()).json()
     assert data['schemaVersion'] == super_agent.SCHEMA
     assert data['workerCount'] == 8
-    assert data['executableWorkers'] == ['A1', 'A5', 'A6']
+    # V3.88.2 起 A2 地质盘点已接上；其余 5 个仍是 planned/blocked。
+    assert data['executableWorkers'] == ['A1', 'A2', 'A5', 'A6']
     assert data['router']['defaultAcceptMode'] == 'observe'
     assert data['router']['mode'] == 'deterministic'
     assert data['formalConstructionIssue'] is False
     assert any('正式施工图' in line for line in data['redLines'])
     planned = [w for w in data['workers'] if not w['executable']]
-    assert len(planned) == 5
+    assert len(planned) == 4
     assert all(w['blockedReason'] for w in planned)
 
 
