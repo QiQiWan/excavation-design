@@ -238,6 +238,11 @@ export default function App() {
   }, []);
 
   async function logout() {
+    // 本地/单机模式没有登录态可退：跳到登录页会进不去，只刷新工作区。
+    if (authPolicy?.loginRequired === false) {
+      window.location.reload();
+      return;
+    }
     try { await api.logout(); } finally {
       setSelected(undefined);
       setIdentity(undefined);
@@ -292,7 +297,9 @@ export default function App() {
             {diagnostics ? <span>版本：{diagnostics.version}</span> : null}
             <a href="/docs">设计说明</a>
             <button className="secondary compactButton" onClick={checkApi}>检查后端</button>
-            <button className="secondary compactButton" onClick={() => void logout()}>退出</button>
+            {authPolicy?.loginRequired !== false
+              ? <button className="secondary compactButton" onClick={() => void logout()}>退出</button>
+              : null}
           </div></details>
         </div>
       </header>
