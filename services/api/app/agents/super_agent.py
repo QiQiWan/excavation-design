@@ -27,6 +27,7 @@ from . import design_basis_intake as intake
 from . import geology_agent
 from . import delivery_agent
 from . import detailing_agent
+from . import joint_flow
 from . import orchestrator
 from . import scheme_stage_agent
 from .catalog import AGENTS
@@ -131,6 +132,10 @@ _DIAGNOSE_HINTS = ('诊断', '哪里失败', '为什么失败', '为什么超限
 _OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算', '复算', '重算',
                    '方案', '降低', '减小', '增大', '加粗', '加长')
 
+
+# 联合流程：一次问完多个 Agent，只做只读体检。
+_JOINT_HINTS = ('全流程体检', '整体体检', '全流程检查', '联合检查',
+                '全流程走一遍', '从头到尾检查', '全部体检')
 
 _GENERATE_HINTS = ('生成', '建模', '建模型', '做一版', '出一版', '出几个',
                    '来一套', '来一版', '补上', '出成果包', '导出', '打包')
@@ -288,6 +293,33 @@ def ingest_trigger(*, project_id: str, kind: str, payload: dict | None = None,
     if not _project_exists(project_id):
         return _record('ignored', '项目不存在或状态不可用', None,
                        {'provider': 'deterministic', 'used': False})
+
+    # V3.91 联合流程：按依赖顺序汇总 A2/A3/A4/A7/A8 的只读体检，不改任何数据。
+    trigger_text = str(payload.get('text') or '')
+    if kind == 'user_message' and any(word in trigger_text for word in _JOINT_HINTS):
+        if accept_mode != 'auto':
+            return _record('observed', '联合体检是只读汇总，需以 auto 模式执行', None,
+                           {'provider': 'deterministic', 'used': False})
+        outcome = joint_flow.execute(project_id, actor)
+        if conversation_id:
+            try:
+                store.get_conversation(conversation_id)
+                store.append_message(
+                    conversation_id, role='tool', content=outcome['summary'],
+                    metadata={'answerKind': 'joint_review', 'roleId': 'JOINT',
+                              'status': outcome['status'], 'stageCount': outcome['stageCount'],
+                              'engineeringJudgement': False},
+                )
+            except KeyError:
+                pass
+        return _record(
+            'accepted', '联合流程：按依赖顺序汇总 A2/A3/A4/A7/A8 只读体检结果', None,
+            {'provider': 'deterministic', 'used': False},
+            {'jointReview': outcome,
+             'execution': {'dispatched': True, 'ticketId': None, 'roleId': 'JOINT',
+                           'executor': 'joint_flow', 'status': 'done',
+                           'outcome': outcome}},
+        )
 
     # 订阅直通：同 Thread 已有活跃 Ticket，事件直接投递，不再走 Router 决策。
     active = store.active_ticket_for_thread(project_id, thread_id)
