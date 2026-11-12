@@ -180,9 +180,9 @@ def test_roles_endpoint_reserves_eight_positions(api):
     assert response.status_code == 200
     roles = response.json()['roles']
     assert [r['id'] for r in roles] == ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8']
-    assert {r['implementation'] for r in roles} == {'pilot', 'planned'}
-    # A1 文档参数提取、A2 只读地质盘点、A5/A6 单剖面试点已可执行。
-    assert {r['id'] for r in roles if r['executable']} == {'A1', 'A2', 'A3', 'A4', 'A5', 'A6'}
+    assert {r['implementation'] for r in roles} == {'pilot'}
+    # A1-A8 全部接入执行链，能力边界由权限与工具白名单约束。
+    assert {r['id'] for r in roles if r['executable']} == {'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8'}
     assert response.json()['formalConstructionIssue'] is False
 
 

@@ -1,8 +1,9 @@
-"""A2 地质与场景：只读盘点，不自动改任何地质或水位参数。
+"""A2 地质与场景：按现有钻孔建地质模型，不自动改任何勘察或水位参数。
 
 文档要求 A2 的交付是「地质模型、荷载和边界工况」，并区分已提取 / 已核对 /
-已确认。第一版先回答「现有资料够不够、缺什么、建议补什么」，为后续自动建模
-提供明确前置；勘察值与计算采用值口径不同，本模块一律不写。
+已确认。本模块能做的写操作只有一件——用已有钻孔插值生成三维地质模型；
+钻孔坐标、土层 γ/c/φ/E、水位记录一律不写：勘察值、经验值、计算采用值口径
+不同，自动改写会伪造依据。
 """
 from __future__ import annotations
 
@@ -37,9 +38,42 @@ def _stratum_gaps(strata: list) -> tuple[list[str], list[str], list[str]]:
     return incomplete, empirical, low_confidence
 
 
-def assess(project_id: str, actor: str) -> dict:
-    """返回地质资料盘点与缺项建议；engineeringJudgement 恒为 False。"""
-    project = _repository(actor).require(project_id)
+def assess(project_id: str, actor: str, *, build: bool = False) -> dict:
+    """返回地质资料盘点与缺项建议；engineeringJudgement 恒为 False。
+
+    ``build=True`` 时先按现有钻孔重建三维地质模型。这是本模块唯一的写操作：
+    只做插值，不改钻孔坐标、土层参数和水位记录。
+    """
+    repo = _repository(actor)
+    project = repo.require(project_id)
+    generated = 0
+    build_error: str | None = None
+    if build:
+        if not project.boreholes:
+            build_error = '项目里没有钻孔记录'
+        else:
+            try:
+                from app.geology.model_builder import (
+                    build_geological_model_from_boreholes,
+                    required_geological_design_bounds,
+                )
+
+                model = build_geological_model_from_boreholes(
+                    project.boreholes,
+                    grid_size=10.0,
+                    required_bounds=required_geological_design_bounds(project),
+                    max_extrapolation_distance_m=(
+                        project.design_settings.geology_max_extrapolation_distance_m),
+                )
+                project.geological_model = model
+                repo.save(project, action='agent.a2.build_geological_model',
+                          summary='A2 按现有钻孔生成三维地质模型')
+                generated = max(len(model.surfaces or []),
+                                len(model.surface_previews or []))
+                project = _repository(actor).require(project_id)
+            except Exception as exc:  # 插值失败要如实报，不伪造模型
+                build_error = f'{type(exc).__name__}: {str(exc)[:120]}'
+
     settings = project.design_settings
     boreholes = list(project.boreholes or [])
     strata = list(project.strata or [])
@@ -129,9 +163,24 @@ def assess(project_id: str, actor: str) -> dict:
         summary = (f"地质资料基本可用：{len(boreholes)} 个钻孔、{len(strata)} 个地层、"
                    f"{len(water_records)} 条水位记录；还有 {len(gaps)} 项待补。")
 
+    label = '地质资料盘点'
+    if build:
+        if generated:
+            label = '地质模型已生成'
+            summary = f'已按现有钻孔重建三维地质模型（{generated} 个地层面）。' + summary
+        elif build_error:
+            label = '地质模型生成失败'
+            summary = f'生成失败：{build_error}；勘察参数与水位未做任何改动。'
+        else:
+            label = '地质模型未生成'
+            summary = '没有生成新的地质模型。' + summary
+
     return {
         'schemaVersion': SCHEMA,
         'mode': 'assessment',
+        'label': label,
+        'generated': generated,
+        'buildError': build_error,
         'projectId': project_id,
         'status': status,
         'boreholes': {

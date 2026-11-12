@@ -131,6 +131,16 @@ def _run_stage_analysis(ctx: dict) -> dict:
     }
 
 
+def _prepare_delivery_package(ctx: dict) -> dict:
+    from . import delivery_agent
+    outcome = delivery_agent.prepare(ctx['projectId'], ctx['actor'], '出成果包')
+    return {
+        'label': outcome.get('label'), 'status': outcome.get('status'),
+        'taskId': outcome.get('taskId'), 'summary': outcome.get('summary'),
+        'formalConstructionIssue': False,
+    }
+
+
 def _evaluate_changes(ctx: dict) -> dict:
     run_id = ctx['params']['runId']
     rows = AgentStore().candidates(run_id)
@@ -165,9 +175,8 @@ TOOLS = (
     Tool('adopt_design_candidate', L2, 'checker_approved_selection_only', 'run',
          '采用候选方案到工作版', {'runId': 'string', 'candidateId': 'string'}, None,
          '必须由授权人员在 /api/agents/runs/{id}/decision 人工确认；工具层不开放'),
-    Tool('prepare_delivery_package', L1, 'working_copy_only', 'delivery',
-         '生成工作版成果包', {'runId': 'string'}, None,
-         '成果链尚未接入，暂不开放'),
+    Tool('prepare_delivery_package', L1, 'artifact_only', 'delivery',
+         '提交评审版成果包导出任务（不签发正式施工图）', {}, _prepare_delivery_package),
 )
 
 BY_NAME = {tool.name: tool for tool in TOOLS}

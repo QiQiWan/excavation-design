@@ -40,14 +40,14 @@ def test_blueprint_exposes_router_and_eight_workers(api):
     data = api.get('/api/agents/super/blueprint', headers=headers()).json()
     assert data['schemaVersion'] == super_agent.SCHEMA
     assert data['workerCount'] == 8
-    # V3.88.2 起 A2 地质盘点已接上；其余 5 个仍是 planned/blocked。
-    assert data['executableWorkers'] == ['A1', 'A2', 'A3', 'A4', 'A5', 'A6']
+    # A1-A8 全部接入执行链。
+    assert data['executableWorkers'] == ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8']
     assert data['router']['defaultAcceptMode'] == 'observe'
     assert data['router']['mode'] == 'deterministic'
     assert data['formalConstructionIssue'] is False
     assert any('正式施工图' in line for line in data['redLines'])
     planned = [w for w in data['workers'] if not w['executable']]
-    assert len(planned) == 2
+    assert planned == []
     assert all(w['blockedReason'] for w in planned)
 
 
@@ -149,7 +149,11 @@ def test_mandate_cannot_be_widened(api):
     assert detail['ticket']['mandate']['allowedTools'] == created['ticket']['mandate']['allowedTools']
 
 
-def test_planned_worker_is_blocked_not_faked(api):
+def test_unimplemented_worker_is_blocked_not_faked(api, monkeypatch):
+    # 防线仍在：把 A7 临时标成未实现，派发必须明确 blocked，不能伪造结果。
+    monkeypatch.setitem(super_agent.WORKER_BY_ID, 'A7', {
+        **super_agent.WORKER_BY_ID['A7'], 'implemented': False, 'executor': None,
+    })
     pid = _project(api, '未建角色')
     body = api.post('/api/agents/super/triggers', headers=headers(), json={
         'projectId': pid, 'kind': 'review_requested', 'acceptMode': 'auto',
