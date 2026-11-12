@@ -343,7 +343,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       return;
     } else if (outcome.mode === 'assessment') {
       // A2 地质盘点：只读，直接给现状和缺项建议。
-      pushNotice('alert', '地质资料评估',
+      pushNotice('alert', outcome.label ?? '资料盘点',
         outcome.summary
         + (outcome.suggestedNext?.length ? ' 建议：' + outcome.suggestedNext.join('；') : ''));
       return;

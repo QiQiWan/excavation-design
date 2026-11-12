@@ -26,6 +26,7 @@ from uuid import uuid4
 from . import design_basis_intake as intake
 from . import geology_agent
 from . import orchestrator
+from . import scheme_stage_agent
 from .catalog import AGENTS
 from .contracts import StartRun
 from .engine import AgentRuntime
@@ -60,11 +61,11 @@ WORKERS: tuple[dict[str, Any], ...] = (
     {'id': 'A2', 'implemented': True, 'permissionCeiling': 'L0',
      'writeMode': 'read_only', 'executor': 'geology_assessment',
      'tools': ('get_project_context',)},
-    {'id': 'A3', 'implemented': False, 'permissionCeiling': 'L1',
-     'writeMode': 'isolated_candidate', 'executor': None,
+    {'id': 'A3', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'isolated_candidate', 'executor': 'scheme_assessment',
      'tools': ('get_project_context', 'generate_scheme_candidates')},
-    {'id': 'A4', 'implemented': False, 'permissionCeiling': 'L1',
-     'writeMode': 'isolated_candidate', 'executor': None,
+    {'id': 'A4', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'isolated_candidate', 'executor': 'stage_assessment',
      'tools': ('get_calculation_findings',)},
     {'id': 'A5', 'implemented': True, 'permissionCeiling': 'L1',
      'writeMode': 'isolated_candidate', 'executor': 'agent_runtime',
@@ -112,6 +113,8 @@ _PARAM_HINTS = ('施工荷载', '地面超载', '地面堆载', '混凝土', '�
                 '重要性系数', '承载力', '安全等级', '工程等级')
 _GEOLOGY_HINTS = ('地质', '地层', '钻孔', '勘察', '地勘', '剖面', '地下水', '水位',
                   '土层', '持力层', '覆盖')
+_SCHEME_HINTS = ('支护方案', '围护', '支撑布置', '支撑体系', '比选', '候选方案')
+_STAGE_HINTS = ('施工阶段', '开挖顺序', '换撑', '拆撑', '工序', '施工组织', '工况')
 _DIAGNOSE_HINTS = ('诊断', '哪里失败', '为什么失败', '为什么超限', '失败原因', '超限',
                    '不满足', '验算', '校核', '过不了', '没通过', '问题在哪')
 _OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算', '复算', '重算',
@@ -129,6 +132,10 @@ def _route_role(kind: str, payload: dict) -> str | None:
         return 'A1'
     if any(word in text for word in _GEOLOGY_HINTS):
         return 'A2'
+    if any(word in text for word in _SCHEME_HINTS):
+        return 'A3'
+    if any(word in text for word in _STAGE_HINTS):
+        return 'A4'
     if any(word in text for word in _OPTIMIZE_HINTS):
         return 'A6'
     if any(word in text for word in _DIAGNOSE_HINTS):
@@ -388,8 +395,14 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
     })
 
     try:
-        if worker['executor'] == 'geology_assessment':
-            outcome = geology_agent.assess(ticket['projectId'], actor)
+        if worker['executor'] in ('geology_assessment', 'scheme_assessment',
+                                  'stage_assessment'):
+            assessor = {
+                'geology_assessment': geology_agent.assess,
+                'scheme_assessment': scheme_stage_agent.assess_scheme,
+                'stage_assessment': scheme_stage_agent.assess_stages,
+            }[worker['executor']]
+            outcome = assessor(ticket['projectId'], actor)
             summary = outcome['summary']
             if outcome['suggestedNext']:
                 summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
