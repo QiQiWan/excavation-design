@@ -4,7 +4,7 @@ from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File,Form
 import json
 from datetime import datetime,timezone
 from .contracts import (StartRun,RunDecision,ConversationCreate,MessageCreate,
-    ToolInvoke,OrchestratorDispatch,SuperTrigger,SuperDispatch)
+    ToolInvoke,OrchestratorDispatch,SuperTrigger,SuperDispatch,FindingDecision)
 from .store import AgentStore,ConflictError
 from .catalog import catalog
 from .engine import AgentRuntime
@@ -15,6 +15,7 @@ from . import tools as tool_registry
 from . import orchestrator
 from . import design_basis_intake as intake
 from . import super_agent
+from . import findings
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -461,6 +462,30 @@ def super_agent_trigger(body:SuperTrigger,request:Request):
             accept_mode=body.acceptMode,actor=identity.actor)
     except ValueError as exc:raise HTTPException(400,detail=str(exc)) from exc
     except KeyError as exc:raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.get('/findings')
+def agent_findings(request:Request,project_id:str,status:str|None=None):
+    """项目级发现与建议动作；默认返回全部，可按状态过滤。"""
+    _actor(request)
+    if status not in (None,'open','acknowledged','resolved'):
+        raise HTTPException(422,detail='status 只能是 open/acknowledged/resolved')
+    return findings.overview(project_id,status=status)
+
+
+@router.post('/actions/{action_id}/decision')
+def agent_action_decision(action_id:str,body:FindingDecision,request:Request):
+    """人工接受/拒绝建议动作；不改工程，采用候选另走 runs decision。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['checker']:
+        raise HTTPException(403,detail='建议动作的接受/拒绝需要具备校审权限')
+    try:
+        return findings.decide(action_id,decision=body.decision,
+                               actor=identity.actor,note=body.note)
+    except KeyError as exc:
+        raise HTTPException(404,detail='建议动作不存在') from exc
+    except ConflictError as exc:
+        raise HTTPException(409,detail=str(exc)) from exc
 
 
 @router.get('/super/tickets')
