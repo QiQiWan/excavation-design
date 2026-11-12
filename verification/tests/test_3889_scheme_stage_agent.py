@@ -61,6 +61,29 @@ def test_scheme_assessment_on_empty_project(api):
     assert result['formalConstructionIssue'] is False
 
 
+def test_requested_action_only_generates_on_explicit_words():
+    assert super_agent._requested_action('帮我生成一版支护方案') == 'generate'
+    assert super_agent._requested_action('出几个候选方案看看') == 'generate'
+    assert super_agent._requested_action('支护方案现在什么情况') == 'assess'
+    assert super_agent._requested_action(None) == 'assess'
+
+
+def test_scheme_generation_requires_confirmed_basis(api):
+    pid = _project(api)
+    result = scheme_stage_agent.generate_scheme(pid, 'alice')
+    assert result['status'] == 'blocked'
+    assert result['gaps'][0]['key'] == 'designBasisConfirmed'
+    assert '设计基准' in result['summary']
+
+
+def test_stage_generation_without_excavation_does_not_fake_success(api):
+    pid = _project(api)
+    result = scheme_stage_agent.assess_stages(pid, 'alice', generate=True)
+    assert result['generated'] == 0
+    assert result['label'] in ('施工阶段未生成', '施工阶段生成失败')
+    assert result['engineeringJudgement'] is False
+
+
 def test_stage_assessment_on_empty_project(api):
     pid = _project(api)
     result = scheme_stage_agent.assess_stages(pid, 'alice')
