@@ -55,16 +55,50 @@ def _action_title(action: dict) -> str:
 
 def record_plan(*, project_id: str, run_id: str, actions: list[dict],
                 created_by: str = 'agent') -> list[dict]:
-    """把有界试算方案落成建议动作；同一 run + 标题幂等。"""
+    """把有界试算方案落成建议动作；同一 run + 标题幂等。
+
+    每条动作都带构件（member）与可调用操作（operation），
+    避免只给一个「增大截面」式的空建议。
+    """
     store = AgentStore()
     rows = []
     for action in actions or []:
+        member = dict(action.get('member') or {})
         rows.append(store.create_action(
             project_id=project_id, run_id=run_id, kind='parameter_trial',
             title=_action_title(action), rationale=str(action.get('reason') or '')[:800],
             params=action, created_by=created_by,
+            member_type=member.get('type'), member_id=member.get('id'),
         ))
     return rows
+
+
+def record_conflicts(*, project_id: str, conflicts: list[dict],
+                     source: str = 'A1 参数录入') -> list[dict]:
+    """自动录入覆盖旧值时留下冲突标记；同一字段只保留最新一条。"""
+    store = AgentStore()
+    rows = []
+    for item in conflicts or []:
+        code = f"PARAMETER_CONFLICT:{item['key']}"[:90]
+        rows.append(store.upsert_finding(
+            project_id=project_id, run_id='', code=code,
+            severity='warning', category='parameter_conflict',
+            title=f"{item.get('label') or item['key']} 被覆盖："
+                  f"{item.get('previous')} → {item.get('value')}"[:240],
+            detail='该字段此前由自动录入写入，本次被新来源覆盖；请核对口径并确认最终值。'[:800],
+            source=source,
+            evidence={'fieldKey': item['key'], 'previous': item.get('previous'),
+                      'value': item.get('value'), 'source': item.get('source'),
+                      'rawText': item.get('raw')},
+        ))
+    return rows
+
+
+def clear_conflicts(*, project_id: str, field_keys: list[str]) -> None:
+    """字段值不再冲突时关闭旧标记。"""
+    store = AgentStore()
+    for key in field_keys:
+        store.set_finding_status(project_id, f'PARAMETER_CONFLICT:{key}'[:90], 'resolved')
 
 
 def overview(project_id: str, *, status: str | None = None) -> dict:
