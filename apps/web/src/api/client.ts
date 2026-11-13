@@ -441,13 +441,22 @@ export type SuperAgentTriggerResult = {
     dispatched: boolean; ticketId: string; roleId: string;
     executor?: string; status?: string; reason?: string;
     runId?: string | null;
-    outcome?: DesignBasisIngestResult | AgentRunCreatedOutcome | GeologyAssessmentOutcome;
+    outcome?: DesignBasisIngestResult | AgentRunCreatedOutcome | GeologyAssessmentOutcome | ChainFlowOutcome;
   };
   formalConstructionIssue: boolean;
 };
 export type AgentRunCreatedOutcome = {
   mode: 'run_created';
   run: { id: string; status: string; step: string };
+};
+export type ChainFlowOutcome = {
+  mode: 'chain';
+  flowId: string;
+  flowStatus: 'running' | 'waiting_human' | 'waiting_run' | 'waiting_task' | 'blocked' | 'done' | 'aborted';
+  summary: string;
+  currentStage?: { stageKey: string; stageId: string; title: string; owner: string } | null;
+  progress?: { done: number; total: number };
+  nextAction?: { type?: string; note?: string; impact?: string } | null;
 };
 export type GeologyAssessmentOutcome = {
   mode: 'assessment';
@@ -466,6 +475,10 @@ export type DesignBasisIngestResult = {
     raw: string; page: number | null; target: string; confidence: string;
   }>;
   remaining: DesignBasisGap;
+  conflicts?: Array<{
+    key: string; label: string; previous: string | number;
+    value: string | number; source: string;
+  }>;
   warnings: string[];
   modelTried: boolean;
   provider: string;

@@ -55,9 +55,10 @@ STAGE_SPECS: dict[str, dict[str, Any]] = {
         'purpose': '生成围护墙、水平支撑与候选布置',
         'tools': ['get_project_context', 'generate_scheme_candidates'],
         'humanAction': {
-            'type': 'role_not_ready',
-            'endpoint': 'POST /api/projects/{projectId}/design/core-scheme',
-            'note': 'A3 尚未建立自治执行链；当前方案由现有工作台生成。',
+            'type': 'generate_scheme',
+            'endpoint': 'POST /api/agents/chain/{flowId}/advance',
+            'note': '生成方案会写工作版并使现有计算结果失效，必须由工程师确认后执行。',
+            'impact': 'writes_working_copy_and_invalidates_calculation',
         },
     },
     'calculation': {
@@ -73,9 +74,10 @@ STAGE_SPECS: dict[str, dict[str, Any]] = {
         'purpose': '按计算内力完成截面选择、配筋与构造检查',
         'tools': ['get_calculation_findings'],
         'humanAction': {
-            'type': 'role_not_ready',
-            'endpoint': 'POST /api/projects/{projectId}/design/reinforcement',
-            'note': 'A7 构件深化尚未建立执行链。',
+            'type': 'generate_detailing',
+            'endpoint': 'POST /api/agents/chain/{flowId}/advance',
+            'note': '深化会写工作版并可能触发配筋重新闭合，必须由工程师确认后执行。',
+            'impact': 'writes_working_copy',
         },
     },
     'deliverables': {
@@ -84,9 +86,10 @@ STAGE_SPECS: dict[str, dict[str, Any]] = {
         'purpose': '生成审查版成果包并做图算表交叉校核',
         'tools': ['prepare_delivery_package'],
         'humanAction': {
-            'type': 'role_not_ready',
-            'endpoint': 'POST /api/projects/{projectId}/design/deliverables',
-            'note': 'A8 成果链尚未接入；正式施工图签发始终关闭。',
+            'type': 'prepare_delivery',
+            'endpoint': 'POST /api/agents/chain/{flowId}/advance',
+            'note': '只导出评审版成果包；正式施工图签发始终关闭。',
+            'impact': 'artifact_only',
         },
     },
 }
@@ -318,12 +321,20 @@ def _stage_block(
             'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
         }
     elif key == 'scheme':
-        block['state'] = 'blocked'
-        block['gate'] = {
-            'type': 'role_not_ready', 'requiresHuman': True,
-            'reason': 'A3 支护方案尚未建立执行链；当前方案仍由现有工作台生成。',
-            'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
-        }
+        if not executable:
+            block['state'] = 'blocked'
+            block['gate'] = {
+                'type': 'role_not_ready', 'requiresHuman': True,
+                'reason': 'A3 支护方案执行链未启用。',
+                'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
+            }
+        else:
+            block['state'] = 'ready'
+            block['gate'] = {
+                'type': 'human_confirm', 'requiresHuman': True,
+                'reason': '生成支护方案会写工作版并使现有计算结果失效，需要工程师确认。',
+                'action': dict(spec['humanAction'] or {}, projectId=project_id),
+            }
     elif key == 'calculation':
         launchable = [row for row in frozen if row['launchable']]
         block['frozenResults'] = {
@@ -358,20 +369,37 @@ def _stage_block(
                 'defaultResultHash': launchable[0]['resultHash'],
             }
     elif key == 'reinforcement':
-        block['state'] = 'blocked'
-        block['gate'] = {
-            'type': 'role_not_ready', 'requiresHuman': True,
-            'reason': 'A7 构件深化尚未建立执行链。',
-            'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
-        }
+        if not executable:
+            block['state'] = 'blocked'
+            block['gate'] = {
+                'type': 'role_not_ready', 'requiresHuman': True,
+                'reason': 'A7 构件深化执行链未启用。',
+                'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
+            }
+        else:
+            block['state'] = 'ready'
+            block['gate'] = {
+                'type': 'human_confirm', 'requiresHuman': True,
+                'reason': '深化会写工作版并可能触发配筋重新闭合，需要工程师确认。',
+                'action': dict(spec['humanAction'] or {}, projectId=project_id),
+            }
     else:  # deliverables
-        block['state'] = 'blocked'
-        block['gate'] = {
-            'type': 'role_not_ready', 'requiresHuman': True,
-            'reason': 'A8 成果链尚未接入；正式施工图签发始终关闭。',
-            'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
-            'formalConstructionIssue': False,
-        }
+        if not executable:
+            block['state'] = 'blocked'
+            block['gate'] = {
+                'type': 'role_not_ready', 'requiresHuman': True,
+                'reason': 'A8 成果与校审执行链未启用。',
+                'humanAction': dict(spec['humanAction'] or {}, projectId=project_id),
+                'formalConstructionIssue': False,
+            }
+        else:
+            block['state'] = 'ready'
+            block['gate'] = {
+                'type': 'human_confirm', 'requiresHuman': True,
+                'reason': '只导出评审版成果包；正式施工图签发始终关闭。',
+                'action': dict(spec['humanAction'] or {}, projectId=project_id),
+                'formalConstructionIssue': False,
+            }
     return block
 
 

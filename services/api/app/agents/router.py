@@ -4,7 +4,8 @@ from fastapi import APIRouter,HTTPException,Request,Query,UploadFile,File,Form
 import json
 from datetime import datetime,timezone
 from .contracts import (StartRun,RunDecision,ConversationCreate,MessageCreate,
-    ToolInvoke,OrchestratorDispatch,SuperTrigger,SuperDispatch,FindingDecision)
+    ToolInvoke,OrchestratorDispatch,SuperTrigger,SuperDispatch,FindingDecision,
+    ChainStart,ChainAdvance)
 from .store import AgentStore,ConflictError
 from .catalog import catalog
 from .engine import AgentRuntime
@@ -18,6 +19,7 @@ from . import super_agent
 from . import findings
 from . import context as engineering_context
 from . import stages as stage_registry
+from . import chain
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -473,6 +475,48 @@ def super_agent_trigger(body:SuperTrigger,request:Request):
             accept_mode=body.acceptMode,actor=identity.actor)
     except ValueError as exc:raise HTTPException(400,detail=str(exc)) from exc
     except KeyError as exc:raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.post('/chain/start', status_code=201)
+def chain_start(body: ChainStart, request: Request):
+    """新建连续执行链并推进到第一个停点。"""
+    identity = _actor(request)
+    try:
+        return chain.start(body.projectId, identity.actor,
+                           conversation_id=body.conversationId)
+    except KeyError as exc:
+        raise HTTPException(404, detail='项目或会话不存在') from exc
+    except ValueError as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.post('/chain/{flow_id}/advance')
+def chain_advance(flow_id: str, body: ChainAdvance, request: Request):
+    """从停点继续；confirm=true 表示工程师确认当前这一步的写操作。"""
+    identity = _actor(request)
+    if body.confirm and ROLE_RANK.get(identity.role, 0) < ROLE_RANK['designer']:
+        raise HTTPException(403, detail='确认写操作需要设计权限')
+    try:
+        return chain.advance(flow_id, identity.actor, confirm=body.confirm)
+    except KeyError as exc:
+        raise HTTPException(404, detail='流程不存在') from exc
+    except ValueError as exc:
+        raise HTTPException(409, detail=str(exc)) from exc
+
+
+@router.get('/chain/{flow_id}')
+def chain_status(flow_id: str, request: Request):
+    _actor(request)
+    try:
+        return chain.status(flow_id)
+    except KeyError as exc:
+        raise HTTPException(404, detail='流程不存在') from exc
+
+
+@router.get('/chain')
+def chain_history(request: Request, project_id: str, limit: int = 20):
+    _actor(request)
+    return {'flows': chain.history(project_id, limit=limit)}
 
 
 @router.get('/stages')

@@ -29,6 +29,7 @@ from . import delivery_agent
 from . import detailing_agent
 from . import joint_flow
 from . import findings as findings_store
+from . import chain as chain_flow
 from .stages import primary_stage_of_role
 from . import orchestrator
 from . import scheme_stage_agent
@@ -134,6 +135,14 @@ _OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算'
 # 直接读已登记的发现，不重新跑诊断。
 _FINDINGS_HINTS = ('有哪些问题', '问题清单', '发现哪些', '待处理问题',
                    '还有什么问题', '哪些没通过')
+
+# 连续执行链：说一次就按六步走，遇到闸口停下等人确认。
+_CHAIN_START_HINTS = ('走一遍全流程', '连续执行', '自动走一遍', '按流程走',
+                      '一路走到底', '开始连续执行', '全流程自动')
+_CHAIN_ADVANCE_HINTS = ('继续执行', '继续走', '接着走', '下一步', '继续往下',
+                        '接着往下走')
+_CHAIN_CONFIRM_HINTS = ('确认执行', '同意执行', '可以执行', '确认生成',
+                        '确认提交', '确认继续')
 
 # 联合流程：一次问完多个 Agent，只做只读体检。
 _JOINT_HINTS = ('全流程体检', '整体体检', '全流程检查', '联合检查',
@@ -298,8 +307,58 @@ def ingest_trigger(*, project_id: str, kind: str, payload: dict | None = None,
         return _record('ignored', '项目不存在或状态不可用', None,
                        {'provider': 'deterministic', 'used': False})
 
-    # V3.91 联合流程：按依赖顺序汇总 A2/A3/A4/A7/A8 的只读体检，不改任何数据。
     trigger_text = str(payload.get('text') or '')
+
+    # V3.91 连续执行链：按六步顺序推进，遇到人工闸口停下，确认后原地继续。
+    if kind == 'user_message' and (
+            any(word in trigger_text for word in _CHAIN_START_HINTS)
+            or any(word in trigger_text for word in _CHAIN_ADVANCE_HINTS)):
+        wants_start = any(word in trigger_text for word in _CHAIN_START_HINTS)
+        if accept_mode != 'auto':
+            return _record('observed', '连续执行会写工作版，需以 auto 模式执行', None,
+                           {'provider': 'deterministic', 'used': False})
+        try:
+            flow = None
+            if wants_start:
+                flow = chain_flow.start(project_id, actor,
+                                        conversation_id=conversation_id)
+            else:
+                active = [row for row in chain_flow.history(project_id, limit=10)
+                          if row['status'] not in ('done', 'aborted')]
+                if active:
+                    confirm = any(word in trigger_text for word in _CHAIN_CONFIRM_HINTS)
+                    flow = chain_flow.advance(active[0]['id'], actor, confirm=confirm)
+            if flow is not None:
+                current_key = (flow.get('currentStage') or {}).get('stageKey')
+                record = next((row for row in flow['steps']
+                               if row['stageKey'] == current_key), None)
+                outcome = {
+                    'mode': 'chain',
+                    'flowId': flow['flowId'],
+                    'flowStatus': flow['status'],
+                    'summary': flow['summary'],
+                    'currentStage': flow.get('currentStage'),
+                    'progress': flow.get('progress'),
+                    'nextAction': (record or {}).get('action'),
+                }
+                return _record(
+                    'accepted', flow['summary'], None,
+                    {'provider': 'deterministic', 'used': False},
+                    {'chain': outcome,
+                     'execution': {'dispatched': True, 'ticketId': None,
+                                   'roleId': 'CHAIN', 'executor': 'chain',
+                                   'status': flow['status'], 'outcome': outcome}},
+                )
+        except Exception as exc:
+            return _record('failed',
+                           f'连续执行中断：{type(exc).__name__}: {str(exc)[:160]}', None,
+                           {'provider': 'deterministic', 'used': False},
+                           {'execution': {'dispatched': False, 'ticketId': None,
+                                          'roleId': 'CHAIN', 'executor': 'chain',
+                                          'status': 'failed',
+                                          'reason': f'{type(exc).__name__}: {str(exc)[:160]}'}})
+
+    # V3.91 联合流程：按依赖顺序汇总 A2/A3/A4/A7/A8 的只读体检，不改任何数据。
     if kind == 'user_message' and any(word in trigger_text for word in _JOINT_HINTS):
         if accept_mode != 'auto':
             return _record('observed', '联合体检是只读汇总，需以 auto 模式执行', None,
