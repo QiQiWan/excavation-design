@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import assistant, document_agent
+from . import findings as findings_store
 from .model_gateway import GatewayUnavailable, _endpoint, configuration
 from .store import AgentStore, now
 
@@ -528,6 +529,18 @@ def apply(project_id: str, fields: list[dict], *, actor: str,
             **provider, 'formalConstructionIssue': False,
         }
 
+    # 覆盖旧值必须留痕：只有「此前由自动录入写入」的字段才算冲突。
+    conflicts: list[dict] = []
+    for item in accepted:
+        previous = current.get(item['key'])
+        if (item['key'] in applied_keys and previous is not None
+                and previous != item['value']):
+            conflicts.append({
+                'key': item['key'], 'label': item.get('label') or item['key'],
+                'previous': previous, 'value': item['value'],
+                'source': source_label, 'raw': item.get('raw'),
+            })
+
     for item in accepted:
         store.record_evidence(
             project_id=project_id, field_key=item['key'], value=item['value'],
@@ -553,17 +566,35 @@ def apply(project_id: str, fields: list[dict], *, actor: str,
     )
     summary = missing_summary(updated)
 
+    conflict_keys = {item['key'] for item in conflicts}
+    if conflicts:
+        try:
+            findings_store.record_conflicts(project_id=project_id, conflicts=conflicts)
+        except Exception:
+            pass
+    cleared = [item['key'] for item in accepted if item['key'] not in conflict_keys]
+    if cleared:
+        try:
+            findings_store.clear_conflicts(project_id=project_id, field_keys=cleared)
+        except Exception:
+            pass
+
     if conversation_id:
         display = (source_label if source_label.endswith(('.pdf', '.json'))
                    or len(source_label) <= 8 else '输入内容')
         lines = [f"已从{display}填入 {len(accepted)} 项设计基准："]
         lines.extend(f"  · {item['label']} = {item['value']}{item['unit']}" for item in accepted)
         lines.append(summary['text'] + '。设计输入变更会作废旧计算结果，请重新验算。')
+        if conflicts:
+            lines.append('注意：' + '、'.join(str(c['label']) for c in conflicts)
+                         + f' 共 {len(conflicts)} 项覆盖了此前自动录入的值，'
+                           '已标记为参数冲突，请核对后确认最终取值。')
         _write_turn(store, conversation_id, source_label, '\n'.join(lines))
 
     return {
         'mode': 'filled',
         'applied': accepted,
+        'conflicts': conflicts,
         'remaining': summary,
         'requiresRecalculation': bool(updated.advanced_engineering.get('requiresRecalculation')),
         **provider,
@@ -599,18 +630,38 @@ def project_version(project_id: str, actor: str) -> str | None:
     return str(stamp) if stamp else None
 
 
+def _price_config() -> tuple[float, float] | None:
+    """每百万 token 的单价；未配置就不估算，绝不把未知写成 0。"""
+    try:
+        price_in = float(os.getenv('PITGUARD_LLM_PRICE_INPUT_PER_MTOK', '') or 0)
+        price_out = float(os.getenv('PITGUARD_LLM_PRICE_OUTPUT_PER_MTOK', '') or 0)
+    except ValueError:
+        return None
+    if price_in <= 0 and price_out <= 0:
+        return None
+    return price_in, price_out
+
+
 def _audit_model_call(project_id: str, model: str, ok: bool, status: str,
                       attempts: int, started: float, usage: dict,
                       error_type: str | None) -> None:
     """记录一次模型调用。审计写失败不能阻断录入。"""
+    prompt_tokens = usage.get('prompt_tokens')
+    completion_tokens = usage.get('completion_tokens')
+    price = _price_config()
+    cost = None
+    cost_source = 'not_configured'
+    if price and isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+        cost = round(prompt_tokens / 1_000_000 * price[0]
+                     + completion_tokens / 1_000_000 * price[1], 8)
+        cost_source = 'configured_per_mtok'
     try:
         AgentStore().record_model_call(
             project_id=project_id, purpose='design_basis_intake',
             model=model or 'unknown', ok=ok, status=status,
             attempts=attempts, duration_ms=int((time.perf_counter() - started) * 1000),
-            prompt_tokens=usage.get('prompt_tokens'),
-            completion_tokens=usage.get('completion_tokens'),
-            error_type=error_type,
+            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+            error_type=error_type, cost_usd=cost, cost_source=cost_source,
         )
     except Exception:
         pass

@@ -39,6 +39,23 @@ def diagnostics(result:dict)->dict:
             'formalConstructionIssue':False}
 
 
+def _member(snapshot,field):
+    """候选必须指到具体构件；桩没有独立 ID 时用 项目/剖面 定位。"""
+    head=field.split('.')[0]
+    if head=='strut':
+        strut=snapshot.get('strut') or {}
+        return {'type':'strut','id':strut.get('id'),
+                'label':f"水平支撑（标高 {strut.get('depth_m')} m）",
+                'resolved':bool(strut.get('id'))}
+    pile=snapshot.get('pile') or {}
+    section=str(snapshot.get('section_id') or '')
+    project=str(snapshot.get('project_id') or '')
+    ident=f'{project}/{section}' if project and section else None
+    return {'type':'pile','id':ident,
+            'label':f"支护桩（直径 {pile.get('diameter_m')} m，剖面 {section or '未命名'}）",
+            'resolved':bool(ident)}
+
+
 def _action(snapshot,field,factor,why):
     a,b=field.split('.')
     old=snapshot[a][b]
@@ -47,6 +64,8 @@ def _action(snapshot,field,factor,why):
     if field=='pile.length_m':new=round(old+factor,3)
     if math.isclose(new,old,rel_tol=1e-8,abs_tol=1e-8):return None
     return {'field':field,'before':old,'after':new,'reason':why,
+            'member':_member(snapshot,field),
+            'operation':'calculate_isolated_candidate',
             'permission':'L1_candidate_only','method':'bounded_parameter_trial'}
 
 
