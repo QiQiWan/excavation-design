@@ -31,6 +31,21 @@ _DERIVED_RETAINING_KEYS = {
 }
 
 
+# 地质模型的面/体/网格是钻孔与地层插值出来的派生几何；工作区只保留
+# preview、计算进程持有完整 surface，二者不能进输入哈希，否则每次算完
+# 合同都会「变旧」。真实输入（钻孔、地层）已在 payload 其他块中冻结。
+_DERIVED_GEOLOGY_KEYS = {"surfaces", "surface_previews", "volumes", "vtu_mesh"}
+
+
+def _strip_derived_geology(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _strip_derived_geology(item) for key, item in value.items()
+                if key not in _DERIVED_GEOLOGY_KEYS}
+    if isinstance(value, list):
+        return [_strip_derived_geology(item) for item in value]
+    return value
+
+
 def _strip_derived_retaining(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _strip_derived_retaining(item) for key, item in value.items() if key not in _DERIVED_RETAINING_KEYS}
@@ -160,7 +175,9 @@ def calculation_input_payload(project: Project, case: CalculationCase) -> dict[s
         "designSettings": _calculation_design_settings_payload(project),
         "boreholes": [row.model_dump(mode="json", by_alias=True) for row in project.boreholes],
         "strata": [row.model_dump(mode="json", by_alias=True) for row in project.strata],
-        "geologicalModel": project.geological_model.model_dump(mode="json", by_alias=True) if project.geological_model else None,
+        "geologicalModel": _strip_derived_geology(
+            project.geological_model.model_dump(mode="json", by_alias=True)
+        ) if project.geological_model else None,
         "excavation": project.excavation.model_dump(mode="json", by_alias=True) if project.excavation else None,
         "retainingSystem": _strip_derived_retaining(project.retaining_system.model_dump(mode="json", by_alias=True)) if project.retaining_system else None,
         # layoutSummary also contains derived diagnostics, but this consumed
@@ -186,6 +203,12 @@ def reinforcement_input_payload(project: Project) -> dict[str, Any]:
         "zone_type", "zone_start_m", "zone_end_m", "zone_length_m", "stirrup_legs"}
     return {row.id: [group.model_dump(mode="json", by_alias=True, include=physical_fields)
         for group in row.reinforcement] for row in members}
+
+
+def calculation_input_component_hashes(project: Project, case: CalculationCase) -> dict[str, str]:
+    """分块哈希：合同不一致时能直接指出是哪个输入块变了。"""
+    return {key: _canonical_hash(value)
+            for key, value in calculation_input_payload(project, case).items()}
 
 
 def build_calculation_contract(project: Project, case: CalculationCase) -> dict[str, Any]:
@@ -219,6 +242,7 @@ def build_calculation_contract(project: Project, case: CalculationCase) -> dict[
         **contract_seed,
         "stageCount": len(case.stages),
         "segmentCount": len(project.excavation.segments) if project.excavation else 0,
+        "inputComponentHashes": calculation_input_component_hashes(project, case),
         "createdAt": _now(),
     }
 
@@ -808,13 +832,23 @@ def verify_current_calculation_contract(project: Project, result: CalculationRes
         key for key, (stored_value, current_value) in comparisons.items()
         if stored_value != current_value
     ]
+    stored_components = dict(stored.get("inputComponentHashes") or {})
+    current_components = dict(current.get("inputComponentHashes") or {})
+    component_mismatches = sorted(
+        key for key in stored_components
+        if stored_components[key] != current_components.get(key)
+    )
     is_current = bool(stored and not mismatches)
+    reason = "calculation contract matches current design snapshot" if is_current else (
+        "calculation contract differs in: " + ", ".join(mismatches)
+    )
+    if component_mismatches:
+        reason += "；输入快照变化字段：" + "、".join(component_mismatches)
     return {
         "current": is_current,
-        "reason": "calculation contract matches current design snapshot" if is_current else (
-            "calculation contract differs in: " + ", ".join(mismatches)
-        ),
+        "reason": reason,
         "mismatches": mismatches,
+        "inputComponentMismatches": component_mismatches,
         "resultId": result.id,
         "storedContractId": result.calculation_contract_id,
         "currentContractId": expected_final_contract_id,
