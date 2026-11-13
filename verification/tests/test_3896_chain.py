@@ -90,6 +90,9 @@ def test_chain_stops_at_first_human_gate_without_dispatching(api, monkeypatch):
     assert body['progress'] == {'done': 0, 'total': 6}
     assert dispatched == []
     assert body['formalConstructionIssue'] is False
+    # 列表/详情里的当前步骤必须落库，否则前端历史里会显示「无当前步骤」。
+    saved = api.get(f"/api/agents/chain/{body['flowId']}", headers=headers()).json()
+    assert saved['currentStage'] == 'basis'
 
 
 def test_confirm_does_not_leak_to_a_gate_the_chain_cannot_execute(api, monkeypatch):

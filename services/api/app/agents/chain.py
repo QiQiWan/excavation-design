@@ -227,7 +227,8 @@ def _walk(flow: dict, actor: str, *, confirm: bool) -> dict:
 
     summary = _summary(status, current, note, done, total)
     updated = AgentStore().update_flow(
-        flow['id'], status=status, current_stage=(current or {}).get('stageKey'),
+        flow['id'], status=status,
+        current_stage=(current.get('key') if current else None),
         steps=steps,
     )
     payload = {
