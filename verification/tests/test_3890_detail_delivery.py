@@ -124,3 +124,16 @@ def test_delivery_prepare_blocks_without_calculation(api):
     result = delivery_agent.prepare(pid, 'alice', '出成果包')
     assert result['status'] == 'blocked'
     assert '没有计算结果' in result['summary']
+
+
+def test_invalidated_calculation_is_reported_as_stale_not_missing():
+    from types import SimpleNamespace
+    from app.agents.detailing_agent import _calculation_note
+
+    fresh = SimpleNamespace(advanced_engineering={})
+    stale = SimpleNamespace(advanced_engineering={
+        'invalidatedCalculationArchive': {'resultId': 'calc-old'},
+        'requiresRecalculation': True,
+    })
+    assert '没有计算结果' in _calculation_note(fresh)
+    assert '已失效' in _calculation_note(stale)

@@ -18,6 +18,14 @@ def _gap(rows: list[dict], key: str, label: str, reason: str, suggestion: str) -
     rows.append({'key': key, 'label': label, 'reason': reason, 'suggestion': suggestion})
 
 
+def _calculation_note(project) -> str:
+    """区分「从没算过」和「算过但已失效」，后者要让人去重算而不是重新建模。"""
+    advanced = dict(getattr(project, 'advanced_engineering', None) or {})
+    if advanced.get('requiresRecalculation') or advanced.get('invalidatedCalculationArchive'):
+        return '现有计算结果已失效（设计或方案变更后需重新计算），深化缺少有效内力依据'
+    return '当前没有计算结果，深化缺少内力依据'
+
+
 def _has_scheme(scheme: dict) -> bool:
     """只有带配筋分区的方案才算已应用；只有 checks/constructability 的空壳不算。"""
     return bool(scheme.get('wallZones'))
@@ -46,8 +54,12 @@ def assess(project_id: str, actor: str) -> dict:
         _gap(gaps, 'rebarScheme', '配筋方案', '还没有生成配筋设计方案',
              '先生成并应用配筋方案，再进入逐根钢筋深化')
     if not project.calculation_results:
-        _gap(gaps, 'calculation', '计算结果', '当前没有计算结果，深化缺少内力依据',
-             '先完成当前施工阶段计算并通过复核')
+        advanced = dict(project.advanced_engineering or {})
+        stale = bool(advanced.get('requiresRecalculation')
+                     or advanced.get('invalidatedCalculationArchive'))
+        _gap(gaps, 'calculation', '计算结果', _calculation_note(project),
+             '重新运行当前方案完整计算并通过复核' if stale
+             else '先完成当前施工阶段计算并通过复核')
 
     geometry = {'bars': [], 'summary': {}}
     screening = {'checks': [], 'summary': {}}
@@ -181,9 +193,13 @@ def generate(project_id: str, actor: str, *, mode: str = 'balanced') -> dict:
                 'summary': '还没有围护结构，无法执行构件深化。',
                 'suggestedNext': ['先生成围护墙与支撑体系']}
     if not project.calculation_results:
+        advanced = dict(project.advanced_engineering or {})
+        stale = bool(advanced.get('requiresRecalculation')
+                     or advanced.get('invalidatedCalculationArchive'))
         return {**base, 'label': '深化任务未提交', 'status': 'blocked',
-                'summary': '当前没有计算结果，深化缺少内力依据。',
-                'suggestedNext': ['先完成当前施工阶段计算']}
+                'summary': _calculation_note(project) + '。',
+                'suggestedNext': ['重新运行当前方案完整计算' if stale
+                                  else '先完成当前施工阶段计算']}
     from app.tasks.manager import task_manager
 
     scheme = dict(getattr(project.retaining_system, 'rebar_design_scheme', {}) or {})
