@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .catalog import catalog
+from .stages import normalize as _normalize_stage
 from .store import AgentStore, now
 
 SCHEMA = 'pitguard.orchestration/1'
@@ -89,6 +90,10 @@ STAGE_SPECS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+# 阶段号必须能在注册表里查到，写错在导入时就失败。
+for _spec in STAGE_SPECS.values():
+    _normalize_stage(_spec['stageId'])
 
 STAGE_ORDER = ('basis', 'input', 'scheme', 'calculation', 'reinforcement', 'deliverables')
 
