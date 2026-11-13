@@ -343,10 +343,16 @@ def _stage_block(
         if active_run:
             block['state'] = 'blocked'
             block['gate'] = {
-                'type': 'already_in_progress', 'requiresHuman': False,
+                'type': 'already_in_progress', 'requiresHuman': True,
                 'reason': f"任务 {active_run['id'][:12]} 处于 {active_run['status']} / {active_run['step']}。",
                 'runId': active_run['id'],
                 'endpoint': f"/api/agents/runs/{active_run['id']}/overview",
+                'action': {
+                    'type': 'review_run',
+                    'endpoint': f"/api/agents/runs/{active_run['id']}/overview",
+                    'note': '该任务在等待人工复核；确认或驳回候选后再继续。',
+                    'impact': 'none',
+                },
             }
         elif not launchable:
             block['state'] = 'blocked'

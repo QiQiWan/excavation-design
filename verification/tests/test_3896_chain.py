@@ -259,3 +259,31 @@ def test_dock_starts_chain_and_reports_the_gate(api, monkeypatch):
     assert execution['outcome']['flowStatus'] == 'waiting_human'
     assert execution['outcome']['currentStage']['stageKey'] == 'basis'
     assert body['decision'] == 'accepted'
+
+
+def test_review_gate_points_to_the_run_overview(tmp_path, monkeypatch):
+    """停在等待复核时，必须告诉人去哪看，而不是只说「已在进行」。"""
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH', str(tmp_path / 'orch-review.sqlite3'))
+    stages = [
+        {'key': 'basis', 'title': '设计基准', 'status': 'done', 'message': None},
+        {'key': 'input', 'title': '地质与场景', 'status': 'done', 'message': None},
+        {'key': 'scheme', 'title': '支护方案', 'status': 'done', 'message': None},
+    ]
+    monkeypatch.setattr(orchestrator, '_workspace_status',
+                        lambda pid: ({'summary': {}, 'stages': stages},
+                                     {'boreholeCount': 4, 'stratumCount': 3,
+                                      'outlinePointCount': 6}))
+    monkeypatch.setattr(orchestrator, '_frozen_results',
+                        lambda pid: [{'resultHash': 'a' * 64, 'launchable': True}])
+    monkeypatch.setattr(orchestrator, '_active_run',
+                        lambda runs: {'id': 'run-abc123', 'status': 'awaiting_review',
+                                      'step': 'review'})
+    orchestrator._plan_cache.clear()
+
+    plan = orchestrator.build_plan('P-review')
+    calc = next(row for row in plan['stages'] if row['key'] == 'calculation')
+
+    assert calc['gate']['type'] == 'already_in_progress'
+    assert calc['gate']['requiresHuman'] is True
+    assert calc['gate']['action']['type'] == 'review_run'
+    assert calc['gate']['action']['endpoint'].endswith('/runs/run-abc123/overview')
