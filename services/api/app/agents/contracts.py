@@ -97,3 +97,16 @@ class FindingDecision(Strict):
 
     decision: Literal['accepted', 'rejected']
     note: str | None = Field(default=None, max_length=500)
+
+
+class ChainStart(Strict):
+    """新建连续执行链。"""
+
+    projectId: str = Field(min_length=1, max_length=100)
+    conversationId: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
+
+
+class ChainAdvance(Strict):
+    """从当前停点继续；confirm 只对当前这一个闸口生效。"""
+
+    confirm: bool = False

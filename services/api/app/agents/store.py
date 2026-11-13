@@ -191,6 +191,7 @@ class AgentStore:
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
                     run_id TEXT NOT NULL DEFAULT '', finding_id TEXT,
                     kind TEXT NOT NULL, title TEXT NOT NULL, rationale TEXT,
+                    member_type TEXT, member_id TEXT,
                     params_json TEXT, status TEXT NOT NULL, created_by TEXT NOT NULL,
                     decided_by TEXT, decision_note TEXT,
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -198,6 +199,14 @@ class AgentStore:
                     ON agent_actions(project_id, run_id, title);
                 CREATE INDEX IF NOT EXISTS agent_actions_project
                     ON agent_actions(project_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_flows (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                    conversation_id TEXT, status TEXT NOT NULL,
+                    current_stage TEXT, steps_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_flows_project
+                    ON agent_flows(project_id, created_at DESC);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
@@ -216,6 +225,18 @@ class AgentStore:
             ticket_columns={x[1] for x in c.execute('PRAGMA table_info(agent_tickets)')}
             if 'source_project_updated_at' not in ticket_columns:
                 c.execute('ALTER TABLE agent_tickets ADD COLUMN source_project_updated_at TEXT')
+            # 模型调用费用：旧库补列，历史行为 NULL（表示未计价，不伪造 0）。
+            call_columns={x[1] for x in c.execute('PRAGMA table_info(model_calls)')}
+            if 'cost_usd' not in call_columns:
+                c.execute('ALTER TABLE model_calls ADD COLUMN cost_usd REAL')
+            if 'cost_source' not in call_columns:
+                c.execute('ALTER TABLE model_calls ADD COLUMN cost_source TEXT')
+            # 建议动作指向具体构件；旧库补列。
+            action_columns={x[1] for x in c.execute('PRAGMA table_info(agent_actions)')}
+            if 'member_type' not in action_columns:
+                c.execute('ALTER TABLE agent_actions ADD COLUMN member_type TEXT')
+            if 'member_id' not in action_columns:
+                c.execute('ALTER TABLE agent_actions ADD COLUMN member_id TEXT')
 
     @contextmanager
     def connect(self):
@@ -673,15 +694,18 @@ class AgentStore:
     def record_model_call(self,*,project_id:str|None,purpose:str,model:str,ok:bool,
                           status:str,attempts:int,duration_ms:int,
                           prompt_tokens:int|None=None,completion_tokens:int|None=None,
-                          error_type:str|None=None)->int:
+                          error_type:str|None=None,cost_usd:float|None=None,
+                          cost_source:str|None=None)->int:
         def _do():
             with self.connect() as c:
                 cur=c.execute('''INSERT INTO model_calls(project_id,purpose,model,ok,status,
                                  attempts,duration_ms,prompt_tokens,completion_tokens,
-                                 error_type,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                                 error_type,cost_usd,cost_source,created_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                               (project_id,purpose,model,1 if ok else 0,status,
                                max(0,int(attempts)),int(duration_ms),
-                               prompt_tokens,completion_tokens,error_type,now()))
+                               prompt_tokens,completion_tokens,error_type,
+                               cost_usd,cost_source,now()))
                 return int(cur.lastrowid)
         return _write_with_retry(_do)
 
@@ -698,7 +722,74 @@ class AgentStore:
                  'model':x['model'],'ok':bool(x['ok']),'status':x['status'],
                  'attempts':x['attempts'],'durationMs':x['duration_ms'],
                  'promptTokens':x['prompt_tokens'],'completionTokens':x['completion_tokens'],
+                 'costUsd':x['cost_usd'],'costSource':x['cost_source'],
                  'errorType':x['error_type'],'createdAt':x['created_at']} for x in rows]
+
+    # --- 连续执行链（V3.91） ---------------------------------------------
+    @staticmethod
+    def _flow(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'],
+            'conversationId': row['conversation_id'], 'status': row['status'],
+            'currentStage': row['current_stage'],
+            'steps': json.loads(row['steps_json']) if row['steps_json'] else {},
+            'createdBy': row['created_by'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    def create_flow(self, *, project_id: str, conversation_id: str | None,
+                    created_by: str, status: str = 'running',
+                    steps: dict | None = None) -> dict:
+        fid = 'flow-' + uuid4().hex[:16]
+        ts = now()
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_flows(id,project_id,conversation_id,status,
+                             current_stage,steps_json,created_by,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?)''',
+                          (fid, project_id, conversation_id, status, None,
+                           encode(steps or {}), created_by, ts, ts))
+            return self.get_flow(fid)
+        return _write_with_retry(_do)
+
+    def get_flow(self, flow_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_flows WHERE id=?', (flow_id,)).fetchone()
+        if not row:
+            raise KeyError(flow_id)
+        return self._flow(row)
+
+    def update_flow(self, flow_id: str, *, status: str | None = None,
+                    current_stage: str | None = None,
+                    steps: dict | None = None) -> dict:
+        def _do():
+            with self.connect() as c:
+                row = c.execute('SELECT * FROM agent_flows WHERE id=?', (flow_id,)).fetchone()
+                if not row:
+                    raise KeyError(flow_id)
+                fields = ['updated_at=?']
+                values: list = [now()]
+                if status is not None:
+                    fields.append('status=?'); values.append(status)
+                if current_stage is not None:
+                    fields.append('current_stage=?'); values.append(current_stage)
+                if steps is not None:
+                    fields.append('steps_json=?'); values.append(encode(steps))
+                values.append(flow_id)
+                c.execute('UPDATE agent_flows SET ' + ','.join(fields) + ' WHERE id=?', values)
+            return self.get_flow(flow_id)
+        return _write_with_retry(_do)
+
+    def list_flows(self, *, project_id: str | None = None, limit: int = 20) -> list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows = c.execute('''SELECT * FROM agent_flows WHERE project_id=?
+                                    ORDER BY created_at DESC LIMIT ?''',
+                                 (project_id, min(max(limit, 1), 100))).fetchall()
+            else:
+                rows = c.execute('SELECT * FROM agent_flows ORDER BY created_at DESC LIMIT ?',
+                                 (min(max(limit, 1), 100),)).fetchall()
+        return [self._flow(row) for row in rows]
 
     # --- EngineeringFinding / ProposedAction -----------------------------
     @staticmethod
@@ -719,6 +810,7 @@ class AgentStore:
             'findingId': row['finding_id'], 'kind': row['kind'], 'title': row['title'],
             'rationale': row['rationale'],
             'params': json.loads(row['params_json']) if row['params_json'] else {},
+            'memberType': row['member_type'], 'memberId': row['member_id'],
             'status': row['status'], 'createdBy': row['created_by'],
             'decidedBy': row['decided_by'], 'decisionNote': row['decision_note'],
             'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
@@ -773,6 +865,16 @@ class AgentStore:
             return self.get_finding_by_key(project_id, code, run_id)
         return _write_with_retry(_do)
 
+    def set_finding_status(self, project_id: str, code: str, status: str,
+                           run_id: str = '') -> None:
+        """解决/重开一条发现；冲突消失时把旧标记关掉，避免一直挂着。"""
+        def _do():
+            with self.connect() as c:
+                c.execute('''UPDATE agent_findings SET status=?,updated_at=?
+                             WHERE project_id=? AND code=? AND run_id=?''',
+                          (status, now(), project_id, code, run_id))
+        _write_with_retry(_do)
+
     def get_action_by_key(self, project_id: str, run_id: str, title: str) -> dict:
         with self.connect() as c:
             row = c.execute('SELECT * FROM agent_actions WHERE project_id=? AND run_id=? AND title=?',
@@ -791,6 +893,7 @@ class AgentStore:
     def create_action(self, *, project_id: str, title: str, kind: str = 'parameter_trial',
                       run_id: str = '', finding_id: str | None = None,
                       rationale: str | None = None, params: dict | None = None,
+                      member_type: str | None = None, member_id: str | None = None,
                       created_by: str = 'agent') -> dict:
         aid = 'act-' + sha256(encode({'p': project_id, 'r': run_id, 't': title}).encode()).hexdigest()[:20]
         ts = now()
@@ -798,11 +901,13 @@ class AgentStore:
         def _do():
             with self.connect() as c:
                 c.execute("""INSERT INTO agent_actions(id,project_id,run_id,finding_id,kind,title,
-                             rationale,params_json,status,created_by,created_at,updated_at)
-                             VALUES(?,?,?,?,?,?,?,?,'proposed',?,?,?)
+                             rationale,member_type,member_id,params_json,status,created_by,
+                             created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?)
                              ON CONFLICT(project_id,run_id,title) DO NOTHING""",
                           (aid, project_id, run_id, finding_id, kind, title[:240],
-                           (rationale or '')[:800], encode(params or {}), created_by, ts, ts))
+                           (rationale or '')[:800], member_type, member_id,
+                           encode(params or {}), created_by, ts, ts))
             return self.get_action_by_key(project_id, run_id, title[:240])
         return _write_with_retry(_do)
 

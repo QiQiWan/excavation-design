@@ -334,6 +334,15 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       pushNotice('alert', '总控已记录', result.reason);
       return;
     }
+    if (outcome.mode === 'chain') {
+      // 连续执行：停在哪个闸口、下一步要人做什么，一次说清。
+      const stage = outcome.currentStage?.title ?? '已完成';
+      const actionNote = outcome.nextAction?.note ? ` ${outcome.nextAction.note}` : '';
+      pushNotice(outcome.flowStatus === 'blocked' ? 'error' : 'alert',
+        `连续执行 · ${stage}`, outcome.summary + actionNote);
+      onProjectChanged?.();
+      return;
+    }
     if (outcome.mode === 'run_created') {
       // A5 诊断 / A6 优化：任务在后台跑，进展会作为消息回到对话框。
       pushNotice('alert', `${execution?.roleId ?? 'Agent'} 已受理`,
@@ -350,6 +359,9 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
     } else if (outcome.mode === 'filled') {
       pushNotice('alert', `已填入 ${outcome.applied.length} 项设计基准`,
         (outcome.remaining?.text ?? '')
+        + (outcome.conflicts?.length
+            ? `；其中 ${outcome.conflicts.length} 项覆盖了此前的自动录入值（已标记参数冲突，请核对）。`
+            : '')
         + (outcome.requiresRecalculation ? '；原计算结果已失效，请重新验算。' : '')
         + (outcome.modelStatus === 'not_configured' ? '（模型未接入，按确定性规则抽取）' : ''));
       onProjectChanged?.();
