@@ -579,7 +579,75 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
     }
 
 
+_TASK_LABELS = {
+    'support_layout_optimization': '支护方案生成',
+    'rebar_design': '配筋方案',
+    'p3_detailing_closure': '节点与钢筋深化',
+    'export_coordinated_delivery': '评审版成果包',
+}
+_TASK_TERMINAL = ('success', 'failed', 'cancelled')
+
+
+def _task_report(task) -> tuple[str, str]:
+    """把任务终态翻译成一句人话；不伪造成功。"""
+    label = _TASK_LABELS.get(str(task.operation), str(task.title or task.operation))
+    if task.status == 'success':
+        result = dict(task.result or {})
+        extra = ''
+        if result.get('candidateCount') is not None:
+            extra = f"，生成 {result['candidateCount']} 个候选"
+        elif result.get('status'):
+            extra = f"，状态 {result['status']}"
+        return 'done', f'{label}已完成{extra}。采用前仍需要人工复核。'
+    if task.status == 'failed':
+        reason = (task.error or '').strip()[:300] or '未知原因'
+        return 'failed', f'{label}失败：{reason}'
+    return 'failed', f'{label}已取消。'
+
+
+def sync_task_tickets(*, project_id: str, limit: int = 50) -> list[dict]:
+    """把已结束的后台任务回写到会话与 Ticket；每个 Ticket 只回写一次。"""
+    from app.tasks.manager import task_manager
+
+    store = AgentStore()
+    synced: list[dict] = []
+    for ticket in store.list_tickets(project_id=project_id, limit=limit):
+        if ticket['status'] != 'waiting_review':
+            continue
+        task_id = str(ticket.get('workerRunId') or '')
+        if not task_id.startswith('task-'):
+            continue
+        task = task_manager.get(task_id)
+        if task is None or task.status not in _TASK_TERMINAL:
+            continue
+        next_status, text = _task_report(task)
+        if ticket.get('conversationId'):
+            try:
+                store.get_conversation(ticket['conversationId'])
+                store.append_message(
+                    ticket['conversationId'], role='tool', content=text,
+                    metadata={'answerKind': 'task_report', 'ticketId': ticket['id'],
+                              'roleId': ticket['roleId'], 'taskId': task.id,
+                              'taskStatus': task.status,
+                              'engineeringJudgement': False},
+                )
+            except KeyError:
+                pass
+        store.update_ticket(ticket['id'], status=next_status, worker_run_id=task.id)
+        store.append_ticket_event(ticket['id'], 'task_completed', {
+            'taskId': task.id, 'status': task.status, 'summary': text,
+        })
+        synced.append({'ticketId': ticket['id'], 'taskId': task.id,
+                       'status': next_status, 'summary': text})
+    return synced
+
+
 def tickets(*, project_id: str | None = None, limit: int = 30) -> list[dict]:
+    if project_id:
+        try:
+            sync_task_tickets(project_id=project_id, limit=limit)
+        except Exception:
+            pass
     return AgentStore().list_tickets(project_id=project_id, limit=limit)
 
 
