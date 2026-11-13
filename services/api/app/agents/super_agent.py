@@ -29,6 +29,7 @@ from . import delivery_agent
 from . import detailing_agent
 from . import joint_flow
 from . import findings as findings_store
+from .stages import primary_stage_of_role
 from . import orchestrator
 from . import scheme_stage_agent
 from .catalog import AGENTS
@@ -50,12 +51,8 @@ TRIGGER_KINDS: dict[str, dict[str, str]] = {
     'review_requested': {'label': '请求人工复核', 'defaultRole': 'A8'},
 }
 
-STAGE_OF_ROLE = {
-    'A1': 'DESIGN.BASIS', 'A2': 'DESIGN.INPUT', 'A3': 'DESIGN.SCHEME',
-    'A4': 'DESIGN.CONSTRUCTION', 'A5': 'DESIGN.CALCULATION',
-    'A6': 'DESIGN.OPTIMIZATION', 'A7': 'DESIGN.REINFORCEMENT',
-    'A8': 'DELIVERY.REVIEW',
-}
+# 阶段号唯一来源：agents/stages.py；A6 复用 A5 的计算阶段。
+STAGE_OF_ROLE = {**primary_stage_of_role(), 'A6': 'DESIGN.CALCULATION'}
 
 # 8 个 Worker。implemented=True 的复用现有执行器，其余明确 blocked。
 WORKERS: tuple[dict[str, Any], ...] = (

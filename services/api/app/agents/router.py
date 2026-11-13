@@ -17,6 +17,7 @@ from . import design_basis_intake as intake
 from . import super_agent
 from . import findings
 from . import context as engineering_context
+from . import stages as stage_registry
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -472,6 +473,13 @@ def super_agent_trigger(body:SuperTrigger,request:Request):
             accept_mode=body.acceptMode,actor=identity.actor)
     except ValueError as exc:raise HTTPException(400,detail=str(exc)) from exc
     except KeyError as exc:raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.get('/stages')
+def agent_stages(request:Request):
+    """阶段注册表：Agent / 流水线 / 计算质量 / 验收四套命名空间与映射。"""
+    _actor(request)
+    return stage_registry.registry()
 
 
 @router.get('/context')
