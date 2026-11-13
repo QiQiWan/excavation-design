@@ -380,8 +380,17 @@ def list_conversation_runs(conversation_id:str,request:Request):
 
 @router.get('/conversations/{conversation_id}/messages')
 def list_conversation_messages(conversation_id:str,request:Request):
-    _check_conversation(request,conversation_id)
-    return {'messages':AgentStore().messages(conversation_id)}
+    conversation=_check_conversation(request,conversation_id)
+    # 后台任务结束时把结果写回会话；同步失败不能挡住读消息。
+    task_sync_error=None
+    try:
+        super_agent.sync_task_tickets(project_id=conversation['projectId'])
+    except Exception as exc:
+        task_sync_error=f'{type(exc).__name__}: {str(exc)[:120]}'
+    payload={'messages':AgentStore().messages(conversation_id)}
+    if task_sync_error:
+        payload['taskSyncError']=task_sync_error
+    return payload
 
 
 @router.post('/conversations/{conversation_id}/messages',status_code=201)

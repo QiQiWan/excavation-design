@@ -17,7 +17,7 @@ type Props = {
 type Notice = { id: number; kind: 'alert' | 'error'; title: string; text: string };
 type Gap = { text: string; items: string[]; tone: 'ok' | 'warn' | 'error' };
 
-const POLL_INTERVAL_MS = 60000;
+const POLL_INTERVAL_MS = 15000;
 const NOTICE_LIFETIME_MS = 12000;
 const PET_POS_KEY = 'pitguard-agent-pet-pos-v2';
 const OPEN_KEY = 'pitguard-agent-open';
