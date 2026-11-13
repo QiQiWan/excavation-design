@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "pitguard.acceptance/1",
+  "note": "案例取自真实冻结快照；期望值由工程师按规范缺口标注，不依赖算法排序结果。",
+  "cases": [
+    {
+      "id": "case-01",
+      "kind": "diagnosis",
+      "title": "单桩剖面：整体稳定与配筋验算缺口",
+      "projectId": "project-73960a1e250b",
+      "sectionId": "SEC-1",
+      "resultHash": "10c9c914eac3f651dbdbaf74d83c22d739a27e590872824055fe126ccf225c4e",
+      "source": "runtime/one_strut/results",
+      "expectedTop3": [
+        "STABILITY_NOT_INTEGRATED",
+        "REBAR_NOT_FULLY_VERIFIED",
+        "NORMATIVE_3_1_LOAD_COMBINATIONS"
+      ],
+      "rationale": "该剖面缺整体稳定集成、缺轴弯抗剪裂缝验算，且荷载组合未生成；这三项应先于来源缺失被指出。"
+    },
+    {
+      "id": "case-02",
+      "kind": "diagnosis",
+      "title": "同一剖面不同刚度快照：缺口是否稳定复现",
+      "projectId": "project-73960a1e250b",
+      "sectionId": "SEC-1",
+      "resultHash": "21fed300e3fba90e0496d9d4b2fc284536bd9178dddfd9605ec71e67734c6dec",
+      "source": "runtime/one_strut/results",
+      "expectedTop3": [
+        "STABILITY_NOT_INTEGRATED",
+        "REBAR_NOT_FULLY_VERIFIED",
+        "NORMATIVE_3_1_LOAD_COMBINATIONS"
+      ],
+      "rationale": "换一个候选刚度后，规范缺口不应变化；若排序漂移说明诊断不稳定。"
+    },
+    {
+      "id": "case-03",
+      "kind": "diagnosis",
+      "title": "同一剖面第三个快照：位移不同但结论一致",
+      "projectId": "project-73960a1e250b",
+      "sectionId": "SEC-1",
+      "resultHash": "333895cb56f8f4e5d1bf2f3a797686a51235f81aad5615b320fba474a1fd91cf",
+      "source": "runtime/one_strut/results",
+      "expectedTop3": [
+        "STABILITY_NOT_INTEGRATED",
+        "REBAR_NOT_FULLY_VERIFIED",
+        "NORMATIVE_3_1_LOAD_COMBINATIONS"
+      ],
+      "rationale": "位移从 5.6mm 降到 4.8mm，仍缺同一批验算；用于确认诊断不是只盯位移。"
+    }
+  ]
+}

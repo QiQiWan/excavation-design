@@ -12,6 +12,7 @@ dist/
 
 # Runtime
 runtime/
+verification-output/
 *.sqlite3
 services/api/exports/*
 !services/api/exports/.gitkeep
