@@ -211,6 +211,9 @@ def calculation_readiness(project: Project) -> dict[str, Any]:
             + (f"（差异：{mismatch_text}）" if mismatch_text else "")
             + "。"
         )
+        changed_inputs = [str(item) for item in list(contract.get("inputComponentMismatches") or []) if item]
+        if changed_inputs:
+            reasons.append("输入快照中发生变化的块：" + "、".join(changed_inputs[:8]) + "。")
     if fail_count:
         reasons.append(f"当前计算仍有 {fail_count} 个硬失败。")
     if assurance_status == "fail":
