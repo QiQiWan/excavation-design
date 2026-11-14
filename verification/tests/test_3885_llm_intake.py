@@ -158,6 +158,9 @@ def test_model_http_failure_falls_back_honestly(llm_env, monkeypatch):
     with pytest.raises(intake.ModelCallFailed) as exc:
         intake.interpret_with_model('施工荷载 30kPa')
     assert '401' in str(exc.value)
+    # 鉴权失败要直接告诉运维换密钥，不能只丢一个 HTTP 状态码
+    assert '鉴权失败' in str(exc.value)
+    assert 'PITGUARD_LLM_API_KEY' in str(exc.value)
 
 
 def test_rules_provider_never_contacts_model(llm_env, monkeypatch):

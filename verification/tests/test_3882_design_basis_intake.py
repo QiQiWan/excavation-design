@@ -163,3 +163,46 @@ def test_http_viewer_cannot_write_and_bad_provider_rejected(api):
                    data={'project_id': project['id'], 'text': '施工荷载 30kPa',
                          'provider': 'magic'})
     assert bad.status_code == 400
+
+
+_CORRECTION_TEXT = (
+    '这个基坑嘛，安全等级就按二级来做，地面超载先算 20kPa 吧。'
+    '哦不对，刚才那个是旧方案，超载要改成 25kPa。'
+    '混凝土 C35，保护层 50mm ... 等一下，保护层应该是 70mm，前面那个 50 不算数。'
+    '现场是粉质黏土，承载力多少没给，你们自己看着办就行。'
+    '另外顺便说下，隔壁标段昨天验收过了，跟这个项目没关系。'
+)
+
+
+def test_rules_follow_explicit_correction_instead_of_first_value():
+    """「先说错、再否定修正」时，规则回退也必须采用修正后的值。"""
+    result = intake.interpret_text(_CORRECTION_TEXT)
+    values = {row['key']: row['value'] for row in result['fields']}
+    assert values['surcharge'] == 25.0
+    assert values['defaultCoverMm'] == 70.0
+    raws = {row['key']: row['raw'] for row in result['fields']}
+    assert '改成' in raws['surcharge']
+    assert '应该是' in raws['defaultCoverMm']
+    assert any('最后一次修正值 25.0' in w for w in result['warnings'])
+    assert any('最后一次修正值 70.0' in w for w in result['warnings'])
+    # 没给具体值的承载力、以及无关信息都不许被推断出来
+    assert 'bearingCapacityKpa' not in values
+
+
+def test_rules_stay_conservative_without_correction_marker():
+    """没有明确修正措辞的多值仍保持原行为：取第一个并提示核对，不猜。"""
+    result = intake.interpret_text('地面超载 20kPa，另有地面超载 30kPa 的记录')
+    assert result['fields'][0]['value'] == 20.0
+    assert any('采用 20.0，请核对' in w for w in result['warnings'])
+    assert not any('最后一次修正' in w for w in result['warnings'])
+
+
+def test_http_rules_ingest_applies_corrected_values(api):
+    project = api.post('/api/projects', headers=headers(), json={'name': '口语修正'}).json()
+    response = api.post('/api/agents/design-basis/ingest', headers=headers(),
+                        data={'project_id': project['id'], 'provider': 'rules',
+                              'text': _CORRECTION_TEXT})
+    assert response.status_code == 200
+    applied = {row['key']: row['value'] for row in response.json()['applied']}
+    assert applied['surcharge'] == 25.0
+    assert applied['defaultCoverMm'] == 70.0
