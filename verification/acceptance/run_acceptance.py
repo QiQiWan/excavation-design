@@ -110,6 +110,10 @@ def _optimization(conn: sqlite3.Connection) -> dict:
                 improved += 1
         if metrics.get('engineeringQualified'):
             qualified += 1
+    note = 'improved 只表示位移下降；engineeringQualified 还要求证据完整，二者不可混用。'
+    if not calculated:
+        note += (' 当前运行库没有 status=calculated 的候选（历史候选已被清理），'
+                 '因此 improvedRate 与工程合格率均不可测；需重新跑一次候选完整计算后再取数。')
     return {
         'totalCandidates': total,
         'calculated': calculated,
@@ -118,7 +122,7 @@ def _optimization(conn: sqlite3.Connection) -> dict:
         'improvedRate': round(improved / calculated, 4) if calculated else None,
         'engineeringQualified': qualified,
         'engineeringQualifiedRate': round(qualified / calculated, 4) if calculated else None,
-        'note': 'improved 只表示位移下降；engineeringQualified 还要求证据完整，二者不可混用。',
+        'note': note,
     }
 
 
@@ -151,6 +155,8 @@ def _provenance(conn: sqlite3.Connection) -> dict:
         'traceableRate': round(traceable / total, 4) if total else None,
         'projects': projects,
         'distinctFields': len(fields),
+        'note': ('运行库没有参数来源证据记录（历史录入已被清理），来源可追溯率不可测；'
+                 '需重新跑一次设计基准录入后再取数。' if not total else ''),
     }
 
 
@@ -216,7 +222,9 @@ def main() -> int:
         'caseHitRate': round(hit_cases / len(evaluated), 4) if evaluated else None,
         'codeHitRate': round(matched_codes / expected_codes, 4) if expected_codes and evaluated else None,
         'caseResults': case_rows,
-        'note': ('冻结快照不可用时不计命中率，指标记为 not_measured。'
+        'note': (('冻结快照不可用时不计命中率，指标记为 not_measured。'
+                  '运行库不入库，执行 python verification/acceptance/build_cases.py 可从'
+                  '站点自带验证样例重新生成三个冻结快照。')
                  if unavailable else ''),
     }
 
