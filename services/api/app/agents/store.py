@@ -149,6 +149,7 @@ class AgentStore:
                     thread_id TEXT, kind TEXT NOT NULL, payload_json TEXT NOT NULL,
                     decision TEXT NOT NULL, reason TEXT NOT NULL,
                     policy_provider TEXT NOT NULL, ticket_id TEXT,
+                    policy_role TEXT, policy_detail TEXT,
                     created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS agent_triggers_project ON agent_triggers(project_id,created_at DESC);
                 CREATE TABLE IF NOT EXISTS agent_tickets (
@@ -237,6 +238,12 @@ class AgentStore:
                 c.execute('ALTER TABLE agent_actions ADD COLUMN member_type TEXT')
             if 'member_id' not in action_columns:
                 c.execute('ALTER TABLE agent_actions ADD COLUMN member_id TEXT')
+            # Router 决策证据链：记录模型 Slow Path 命中的角色与详情；旧库补列，历史为 NULL。
+            trigger_columns={x[1] for x in c.execute('PRAGMA table_info(agent_triggers)')}
+            if 'policy_role' not in trigger_columns:
+                c.execute('ALTER TABLE agent_triggers ADD COLUMN policy_role TEXT')
+            if 'policy_detail' not in trigger_columns:
+                c.execute('ALTER TABLE agent_triggers ADD COLUMN policy_detail TEXT')
 
     @contextmanager
     def connect(self):
@@ -973,22 +980,26 @@ class AgentStore:
                        thread_id: str | None, kind: str, payload: dict,
                        decision: str, reason: str, policy_provider: str,
                        ticket_id: str | None = None,
-                       trigger_id: str | None = None) -> dict:
+                       trigger_id: str | None = None,
+                       policy_role: str | None = None,
+                       policy_detail: str | None = None) -> dict:
         row = {
             'id': trigger_id or uuid4().hex, 'projectId': project_id,
             'conversationId': conversation_id, 'threadId': thread_id,
             'kind': kind, 'payload': payload, 'decision': decision,
             'reason': reason, 'policyProvider': policy_provider,
+            'policyRole': policy_role, 'policyDetail': policy_detail,
             'ticketId': ticket_id, 'createdAt': now(),
         }
         def _do():
             with self.connect() as c:
                 c.execute('''INSERT INTO agent_triggers(id,project_id,conversation_id,thread_id,
-                             kind,payload_json,decision,reason,policy_provider,ticket_id,created_at)
-                             VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                             kind,payload_json,decision,reason,policy_provider,ticket_id,
+                             policy_role,policy_detail,created_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                           (row['id'], project_id, conversation_id, thread_id, kind,
                            encode(payload), decision, reason, policy_provider,
-                           ticket_id, row['createdAt']))
+                           ticket_id, policy_role, policy_detail, row['createdAt']))
             return row
         return _write_with_retry(_do)
 
