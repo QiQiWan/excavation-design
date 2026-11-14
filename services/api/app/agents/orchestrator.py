@@ -132,7 +132,10 @@ def _workspace_status(project_id: str) -> tuple[dict | None, dict]:
         from app.storage.repository import ProjectRepository, shared_project_store
 
         repo = ProjectRepository(store=shared_project_store(os.getenv('PITGUARD_DB_PATH') or None))
-        project = repo.require_workspace(project_id)
+        # The workspace projection externalises stage results.  Read it together
+        # with the latest calculation so a completed run is not misread as
+        # "artifacts missing" and the chain stops asking for a frozen section.
+        project = repo.require_workspace_with_latest_calculation(project_id)
         outline = getattr(getattr(project, 'excavation', None), 'outline', None)
         counts = {
             'boreholeCount': len(project.boreholes or []),

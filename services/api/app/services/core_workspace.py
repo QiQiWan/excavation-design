@@ -85,7 +85,14 @@ def build_core_workspace_status(
         topology_status=topology_status,
         scheme_applied=rebar_ready,
     )
-    deliverable_ready = bool(deepening_readiness.get("canIssueConstructionDrawings"))
+    # A review package is a real deliverable.  Formal construction issue stays
+    # closed until the human sign-off gate allows it, so both are accepted here.
+    review_package = next(
+        (row for row in reversed(list(getattr(project, "delivery_packages", None) or []))
+         if str(row.get("issueMode") or "") == "review"),
+        None,
+    )
+    deliverable_ready = bool(deepening_readiness.get("canIssueConstructionDrawings") or review_package)
 
     stages = [
         _stage("basis", "设计基准", basis_ready, True, "等级、规范和荷载组合已确认" if basis_ready else "确认工程等级、场地标准和荷载组合"),
@@ -93,7 +100,9 @@ def build_core_workspace_status(
         _stage("scheme", "围护方案", scheme_ready, input_ready, f"围护墙 {wall_count}，支撑 {support_count}，候选 {candidate_count}"),
         _stage("calculation", "计算验算", calculation_ready, scheme_ready, "计算合同、阶段结果与当前设计快照一致" if calculation_ready else str((calculation_gate.get("messages") or ["等待当前方案完整计算"])[0])),
         _stage("reinforcement", "配筋深化", bool(deepening_readiness.get("canEnterDetailing")), calculation_ready, str(deepening_readiness.get("headline")) if rebar_ready else "等待计算内力包络"),
-        _stage("deliverables", "成果交付", deliverable_ready, rebar_ready, "可生成审查成果" if deliverable_ready else "完成前述步骤后生成成果"),
+        _stage("deliverables", "成果交付", deliverable_ready, rebar_ready,
+               ("评审版成果包已导出；正式施工图仍需人工审签" if review_package and not deepening_readiness.get("canIssueConstructionDrawings")
+                else "可生成审查成果" if deliverable_ready else "完成前述步骤后生成成果")),
     ]
     next_stage = next((item for item in stages if item["status"] != "done"), stages[-1])
     blockers: list[str] = []

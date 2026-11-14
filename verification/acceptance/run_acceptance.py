@@ -66,7 +66,7 @@ def run_cases(cases: list[dict], one_strut: str) -> list[dict]:
     rows: list[dict] = []
     for case in cases:
         entry = {'id': case['id'], 'title': case.get('title'), 'hit': False,
-                 'matched': [], 'top3': [], 'error': None}
+                 'matched': [], 'top3': [], 'error': None, 'evaluated': False}
         try:
             result = repo.load(case['resultHash'])
             snapshot = result.get('snapshot') or {}
@@ -81,6 +81,7 @@ def run_cases(cases: list[dict], one_strut: str) -> list[dict]:
             matched = [code for code in case['expectedTop3'] if code in top3]
             entry.update({'top3': top3, 'matched': matched,
                           'hit': len(matched) == len(case['expectedTop3']),
+                          'evaluated': True,
                           'analysisStatus': result.get('analysisStatus')})
         except Exception as exc:  # 如实记录，不把失败算成通过
             entry['error'] = f'{type(exc).__name__}: {str(exc)[:160]}'
@@ -174,22 +175,49 @@ def main() -> int:
     bundle = json.loads(Path(args.cases).read_text(encoding='utf-8'))
     case_rows = run_cases(bundle['cases'], args.one_strut)
 
-    conn = sqlite3.connect(f'file:{args.agent_db}?mode=ro', uri=True)
-    try:
-        optimization = _optimization(conn)
-        gates = _gates(conn)
-        provenance = _provenance(conn)
-    finally:
-        conn.close()
+    # 默认路径是历史部署位置；本机开发库在 services/api 下。两者都没有时
+    # 如实标记指标不可测，而不是让脚本崩掉或把空库算成 0 分。
+    db_path = Path(args.agent_db)
+    if not db_path.is_file() and args.agent_db == str(ROOT / 'runtime' / 'pitguard_agent_v388.sqlite3'):
+        local = ROOT / 'services' / 'api' / 'pitguard_agent_v388.sqlite3'
+        if local.is_file():
+            db_path = local
+    if not db_path.is_file():
+        db_error = f'运行库不存在：{db_path}'
+        optimization = {'totalCandidates': 0, 'calculated': 0, 'calculatedRate': None,
+                        'improved': 0, 'improvedRate': None,
+                        'engineeringQualified': 0, 'engineeringQualifiedRate': None,
+                        'note': db_error}
+        gates = {'decisions': 0, 'bypass': None, 'breakdown': [], 'note': db_error}
+        provenance = {'records': 0, 'traceable': 0, 'traceableRate': None,
+                      'projects': [], 'distinctFields': 0, 'note': db_error}
+    else:
+        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+        try:
+            optimization = _optimization(conn)
+            gates = _gates(conn)
+            provenance = _provenance(conn)
+        finally:
+            conn.close()
+    args.agent_db = str(db_path)
 
+    evaluated = [row for row in case_rows if row['evaluated']]
+    # 冻结快照缺失或不可读时是「没有证据」，不是「算法没命中」。
+    # 把所有案例都记为 0 分会把资产缺失伪装成产品失败。
+    unavailable = [{'id': row['id'], 'reason': row['error']}
+                   for row in case_rows if not row['evaluated']]
     expected_codes = sum(len(case['expectedTop3']) for case in bundle['cases'])
-    matched_codes = sum(len(row['matched']) for row in case_rows)
-    hit_cases = sum(1 for row in case_rows if row['hit'])
+    matched_codes = sum(len(row['matched']) for row in evaluated)
+    hit_cases = sum(1 for row in evaluated if row['hit'])
     localization = {
         'cases': len(case_rows),
-        'caseHitRate': round(hit_cases / len(case_rows), 4) if case_rows else None,
-        'codeHitRate': round(matched_codes / expected_codes, 4) if expected_codes else None,
+        'evaluatedCases': len(evaluated),
+        'unavailableCases': unavailable,
+        'caseHitRate': round(hit_cases / len(evaluated), 4) if evaluated else None,
+        'codeHitRate': round(matched_codes / expected_codes, 4) if expected_codes and evaluated else None,
         'caseResults': case_rows,
+        'note': ('冻结快照不可用时不计命中率，指标记为 not_measured。'
+                 if unavailable else ''),
     }
 
     metrics = {

@@ -2159,9 +2159,9 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     support_checks: list[dict[str, Any]] = []
     support_checks.append({
         "ruleId": "PITGUARD-SOIL-RESISTANCE-MODEL", "objectId": project.retaining_system.id,
-        "objectType": "RetainingSystem", "status": "fail", "calculatedValue": None, "limitValue": None,
+        "objectType": "RetainingSystem", "status": "manual_review", "calculatedValue": None, "limitValue": None,
         "unit": "-", "formalUseAllowed": False,
-        "message": "当前土压力含坑内被动抗力，结构模型同时采用坑底以下弹性土弹簧；两者动员关系尚未完成本构一致性验证，可能重复计入土体抗力。结果仅用于排错与筛查。",
+        "message": "当前土压力含坑内被动抗力，结构模型同时采用坑底以下弹性土弹簧；两者动员关系尚未完成本构一致性验证，可能重复计入土体抗力。结果是方法学限制，不代表设计不合格；正式使用前仍需专项验算。",
         "clauseReference": "unvalidated passive-resistance and elastic-spring compatibility; requires a calibrated constitutive model",
     })
     # V3.68-V3.70: solve the concave transfer frame for every construction
