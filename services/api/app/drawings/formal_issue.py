@@ -156,7 +156,16 @@ def export_batch_pdf(project: Project, output_path: Path, mode: str = "balanced"
 def export_formal_drawing_package(project: Project, output_dir: str | Path, issue_mode: str = "review", rebar_mode: str = "balanced") -> Path:
     out = Path(output_dir); out.mkdir(parents=True, exist_ok=True)
     work = out / f"{project.id}_formal_issue_v{SOFTWARE_VERSION.replace('.', '_')}"
-    if work.exists(): shutil.rmtree(work)
+    # Keep earlier issues instead of deleting them; a managed machine blocks
+    # bulk deletes and the previous package is review evidence.
+    if work.exists():
+        index = 2
+        while True:
+            candidate = out / f"{work.name}_run{index}"
+            if not candidate.exists():
+                work = candidate
+                break
+            index += 1
     work.mkdir(parents=True)
     cad_zip = export_construction_cad_package(project, out, scope="full", rebar_mode=rebar_mode, issue_mode=issue_mode)
     with zipfile.ZipFile(cad_zip) as zf: zf.extractall(work / "CAD")

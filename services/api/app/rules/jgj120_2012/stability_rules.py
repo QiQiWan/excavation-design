@@ -293,11 +293,96 @@ def required_overall_factor(safety_grade: str) -> float:
     return 1.25
 
 
-def _average_strength(layers: list[GeologicalLayer], top: float, bottom: float) -> tuple[float, float, float]:
-    avg_c = _average_profile_value(layers, top, bottom, _cohesion)
-    avg_phi = _average_profile_value(layers, top, bottom, _friction_angle)
-    avg_gamma = _average_profile_value(layers, top, bottom, _unit_weight)
-    return avg_c, avg_phi, avg_gamma
+def _ground_elevation(x: float, top: float, pit_bottom: float, width: float) -> float:
+    """Ground surface of the representative section: pit bottom inside, grade outside."""
+    return pit_bottom if 0.0 < x < width else top
+
+
+def _slice_soil(layers: list[GeologicalLayer], z_top: float, z_bottom: float) -> tuple[float, float, float]:
+    """Thickness-weighted cohesion, friction angle and unit weight over one slice."""
+    thickness = z_top - z_bottom
+    if thickness <= 1e-9:
+        layer = _layer_at_elevation(layers, z_top)
+        return _cohesion(layer), _friction_angle(layer), _unit_weight(layer)
+    samples = max(3, min(10, int(math.ceil(thickness / 0.5))))
+    cohesion = friction = weight = 0.0
+    for index in range(samples):
+        z = z_top - (index + 0.5) * thickness / samples
+        layer = _layer_at_elevation(layers, z)
+        cohesion += _cohesion(layer)
+        friction += _friction_angle(layer)
+        weight += _unit_weight(layer)
+    return cohesion / samples, friction / samples, weight / samples
+
+
+def _bishop_factor(
+    layers: list[GeologicalLayer],
+    *,
+    center_x: float,
+    center_z: float,
+    radius: float,
+    top: float,
+    pit_bottom: float,
+    width: float,
+    surcharge: float,
+) -> tuple[float, float] | None:
+    """Simplified Bishop factor of safety for one trial circle.
+
+    A valid trial surface has to daylight on the outboard ground surface and
+    again inside the pit; a circle that stays buried is not a slope mechanism.
+    Slices are vertical, 0.5 m wide, taken between those two daylight points.
+    Water pressure is not applied in this screening step.
+    """
+    if center_z + radius < top - 1e-6:
+        return None
+    left_dx = math.sqrt(max(radius * radius - (center_z - top) ** 2, 0.0))
+    x_left = center_x - left_dx
+    exit_dx = math.sqrt(max(radius * radius - (center_z - pit_bottom) ** 2, 0.0))
+    x_exit = center_x + exit_dx
+    if x_left >= -1e-6 or not (1e-6 < x_exit < width - 1e-6):
+        return None
+
+    slices: list[tuple[float, float, float, float]] = []
+    driving_sum = 0.0
+    slice_width = 0.5
+    x = x_left + 0.5 * slice_width
+    while x < x_exit:
+        dx = x - center_x
+        inside = radius * radius - dx * dx
+        if inside > 0.0:
+            z_circle = center_z - math.sqrt(inside)
+            z_surface = _ground_elevation(x, top, pit_bottom, width)
+            if z_circle < z_surface - 1e-6:
+                c, phi, gamma = _slice_soil(layers, z_surface, z_circle)
+                weight = gamma * (z_surface - z_circle) * slice_width
+                if x < 0.0:
+                    weight += max(surcharge, 0.0) * slice_width
+                sin_alpha = max(-0.98, min(0.98, dx / radius))
+                slices.append((c, phi, weight, sin_alpha))
+                driving_sum += weight * sin_alpha
+        x += slice_width
+    if not slices or driving_sum <= 1e-6:
+        return None
+
+    # Simplified Bishop: F = sum[(c*b + W tan phi) / (cos a + sin a tan phi / F)] / sum[W sin a]
+    fs = 1.0
+    for _ in range(30):
+        numerator = 0.0
+        for c, phi, weight, sin_alpha in slices:
+            cos_alpha = math.sqrt(max(1.0 - sin_alpha * sin_alpha, 1e-6))
+            tan_phi = math.tan(math.radians(phi))
+            denominator = cos_alpha + sin_alpha * tan_phi / max(fs, 1e-6)
+            if denominator <= 1e-6:
+                continue
+            numerator += (c * slice_width + weight * tan_phi) / denominator
+        next_fs = numerator / driving_sum
+        if not math.isfinite(next_fs):
+            return 999.0, driving_sum
+        if abs(next_fs - fs) < 1e-4:
+            fs = next_fs
+            break
+        fs = next_fs
+    return fs, driving_sum
 
 
 def check_overall_stability_circular_search(
@@ -311,41 +396,62 @@ def check_overall_stability_circular_search(
     safety_grade: str = "二级",
     pit_width: float | None = None,
 ) -> CheckResult:
-    """Equivalent circular-slip screening search.
+    """Circular-slip screening by slices on the representative section.
 
-    The search is intentionally compact for deterministic unit tests. It evaluates families of candidate
-    circular sliding mechanisms by equivalent arc length, slip wedge weight and average c-phi strength. It
-    remains an unverified screening method and cannot certify overall stability.
+    Trial circles have to pass at or below the wall toe (above the toe the wall
+    restrains the soil), daylight on the outboard ground surface and again
+    inside the pit.  Each admissible circle is evaluated with the simplified
+    Bishop method, taking strength from the layered profile slice by slice.
+    Water pressure and support reactions are not modelled; the result is a
+    screening value only and never certifies overall stability.
     """
     h = max(excavation_depth, 0.1)
     d = max(embedment_depth, 0.1)
-    width = pit_width or max(2.5 * h, 20.0)
-    c, phi_deg, gamma = _average_strength(soil_profile, top_elevation, excavation_bottom_elevation - max(d, 0.5 * h))
-    phi = math.radians(phi_deg)
+    width = max(float(pit_width or max(2.5 * h, 20.0)), 1.0)
+    pit_bottom = top_elevation - h
+    toe = pit_bottom - d
     best_factor = 999.0
     best_radius = 0.0
-    best_center_offset = 0.0
-    for radius_factor in (1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00):
-        radius = radius_factor * h
-        for offset_factor in (0.35, 0.50, 0.75, 1.00, 1.25):
-            center_offset = offset_factor * width
-            chord = min(2.0 * radius * 0.92, math.hypot(center_offset, h + d))
-            theta = 2.0 * math.asin(min(chord / max(2.0 * radius, 1e-9), 0.98))
-            arc = radius * theta
-            area = 0.5 * max(center_offset, 0.1) * (h + 0.5 * d)
-            weight = gamma * area + max(surcharge, 0.0) * max(center_offset, 0.1)
-            mobilized_angle = max(theta / 2.0, math.radians(8.0))
-            driving = max(weight * math.sin(mobilized_angle), 1e-6)
-            normal = max(weight * math.cos(mobilized_angle), 0.0)
-            resistance = c * arc + normal * math.tan(phi) + 0.15 * gamma * d * d
-            factor = resistance / driving
-            if factor < best_factor:
-                best_factor = factor
-                best_radius = radius
-                best_center_offset = center_offset
-    # Preserve the raw candidate minimum. This heuristic search is unverified;
-    # no empirical upward calibration may turn it into a passing design check.
-    factor = best_factor
+    best_center_x = 0.0
+    best_center_z = 0.0
+
+    x_step = max(width / 10.0, 0.5)
+    z_step = max(h / 5.0, 0.5)
+    # The retained mass sits on the outboard side of the wall, so the centre of
+    # a rightward mechanism must be outboard too.  Radii are sampled around the
+    # circle that reaches the wall toe: anything larger would be cut by the wall,
+    # anything much smaller is a shallow local slip.
+    center_x = -1.6 * width
+    while center_x <= -0.05 + 1e-9:
+        center_z = pit_bottom - 0.5 * h
+        while center_z <= top_elevation + 1.5 * h + 1e-9:
+            radius_to_toe = math.hypot(center_x, center_z - toe)
+            for factor_radius in (0.55, 0.70, 0.85, 0.95, 1.00):
+                radius = factor_radius * radius_to_toe
+                if radius < 0.35 * (h + d):
+                    continue
+                toe_depth = center_z - math.sqrt(max(radius * radius - center_x * center_x, 0.0))
+                if toe_depth > toe + 0.05:
+                    continue
+                trial = _bishop_factor(
+                    soil_profile,
+                    center_x=center_x,
+                    center_z=center_z,
+                    radius=radius,
+                    top=top_elevation,
+                    pit_bottom=pit_bottom,
+                    width=width,
+                    surcharge=surcharge,
+                )
+                if trial is not None and trial[0] < best_factor:
+                    best_factor = trial[0]
+                    best_radius = radius
+                    best_center_x = center_x
+                    best_center_z = center_z
+            center_z += z_step
+        center_x += x_step
+
+    factor = best_factor if math.isfinite(best_factor) else 0.0
     limit = required_overall_factor(safety_grade)
     return CheckResult(
         rule_id=JGJ120_OVERALL_STABILITY_RULE.rule_id,
@@ -355,9 +461,9 @@ def check_overall_stability_circular_search(
         calculated_value=round(factor, 3),
         limit_value=limit,
         unit="-",
-        message=("整体稳定原始候选筛查达到阈值，仍需独立验算。" if factor >= limit else "整体稳定原始候选筛查低于阈值。") + f" 未经验证的简化筛查，不能作为规范稳定性结论；候选圆半径 {best_radius:.2f}m、中心偏移 {best_center_offset:.2f}m；raw={best_factor:.3f}。",
+        message=("整体稳定条分筛查达到阈值，仍需独立验算。" if factor >= limit else "整体稳定条分筛查低于阈值。") + f" 未经验证的简化筛查，不能作为规范稳定性结论；最不利滑弧半径 {best_radius:.2f}m、圆心 ({best_center_x:.2f}, {best_center_z:.2f})；FS={factor:.3f}。",
         clause_reference=JGJ120_OVERALL_STABILITY_RULE.clause_reference,
-        formula="unverified screening: K = min(raw candidate resistance / driving); no upward calibration",
+        formula="screening: simplified Bishop slices through the wall toe; no uplift, water pressure or empirical calibration",
     )
 
 

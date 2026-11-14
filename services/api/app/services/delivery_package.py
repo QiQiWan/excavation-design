@@ -270,8 +270,17 @@ def export_coordinated_delivery_package(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     root = out / f"{project.id}_coordinated_delivery_{issue_mode}_v{SOFTWARE_VERSION.replace('.', '_')}"
+    # Never delete a previously exported package: keep it and write this run to
+    # the next free suffix.  Deleting a directory of drawings also trips bulk
+    # delete guards on managed machines and loses the review evidence.
     if root.exists():
-        shutil.rmtree(root)
+        index = 2
+        while True:
+            candidate = out / f"{root.name}_run{index}"
+            if not candidate.exists():
+                root = candidate
+                break
+            index += 1
     for folder in ("00_release", "10_drawings", "20_bim", "30_reports", "40_rebar", "50_data", "90_audit"):
         (root / folder).mkdir(parents=True, exist_ok=True)
 

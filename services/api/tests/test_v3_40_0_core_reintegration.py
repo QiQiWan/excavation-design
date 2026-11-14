@@ -57,6 +57,22 @@ def test_core_status_exposes_six_design_stages_with_basis_first() -> None:
     assert result["storage"]["workspaceBytes"] == 1024
 
 
+def test_review_package_counts_as_delivered_while_formal_issue_stays_closed() -> None:
+    project = _project()
+    before = build_core_workspace_status(project, {})
+    stage_before = next(row for row in before["stages"] if row["key"] == "deliverables")
+    assert stage_before["status"] != "done"
+    assert before["summary"]["deliverableReady"] is False
+
+    project.delivery_packages = [{"issueMode": "review", "filename": "pkg.zip"}]
+    after = build_core_workspace_status(project, {})
+    stage_after = next(row for row in after["stages"] if row["key"] == "deliverables")
+    assert stage_after["status"] == "done"
+    assert after["summary"]["deliverableReady"] is True
+    # A review package must not be presented as a formal construction issue.
+    assert "人工审签" in stage_after["message"]
+
+
 def test_progressive_stale_patch_is_rebased_instead_of_returning_409(tmp_path) -> None:
     store = SQLiteProjectStore(tmp_path / "core.sqlite3")
     project = _project()
@@ -129,4 +145,7 @@ def test_default_core_product_mode_does_not_register_extension_routes() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert int(result.stdout.strip()) <= 150
+    # Budget guards against accidental extension-route growth.  It is not a
+    # product-size claim: the design-core routers added since V3.40 already
+    # register 239 API paths in core mode (HEAD measured the same).
+    assert int(result.stdout.strip()) <= 260
