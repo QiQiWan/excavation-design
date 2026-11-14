@@ -43,7 +43,8 @@ def test_blueprint_exposes_router_and_eight_workers(api):
     # A1-A8 全部接入执行链。
     assert data['executableWorkers'] == ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8']
     assert data['router']['defaultAcceptMode'] == 'observe'
-    assert data['router']['mode'] == 'deterministic'
+    assert data['router']['mode'] == 'rules-then-model'
+    assert data['router']['modelSlowPath'] == 'wired'
     assert data['formalConstructionIssue'] is False
     assert any('正式施工图' in line for line in data['redLines'])
     planned = [w for w in data['workers'] if not w['executable']]
@@ -265,3 +266,41 @@ def test_router_model_failure_falls_back_honestly(router_env, monkeypatch):
     assert policy['provider'] == 'fallback'
     assert policy['used'] is False
     assert policy['role'] is None
+
+
+def test_trigger_audit_records_model_route_evidence(router_env, monkeypatch, tmp_path):
+    """模型分派的决策证据（provider/role/detail）要落到 trigger 审计里。"""
+    monkeypatch.setenv('PITGUARD_DB_PATH', str(tmp_path / 'projects.sqlite3'))
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH', str(tmp_path / 'agent.sqlite3'))
+    monkeypatch.setenv('PITGUARD_ONE_STRUT_STORE', str(tmp_path / 'one_strut'))
+    from app.storage.repository import ProjectRepository, shared_project_store
+    from app.schemas.domain import Project
+
+    repo = ProjectRepository(store=shared_project_store(tmp_path / 'projects.sqlite3'))
+    pid = repo.create(Project(name='证据链')).id
+
+    def fake_urlopen(request, timeout=None, context=None):
+        return _RouterReply(_router_chat({'content': '{"role":"A3"}'}))
+
+    monkeypatch.setattr(super_agent.intake.urllib.request, 'urlopen', fake_urlopen)
+    result = super_agent.ingest_trigger(
+        project_id=pid, kind='user_message',
+        payload={'text': '这个项目整体怎么样'}, actor='alice')
+    assert result['policy']['provider'] == 'llm-router'
+
+    trigger = result['trigger']
+    assert trigger['policyProvider'] == 'llm-router'
+    assert trigger['policyRole'] == 'A3'
+    assert trigger['policyDetail'] and 'Slow Path' in trigger['policyDetail']
+
+
+def test_trigger_audit_marks_fast_path_without_model(api):
+    """规则命中的决策，审计里 provider 是 deterministic、无模型角色。"""
+    pid = _project(api, '规则证据')
+    result = super_agent.ingest_trigger(
+        project_id=pid, kind='user_message',
+        payload={'text': '施工荷载 42kPa'}, actor='alice')
+    assert result['policy']['provider'] == 'deterministic'
+    trigger = result['trigger']
+    assert trigger['policyProvider'] == 'deterministic'
+    assert trigger['policyRole'] == 'A1'
