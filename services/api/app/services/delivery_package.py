@@ -478,7 +478,12 @@ def export_coordinated_delivery_package(
             hashes.append(f"{_sha256(file)}  {file.relative_to(root).as_posix()}")
     checksums.write_text("\n".join(hashes) + "\n", encoding="utf-8")
 
-    zip_path = out / f"{project.id}_coordinated_delivery_{issue_mode}_v{SOFTWARE_VERSION.replace('.', '_')}.zip"
+    # 每版包独立留档：同一项目反复导出时，旧包必须还能被复核，不能被同名覆盖。
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    zip_path = out / (
+        f"{project.id}_coordinated_delivery_{issue_mode}_"
+        f"v{SOFTWARE_VERSION.replace('.', '_')}_{stamp}.zip"
+    )
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(root.rglob("*")):
             if file.is_file():

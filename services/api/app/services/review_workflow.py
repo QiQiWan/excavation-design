@@ -16,7 +16,10 @@ def _valid_signature_hash(value: Any) -> bool:
 
 
 def project_snapshot_hash(project: Project) -> str:
-    payload = project.model_dump(mode="json", by_alias=True, exclude={"review_workflow", "drawing_revisions", "updated_at", "messages", "monitoring_records", "calibration_runs"})
+    payload = project.model_dump(mode="json", by_alias=True, exclude={
+        "review_workflow", "drawing_revisions", "updated_at", "messages",
+        "monitoring_records", "calibration_runs", "delivery_packages",
+    })
     # Review/verification records are evidence about the design snapshot and must
     # not change the snapshot they sign. Calculated engineering state remains in
     # the hash; only approval metadata and repeatable assurance summaries are removed.
@@ -25,7 +28,15 @@ def project_snapshot_hash(project: Project) -> str:
         "concaveTransferDetailingApproval",
         "concaveTransferDetailingApprovalHistory",
         "transferEngineeringDataAssurance",
+        # 存储索引只是"成果放在哪"的账本，每次落盘都会刷新 updatedAt；
+        # 设计状态本身在 calculation_results 等项目字段里，已被哈希覆盖。
+        "artifactStorage",
     ):
+        advanced.pop(key, None)
+    # Export manifests describe a package that was produced from this snapshot.
+    # Recording one must not invalidate the snapshot it signs, otherwise every
+    # export makes its own delivery_readiness hash stale on arrival.
+    for key in [name for name in advanced if name.endswith("Manifest")]:
         advanced.pop(key, None)
     payload["advancedEngineering"] = advanced
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:20]
