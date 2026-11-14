@@ -174,3 +174,94 @@ def test_watchdog_and_role_gate(api):
                       headers=headers('key-viewer'),
                       json={'projectId': pid, 'kind': 'user_message'})
     assert denied.status_code == 403
+
+
+# —— 模型 Router（Slow Path）测试：不依赖真实网络，用 mock urlopen ——
+
+class _RouterReply:
+    headers = {'Content-Length': '0'}
+    def __init__(self, payload: bytes):
+        self._payload = payload
+    def read(self, _limit=-1):
+        return self._payload
+    def __enter__(self):
+        return self
+    def __exit__(self, *_args):
+        return False
+
+
+def _router_chat(message: dict) -> bytes:
+    return json.dumps({'choices': [{'message': message}]}).encode('utf-8')
+
+
+@pytest.fixture
+def router_env(monkeypatch):
+    monkeypatch.setenv('PITGUARD_LLM_ENABLE', '1')
+    monkeypatch.setenv('PITGUARD_LLM_API_KEY', 'unit-test-placeholder')
+    monkeypatch.setenv('PITGUARD_LLM_MODEL_FAST', 'unit-test-model')
+    monkeypatch.setenv('PITGUARD_LLM_BASE_URL', 'http://127.0.0.1:9/v1')
+    monkeypatch.setenv('PITGUARD_LLM_ALLOWED_HOSTS', '127.0.0.1')
+    monkeypatch.setenv('PITGUARD_LLM_TIMEOUT', '3')
+
+
+def test_router_fast_path_never_calls_model(router_env, monkeypatch):
+    called = []
+    monkeypatch.setattr(super_agent.intake.urllib.request, 'urlopen',
+                        lambda *a, **k: called.append(1) or (_ for _ in ()).throw(AssertionError))
+    policy = super_agent._semantic_policy(
+        'user_message', {'text': '施工荷载 42kPa'}, {'owner': 'A1'})
+    assert policy['provider'] == 'deterministic'
+    assert policy['used'] is True
+    assert policy['role'] == 'A1'
+    assert not called
+
+
+def test_router_slow_path_uses_model_when_rules_miss(router_env, monkeypatch):
+    def fake_urlopen(request, timeout=None, context=None):
+        return _RouterReply(_router_chat({'content': '{"role":"A2"}'}))
+
+    monkeypatch.setattr(super_agent.intake.urllib.request, 'urlopen', fake_urlopen)
+    policy = super_agent._semantic_policy(
+        'user_message', {'text': '这个项目整体怎么样'}, {'owner': 'A1'})
+    assert policy['provider'] == 'llm-router'
+    assert policy['used'] is True
+    assert policy['role'] == 'A2'
+
+
+def test_router_reads_reasoning_content_when_body_empty(router_env, monkeypatch):
+    def fake_urlopen(request, timeout=None, context=None):
+        return _RouterReply(_router_chat({'content': None,
+                                          'reasoning_content': '{"role":"A6"}'}))
+
+    monkeypatch.setattr(super_agent.intake.urllib.request, 'urlopen', fake_urlopen)
+    policy = super_agent._semantic_policy(
+        'user_message', {'text': '这个项目整体怎么样'}, {'owner': 'A1'})
+    assert policy['provider'] == 'llm-router'
+    assert policy['role'] == 'A6'
+
+
+def test_router_whitelists_model_role(router_env, monkeypatch):
+    def fake_urlopen(request, timeout=None, context=None):
+        return _RouterReply(_router_chat({'content': '{"role":"A999"}'}))
+
+    monkeypatch.setattr(super_agent.intake.urllib.request, 'urlopen', fake_urlopen)
+    policy = super_agent._semantic_policy(
+        'user_message', {'text': '这个项目整体怎么样'}, {'owner': 'A1'})
+    assert policy['provider'] == 'fallback'
+    assert policy['used'] is False
+    assert policy['role'] is None
+
+
+def test_router_model_failure_falls_back_honestly(router_env, monkeypatch):
+    import urllib.error
+
+    def fake_urlopen(request, timeout=None, context=None):
+        raise urllib.error.HTTPError(request.full_url, 429, 'Too Many Requests', {}, None)
+
+    monkeypatch.setattr(super_agent.intake.urllib.request, 'urlopen', fake_urlopen)
+    monkeypatch.setattr(super_agent.intake.time, 'sleep', lambda s: None)
+    policy = super_agent._semantic_policy(
+        'user_message', {'text': '这个项目整体怎么样'}, {'owner': 'A1'})
+    assert policy['provider'] == 'fallback'
+    assert policy['used'] is False
+    assert policy['role'] is None
