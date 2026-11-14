@@ -142,6 +142,11 @@ def _post_model(endpoint: str, payload: bytes, key: str, timeout: float) -> byte
                     continue
                 raise ModelCallFailed('模型服务持续限流（HTTP 429），请稍后重试',
                                       attempts=attempt + 1) from exc
+            if exc.code in (401, 403):
+                raise ModelCallFailed(
+                    f'模型鉴权失败（HTTP {exc.code}）：API key 无效或已过期，'
+                    '请更换 PITGUARD_LLM_API_KEY；已回退确定性规则',
+                    attempts=attempt + 1) from exc
             raise ModelCallFailed(f'模型服务返回 HTTP {exc.code}',
                                   attempts=attempt + 1) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -289,6 +294,9 @@ TEXT_RULES: tuple[dict[str, Any], ...] = (
         'patterns': (
             r'(?:周边)?施工荷载[^。；\n]{0,16}?(\d+(?:\.\d+)?)\s*kPa',
             r'地面超载[^。；\n]{0,16}?(\d+(?:\.\d+)?)\s*kPa',
+            # 口语里修正时往往省略前缀（「超载要改成 25kPa」），也要能命中，
+            # 才能让下面的否定/修正判定看见两个候选值。
+            r'超载[^。；\n]{0,16}?(\d+(?:\.\d+)?)\s*kPa',
         ),
     },
     {
@@ -344,6 +352,24 @@ _ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+# 口语修正标记：出现在一句里，说明这句在推翻前面的值。
+# 只在「同一字段有多个不同值」时启用，不做任何数值推断。
+_CORRECTION_MARKERS = re.compile(
+    r'(?:哦?不对|说错|旧方案|刚才那个|改成|改为|更正|应(?:该)?是|'
+    r'以[^，。；]{0,10}为准|前面[^，。；]{0,14}不算|不算数|作废|'
+    r'实际(?:上)?是|最终(?:按|取|为))', re.IGNORECASE)
+_CLAUSE_BREAK = re.compile(r'[。；;！!？?\n]|\.\.\.')
+
+
+def _clause_at(text: str, position: int) -> str:
+    """返回 position 所在分句；省略号也视作口语里的断句。"""
+    start = 0
+    for match in _CLAUSE_BREAK.finditer(text, 0, max(position, 0)):
+        start = match.end()
+    following = _CLAUSE_BREAK.search(text, max(position, 0))
+    return text[start:following.start() if following else len(text)]
+
+
 def _coerce(kind: str, raw: str) -> Any:
     if kind == 'float':
         return float(raw)
@@ -368,7 +394,7 @@ def interpret_text(text: str) -> dict:
     fields: dict[str, dict] = {}
     warnings: list[str] = []
     for rule in TEXT_RULES:
-        hits: list[tuple[Any, str]] = []
+        hits: list[tuple[Any, str, int]] = []
         for pattern in rule['patterns']:
             for match in re.finditer(pattern, text, flags=re.IGNORECASE):
                 raw = match.group(1)
@@ -378,13 +404,24 @@ def interpret_text(text: str) -> dict:
                     continue
                 if not FIELDS[rule['key']]['validate'](value):
                     continue
-                hits.append((value, ' '.join(match.group(0).split())))
+                hits.append((value, ' '.join(match.group(0).split()), match.start()))
         if hits:
-            value, raw = hits[0]
+            # 多条正则的命中顺序不是文本顺序，先按原文位置排序。
+            hits.sort(key=lambda item: item[2])
+            value, raw, _ = hits[0]
             distinct = sorted({str(item[0]) for item in hits})
             if len(distinct) > 1:
-                warnings.append(
-                    f"{FIELDS[rule['key']]['label']}出现多个值：{'、'.join(distinct)}；采用 {value}，请核对。")
+                corrected = [item for item in hits
+                             if _CORRECTION_MARKERS.search(_clause_at(text, item[2]))]
+                if corrected:
+                    value, raw, _ = corrected[-1]
+                    warnings.append(
+                        f"{FIELDS[rule['key']]['label']}出现多个值：{'、'.join(distinct)}；"
+                        f"原文有明确修正，采用最后一次修正值 {value}，请核对。")
+                else:
+                    warnings.append(
+                        f"{FIELDS[rule['key']]['label']}出现多个值：{'、'.join(distinct)}；"
+                        f"采用 {value}，请核对。")
             fields[rule['key']] = _field(rule['key'], value, raw=raw)
 
     for key, aliases in _ALIASES.items():
