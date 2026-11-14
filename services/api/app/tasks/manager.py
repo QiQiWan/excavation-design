@@ -2851,12 +2851,17 @@ class TaskManager:
         path = export_coordinated_delivery_package(
             project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode, include_ifc_profiles=include_ifc
         )
+        from hashlib import sha256
+
         project.delivery_packages = [*list(project.delivery_packages or [])[-9:], {
             "packageType": "coordinated_delivery",
             "issueMode": issue_mode,
             "rebarMode": rebar_mode,
             "filename": path.name,
             "path": str(path),
+            "fileSize": path.stat().st_size if path.exists() else None,
+            "sha256": sha256(path.read_bytes()).hexdigest() if path.exists() else None,
+            "calculationResultId": (project.calculation_results[-1].id if project.calculation_results else None),
             "createdAt": now_iso(),
         }]
         repo.save(project)
