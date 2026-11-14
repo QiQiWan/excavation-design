@@ -1,0 +1,810 @@
+"""Super-agent 双层架构：常驻 Router + 8 个隔离 Worker。
+
+参考 DeepSeek Harness《Super-agent 设计探索》(2026-10-31 开源
+``dsh-superagent-prototype``，11-01 设计文章)。这里落地的是架构骨架，
+不是把 9 个聊天窗口摆出来：
+
+- Router：唯一对外入口（桌宠对话），只做事件准入、分派与统一回复，
+  **不亲自执行工程任务**。当前为确定性实现，语义 Slow Path 只留接口。
+- Worker：A1~A8 各一个专业角色，每个 Ticket 一个隔离上下文；Worker 不
+  直接对人说话，结果由 Router 回写到会话。
+- Trigger：环境事件；Fast Path 程序规则先筛，Slow Path 留给模型。
+- Ticket + Mandate：授权范围创建时冻结，不可自我扩张。
+- 订阅直通：同一 Thread 的后续事件直接进已有 Ticket，不再绕 Router。
+- observe 默认：只记录「会派给谁」，不执行；显式 auto 才真正派单。
+- Watchdog：巡检卡住或失败的任务，给恢复建议。
+
+红线：正式施工图签发恒关闭；L2 采用必须人工；候选只写独立工作版；
+模型不参与数值与规范判定。
+"""
+from __future__ import annotations
+
+import os
+from typing import Any
+from uuid import uuid4
+
+from . import design_basis_intake as intake
+from . import geology_agent
+from . import delivery_agent
+from . import detailing_agent
+from . import joint_flow
+from . import findings as findings_store
+from . import chain as chain_flow
+from .stages import primary_stage_of_role
+from . import orchestrator
+from . import scheme_stage_agent
+from .catalog import AGENTS
+from .contracts import StartRun
+from .engine import AgentRuntime
+from .model_gateway import configuration
+from .store import AgentStore
+
+SCHEMA = 'pitguard.super-agent/1'
+MANDATE_SCHEMA = 'pitguard.agent-mandate/1'
+
+# 环境事件白名单。未登记的类型在 Fast Path 直接丢弃，不进模型。
+TRIGGER_KINDS: dict[str, dict[str, str]] = {
+    'user_message': {'label': '工程师在桌宠输入', 'defaultRole': 'A1'},
+    'document_uploaded': {'label': '上传资料文件', 'defaultRole': 'A1'},
+    'design_input_changed': {'label': '设计输入变更', 'defaultRole': 'A1'},
+    'calculation_failed': {'label': '计算验算失败', 'defaultRole': 'A6'},
+    'run_completed': {'label': 'Agent 任务完成', 'defaultRole': 'A5'},
+    'review_requested': {'label': '请求人工复核', 'defaultRole': 'A8'},
+}
+
+# 阶段号唯一来源：agents/stages.py；A6 复用 A5 的计算阶段。
+STAGE_OF_ROLE = {**primary_stage_of_role(), 'A6': 'DESIGN.CALCULATION'}
+
+# 8 个 Worker。implemented=True 的复用现有执行器，其余明确 blocked。
+WORKERS: tuple[dict[str, Any], ...] = (
+    {'id': 'A1', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'design_basis_only', 'executor': 'design_basis_intake',
+     'tools': ('get_project_context',)},
+    # A2 能按现有钻孔重建三维地质模型（写模型本身），但不写任何勘察参数。
+    {'id': 'A2', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'geology_model_only', 'executor': 'geology_assessment',
+     'tools': ('get_project_context',)},
+    # 生成动作会写工作版（方案候选 / 控制阶段），因此如实标 working_copy_only，
+    # 不再声称是 isolated_candidate。
+    {'id': 'A3', 'implemented': True, 'permissionCeiling': 'L2',
+     'writeMode': 'working_copy_only', 'executor': 'scheme_assessment',
+     'tools': ('get_project_context', 'generate_scheme_candidates')},
+    {'id': 'A4', 'implemented': True, 'permissionCeiling': 'L2',
+     'writeMode': 'working_copy_only', 'executor': 'stage_assessment',
+     'tools': ('get_calculation_findings',)},
+    {'id': 'A5', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'isolated_candidate', 'executor': 'agent_runtime',
+     'tools': ('get_calculation_findings', 'run_stage_analysis',
+               'evaluate_design_changes', 'generate_scheme_candidates')},
+    {'id': 'A6', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'isolated_candidate', 'executor': 'agent_runtime',
+     'tools': ('get_calculation_findings', 'run_stage_analysis',
+               'evaluate_design_changes', 'generate_scheme_candidates')},
+    # A7 深化写工作版（advancedEngineering.p3DetailingClosure）。
+    {'id': 'A7', 'implemented': True, 'permissionCeiling': 'L2',
+     'writeMode': 'working_copy_only', 'executor': 'detailing_assessment',
+     'tools': ('get_calculation_findings', 'evaluate_design_changes')},
+    # A8 只出评审版成果包，正式签发不进入工具层。
+    {'id': 'A8', 'implemented': True, 'permissionCeiling': 'L1',
+     'writeMode': 'artifact_only', 'executor': 'delivery_assessment',
+     'tools': ('prepare_delivery_package', 'get_calculation_findings')},
+)
+
+WORKER_BY_ID = {row['id']: row for row in WORKERS}
+ROLE_META = {row[0]: {'name': row[1], 'capability': row[2],
+                      'implementation': row[3]} for row in AGENTS}
+
+RED_LINES = (
+    '正式施工图签发始终关闭，approve_formal_issue 不注册为工具',
+    'L2 采用候选必须由授权人员在人工端点确认，Worker 不得自行采用',
+    'Agent 只写独立候选 / 工作版，不改主项目或签发成果',
+    '模型输出不参与数值计算与规范通过判定',
+)
+
+
+def _project_exists(project_id: str) -> bool:
+    try:
+        from app.storage.repository import ProjectRepository, shared_project_store
+
+        ProjectRepository(
+            store=shared_project_store(os.getenv('PITGUARD_DB_PATH') or None)
+        ).require_workspace(project_id)
+        return True
+    except Exception:
+        return False
+
+
+# 桌宠意图分流：先看是不是参数录入，再看诊断/优化。全部确定性关键词，
+# 不额外调模型，避免为一句普通提问付一次模型延迟。
+_PARAM_HINTS = ('施工荷载', '地面超载', '地面堆载', '混凝土', '保护层', '钢筋等级',
+                '重要性系数', '承载力', '安全等级', '工程等级')
+_GEOLOGY_HINTS = ('地质', '地层', '钻孔', '勘察', '地勘', '剖面', '地下水', '水位',
+                  '土层', '持力层', '覆盖')
+_SCHEME_HINTS = ('支护方案', '围护', '支撑布置', '支撑体系', '比选', '候选方案')
+_STAGE_HINTS = ('施工阶段', '开挖顺序', '换撑', '拆撑', '工序', '施工组织', '工况')
+_DETAIL_HINTS = ('深化', '配筋', '钢筋', '钢筋笼', '节点', '预埋件', '套筒',
+                 '下料', '加工图', '吊装')
+_DELIVERY_HINTS = ('成果', '交付', '出图', '图纸', '校审', '审签', '归档',
+                   '成果包', '质量报告', '签发')
+_DIAGNOSE_HINTS = ('诊断', '哪里失败', '为什么失败', '为什么超限', '失败原因', '超限',
+                   '不满足', '验算', '校核', '过不了', '没通过', '问题在哪')
+_OPTIMIZE_HINTS = ('优化', '调整', '改一下', '改小', '改大', '试算', '复算', '重算',
+                   '方案', '降低', '减小', '增大', '加粗', '加长')
+
+
+# 直接读已登记的发现，不重新跑诊断。
+_FINDINGS_HINTS = ('有哪些问题', '问题清单', '发现哪些', '待处理问题',
+                   '还有什么问题', '哪些没通过')
+
+# 连续执行链：说一次就按六步走，遇到闸口停下等人确认。
+_CHAIN_START_HINTS = ('走一遍全流程', '连续执行', '自动走一遍', '按流程走',
+                      '一路走到底', '开始连续执行', '全流程自动')
+_CHAIN_ADVANCE_HINTS = ('继续执行', '继续走', '接着走', '下一步', '继续往下',
+                        '接着往下走')
+_CHAIN_CONFIRM_HINTS = ('确认执行', '同意执行', '可以执行', '确认生成',
+                        '确认提交', '确认继续')
+
+# 联合流程：一次问完多个 Agent，只做只读体检。
+_JOINT_HINTS = ('全流程体检', '整体体检', '全流程检查', '联合检查',
+                '全流程走一遍', '从头到尾检查', '全部体检')
+
+_GENERATE_HINTS = ('生成', '建模', '建模型', '做一版', '出一版', '出几个',
+                   '来一套', '来一版', '补上', '出成果包', '导出', '打包')
+
+
+def _requested_action(text: str | None) -> str:
+    """只有明确说「生成」才写工作版；其它情况一律只盘点。"""
+    content = str(text or '')
+    return 'generate' if any(word in content for word in _GENERATE_HINTS) else 'assess'
+
+
+def _route_role(kind: str, payload: dict) -> str | None:
+    """把一句人话分给合适的 Worker；无法判断时交给总控的下一阶段。"""
+    if kind != 'user_message':
+        return None
+    text = str(payload.get('text') or '').strip()
+    if not text:
+        return None
+    if any(word in text for word in _PARAM_HINTS):
+        return 'A1'
+    if any(word in text for word in _GEOLOGY_HINTS):
+        return 'A2'
+    if any(word in text for word in _SCHEME_HINTS):
+        return 'A3'
+    if any(word in text for word in _STAGE_HINTS):
+        return 'A4'
+    if any(word in text for word in _DETAIL_HINTS):
+        return 'A7'
+    if any(word in text for word in _DELIVERY_HINTS):
+        return 'A8'
+    if any(word in text for word in _FINDINGS_HINTS):
+        return 'A5'
+    if any(word in text for word in _OPTIMIZE_HINTS):
+        return 'A6'
+    if any(word in text for word in _DIAGNOSE_HINTS):
+        return 'A5'
+    return None
+
+
+# 模型 Router 的提示词：只分派、不干活，输出紧凑 JSON。
+_ROUTER_INSTRUCTION = (
+    '你是岩土基坑设计系统的任务路由器（Router）。'
+    '根据用户一句话，判断交给哪个 Worker，只输出一个 JSON 对象：{"role":"<ROLE>"}。\n'
+    '可选角色：A1 资料与参数、A2 地质与场景、A3 支护方案、A4 施工阶段、'
+    'A5 计算与验算、A6 优化闭环、A7 构件深化、A8 成果与校审、none 无法判断。\n'
+    '只输出 JSON，不要解释、不要 Markdown、不要思考过程。'
+)
+_VALID_ROLES = {'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8'}
+
+
+def _model_route_role(text: str) -> str | None:
+    """Slow Path：规则判不出时，用模型做语义分派。
+
+    只补规则盲区，不替代规则；模型失败/超时/限流一律返回 None，由调用方
+    回退到总控的下一阶段，绝不伪造一个角色。模型输出不被信任，只接受
+    白名单里的角色名。
+    """
+    config = configuration()
+    if not config.get('enabled') or not config.get('configured'):
+        return None
+    try:
+        key, model, timeout, max_tokens = intake._model_settings()
+    except Exception:
+        return None
+    try:
+        endpoint = intake._endpoint()
+    except Exception:
+        return None
+    payload = intake.json.dumps({
+        'model': model,
+        'temperature': 0,
+        'max_tokens': min(max_tokens, 64),
+        'messages': [
+            {'role': 'system', 'content': _ROUTER_INSTRUCTION},
+            {'role': 'user', 'content': text[:2000]},
+        ],
+    }, ensure_ascii=False).encode('utf-8')
+    try:
+        raw = intake._post_model(endpoint, payload, key, timeout)
+        response = intake.json.loads(raw)
+        message = response['choices'][0]['message']
+        # flash/思考型模型可能把正文留空、答案塞进 reasoning_content。
+        content = message.get('content') or message.get('reasoning_content') or ''
+    except Exception:
+        return None
+    if not isinstance(content, str) or not content.strip():
+        return None
+    try:
+        obj = intake._parse_model_json(content)
+    except Exception:
+        return None
+    role = str(obj.get('role') or '').strip()
+    return role if role in _VALID_ROLES else None
+
+
+def _semantic_policy(kind: str, payload: dict, plan_next: dict) -> dict:
+    """Fast Path 规则先判；判不出才走模型 Slow Path，失败如实回退。"""
+    intent_role = _route_role(kind, payload)
+    if intent_role:
+        return {
+            'provider': 'deterministic', 'used': True,
+            'role': intent_role,
+            'note': 'Fast Path 关键词规则命中，未调用模型',
+        }
+    if kind == 'user_message':
+        text = str(payload.get('text') or '').strip()
+        model_role = _model_route_role(text) if text else None
+        if model_role:
+            return {
+                'provider': 'llm-router', 'used': True,
+                'role': model_role,
+                'note': f'规则未命中，模型 Slow Path 分派给 {model_role}',
+            }
+        return {
+            'provider': 'fallback', 'used': False, 'role': None,
+            'note': '规则与模型均无法判断，交由总控下一阶段（未伪造分派）',
+        }
+    return {
+        'provider': 'deterministic', 'used': False, 'role': None,
+        'note': '非用户消息，无需意图分派',
+    }
+
+
+def _mandate(*, project_id: str, stage_id: str, role_id: str,
+             worker: dict, trigger: dict, actor: str, plan_next: dict) -> dict:
+    """创建时冻结的授权书；dispatch 时只允许读取，不允许扩张。"""
+    return {
+        'schemaVersion': MANDATE_SCHEMA,
+        'projectId': project_id,
+        'stageId': stage_id,
+        'roleId': role_id,
+        'permissionCeiling': worker['permissionCeiling'],
+        'writeMode': worker['writeMode'],
+        'allowedTools': list(worker['tools']),
+        'requiresHumanAdoption': True,
+        'formalConstructionIssue': False,
+        'sourceTriggerId': trigger['id'],
+        'sourceSnapshotHash': trigger['payload'].get('sourceSnapshotHash'),
+        'gateAtIssue': plan_next.get('gate', {}).get('type'),
+        'issuedBy': actor,
+        'immutable': True,
+        'note': 'Ticket 生命周期内不得扩大工具范围、权限或写入模式',
+    }
+
+
+def blueprint() -> dict:
+    """架构蓝图：给人和前端看，明确哪些 Worker 现在真能干活。"""
+    workers = []
+    for row in WORKERS:
+        meta = ROLE_META[row['id']]
+        workers.append({
+            'id': row['id'], 'name': meta['name'], 'capability': meta['capability'],
+            'stageId': STAGE_OF_ROLE[row['id']],
+            'implementation': meta['implementation'],
+            'executable': row['implemented'],
+            'permissionCeiling': row['permissionCeiling'],
+            'writeMode': row['writeMode'],
+            'tools': list(row['tools']),
+            'executor': row['executor'],
+            'blockedReason': None if row['implemented'] else '执行链尚未建立，不伪造执行结果',
+        })
+    return {
+        'schemaVersion': SCHEMA,
+        'reference': {
+            'name': 'DeepSeek Harness · Super-agent 设计探索',
+            'prototype': 'deepseek-ai/dsh-superagent-prototype',
+            'published': '2026-10-31',
+            'note': '研究原型，不是正式产品；这里只采用其 Router+Worker 架构思想',
+        },
+        'router': {
+            'role': '常驻唯一对外入口，只分派不执行',
+            'entry': '桌面助手对话（单一会话）',
+            'mode': 'deterministic',
+            'defaultAcceptMode': 'observe',
+            'modelSlowPath': 'reserved',
+        },
+        'workers': workers,
+        'workerCount': len(workers),
+        'executableWorkers': [w['id'] for w in workers if w['executable']],
+        'triggers': [{'kind': key, **value} for key, value in TRIGGER_KINDS.items()],
+        'mechanisms': {
+            'fastPath': '程序规则：事件白名单、项目存在性、订阅直通、闸口准入',
+            'slowPath': '语义策略预留，模型未配置时如实回退确定性规则',
+            'subscriptionDirect': '同一 Thread 的后续 Trigger 直接进已有 Ticket',
+            'mandateImmutable': '授权范围创建时冻结，dispatch 二次校验',
+            'watchdog': '巡检超时/失败任务并给恢复建议',
+            'unifiedReply': 'Worker 只向 Router 汇报，Router 统一回写会话',
+        },
+        'redLines': list(RED_LINES),
+        'formalConstructionIssue': False,
+    }
+
+
+def ingest_trigger(*, project_id: str, kind: str, payload: dict | None = None,
+                   conversation_id: str | None = None, thread_id: str | None = None,
+                   accept_mode: str = 'observe', actor: str = 'system') -> dict:
+    """Router 入口：一个环境事件 → 准入决策 → 可选的 Ticket。"""
+    if accept_mode not in ('observe', 'auto'):
+        raise ValueError('acceptMode 只能是 observe 或 auto')
+    payload = dict(payload or {})
+    for key, value in list(payload.items()):
+        if isinstance(value, str) and len(value) > 2000:
+            payload[key] = value[:2000]
+    store = AgentStore()
+    trigger_id = uuid4().hex
+
+    def _record(decision: str, reason: str, ticket_id: str | None,
+                policy: dict, extra: dict | None = None) -> dict:
+        trigger = store.record_trigger(
+            project_id=project_id, conversation_id=conversation_id,
+            thread_id=thread_id, kind=kind, payload=payload,
+            decision=decision, reason=reason,
+            policy_provider=policy['provider'], ticket_id=ticket_id,
+            trigger_id=trigger_id,
+        )
+        return {
+            'schemaVersion': SCHEMA, 'decision': decision, 'reason': reason,
+            'trigger': trigger, 'ticketId': ticket_id, 'policy': policy,
+            'acceptMode': accept_mode, **(extra or {}),
+            'formalConstructionIssue': False,
+        }
+
+    # --- Fast Path：纯程序规则，不消耗模型 ---------------------------------
+    if kind not in TRIGGER_KINDS:
+        return _record('ignored', f'未登记的 Trigger 类型：{kind}', None,
+                       {'provider': 'deterministic', 'used': False})
+    if not _project_exists(project_id):
+        return _record('ignored', '项目不存在或状态不可用', None,
+                       {'provider': 'deterministic', 'used': False})
+
+    trigger_text = str(payload.get('text') or '')
+
+    # V3.91 连续执行链：按六步顺序推进，遇到人工闸口停下，确认后原地继续。
+    if kind == 'user_message' and (
+            any(word in trigger_text for word in _CHAIN_START_HINTS)
+            or any(word in trigger_text for word in _CHAIN_ADVANCE_HINTS)):
+        wants_start = any(word in trigger_text for word in _CHAIN_START_HINTS)
+        if accept_mode != 'auto':
+            return _record('observed', '连续执行会写工作版，需以 auto 模式执行', None,
+                           {'provider': 'deterministic', 'used': False})
+        try:
+            flow = None
+            if wants_start:
+                flow = chain_flow.start(project_id, actor,
+                                        conversation_id=conversation_id)
+            else:
+                active = [row for row in chain_flow.history(project_id, limit=10)
+                          if row['status'] not in ('done', 'aborted')]
+                if active:
+                    confirm = any(word in trigger_text for word in _CHAIN_CONFIRM_HINTS)
+                    flow = chain_flow.advance(active[0]['id'], actor, confirm=confirm)
+            if flow is not None:
+                current_key = (flow.get('currentStage') or {}).get('stageKey')
+                record = next((row for row in flow['steps']
+                               if row['stageKey'] == current_key), None)
+                outcome = {
+                    'mode': 'chain',
+                    'flowId': flow['flowId'],
+                    'flowStatus': flow['status'],
+                    'summary': flow['summary'],
+                    'currentStage': flow.get('currentStage'),
+                    'progress': flow.get('progress'),
+                    'nextAction': (record or {}).get('action'),
+                }
+                return _record(
+                    'accepted', flow['summary'], None,
+                    {'provider': 'deterministic', 'used': False},
+                    {'chain': outcome,
+                     'execution': {'dispatched': True, 'ticketId': None,
+                                   'roleId': 'CHAIN', 'executor': 'chain',
+                                   'status': flow['status'], 'outcome': outcome}},
+                )
+        except Exception as exc:
+            return _record('failed',
+                           f'连续执行中断：{type(exc).__name__}: {str(exc)[:160]}', None,
+                           {'provider': 'deterministic', 'used': False},
+                           {'execution': {'dispatched': False, 'ticketId': None,
+                                          'roleId': 'CHAIN', 'executor': 'chain',
+                                          'status': 'failed',
+                                          'reason': f'{type(exc).__name__}: {str(exc)[:160]}'}})
+
+    # V3.91 联合流程：按依赖顺序汇总 A2/A3/A4/A7/A8 的只读体检，不改任何数据。
+    if kind == 'user_message' and any(word in trigger_text for word in _JOINT_HINTS):
+        if accept_mode != 'auto':
+            return _record('observed', '联合体检是只读汇总，需以 auto 模式执行', None,
+                           {'provider': 'deterministic', 'used': False})
+        outcome = joint_flow.execute(project_id, actor)
+        if conversation_id:
+            try:
+                store.get_conversation(conversation_id)
+                store.append_message(
+                    conversation_id, role='tool', content=outcome['summary'],
+                    metadata={'answerKind': 'joint_review', 'roleId': 'JOINT',
+                              'status': outcome['status'], 'stageCount': outcome['stageCount'],
+                              'engineeringJudgement': False},
+                )
+            except KeyError:
+                pass
+        return _record(
+            'accepted', '联合流程：按依赖顺序汇总 A2/A3/A4/A7/A8 只读体检结果', None,
+            {'provider': 'deterministic', 'used': False},
+            {'jointReview': outcome,
+             'execution': {'dispatched': True, 'ticketId': None, 'roleId': 'JOINT',
+                           'executor': 'joint_flow', 'status': 'done',
+                           'outcome': outcome}},
+        )
+
+    # 订阅直通：同 Thread 已有活跃 Ticket，事件直接投递，不再走 Router 决策。
+    active = store.active_ticket_for_thread(project_id, thread_id)
+    if active:
+        store.append_ticket_event(active['id'], 'trigger_direct', {
+            'kind': kind, 'payload': payload, 'via': 'subscription_direct',
+        })
+        return _record('direct', f"同一 Thread 直通 Ticket {active['id'][:12]}，未重复派单",
+                       active['id'], {'provider': 'deterministic', 'used': False},
+                       {'ticket': active, 'subscriptionDirect': True})
+
+    plan = orchestrator.build_plan(project_id)
+    plan_next = plan['next']
+    policy = _semantic_policy(kind, payload, plan_next)
+
+    requested_role = str(payload.get('roleId') or '')
+    # 意图分派：规则 Fast Path 优先，其次模型 Slow Path（policy['role']），
+    # 都没有才落到总控的下一阶段。
+    intent_role = _route_role(kind, payload)
+    if not intent_role and policy.get('provider') == 'llm-router':
+        intent_role = policy.get('role')
+    if requested_role and requested_role not in ('A1', 'auto'):
+        # 调用方显式指定了 A1 以外的角色，尊重它。
+        role_id = requested_role if requested_role in WORKER_BY_ID else plan_next['owner']
+    elif intent_role:
+        role_id = intent_role
+    elif requested_role in WORKER_BY_ID:
+        role_id = requested_role
+    else:
+        role_id = plan_next['owner']
+    if role_id not in WORKER_BY_ID:
+        role_id = TRIGGER_KINDS[kind]['defaultRole']
+    worker = WORKER_BY_ID[role_id]
+    stage_id = STAGE_OF_ROLE[role_id]
+
+    mandate = _mandate(project_id=project_id, stage_id=stage_id, role_id=role_id,
+                       worker=worker,
+                       trigger={'id': trigger_id, 'payload': payload},
+                       actor=actor, plan_next=plan_next)
+    status = 'accepted' if accept_mode == 'auto' else 'observed'
+    ticket = store.create_ticket(
+        project_id=project_id, conversation_id=conversation_id,
+        thread_id=thread_id, role_id=role_id,
+        stage_id=stage_id, mandate=mandate, status=status,
+        accept_mode=accept_mode,
+        # 绑定项目版本：排队期间项目被改过就不执行，避免覆盖工程师的新修改。
+        source_project_updated_at=intake.project_version(project_id, actor),
+    )
+    store.append_ticket_event(ticket['id'], 'ticket_created', {
+        'roleId': role_id, 'stageId': stage_id, 'gate': mandate['gateAtIssue'],
+        'acceptMode': accept_mode,
+    })
+    decision = 'accepted' if accept_mode == 'auto' else 'observed'
+    reason = (f"Router 分派给 {role_id} · {ROLE_META[role_id]['name']}（{stage_id}）；"
+              f"闸口 {mandate['gateAtIssue']}，{accept_mode} 模式")
+    if not worker['implemented']:
+        reason += '；该 Worker 执行链尚未建立'
+    result = _record(decision, reason, ticket['id'], policy, {'ticket': ticket})
+    if accept_mode == 'auto':
+        result['execution'] = dispatch_ticket(
+            ticket['id'], actor=actor, text=payload.get('text'),
+            result_hash=payload.get('resultHash'),
+            requested_tools=payload.get('requestedTools'),
+            raw_fields=payload.get('fields'),
+            source_label=payload.get('documentName'),
+        )
+    return result
+
+
+def _reply_from_router(ticket: dict, kind: str, text: str, extra: dict) -> None:
+    """Worker 不直接对人说话；由 Router 统一回写会话。"""
+    conversation_id = ticket.get('conversationId')
+    if not conversation_id:
+        return
+    store = AgentStore()
+    try:
+        store.get_conversation(conversation_id)
+        store.append_message(
+            conversation_id, role='tool', content=text,
+            metadata={
+                'answerKind': 'worker_report', 'ticketId': ticket['id'],
+                'roleId': ticket['roleId'], 'stageId': ticket['stageId'],
+                'eventKind': kind, 'engineeringJudgement': False,
+                **extra,
+            },
+        )
+    except (KeyError, ValueError):
+        pass
+
+
+def dispatch_ticket(ticket_id: str, *, actor: str,
+                    text: str | None = None, result_hash: str | None = None,
+                    requested_tools: list[str] | None = None,
+                    raw_fields: list[dict] | None = None,
+                    source_label: str | None = None) -> dict:
+    """把一个 Ticket 交给对应 Worker 执行；越权或未实现都如实拒绝。"""
+    store = AgentStore()
+    ticket = store.get_ticket(ticket_id)
+    mandate = ticket['mandate']
+    worker = WORKER_BY_ID.get(ticket['roleId'])
+
+    def _blocked(reason: str, status: str = 'blocked') -> dict:
+        store.update_ticket(ticket_id, status=status)
+        store.append_ticket_event(ticket_id, 'worker_blocked', {'reason': reason})
+        _reply_from_router(ticket, 'worker_blocked',
+                           f"任务未执行：{reason}", {'dispatched': False})
+        return {'dispatched': False, 'ticketId': ticket_id,
+                'roleId': ticket['roleId'], 'reason': reason,
+                'status': status, 'formalConstructionIssue': False}
+
+    bound_version = ticket.get('sourceProjectUpdatedAt')
+    current_version = intake.project_version(ticket['projectId'], actor)
+    if bound_version and current_version and bound_version != current_version:
+        return _blocked('项目在任务排队期间已被修改，为避免覆盖新改动，请重新提交', 'stale')
+
+    if ticket['status'] == 'observed':
+        return _blocked('observe 模式只记录会派给谁，不执行；需以 auto 重新提交', 'observed')
+    if ticket['status'] in ('done', 'waiting_review'):
+        return _blocked(f"Ticket 已处于 {ticket['status']}，不重复执行", ticket['status'])
+    if mandate.get('formalConstructionIssue') is not False:
+        return _blocked('授权书不符合正式签发关闭约束')
+    if worker is None:
+        return _blocked('未登记的 Worker')
+
+    requested = list(requested_tools or [])
+    unknown = sorted(set(requested) - set(mandate['allowedTools']))
+    if unknown:
+        return _blocked('授权书不允许的工具：' + '、'.join(unknown))
+    if not worker['implemented']:
+        return _blocked(f"{ticket['roleId']} 执行链尚未建立，不伪造执行结果")
+
+    store.append_ticket_event(ticket_id, 'worker_started', {
+        'executor': worker['executor'], 'requestedTools': requested,
+    })
+
+    try:
+        if worker['executor'] == 'geology_assessment':
+            build = _requested_action(text) == 'generate'
+            outcome = geology_agent.assess(ticket['projectId'], actor, build=build)
+            summary = outcome['summary']
+            if outcome['suggestedNext']:
+                summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            run_id = None
+            next_status = 'done'
+        elif worker['executor'] in ('scheme_assessment', 'stage_assessment'):
+            generate = _requested_action(text) == 'generate'
+            if worker['executor'] == 'scheme_assessment':
+                outcome = (scheme_stage_agent.generate_scheme(ticket['projectId'], actor)
+                           if generate
+                           else scheme_stage_agent.assess_scheme(ticket['projectId'], actor))
+            else:
+                outcome = scheme_stage_agent.assess_stages(
+                    ticket['projectId'], actor, generate=generate)
+            summary = outcome['summary']
+            if outcome.get('suggestedNext'):
+                summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            run_id = outcome.get('taskId')
+            next_status = 'waiting_review' if run_id else 'done'
+        elif worker['executor'] in ('detailing_assessment', 'delivery_assessment'):
+            generate = _requested_action(text) == 'generate'
+            if worker['executor'] == 'detailing_assessment':
+                outcome = (detailing_agent.generate(ticket['projectId'], actor)
+                           if generate
+                           else detailing_agent.assess(ticket['projectId'], actor))
+            else:
+                formal = any(word in str(text or '')
+                             for word in delivery_agent.FORMAL_REQUEST_HINTS)
+                outcome = (delivery_agent.prepare(ticket['projectId'], actor, text)
+                           if (generate or formal)
+                           else delivery_agent.assess(ticket['projectId'], actor))
+            summary = outcome['summary']
+            if outcome.get('suggestedNext'):
+                summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            run_id = outcome.get('taskId')
+            next_status = 'waiting_review' if run_id else 'done'
+        elif worker['executor'] == 'design_basis_intake':
+            outcome = intake.ingest(
+                project_id=ticket['projectId'], actor=actor, text=text,
+                raw_fields=raw_fields, conversation_id=ticket.get('conversationId'),
+                source_label=source_label,
+            )
+            summary = (f"A1 已处理输入：{outcome['mode']}，"
+                       f"填入 {len(outcome['applied'])} 项；{outcome['remaining']['text']}。")
+            run_id = None
+            next_status = 'waiting_review'
+        elif worker['executor'] == 'agent_runtime':
+            if any(word in str(text or '') for word in _FINDINGS_HINTS):
+                overview = findings_store.overview(ticket['projectId'])
+                counts = overview['counts']
+                status = ('blocked' if counts['blockers']
+                          else 'incomplete' if counts['warnings'] else 'ready')
+                outcome = {
+                    'schemaVersion': overview['schemaVersion'],
+                    'mode': 'assessment', 'label': '问题清单',
+                    'projectId': ticket['projectId'], 'status': status,
+                    'counts': counts,
+                    'findings': overview['findings'][:20],
+                    'actions': overview['actions'][:20],
+                    'gaps': [],
+                    'summary': (f"当前登记 {counts['findings']} 条发现"
+                                f"（{counts['blockers']} 阻断、{counts['warnings']} 警告），"
+                                f"{counts['actions']} 条建议动作"
+                                f"（{counts['proposed']} 条待人工决策）。"),
+                    'suggestedNext': ['说「这个计算哪里失败了」可重新诊断并刷新发现'
+                                      if not counts['findings'] else
+                                      '在 /api/agents/findings 查看明细，接受建议需校审角色'],
+                    'engineeringJudgement': False,
+                    'formalConstructionIssue': False,
+                }
+                run_id = None
+                next_status = 'done'
+                summary = outcome['summary']
+                if outcome.get('suggestedNext'):
+                    summary += ' 建议：' + '；'.join(outcome['suggestedNext'])
+            else:
+                chosen = result_hash
+                if not chosen:
+                    frozen = [row for row in orchestrator._frozen_results(ticket['projectId'])
+                              if row['launchable']]
+                    chosen = frozen[0]['resultHash'] if frozen else None
+                if not chosen:
+                    return _blocked('没有可启动的冻结单剖面结果；'
+                                    '请先在单剖面工作台完成一次计算并冻结结果')
+                run = AgentRuntime().create(
+                    StartRun(result_hash=chosen,
+                             conversation_id=ticket.get('conversationId')),
+                    actor=actor,
+                )
+                outcome = {'mode': 'run_created', 'run': {
+                    'id': run['id'], 'status': run['status'], 'step': run['step']}}
+                run_id = run['id']
+                role_name = ROLE_META[ticket['roleId']]['name']
+                summary = (f"{ticket['roleId']} {role_name} 已受理：任务 {run['id'][:12]} "
+                           f"在后台执行（{run['step']}），诊断和候选复算结果会陆续回到这里；"
+                           f"采用候选需在人工复核端点确认。")
+                next_status = 'waiting_review'
+        else:
+            return _blocked('执行器未登记')
+    except Exception as exc:
+        return _blocked(f"执行器返回错误：{type(exc).__name__}: {str(exc)[:160]}", 'failed')
+
+    store.append_ticket_event(ticket_id, 'worker_completed', {
+        'executor': worker['executor'], 'outcome': outcome,
+    })
+    store.update_ticket(ticket_id, status=next_status, worker_run_id=run_id)
+    _reply_from_router(ticket, 'worker_completed', summary, {
+        'dispatched': True, 'runId': run_id,
+    })
+    return {
+        'dispatched': True, 'ticketId': ticket_id, 'roleId': ticket['roleId'],
+        'executor': worker['executor'], 'status': next_status,
+        'runId': run_id, 'outcome': outcome,
+        'formalConstructionIssue': False,
+    }
+
+
+_TASK_LABELS = {
+    'support_layout_optimization': '支护方案生成',
+    'rebar_design': '配筋方案',
+    'p3_detailing_closure': '节点与钢筋深化',
+    'export_coordinated_delivery': '评审版成果包',
+}
+_TASK_TERMINAL = ('success', 'failed', 'cancelled')
+
+
+def _task_report(task) -> tuple[str, str]:
+    """把任务终态翻译成一句人话；不伪造成功。"""
+    label = _TASK_LABELS.get(str(task.operation), str(task.title or task.operation))
+    if task.status == 'success':
+        result = dict(task.result or {})
+        extra = ''
+        if result.get('candidateCount') is not None:
+            extra = f"，生成 {result['candidateCount']} 个候选"
+        elif result.get('status'):
+            extra = f"，状态 {result['status']}"
+        return 'done', f'{label}已完成{extra}。采用前仍需要人工复核。'
+    if task.status == 'failed':
+        reason = (task.error or '').strip()[:300] or '未知原因'
+        return 'failed', f'{label}失败：{reason}'
+    return 'failed', f'{label}已取消。'
+
+
+def sync_task_tickets(*, project_id: str, limit: int = 50) -> list[dict]:
+    """把已结束的后台任务回写到会话与 Ticket；每个 Ticket 只回写一次。"""
+    from app.tasks.manager import task_manager
+
+    store = AgentStore()
+    synced: list[dict] = []
+    for ticket in store.list_tickets(project_id=project_id, limit=limit):
+        if ticket['status'] != 'waiting_review':
+            continue
+        task_id = str(ticket.get('workerRunId') or '')
+        if not task_id.startswith('task-'):
+            continue
+        task = task_manager.get(task_id)
+        if task is None or task.status not in _TASK_TERMINAL:
+            continue
+        next_status, text = _task_report(task)
+        if ticket.get('conversationId'):
+            try:
+                store.get_conversation(ticket['conversationId'])
+                store.append_message(
+                    ticket['conversationId'], role='tool', content=text,
+                    metadata={'answerKind': 'task_report', 'ticketId': ticket['id'],
+                              'roleId': ticket['roleId'], 'taskId': task.id,
+                              'taskStatus': task.status,
+                              'engineeringJudgement': False},
+                )
+            except KeyError:
+                pass
+        store.update_ticket(ticket['id'], status=next_status, worker_run_id=task.id)
+        store.append_ticket_event(ticket['id'], 'task_completed', {
+            'taskId': task.id, 'status': task.status, 'summary': text,
+        })
+        synced.append({'ticketId': ticket['id'], 'taskId': task.id,
+                       'status': next_status, 'summary': text})
+    return synced
+
+
+def tickets(*, project_id: str | None = None, limit: int = 30) -> list[dict]:
+    if project_id:
+        try:
+            sync_task_tickets(project_id=project_id, limit=limit)
+        except Exception:
+            pass
+    return AgentStore().list_tickets(project_id=project_id, limit=limit)
+
+
+def ticket_detail(ticket_id: str) -> dict:
+    store = AgentStore()
+    ticket = store.get_ticket(ticket_id)
+    return {'ticket': ticket, 'events': store.ticket_events(ticket_id),
+            'formalConstructionIssue': False}
+
+
+def watchdog(project_id: str) -> dict:
+    """外部看门狗视角：巡检卡住的任务与停滞的 Ticket。"""
+    runs = AgentStore().list(project_id=project_id, limit=10)
+    stalled_tickets = []
+    for ticket in AgentStore().list_tickets(project_id=project_id, limit=30):
+        if ticket['status'] in ('accepted', 'running'):
+            age = orchestrator._age_seconds(ticket['updatedAt'])
+            if age > 300:
+                stalled_tickets.append({
+                    'ticketId': ticket['id'], 'roleId': ticket['roleId'],
+                    'status': ticket['status'], 'ageSeconds': round(age, 1),
+                    'action': 'inspect_then_retry',
+                })
+    return {
+        'schemaVersion': 'pitguard.super-agent-watchdog/1',
+        'projectId': project_id,
+        'runRecovery': orchestrator._recovery(runs),
+        'stalledTickets': stalled_tickets,
+        'formalConstructionIssue': False,
+    }

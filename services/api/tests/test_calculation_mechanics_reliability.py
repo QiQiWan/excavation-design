@@ -90,14 +90,37 @@ def test_embedment_passive_overburden_starts_at_pit_bottom():
     assert check.calculated_value==pytest.approx(rm/am,abs=.001)
     assert check.status!='pass'
 def test_overall_screen_does_not_raise_raw_factor_or_certify():
-    result=check_overall_stability_circular_search('e',soil(),10.,4.,0.,-10.,0.,'二级',20.); candidates=[]
-    for radius in [11.,12.5,15.,17.5,20.,25.,30.]:
-        for offset in [7.,10.,15.,20.,25.]:
-            theta=2*math.asin(min(min(2*radius*.92,math.hypot(offset,14.))/(2*radius),.98)); angle=max(theta/2,math.radians(8)); weight=18*.5*offset*12
-            candidates.append((weight*math.cos(angle)*math.tan(math.pi/6)+.15*18*16)/(weight*math.sin(angle)))
-    assert result.calculated_value==pytest.approx(min(candidates),abs=.001)
-    assert result.status!='pass'
-    assert 'unverified' in result.formula.lower()
+    sand = [GeologicalLayer(stratum_code='S', stratum_name='sand', top_elevation=0., bottom_elevation=-50., thickness=50.,
+                            parameters=SoilParameters(unit_weight=18., saturated_unit_weight=20., cohesion=0., friction_angle=30.,
+                                                      horizontal_subgrade_modulus=8000.))]
+    result = check_overall_stability_circular_search('e', sand, 10., 4., 0., -10., 0., '二级', 20.)
+    assert result.status != 'pass'
+    assert 'screening' in result.formula.lower()
+    assert 'unverified' in result.message.lower() or '未经验证' in result.message
+    # 砂土深坑不应被算成必滑：条分结果必须给出有限、可解释的安全系数
+    assert 0.5 < result.calculated_value < 6.0
+
+    weak = [GeologicalLayer(stratum_code='W', stratum_name='soft', top_elevation=0., bottom_elevation=-50., thickness=50.,
+                            parameters=SoilParameters(unit_weight=18., cohesion=5., friction_angle=8.,
+                                                      horizontal_subgrade_modulus=3000.))]
+    weak_result = check_overall_stability_circular_search('e', weak, 10., 4., 0., -10., 0., '二级', 20.)
+    assert weak_result.calculated_value < result.calculated_value
+
+    # 基坑宽度进入搜索时，不应因宽度放大滑体而出现荒谬的低值
+    wide = check_overall_stability_circular_search('e', sand, 10., 4., 0., -10., 0., '二级', 80.)
+    assert wide.calculated_value > 1.0
+
+
+def test_overall_screen_scales_with_cohesion():
+    values = []
+    for cohesion in (10., 40., 80.):
+        layers = [GeologicalLayer(stratum_code='C', stratum_name='clay', top_elevation=0., bottom_elevation=-40., thickness=40.,
+                                  parameters=SoilParameters(unit_weight=18., cohesion=cohesion, friction_angle=0.,
+                                                            horizontal_subgrade_modulus=5000.))]
+        values.append(check_overall_stability_circular_search('e', layers, 8., 6., 0., -8., 10., '二级', 24.).calculated_value)
+    assert values[0] < values[1] < values[2]
+    # c 从 10 提到 40（4 倍）时，纯黏性土的筛查安全系数应随之成比例上升
+    assert values[1] == pytest.approx(4.0 * values[0], rel=0.25)
 
 @pytest.mark.parametrize('stiffness',[0.,1e3,1e9])
 def test_wall_assembly_and_recovery_use_identical_stiffness(monkeypatch,stiffness):

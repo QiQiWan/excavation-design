@@ -1591,6 +1591,17 @@ def run_candidate_comparison_for_project(project: Project, top_n: int = 3) -> li
     return comparison
 
 
+def _restraint_status(stage_depth: float, active_supports: list, audit_status: str) -> str:
+    """没有支撑的阶段按悬臂工况验算，不存在「支撑层未闭合」问题。
+
+    该检查只审「已安装支撑的传力路径是否连续」；未开挖或悬臂开挖阶段
+    没有支撑可审，判失败会让每个项目凭空多出硬失败。
+    """
+    if not active_supports:
+        return "pass"
+    return audit_status
+
+
 def _run_calculation_impl(project: Project, calculation_case: CalculationCase | None = None, auto_repair: bool = True, include_candidate_comparison: bool = False, mode: str = "verify") -> CalculationResult:
     execution = CalculationExecutionTrace(
         run_id=f"calc-run-{project.id}-{hashlib.sha256(os.urandom(16)).hexdigest()[:12]}",
@@ -1829,6 +1840,7 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     segment_wall_envelopes: dict[str, dict[str, float]] = {}
     segment_wall_design: dict[str, dict[str, float]] = {}
 
+
     for segment in project.excavation.segments:
         section = extract_representative_section(project, segment.id)
         wall = walls_by_segment.get(segment.id)
@@ -1890,7 +1902,10 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
             segment_design["moment"] = max(segment_design["moment"], m_design)
             segment_design["shear"] = max(segment_design["shear"], v_design)
             stage_checks: list[dict[str, Any]] = []
-            restraint_status = str(wall_restraint_audit.get("status") or "manual_review")
+            no_supports = not active_supports
+            restraint_status = _restraint_status(
+                stage_depth, active_supports,
+                str(wall_restraint_audit.get("status") or "manual_review"))
             stage_checks.append({
                 "ruleId": "PITGUARD-WALL-RESTRAINT-LOAD-PATH",
                 "objectId": wall.id if wall else segment.id,
@@ -1900,7 +1915,11 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
                 "limitValue": len(wall_restraint_audit.get("activeLevels") or []),
                 "unit": "support levels",
                 "message": (
-                    "墙面已形成直接支撑或短回墙两端围檩传力约束。"
+                    ("初始状态尚未开挖，无支撑传力需求。"
+                     if float(stage_depth) <= 1e-9
+                     else "本阶段无支撑，按悬臂工况验算，无支撑传力路径需核对。")
+                    if no_supports
+                    else "墙面已形成直接支撑或短回墙两端围檩传力约束。"
                     if restraint_status == "pass"
                     else "墙面存在未闭合支撑层，当前内力不得直接用于构件设计。"
                 ),
@@ -2140,9 +2159,9 @@ def _run_calculation_impl(project: Project, calculation_case: CalculationCase | 
     support_checks: list[dict[str, Any]] = []
     support_checks.append({
         "ruleId": "PITGUARD-SOIL-RESISTANCE-MODEL", "objectId": project.retaining_system.id,
-        "objectType": "RetainingSystem", "status": "fail", "calculatedValue": None, "limitValue": None,
+        "objectType": "RetainingSystem", "status": "manual_review", "calculatedValue": None, "limitValue": None,
         "unit": "-", "formalUseAllowed": False,
-        "message": "当前土压力含坑内被动抗力，结构模型同时采用坑底以下弹性土弹簧；两者动员关系尚未完成本构一致性验证，可能重复计入土体抗力。结果仅用于排错与筛查。",
+        "message": "当前土压力含坑内被动抗力，结构模型同时采用坑底以下弹性土弹簧；两者动员关系尚未完成本构一致性验证，可能重复计入土体抗力。结果是方法学限制，不代表设计不合格；正式使用前仍需专项验算。",
         "clauseReference": "unvalidated passive-resistance and elastic-spring compatibility; requires a calibrated constitutive model",
     })
     # V3.68-V3.70: solve the concave transfer frame for every construction

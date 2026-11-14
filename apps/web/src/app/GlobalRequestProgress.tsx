@@ -75,6 +75,10 @@ export function finishGlobalActivity(id: string, result: { ok: boolean; phase?: 
   });
 }
 
+// 被动读取只用于告诉用户"还在加载"，不该被轮询请求钉在屏幕上。
+const PASSIVE_VISIBLE_MS = 3000;
+const PASSIVE_STALE_MS = 20000;
+
 function estimatedProgress(item: ActiveRequest, clock: number) {
   if (item.finishedAt) return 100;
   if (Number.isFinite(Number(item.progress))) return Math.max(2, Math.min(98, Number(item.progress)));
@@ -145,7 +149,13 @@ export function GlobalRequestProgress() {
   }, [items]);
 
   const visible = useMemo(() => Object.values(items)
-    .filter((item) => item.finishedAt || clock - item.startedAt >= (item.blocking ? 180 : 900))
+    .filter((item) => {
+      const age = clock - item.startedAt;
+      if (item.finishedAt) return true;
+      // 超过上限仍未结束的被动读取直接不展示，避免遮罩长期停在一个百分比。
+      if (!item.blocking && age > PASSIVE_STALE_MS) return false;
+      return age >= (item.blocking ? 180 : PASSIVE_VISIBLE_MS);
+    })
     .sort((a, b) => {
       if (Boolean(a.finishedAt) !== Boolean(b.finishedAt)) return a.finishedAt ? 1 : -1;
       return b.startedAt - a.startedAt;

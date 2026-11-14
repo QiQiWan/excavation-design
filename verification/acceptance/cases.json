@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "pitguard.acceptance/1",
+  "note": "案例由 build_cases.py 从站点自带单剖面验证样例的三个刚度变体重新算出；expectedTop3 沿用 V3.88 工程师按规范缺口的人工标注，不依赖算法排序结果。runtime/ 不入库，快照丢失时重跑本脚本即可恢复。",
+  "cases": [
+    {
+      "id": "case-01",
+      "kind": "diagnosis",
+      "title": "单桩剖面：整体稳定与配筋验算缺口",
+      "projectId": "NUMERICAL-VERIFICATION",
+      "sectionId": "ONE-STRUT-01",
+      "resultHash": "f503c3d76123940119ce0d865211312987e4be3ecaec938268494105a8caacc8",
+      "source": "runtime/one_strut/results",
+      "sourceInput": "services/api/app/engineering/single_braced_pile/assets/verification_example.json",
+      "stiffnessFactor": 1.0,
+      "displacementMm": 5.609,
+      "expectedTop3": [
+        "STABILITY_NOT_INTEGRATED",
+        "REBAR_NOT_FULLY_VERIFIED",
+        "NORMATIVE_3_1_LOAD_COMBINATIONS"
+      ],
+      "rationale": "该剖面缺整体稳定集成、缺轴弯抗剪裂缝验算，且荷载组合未生成；这三项应先于来源缺失被指出。",
+      "analysisStatus": "complete"
+    },
+    {
+      "id": "case-02",
+      "kind": "diagnosis",
+      "title": "同一剖面降低桩刚度：缺口是否稳定复现",
+      "projectId": "NUMERICAL-VERIFICATION",
+      "sectionId": "ONE-STRUT-01",
+      "resultHash": "1fa118e5d8d78828497d7acca292763c6891063e0c502f4b104a300d06f1e0ee",
+      "source": "runtime/one_strut/results",
+      "sourceInput": "services/api/app/engineering/single_braced_pile/assets/verification_example.json",
+      "stiffnessFactor": 0.7,
+      "displacementMm": 5.83,
+      "expectedTop3": [
+        "STABILITY_NOT_INTEGRATED",
+        "REBAR_NOT_FULLY_VERIFIED",
+        "NORMATIVE_3_1_LOAD_COMBINATIONS"
+      ],
+      "rationale": "桩刚度降到 70% 后位移上升，规范缺口不应变化；若排序漂移说明诊断不稳定。",
+      "analysisStatus": "complete"
+    },
+    {
+      "id": "case-03",
+      "kind": "diagnosis",
+      "title": "同一剖面提高桩刚度：位移下降但结论一致",
+      "projectId": "NUMERICAL-VERIFICATION",
+      "sectionId": "ONE-STRUT-01",
+      "resultHash": "a060ce09005b3430122e57393450614e231a6cc37c73e32f7b5ae043a7bbb97d",
+      "source": "runtime/one_strut/results",
+      "sourceInput": "services/api/app/engineering/single_braced_pile/assets/verification_example.json",
+      "stiffnessFactor": 1.4,
+      "displacementMm": 5.496,
+      "expectedTop3": [
+        "STABILITY_NOT_INTEGRATED",
+        "REBAR_NOT_FULLY_VERIFIED",
+        "NORMATIVE_3_1_LOAD_COMBINATIONS"
+      ],
+      "rationale": "桩刚度提到 140% 后位移下降，仍缺同一批验算；用于确认诊断不是只盯位移。",
+      "analysisStatus": "complete"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import { waitForTaskWithHealth } from '../utils/taskPolling';
 import ConstructionStageEditor from '../components/ConstructionStageEditor';
 import DesignCoreWorkflowPanel, { type PrimaryDesignStageKey } from '../components/DesignCoreWorkflowPanel';
 import PanelErrorBoundary from '../app/PanelErrorBoundary';
+import AssistantPanel from '../features/agent/AssistantPanel';
 import { sanitizeCandidatePlanGeometry } from '../drawing/candidateGeometry';
 
 const GeologyViewer = lazy(() => import('../viewers/GeologyViewer'));
@@ -151,18 +152,30 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
     const controller = new AbortController();
     refreshAbortRef.current = controller;
     setStatusLoadState('loading');
-    const [updated, core] = await Promise.all([
-      api.getProject(projectId, controller.signal),
-      api.getCoreDesignStatus(projectId, active, 'stage', controller.signal),
-    ]).catch((reason) => { if (!controller.signal.aborted && generation === refreshGenerationRef.current) setStatusLoadState('error'); throw reason; });
-    if (generation !== refreshGenerationRef.current || updated.id !== projectId || controller.signal.aborted) return core as CoreStatus;
+    // 设计基准等第一页表单只依赖项目快照。状态投影较慢，拆开跑：
+    // 拿到项目就立即刷新表单；状态接口失败只标记状态区，不回滚这次刷新。
+    const statusRequest = api.getCoreDesignStatus(projectId, active, 'stage', controller.signal);
+    void statusRequest.catch(() => undefined);
+    const updated = await api.getProject(projectId, controller.signal).catch((reason) => {
+      if (!controller.signal.aborted && generation === refreshGenerationRef.current) setStatusLoadState('error');
+      throw reason;
+    });
+    if (generation !== refreshGenerationRef.current || updated.id !== projectId || controller.signal.aborted) return undefined;
     loadedStageKeyRef.current = `${updated.id}:${updated.updatedAt}:${active}`;
     setCurrent(updated);
-    setStatus(core as CoreStatus);
     setStatusRevision(`${updated.id}:${updated.updatedAt}`);
-    setStatusLoadState('ready');
     onProjectChange(updated);
-    return core as CoreStatus;
+    try {
+      const core = await statusRequest;
+      if (!controller.signal.aborted && generation === refreshGenerationRef.current) {
+        setStatus(core as CoreStatus);
+        setStatusLoadState('ready');
+        return core as CoreStatus;
+      }
+    } catch {
+      if (!controller.signal.aborted && generation === refreshGenerationRef.current) setStatusLoadState('error');
+    }
+    return undefined;
   }
 
   useEffect(() => {
@@ -362,6 +375,8 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
   const calculationBusy = taskLaunching || Boolean(taskState);
 
   return <main className="coreWorkspace">
+    <div className="coreBody">
+    <div className="coreColumn">
     <header className="coreHeader">
       <div className="coreProjectIdentity">
         <button className="secondary" onClick={onBack}>项目列表</button>
@@ -418,7 +433,7 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
       <CoreStandardGuidance standards={(status?.standards?.[active] ?? []) as any[]} />
 
       {active === 'basis' ? <section className="corePanel">
-        <DesignBasisPanel project={current} basis={status?.designBasis} onSaved={async (updated) => { setCurrent(updated); await refresh(); }} />
+        <DesignBasisPanel key={current.updatedAt} project={current} basis={status?.designBasis} onSaved={async (updated) => { setCurrent(updated); await refresh(); }} />
       </section> : null}
 
       {active === 'input' ? <section className="corePanel">
@@ -537,5 +552,8 @@ export default function CoreProjectWorkspace({ project, onBack, onProjectChange 
         </div>
       </section> : null}
     </section>
+    </div>
+    </div>
+    <AssistantPanel projectId={current.id} projectName={current.name} onProjectChanged={() => { void refresh(); }} />
   </main>;
 }

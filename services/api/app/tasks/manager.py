@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - Windows compatibility
     resource = None  # type: ignore[assignment]
 from contextlib import contextmanager, nullcontext
 
-from app.schemas.domain import Project
+from app.schemas.domain import Project, now_iso
 from app.storage.repository import ProjectRepository
 from app.storage.task_store import SQLiteTaskStore
 from app.version import SOFTWARE_VERSION
@@ -2842,7 +2842,8 @@ class TaskManager:
 
     def _run_coordinated_delivery_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         from app.services.delivery_package import export_coordinated_delivery_package
-        project = self._repo().require(task.project_id)
+        repo = self._repo()
+        project = repo.require(task.project_id)
         issue_mode = str(payload.get("issueMode") or payload.get("issue_mode") or "review")
         rebar_mode = str(payload.get("rebarMode") or payload.get("rebar_mode") or "balanced")
         include_ifc = bool(payload.get("includeIfcProfiles", payload.get("include_ifc_profiles", True)))
@@ -2850,6 +2851,15 @@ class TaskManager:
         path = export_coordinated_delivery_package(
             project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode, include_ifc_profiles=include_ifc
         )
+        project.delivery_packages = [*list(project.delivery_packages or [])[-9:], {
+            "packageType": "coordinated_delivery",
+            "issueMode": issue_mode,
+            "rebarMode": rebar_mode,
+            "filename": path.name,
+            "path": str(path),
+            "createdAt": now_iso(),
+        }]
+        repo.save(project)
         return self._file_result(path, "application/zip", {
             "packageType": "coordinated_delivery", "issueMode": issue_mode, "rebarMode": rebar_mode, "refreshProject": True
         })

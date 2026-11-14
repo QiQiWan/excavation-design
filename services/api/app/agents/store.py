@@ -9,7 +9,7 @@ from datetime import datetime,timezone
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
-import json,os,sqlite3,time
+import json,os,sqlite3,time,threading
 
 
 def now():
@@ -18,6 +18,63 @@ def now():
 
 def encode(value):
     return json.dumps(value,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':'))
+
+
+# WAL 只需要对每个库设置一次。每次连接都执行 PRAGMA journal_mode=WAL 会与
+# 后台 worker 的高频连接争抢写锁，在 Windows 上表现为偶发的
+# "attempt to write a readonly database"。
+_WAL_READY: set[str] = set()
+
+# 同一个库文件在进程内共用一把可重入锁。SQLite 在 Windows 上由最后一个连接
+# 关闭时删除 -wal/-shm；若此刻另一线程正在打开同一个库，新连接会拿到已失效的
+# WAL 上下文，随后 BEGIN IMMEDIATE 报 "attempt to write a readonly database"。
+# 把「开连接 → 设 WAL → 用 → 关连接」整段串行化即可断根；同时避免两个线程
+# 同时执行 PRAGMA journal_mode=WAL 把对方的连接变成只读。
+_PATH_LOCKS: dict[str, object] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(key: str):
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _PATH_LOCKS[key] = lock
+        return lock
+
+
+def _execute_with_retry(operation, *args):
+    """Retry only transient SQLite write contention; other errors propagate."""
+    for attempt in range(5):
+        try:
+            return operation(*args)
+        except sqlite3.OperationalError as exc:
+            message = str(exc).lower()
+            if 'readonly database' not in message and 'database is locked' not in message:
+                raise
+            if attempt == 4:
+                raise
+            time.sleep(0.12 * (attempt + 1))
+
+
+def _write_with_retry(operation):
+    return _execute_with_retry(operation)
+
+
+class _RetryingConnection:
+    """Proxy that gives every write path the same transient-failure retry."""
+
+    def __init__(self, connection):
+        object.__setattr__(self, '_connection', connection)
+
+    def execute(self, sql, *args):
+        return _execute_with_retry(self._connection.execute, sql, *args)
+
+    def executescript(self, sql):
+        return _execute_with_retry(self._connection.executescript, sql)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
 
 
 class ConflictError(ValueError):
@@ -41,7 +98,8 @@ class AgentStore:
                     error TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0,
                     pause_requested INTEGER NOT NULL DEFAULT 0,
                     lease_owner TEXT, lease_until REAL, revision INTEGER NOT NULL DEFAULT 0,
-                    client_request_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    client_request_id TEXT, conversation_id TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                     UNIQUE(actor,client_request_id));
                 CREATE INDEX IF NOT EXISTS runs_schedule ON runs(status,lease_until,created_at);
                 CREATE TABLE IF NOT EXISTS events (
@@ -64,21 +122,138 @@ class AgentStore:
                     decision TEXT NOT NULL, comment TEXT NOT NULL, reviewer TEXT NOT NULL,
                     previous_snapshot_hash TEXT NOT NULL, selected_snapshot_hash TEXT,
                     created_at TEXT NOT NULL, UNIQUE(run_id));
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor TEXT NOT NULL,
+                    title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS conversations_project ON conversations(project_id,updated_at);
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL, content TEXT NOT NULL, metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS messages_conversation ON messages(conversation_id,id);
+                CREATE TABLE IF NOT EXISTS tool_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, tool_name TEXT NOT NULL,
+                    permission TEXT NOT NULL, actor TEXT NOT NULL, project_id TEXT,
+                    params_json TEXT NOT NULL, ok INTEGER NOT NULL, result_json TEXT,
+                    error TEXT, duration_ms INTEGER NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS tool_calls_recent ON tool_calls(id DESC);
+                CREATE TABLE IF NOT EXISTS orchestrations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+                    conversation_id TEXT, actor TEXT NOT NULL, stage_key TEXT,
+                    gate TEXT, dispatched INTEGER NOT NULL, run_id TEXT,
+                    decision_json TEXT NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS orchestrations_project ON orchestrations(project_id,id DESC);
+                CREATE TABLE IF NOT EXISTS agent_triggers (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, conversation_id TEXT,
+                    thread_id TEXT, kind TEXT NOT NULL, payload_json TEXT NOT NULL,
+                    decision TEXT NOT NULL, reason TEXT NOT NULL,
+                    policy_provider TEXT NOT NULL, ticket_id TEXT,
+                    created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_triggers_project ON agent_triggers(project_id,created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_tickets (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, conversation_id TEXT,
+                    thread_id TEXT, role_id TEXT NOT NULL, stage_id TEXT NOT NULL,
+                    mandate_json TEXT NOT NULL, status TEXT NOT NULL,
+                    accept_mode TEXT NOT NULL, worker_run_id TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_tickets_project ON agent_tickets(project_id,created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_ticket_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_ticket_events_ticket ON agent_ticket_events(ticket_id,id);
+                CREATE TABLE IF NOT EXISTS evidence_records (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, field_key TEXT NOT NULL,
+                    value_json TEXT NOT NULL, source_type TEXT NOT NULL, source_label TEXT NOT NULL,
+                    source_location TEXT, raw_text TEXT, provider TEXT NOT NULL,
+                    captured_at TEXT NOT NULL, captured_by TEXT NOT NULL,
+                    confirmed INTEGER NOT NULL DEFAULT 0);
+                CREATE INDEX IF NOT EXISTS evidence_project ON evidence_records(project_id, captured_at DESC);
+                CREATE TABLE IF NOT EXISTS model_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, purpose TEXT NOT NULL,
+                    model TEXT NOT NULL, ok INTEGER NOT NULL, status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL, duration_ms INTEGER NOT NULL,
+                    prompt_tokens INTEGER, completion_tokens INTEGER,
+                    error_type TEXT, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS model_calls_recent ON model_calls(id DESC);
+                CREATE TABLE IF NOT EXISTS agent_findings (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL DEFAULT '', code TEXT NOT NULL,
+                    severity TEXT NOT NULL, category TEXT, title TEXT NOT NULL,
+                    detail TEXT, source TEXT NOT NULL, evidence_json TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS agent_findings_key
+                    ON agent_findings(project_id, code, run_id);
+                CREATE INDEX IF NOT EXISTS agent_findings_project
+                    ON agent_findings(project_id, severity, created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_actions (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL DEFAULT '', finding_id TEXT,
+                    kind TEXT NOT NULL, title TEXT NOT NULL, rationale TEXT,
+                    member_type TEXT, member_id TEXT,
+                    params_json TEXT, status TEXT NOT NULL, created_by TEXT NOT NULL,
+                    decided_by TEXT, decision_note TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS agent_actions_key
+                    ON agent_actions(project_id, run_id, title);
+                CREATE INDEX IF NOT EXISTS agent_actions_project
+                    ON agent_actions(project_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_flows (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                    conversation_id TEXT, status TEXT NOT NULL,
+                    current_stage TEXT, steps_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS agent_flows_project
+                    ON agent_flows(project_id, created_at DESC);
             ''')
             # Migration for installations that ran an early V3.88 pilot build.
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
             if 'pause_requested' not in columns:
                 c.execute('ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0')
+            if 'conversation_id' not in columns:
+                c.execute('ALTER TABLE runs ADD COLUMN conversation_id TEXT')
+            # Run events are mirrored into the linked conversation. source_key
+            # makes the mirror idempotent; ordinary turns keep a NULL key.
+            message_columns={x[1] for x in c.execute('PRAGMA table_info(messages)')}
+            if 'source_key' not in message_columns:
+                c.execute('ALTER TABLE messages ADD COLUMN source_key TEXT')
+            c.execute('''CREATE UNIQUE INDEX IF NOT EXISTS messages_source_key
+                         ON messages(conversation_id,source_key) WHERE source_key IS NOT NULL''')
+            # Ticket 绑定的项目版本：排队期间项目被改过就不允许继续执行。
+            ticket_columns={x[1] for x in c.execute('PRAGMA table_info(agent_tickets)')}
+            if 'source_project_updated_at' not in ticket_columns:
+                c.execute('ALTER TABLE agent_tickets ADD COLUMN source_project_updated_at TEXT')
+            # 模型调用费用：旧库补列，历史行为 NULL（表示未计价，不伪造 0）。
+            call_columns={x[1] for x in c.execute('PRAGMA table_info(model_calls)')}
+            if 'cost_usd' not in call_columns:
+                c.execute('ALTER TABLE model_calls ADD COLUMN cost_usd REAL')
+            if 'cost_source' not in call_columns:
+                c.execute('ALTER TABLE model_calls ADD COLUMN cost_source TEXT')
+            # 建议动作指向具体构件；旧库补列。
+            action_columns={x[1] for x in c.execute('PRAGMA table_info(agent_actions)')}
+            if 'member_type' not in action_columns:
+                c.execute('ALTER TABLE agent_actions ADD COLUMN member_type TEXT')
+            if 'member_id' not in action_columns:
+                c.execute('ALTER TABLE agent_actions ADD COLUMN member_id TEXT')
 
     @contextmanager
     def connect(self):
-        c=sqlite3.connect(self.path,timeout=12.0,isolation_level=None)
-        c.row_factory=sqlite3.Row
-        c.execute('PRAGMA busy_timeout=12000')
-        c.execute('PRAGMA foreign_keys=ON')
-        c.execute('PRAGMA journal_mode=WAL')
-        try: yield c
-        finally: c.close()
+        key = str(self.path)
+        with _path_lock(key):
+            c=sqlite3.connect(self.path,timeout=12.0,isolation_level=None)
+            c.row_factory=sqlite3.Row
+            c.execute('PRAGMA busy_timeout=12000')
+            c.execute('PRAGMA foreign_keys=ON')
+            if key not in _WAL_READY:
+                try:
+                    c.execute('PRAGMA journal_mode=WAL')
+                    _WAL_READY.add(key)
+                except sqlite3.OperationalError:
+                    pass
+            try: yield _RetryingConnection(c)
+            finally: c.close()
 
     @staticmethod
     def _run(row):
@@ -98,10 +273,12 @@ class AgentStore:
                  'updatedAt' if k=='updated_at' else
                  'leaseOwner' if k=='lease_owner' else
                  'leaseUntil' if k=='lease_until' else
+                 'conversationId' if k=='conversation_id' else
                  'clientRequestId' if k=='client_request_id' else k):
                 bool(v) if k in ('cancel_requested','pause_requested') else v for k,v in r.items()}
 
-    def create(self,*,result,actor:str,max_candidates:int=3,model_mode:str='off',client_request_id=None):
+    def create(self,*,result,actor:str,max_candidates:int=3,model_mode:str='off',
+               client_request_id=None,conversation_id:str|None=None):
         rh=result['resultHash'];sh=result['snapshotHash'];pr=result['projectId'];sec=result['sectionId']
         rid=uuid4().hex;ts=now()
         with self.connect() as c:
@@ -110,9 +287,10 @@ class AgentStore:
                 prior=c.execute('SELECT * FROM runs WHERE actor=? AND client_request_id=?',(actor,client_request_id)).fetchone()
                 if prior:
                     if (prior['source_result_hash']!=rh or prior['candidate_limit']!=max_candidates
-                            or prior['model_mode']!=model_mode):
+                            or prior['model_mode']!=model_mode
+                            or (prior['conversation_id'] or None)!=(conversation_id or None)):
                         c.execute('ROLLBACK')
-                        raise ConflictError('幂等请求号对应不同冻结结果、模型模式或候选预算')
+                        raise ConflictError('幂等请求号对应不同冻结结果、模型模式、候选预算或会话')
                     c.execute('COMMIT')
                     return self._run(prior)
             selection=c.execute('SELECT * FROM selection WHERE project_id=? AND section_id=?',(pr,sec)).fetchone()
@@ -122,17 +300,69 @@ class AgentStore:
             if not selection:
                 c.execute('INSERT INTO selection VALUES(?,?,?,?,?,?,?)',(pr,sec,sh,rh,0,actor,ts))
             c.execute('''INSERT INTO runs(id,project_id,section_id,actor,source_result_hash,
-                source_snapshot_hash,status,step,progress,candidate_limit,model_mode,client_request_id,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                (rid,pr,sec,actor,rh,sh,'queued','diagnose',0,max_candidates,model_mode,client_request_id,ts,ts))
-            self._event(c,rid,'created','run_created',{'sourceResultHash':rh})
+                source_snapshot_hash,status,step,progress,candidate_limit,model_mode,client_request_id,conversation_id,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (rid,pr,sec,actor,rh,sh,'queued','diagnose',0,max_candidates,model_mode,client_request_id,conversation_id,ts,ts))
+            self._event(c,rid,'created','run_created',{'sourceResultHash':rh,
+                **({'conversationId':conversation_id} if conversation_id else {})})
             c.execute('COMMIT')
         return self.get(rid)
 
+    EVENT_NOTES = {
+        'run_created': '试点任务已创建',
+        'diagnosis_completed': '诊断完成，已记录待处理问题',
+        'candidate_plan_created': '已生成有界候选方案',
+        'candidate_evaluated': '完成一个候选的完整复算',
+        'candidate_evaluation_completed': '候选复算全部完成',
+        'candidate_comparison_completed': '候选对比完成，等待人工复核',
+        'human_decision': '人工复核决策已记录',
+        'run_paused': '任务已暂停',
+        'run_cancelled': '任务已取消',
+        'run_failed': '任务执行失败',
+    }
+
+    @staticmethod
+    def _event_note(kind,data):
+        """把 run 事件翻译成工程师能看懂的一句进展，而不是笼统的「状态更新」。"""
+        data=data or {}
+        if kind=='diagnosis_completed':
+            return f"诊断完成：发现 {int(data.get('issueCount') or 0)} 个待处理问题"
+        if kind=='candidate_plan_created':
+            return f"已生成 {int(data.get('candidateCount') or 0)} 个候选修改"
+        if kind=='candidate_evaluated':
+            index=data.get('index')
+            label=(int(index)+1) if isinstance(index,int) else '?'
+            return f"候选 {label} 复算完成（{data.get('status') or 'unknown'}）"
+        if kind=='candidate_evaluation_completed':
+            return '全部候选复算完成'
+        if kind=='candidate_comparison_completed':
+            return (f"候选对比完成：共 {int(data.get('candidateCount') or 0)} 个，"
+                    f"{int(data.get('calculatedCount') or 0)} 个可计算；采用需人工复核")
+        if kind=='step_failed':
+            return f"任务失败（{data.get('step') or '未知阶段'}）：{str(data.get('errorType') or '')[:60]}"
+        return AgentStore.EVENT_NOTES.get(kind,'任务状态更新')
+
     @staticmethod
     def _event(c,rid,key,kind,data):
-        c.execute('INSERT OR IGNORE INTO events(run_id,event_key,event_type,payload_json,created_at) VALUES(?,?,?,?,?)',
-                  (rid,key,kind,encode(data),now()))
+        cur=c.execute('INSERT OR IGNORE INTO events(run_id,event_key,event_type,payload_json,created_at) VALUES(?,?,?,?,?)',
+                      (rid,key,kind,encode(data),now()))
+        if not cur.rowcount:
+            return
+        row=c.execute('SELECT conversation_id FROM runs WHERE id=?',(rid,)).fetchone()
+        cid=row['conversation_id'] if row else None
+        if not cid:
+            return
+        meta={'answerKind':'run_event','runId':rid,'eventKey':key,'eventType':kind,
+              'payload':data or {},'engineeringJudgement':False}
+        try:
+            c.execute('''INSERT OR IGNORE INTO messages
+                (conversation_id,role,content,metadata_json,created_at,source_key)
+                VALUES(?,?,?,?,?,?)''',
+                (cid,'tool',AgentStore._event_note(kind,data),
+                 encode(meta),now(),'run:'+rid+':'+key))
+            c.execute('UPDATE conversations SET updated_at=? WHERE id=?',(now(),cid))
+        except sqlite3.Error:
+            pass
 
     def get(self,rid):
         with self.connect() as c: return self._run(c.execute('SELECT * FROM runs WHERE id=?',(rid,)).fetchone())
@@ -169,19 +399,23 @@ class AgentStore:
                     'updatedBy':r['updated_by'],'formalConstructionIssue':False}
 
     def claim(self,owner:str,lease_seconds=300,run_id=None):
-        with self.connect() as c:
-            c.execute('BEGIN IMMEDIATE')
-            cond='''status IN ('queued','running') AND cancel_requested=0
-                     AND (lease_until IS NULL OR lease_until<?)'''
-            args=[time.time()]
-            if run_id:
-                cond+=' AND id=?';args.append(run_id)
-            row=c.execute('SELECT * FROM runs WHERE '+cond+' ORDER BY created_at ASC LIMIT 1',tuple(args)).fetchone()
-            if row is None: c.execute('COMMIT');return None
-            c.execute('UPDATE runs SET status=?, lease_owner=?, lease_until=?, updated_at=?, revision=revision+1 WHERE id=?',
-                      ('running',owner,time.time()+lease_seconds,now(),row['id']))
-            c.execute('COMMIT')
-            return self.get(row['id'])
+        def _do():
+            with self.connect() as c:
+                c.execute('BEGIN IMMEDIATE')
+                cond='''status IN ('queued','running') AND cancel_requested=0
+                         AND (lease_until IS NULL OR lease_until<?)'''
+                args=[time.time()]
+                if run_id:
+                    cond+=' AND id=?';args.append(run_id)
+                row=c.execute('SELECT * FROM runs WHERE '+cond+' ORDER BY created_at ASC LIMIT 1',tuple(args)).fetchone()
+                if row is None: c.execute('COMMIT');return None
+                c.execute('UPDATE runs SET status=?, lease_owner=?, lease_until=?, updated_at=?, revision=revision+1 WHERE id=?',
+                          ('running',owner,time.time()+lease_seconds,now(),row['id']))
+                c.execute('COMMIT')
+                return row['id']
+
+        claimed = _write_with_retry(_do)
+        return self.get(claimed) if claimed else None
 
     def heartbeat(self,rid,owner,lease_seconds=300):
         with self.connect() as c:
@@ -323,3 +557,537 @@ class AgentStore:
             self._event(c,rid,'decision','human_decision',{'decision':decision,'candidateId':candidate_id,'reviewer':reviewer})
             c.execute('COMMIT')
             return {'decisionId':receipt_id,**receipt,'formalConstructionIssue':False}
+
+    # ------------------------------------------------------------------ #
+    # Conversation and message records.
+    #
+    # A conversation is the durable transcript of a designer's session with
+    # the engineering assistant. It stores only what was said and what it
+    # referenced; it never grants a model any engineering authority.
+    # ------------------------------------------------------------------ #
+
+    def create_conversation(self,*,project_id:str,actor:str,title:str='新会话'):
+        cid=uuid4().hex;ts=now()
+        with self.connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            c.execute('INSERT INTO conversations VALUES(?,?,?,?,?,?,?)',
+                      (cid,project_id,actor,title,'active',ts,ts))
+            c.execute('COMMIT')
+        return self.get_conversation(cid)
+
+    def get_conversation(self,cid):
+        with self.connect() as c:
+            row=c.execute('''SELECT cv.*,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=cv.id)
+                             AS message_count FROM conversations cv WHERE cv.id=?''',(cid,)).fetchone()
+        if row is None:raise KeyError('Agent conversation not found')
+        r=dict(row)
+        return {'id':r['id'],'projectId':r['project_id'],'actor':r['actor'],'title':r['title'],
+                'status':r['status'],'messageCount':r['message_count'],
+                'createdAt':r['created_at'],'updatedAt':r['updated_at']}
+
+    def list_conversations(self,*,project_id:str,actor:str|None=None):
+        with self.connect() as c:
+            if actor:
+                rows=c.execute('SELECT id FROM conversations WHERE project_id=? AND actor=? '
+                               'ORDER BY updated_at DESC LIMIT 100',(project_id,actor)).fetchall()
+            else:
+                rows=c.execute('SELECT id FROM conversations WHERE project_id=? '
+                               'ORDER BY updated_at DESC LIMIT 100',(project_id,)).fetchall()
+            ids=[x['id'] for x in rows]
+        return [self.get_conversation(i) for i in ids]
+
+    def append_message(self,cid,*,role:str,content:str,metadata:dict|None=None):
+        if role not in ('user','assistant','system','tool'):
+            raise ValueError('unsupported message role')
+        ts=now()
+        with self.connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if c.execute('SELECT id FROM conversations WHERE id=?',(cid,)).fetchone() is None:
+                c.execute('ROLLBACK');raise KeyError('Agent conversation not found')
+            cur=c.execute('''INSERT INTO messages(conversation_id,role,content,metadata_json,created_at)
+                             VALUES(?,?,?,?,?)''',(cid,role,content,encode(metadata or {}),ts))
+            mid=cur.lastrowid
+            c.execute('UPDATE conversations SET updated_at=? WHERE id=?',(ts,cid))
+            c.execute('COMMIT')
+        return {'id':mid,'conversationId':cid,'role':role,'content':content,
+                'metadata':metadata or {},'createdAt':ts}
+
+    def messages(self,cid,limit:int=200):
+        with self.connect() as c:
+            rows=c.execute('SELECT * FROM messages WHERE conversation_id=? ORDER BY id ASC LIMIT ?',
+                           (cid,min(max(limit,1),1000))).fetchall()
+        return [{'id':x['id'],'conversationId':x['conversation_id'],'role':x['role'],
+                 'content':x['content'],'metadata':json.loads(x['metadata_json']),
+                 'createdAt':x['created_at']} for x in rows]
+
+    def runs_for_conversation(self,cid,limit:int=10):
+        """Read-only view of the runs a conversation started or observed."""
+        with self.connect() as c:
+            rows=c.execute('''SELECT * FROM runs WHERE conversation_id=?
+                              ORDER BY created_at DESC LIMIT ?''',
+                           (cid,min(max(limit,1),50))).fetchall()
+        return [{'id':x['id'],'status':x['status'],'step':x['step'],'progress':x['progress'],
+                 'projectId':x['project_id'],'sectionId':x['section_id'],
+                 'createdAt':x['created_at'],'updatedAt':x['updated_at']} for x in rows]
+
+    def record_tool_call(self,*,tool_name:str,permission:str,actor:str,project_id:str|None,
+                         params:dict|None,ok:bool,result:dict|None,error:str|None,
+                         duration_ms:int)->None:
+        """Append-only audit row for one Agent tool invocation."""
+        with self.connect() as c:
+            c.execute('''INSERT INTO tool_calls(tool_name,permission,actor,project_id,
+                         params_json,ok,result_json,error,duration_ms,created_at)
+                         VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                      (tool_name,permission,actor,project_id,encode(params or {}),
+                       1 if ok else 0,encode(result) if result is not None else None,
+                       error,int(duration_ms),now()))
+
+    def tool_calls(self,limit:int=50,project_id:str|None=None)->list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows=c.execute('''SELECT * FROM tool_calls WHERE project_id=?
+                                  ORDER BY id DESC LIMIT ?''',(project_id,min(max(limit,1),200))).fetchall()
+            else:
+                rows=c.execute('SELECT * FROM tool_calls ORDER BY id DESC LIMIT ?',
+                               (min(max(limit,1),200),)).fetchall()
+        return [{'id':x['id'],'tool':x['tool_name'],'permission':x['permission'],
+                 'actor':x['actor'],'projectId':x['project_id'],
+                 'params':json.loads(x['params_json']),'ok':bool(x['ok']),
+                 'result':json.loads(x['result_json']) if x['result_json'] else None,
+                 'error':x['error'],'durationMs':x['duration_ms'],
+                 'createdAt':x['created_at']} for x in rows]
+
+    def record_evidence(self,*,project_id:str,field_key:str,value,
+                        source_type:str,source_label:str,provider:str,
+                        source_location:str|None=None,raw_text:str|None=None,
+                        captured_by:str='system',confirmed:bool=False)->dict:
+        """One parameter-provenance row: what was written, from where, by whom."""
+        rid=uuid4().hex;ts=now()
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO evidence_records(id,project_id,field_key,value_json,
+                             source_type,source_label,source_location,raw_text,provider,
+                             captured_at,captured_by,confirmed)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                          (rid,project_id,field_key,encode(value),source_type,
+                           str(source_label)[:240],source_location,str(raw_text or '')[:400],
+                           provider,ts,captured_by,1 if confirmed else 0))
+            return None
+        _write_with_retry(_do)
+        return {'evidenceId':rid,'projectId':project_id,'fieldKey':field_key,
+                'value':value,'sourceType':source_type,'sourceLabel':source_label,
+                'sourceLocation':source_location,'rawText':raw_text,'provider':provider,
+                'capturedAt':ts,'capturedBy':captured_by,'confirmed':bool(confirmed)}
+
+    def evidence(self,*,project_id:str,limit:int=100)->list[dict]:
+        with self.connect() as c:
+            rows=c.execute('''SELECT * FROM evidence_records WHERE project_id=?
+                              ORDER BY captured_at DESC LIMIT ?''',
+                           (project_id,min(max(limit,1),500))).fetchall()
+        return [{'evidenceId':x['id'],'projectId':x['project_id'],'fieldKey':x['field_key'],
+                 'value':json.loads(x['value_json']),'sourceType':x['source_type'],
+                 'sourceLabel':x['source_label'],'sourceLocation':x['source_location'],
+                 'rawText':x['raw_text'],'provider':x['provider'],
+                 'capturedAt':x['captured_at'],'capturedBy':x['captured_by'],
+                 'confirmed':bool(x['confirmed'])} for x in rows]
+
+    def record_model_call(self,*,project_id:str|None,purpose:str,model:str,ok:bool,
+                          status:str,attempts:int,duration_ms:int,
+                          prompt_tokens:int|None=None,completion_tokens:int|None=None,
+                          error_type:str|None=None,cost_usd:float|None=None,
+                          cost_source:str|None=None)->int:
+        def _do():
+            with self.connect() as c:
+                cur=c.execute('''INSERT INTO model_calls(project_id,purpose,model,ok,status,
+                                 attempts,duration_ms,prompt_tokens,completion_tokens,
+                                 error_type,cost_usd,cost_source,created_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                              (project_id,purpose,model,1 if ok else 0,status,
+                               max(0,int(attempts)),int(duration_ms),
+                               prompt_tokens,completion_tokens,error_type,
+                               cost_usd,cost_source,now()))
+                return int(cur.lastrowid)
+        return _write_with_retry(_do)
+
+    def model_calls(self,*,project_id:str|None=None,limit:int=50)->list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows=c.execute('''SELECT * FROM model_calls WHERE project_id=?
+                                  ORDER BY id DESC LIMIT ?''',
+                               (project_id,min(max(limit,1),200))).fetchall()
+            else:
+                rows=c.execute('SELECT * FROM model_calls ORDER BY id DESC LIMIT ?',
+                               (min(max(limit,1),200),)).fetchall()
+        return [{'id':x['id'],'projectId':x['project_id'],'purpose':x['purpose'],
+                 'model':x['model'],'ok':bool(x['ok']),'status':x['status'],
+                 'attempts':x['attempts'],'durationMs':x['duration_ms'],
+                 'promptTokens':x['prompt_tokens'],'completionTokens':x['completion_tokens'],
+                 'costUsd':x['cost_usd'],'costSource':x['cost_source'],
+                 'errorType':x['error_type'],'createdAt':x['created_at']} for x in rows]
+
+    # --- 连续执行链（V3.91） ---------------------------------------------
+    @staticmethod
+    def _flow(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'],
+            'conversationId': row['conversation_id'], 'status': row['status'],
+            'currentStage': row['current_stage'],
+            'steps': json.loads(row['steps_json']) if row['steps_json'] else {},
+            'createdBy': row['created_by'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    def create_flow(self, *, project_id: str, conversation_id: str | None,
+                    created_by: str, status: str = 'running',
+                    steps: dict | None = None) -> dict:
+        fid = 'flow-' + uuid4().hex[:16]
+        ts = now()
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_flows(id,project_id,conversation_id,status,
+                             current_stage,steps_json,created_by,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?)''',
+                          (fid, project_id, conversation_id, status, None,
+                           encode(steps or {}), created_by, ts, ts))
+            return self.get_flow(fid)
+        return _write_with_retry(_do)
+
+    def get_flow(self, flow_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_flows WHERE id=?', (flow_id,)).fetchone()
+        if not row:
+            raise KeyError(flow_id)
+        return self._flow(row)
+
+    def update_flow(self, flow_id: str, *, status: str | None = None,
+                    current_stage: str | None = None,
+                    steps: dict | None = None) -> dict:
+        def _do():
+            with self.connect() as c:
+                row = c.execute('SELECT * FROM agent_flows WHERE id=?', (flow_id,)).fetchone()
+                if not row:
+                    raise KeyError(flow_id)
+                fields = ['updated_at=?']
+                values: list = [now()]
+                if status is not None:
+                    fields.append('status=?'); values.append(status)
+                if current_stage is not None:
+                    fields.append('current_stage=?'); values.append(current_stage)
+                if steps is not None:
+                    fields.append('steps_json=?'); values.append(encode(steps))
+                values.append(flow_id)
+                c.execute('UPDATE agent_flows SET ' + ','.join(fields) + ' WHERE id=?', values)
+            return self.get_flow(flow_id)
+        return _write_with_retry(_do)
+
+    def list_flows(self, *, project_id: str | None = None, limit: int = 20) -> list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows = c.execute('''SELECT * FROM agent_flows WHERE project_id=?
+                                    ORDER BY created_at DESC LIMIT ?''',
+                                 (project_id, min(max(limit, 1), 100))).fetchall()
+            else:
+                rows = c.execute('SELECT * FROM agent_flows ORDER BY created_at DESC LIMIT ?',
+                                 (min(max(limit, 1), 100),)).fetchall()
+        return [self._flow(row) for row in rows]
+
+    # --- EngineeringFinding / ProposedAction -----------------------------
+    @staticmethod
+    def _finding(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'], 'runId': row['run_id'],
+            'code': row['code'], 'severity': row['severity'], 'category': row['category'],
+            'title': row['title'], 'detail': row['detail'], 'source': row['source'],
+            'evidence': json.loads(row['evidence_json']) if row['evidence_json'] else {},
+            'status': row['status'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    @staticmethod
+    def _action(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'], 'runId': row['run_id'],
+            'findingId': row['finding_id'], 'kind': row['kind'], 'title': row['title'],
+            'rationale': row['rationale'],
+            'params': json.loads(row['params_json']) if row['params_json'] else {},
+            'memberType': row['member_type'], 'memberId': row['member_id'],
+            'status': row['status'], 'createdBy': row['created_by'],
+            'decidedBy': row['decided_by'], 'decisionNote': row['decision_note'],
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    def get_finding_by_key(self, project_id: str, code: str, run_id: str = '') -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_findings WHERE project_id=? AND code=? AND run_id=?',
+                            (project_id, code, run_id)).fetchone()
+        if not row:
+            raise KeyError(code)
+        return self._finding(row)
+
+    def get_finding(self, finding_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_findings WHERE id=?', (finding_id,)).fetchone()
+        if not row:
+            raise KeyError(finding_id)
+        return self._finding(row)
+
+    def list_findings(self, project_id: str, status: str | None = None) -> list[dict]:
+        sql = 'SELECT * FROM agent_findings WHERE project_id=?'
+        args: list = [project_id]
+        if status:
+            sql += ' AND status=?'
+            args.append(status)
+        sql += ' ORDER BY CASE severity WHEN \'blocker\' THEN 0 ELSE 1 END, created_at DESC'
+        with self.connect() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [self._finding(row) for row in rows]
+
+    def upsert_finding(self, *, project_id: str, code: str, severity: str,
+                       title: str, run_id: str = '', category: str | None = None,
+                       detail: str | None = None, source: str = 'calculation',
+                       evidence: dict | None = None) -> dict:
+        """同一 项目 + 代码 + run 幂等；重复诊断只更新内容，不刷屏。"""
+        fid = 'fnd-' + sha256(encode({'p': project_id, 'c': code, 'r': run_id}).encode()).hexdigest()[:20]
+        ts = now()
+
+        def _do():
+            with self.connect() as c:
+                c.execute("""INSERT INTO agent_findings(id,project_id,run_id,code,severity,category,
+                             title,detail,source,evidence_json,status,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,'open',?,?)
+                             ON CONFLICT(project_id,code,run_id) DO UPDATE SET
+                               severity=excluded.severity, category=excluded.category,
+                               title=excluded.title, detail=excluded.detail,
+                               source=excluded.source, evidence_json=excluded.evidence_json,
+                               updated_at=excluded.updated_at""",
+                          (fid, project_id, run_id, code, severity, category, title[:240],
+                           (detail or '')[:800], source, encode(evidence or {}), ts, ts))
+            return self.get_finding_by_key(project_id, code, run_id)
+        return _write_with_retry(_do)
+
+    def set_finding_status(self, project_id: str, code: str, status: str,
+                           run_id: str = '') -> None:
+        """解决/重开一条发现；冲突消失时把旧标记关掉，避免一直挂着。"""
+        def _do():
+            with self.connect() as c:
+                c.execute('''UPDATE agent_findings SET status=?,updated_at=?
+                             WHERE project_id=? AND code=? AND run_id=?''',
+                          (status, now(), project_id, code, run_id))
+        _write_with_retry(_do)
+
+    def get_action_by_key(self, project_id: str, run_id: str, title: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_actions WHERE project_id=? AND run_id=? AND title=?',
+                            (project_id, run_id, title)).fetchone()
+        if not row:
+            raise KeyError(title)
+        return self._action(row)
+
+    def get_action(self, action_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_actions WHERE id=?', (action_id,)).fetchone()
+        if not row:
+            raise KeyError(action_id)
+        return self._action(row)
+
+    def create_action(self, *, project_id: str, title: str, kind: str = 'parameter_trial',
+                      run_id: str = '', finding_id: str | None = None,
+                      rationale: str | None = None, params: dict | None = None,
+                      member_type: str | None = None, member_id: str | None = None,
+                      created_by: str = 'agent') -> dict:
+        aid = 'act-' + sha256(encode({'p': project_id, 'r': run_id, 't': title}).encode()).hexdigest()[:20]
+        ts = now()
+
+        def _do():
+            with self.connect() as c:
+                c.execute("""INSERT INTO agent_actions(id,project_id,run_id,finding_id,kind,title,
+                             rationale,member_type,member_id,params_json,status,created_by,
+                             created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?)
+                             ON CONFLICT(project_id,run_id,title) DO NOTHING""",
+                          (aid, project_id, run_id, finding_id, kind, title[:240],
+                           (rationale or '')[:800], member_type, member_id,
+                           encode(params or {}), created_by, ts, ts))
+            return self.get_action_by_key(project_id, run_id, title[:240])
+        return _write_with_retry(_do)
+
+    def list_actions(self, project_id: str, status: str | None = None) -> list[dict]:
+        sql = 'SELECT * FROM agent_actions WHERE project_id=?'
+        args: list = [project_id]
+        if status:
+            sql += ' AND status=?'
+            args.append(status)
+        sql += ' ORDER BY created_at DESC'
+        with self.connect() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [self._action(row) for row in rows]
+
+    def decide_action(self, action_id: str, *, decision: str, actor: str,
+                      note: str | None = None) -> dict:
+        """人工接受/拒绝建议；只记录决策，不修改工程数据。"""
+        if decision not in ('accepted', 'rejected'):
+            raise ValueError('decision 只能是 accepted 或 rejected')
+
+        def _do():
+            with self.connect() as c:
+                row = c.execute('SELECT * FROM agent_actions WHERE id=?', (action_id,)).fetchone()
+                if not row:
+                    raise KeyError(action_id)
+                if row['status'] != 'proposed':
+                    raise ConflictError('建议动作已决策，不重复处理')
+                c.execute('UPDATE agent_actions SET status=?,decided_by=?,decision_note=?,updated_at=? WHERE id=?',
+                          (decision, actor, (note or '')[:500], now(), action_id))
+            return self.get_action(action_id)
+        return _write_with_retry(_do)
+
+    def record_orchestration(self,*,project_id:str,actor:str,conversation_id:str|None,
+                             stage_key:str|None,gate:str|None,dispatched:bool,
+                             run_id:str|None,decision:dict)->int:
+        """Persist one scheduling verdict so 'why this step' stays answerable."""
+        with self.connect() as c:
+            cur=c.execute('''INSERT INTO orchestrations(project_id,conversation_id,actor,
+                             stage_key,gate,dispatched,run_id,decision_json,created_at)
+                             VALUES(?,?,?,?,?,?,?,?,?)''',
+                          (project_id,conversation_id,actor,stage_key,gate,
+                           1 if dispatched else 0,run_id,encode(decision),now()))
+            return int(cur.lastrowid)
+
+    def orchestrations(self,*,project_id:str|None=None,limit:int=30)->list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows=c.execute('''SELECT * FROM orchestrations WHERE project_id=?
+                                  ORDER BY id DESC LIMIT ?''',
+                               (project_id,min(max(limit,1),200))).fetchall()
+            else:
+                rows=c.execute('SELECT * FROM orchestrations ORDER BY id DESC LIMIT ?',
+                               (min(max(limit,1),200),)).fetchall()
+        return [{'id':x['id'],'projectId':x['project_id'],
+                 'conversationId':x['conversation_id'],'actor':x['actor'],
+                 'stageKey':x['stage_key'],'gate':x['gate'],
+                 'dispatched':bool(x['dispatched']),'runId':x['run_id'],
+                 'decision':json.loads(x['decision_json']),
+                 'createdAt':x['created_at']} for x in rows]
+
+    # --- Super-agent: Router / Worker 的持久状态 ---------------------------
+    def record_trigger(self, *, project_id: str, conversation_id: str | None,
+                       thread_id: str | None, kind: str, payload: dict,
+                       decision: str, reason: str, policy_provider: str,
+                       ticket_id: str | None = None,
+                       trigger_id: str | None = None) -> dict:
+        row = {
+            'id': trigger_id or uuid4().hex, 'projectId': project_id,
+            'conversationId': conversation_id, 'threadId': thread_id,
+            'kind': kind, 'payload': payload, 'decision': decision,
+            'reason': reason, 'policyProvider': policy_provider,
+            'ticketId': ticket_id, 'createdAt': now(),
+        }
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_triggers(id,project_id,conversation_id,thread_id,
+                             kind,payload_json,decision,reason,policy_provider,ticket_id,created_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                          (row['id'], project_id, conversation_id, thread_id, kind,
+                           encode(payload), decision, reason, policy_provider,
+                           ticket_id, row['createdAt']))
+            return row
+        return _write_with_retry(_do)
+
+    def create_ticket(self, *, project_id: str, conversation_id: str | None,
+                      thread_id: str | None, role_id: str, stage_id: str,
+                      mandate: dict, status: str, accept_mode: str,
+                      source_project_updated_at: str | None = None) -> dict:
+        row = {
+            'id': uuid4().hex, 'projectId': project_id,
+            'conversationId': conversation_id, 'threadId': thread_id,
+            'roleId': role_id, 'stageId': stage_id, 'mandate': mandate,
+            'status': status, 'acceptMode': accept_mode, 'workerRunId': None,
+            'sourceProjectUpdatedAt': source_project_updated_at,
+            'createdAt': now(), 'updatedAt': now(),
+        }
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_tickets(id,project_id,conversation_id,thread_id,
+                             role_id,stage_id,mandate_json,status,accept_mode,worker_run_id,
+                             source_project_updated_at,created_at,updated_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                          (row['id'], project_id, conversation_id, thread_id, role_id,
+                           stage_id, encode(mandate), status, accept_mode, None,
+                           source_project_updated_at, row['createdAt'], row['updatedAt']))
+            return row
+        return _write_with_retry(_do)
+
+    def update_ticket(self, ticket_id: str, *, status: str | None = None,
+                      worker_run_id: str | None = None) -> None:
+        def _do():
+            with self.connect() as c:
+                row = c.execute('SELECT * FROM agent_tickets WHERE id=?', (ticket_id,)).fetchone()
+                if row is None:
+                    raise KeyError('Ticket not found')
+                c.execute('''UPDATE agent_tickets SET status=?, worker_run_id=?, updated_at=?
+                             WHERE id=?''',
+                          (status or row['status'],
+                           worker_run_id if worker_run_id is not None else row['worker_run_id'],
+                           now(), ticket_id))
+            return None
+        return _write_with_retry(_do)
+
+    def get_ticket(self, ticket_id: str) -> dict:
+        with self.connect() as c:
+            row = c.execute('SELECT * FROM agent_tickets WHERE id=?', (ticket_id,)).fetchone()
+        if row is None:
+            raise KeyError('Ticket not found')
+        return self._ticket(row)
+
+    @staticmethod
+    def _ticket(row) -> dict:
+        return {
+            'id': row['id'], 'projectId': row['project_id'],
+            'conversationId': row['conversation_id'], 'threadId': row['thread_id'],
+            'roleId': row['role_id'], 'stageId': row['stage_id'],
+            'mandate': json.loads(row['mandate_json']),
+            'status': row['status'], 'acceptMode': row['accept_mode'],
+            'workerRunId': row['worker_run_id'],
+            'sourceProjectUpdatedAt': (row['source_project_updated_at']
+                                       if 'source_project_updated_at' in row.keys() else None),
+            'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    def list_tickets(self, *, project_id: str | None = None, limit: int = 30) -> list[dict]:
+        with self.connect() as c:
+            if project_id:
+                rows = c.execute('''SELECT * FROM agent_tickets WHERE project_id=?
+                                    ORDER BY created_at DESC LIMIT ?''',
+                                 (project_id, min(max(limit, 1), 200))).fetchall()
+            else:
+                rows = c.execute('SELECT * FROM agent_tickets ORDER BY created_at DESC LIMIT ?',
+                                 (min(max(limit, 1), 200),)).fetchall()
+        return [self._ticket(row) for row in rows]
+
+    def active_ticket_for_thread(self, project_id: str, thread_id: str | None) -> dict | None:
+        if not thread_id:
+            return None
+        with self.connect() as c:
+            row = c.execute('''SELECT * FROM agent_tickets WHERE project_id=? AND thread_id=?
+                               AND status IN ('accepted','observed','running','waiting_review')
+                               ORDER BY created_at DESC LIMIT 1''',
+                            (project_id, thread_id)).fetchone()
+        return self._ticket(row) if row else None
+
+    def append_ticket_event(self, ticket_id: str, kind: str, payload: dict) -> dict:
+        row = {'ticketId': ticket_id, 'kind': kind, 'payload': payload, 'createdAt': now()}
+        def _do():
+            with self.connect() as c:
+                c.execute('''INSERT INTO agent_ticket_events(ticket_id,kind,payload_json,created_at)
+                             VALUES(?,?,?,?)''',
+                          (ticket_id, kind, encode(payload), row['createdAt']))
+            return row
+        return _write_with_retry(_do)
+
+    def ticket_events(self, ticket_id: str, limit: int = 100) -> list[dict]:
+        with self.connect() as c:
+            rows = c.execute('''SELECT * FROM agent_ticket_events WHERE ticket_id=?
+                                ORDER BY id ASC LIMIT ?''',
+                             (ticket_id, min(max(limit, 1), 500))).fetchall()
+        return [{'ticketId': x['ticket_id'], 'kind': x['kind'],
+                 'payload': json.loads(x['payload_json']),
+                 'createdAt': x['created_at']} for x in rows]

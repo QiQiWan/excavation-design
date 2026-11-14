@@ -1640,5 +1640,8 @@ class Project(DomainModel):
     calibration_runs: list[CalibrationRun] = Field(default_factory=list)
     review_workflow: ReviewWorkflow = Field(default_factory=ReviewWorkflow)
     drawing_revisions: list[DrawingRevision] = Field(default_factory=list)
+    # Exported delivery packages (review or construction).  A review package is
+    # a real deliverable even while formal construction issue stays closed.
+    delivery_packages: list[dict[str, Any]] = Field(default_factory=list)
     advanced_engineering: dict[str, Any] = Field(default_factory=dict)
     messages: list[str] = Field(default_factory=list)

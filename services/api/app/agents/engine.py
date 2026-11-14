@@ -39,6 +39,23 @@ def diagnostics(result:dict)->dict:
             'formalConstructionIssue':False}
 
 
+def _member(snapshot,field):
+    """候选必须指到具体构件；桩没有独立 ID 时用 项目/剖面 定位。"""
+    head=field.split('.')[0]
+    if head=='strut':
+        strut=snapshot.get('strut') or {}
+        return {'type':'strut','id':strut.get('id'),
+                'label':f"水平支撑（标高 {strut.get('depth_m')} m）",
+                'resolved':bool(strut.get('id'))}
+    pile=snapshot.get('pile') or {}
+    section=str(snapshot.get('section_id') or '')
+    project=str(snapshot.get('project_id') or '')
+    ident=f'{project}/{section}' if project and section else None
+    return {'type':'pile','id':ident,
+            'label':f"支护桩（直径 {pile.get('diameter_m')} m，剖面 {section or '未命名'}）",
+            'resolved':bool(ident)}
+
+
 def _action(snapshot,field,factor,why):
     a,b=field.split('.')
     old=snapshot[a][b]
@@ -47,6 +64,8 @@ def _action(snapshot,field,factor,why):
     if field=='pile.length_m':new=round(old+factor,3)
     if math.isclose(new,old,rel_tol=1e-8,abs_tol=1e-8):return None
     return {'field':field,'before':old,'after':new,'reason':why,
+            'member':_member(snapshot,field),
+            'operation':'calculate_isolated_candidate',
             'permission':'L1_candidate_only','method':'bounded_parameter_trial'}
 
 
@@ -146,7 +165,8 @@ class AgentRuntime:
     def create(self,body,actor):
         result=self.repo.load(body.result_hash)
         return self.store.create(result=result,actor=actor,max_candidates=body.max_candidates,
-                                 model_mode=body.model_mode,client_request_id=body.client_request_id)
+                                 model_mode=body.model_mode,client_request_id=body.client_request_id,
+                                 conversation_id=getattr(body,'conversation_id',None))
 
     def _compute_with_heartbeat(self,run,owner,base,action):
         stop=Event()
@@ -174,16 +194,41 @@ class AgentRuntime:
                 found=diagnostics(base)
                 annotation=self.gateway.annotate(project_id=run['projectId'],issues=found['issues'],mode=run['modelMode'])
                 found['modelExplanation']=annotation
+                # 诊断结果落成可追溯的 Finding；失败不阻断诊断本身，但要在事件里写明。
+                finding_error=None
+                context_hash=None
+                try:
+                    from . import context as engineering_context
+                    context_hash=engineering_context.build(run['projectId'])['contextHash']
+                except Exception:
+                    context_hash=None
+                try:
+                    from . import findings as findings_store
+                    findings_store.record_diagnosis(
+                        project_id=run['projectId'],run_id=rid,issues=found['issues'],
+                        evidence={'resultHash':run['sourceResultHash'],
+                                  'snapshotHash':run['sourceSnapshotHash'],
+                                  'contextHash':context_hash,
+                                  'analysisStatus':found.get('analysisStatus')})
+                except Exception as exc:
+                    finding_error=f'{type(exc).__name__}: {str(exc)[:120]}'
                 return self.store.advance(rid,owner,step,status='queued',step='plan',progress=20,
                     diagnostics=found,event_key='diagnosis',event_type='diagnosis_completed',
-                    payload={'issueCount':found['unresolvedCount'],'modelStatus':annotation['status']})
+                    payload={'issueCount':found['unresolvedCount'],'modelStatus':annotation['status'],
+                             'findingsError':finding_error})
             if step=='plan':
                 actions=proposals(base,run['maxCandidates'])
                 plan={'actions':actions,'cursor':0,'sourceSnapshotHash':run['sourceSnapshotHash'],
                       'engineeringMethodValidated':False,'formalConstructionIssue':False}
+                action_error=None
+                try:
+                    from . import findings as findings_store
+                    findings_store.record_plan(project_id=run['projectId'],run_id=rid,actions=actions)
+                except Exception as exc:
+                    action_error=f'{type(exc).__name__}: {str(exc)[:120]}'
                 return self.store.advance(rid,owner,step,status='queued',step='evaluate' if actions else 'summarize',
                     progress=30,plan=plan,event_key='planned',event_type='candidate_plan_created',
-                    payload={'candidateCount':len(actions)})
+                    payload={'candidateCount':len(actions),'actionsError':action_error})
             if step=='evaluate':
                 plan=run['plan'] or {}
                 cursor=int(plan.get('cursor',0));actions=plan.get('actions') or []

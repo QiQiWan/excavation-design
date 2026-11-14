@@ -41,7 +41,8 @@ def context(tmp_path,baseline):
 def test_role_and_tool_catalog():
     obj=catalog()
     assert len(obj['roles'])==8
-    assert {x['id'] for x in obj['roles'] if x['implementation']=='pilot'}=={'A5','A6'}
+    # A1 文档参数提取已可执行；A5/A6 是单剖面试点。
+    assert {x['id'] for x in obj['roles'] if x['implementation']=='pilot'}=={'A1','A2','A3','A4','A5','A6','A7','A8'}
     assert all(x['scope']=='one_strut' for x in obj['tools'])
     assert all(x['name']!='approve_formal_issue' for x in obj['tools'])
     assert obj['formalConstructionIssue'] is False
@@ -481,3 +482,187 @@ def test_embedded_worker_autorun_to_human_review(tmp_path,monkeypatch,baseline):
             time.sleep(.1)
         assert state['status']=='awaiting_review'
         assert len(client.get('/api/agents/runs/'+rid+'/overview').json()['candidates'])==2
+
+
+def test_tool_registry_hides_formal_issue_and_marks_l2_manual():
+    from app.agents import tools
+    reg=tools.registry()
+    names={t['name'] for t in reg['tools']}
+    assert len(names)==8
+    assert 'approve_formal_issue' not in names
+    assert reg['approveFormalIssue']['registered'] is False
+    adopt=next(t for t in reg['tools'] if t['name']=='adopt_design_candidate')
+    assert adopt['permission']=='L2' and adopt['autoInvocable'] is False
+    assert all(t['permission'] in ('L0','L1','L2') for t in reg['tools'])
+
+
+def test_tool_invoke_guardrails_and_audit(tmp_path,monkeypatch):
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH',str(tmp_path/'tools.sqlite3'))
+    from app.agents import tools
+    with pytest.raises(PermissionError):
+        tools.invoke('adopt_design_candidate',project_id='P',actor='alice',
+                     params={'runId':'r','candidateId':'c'})
+    with pytest.raises(KeyError):
+        tools.invoke('approve_formal_issue',project_id='P',actor='alice',params={})
+    with pytest.raises(ValueError):
+        tools.invoke('generate_scheme_candidates',project_id='P',actor='alice',params={'runId':1})
+    with pytest.raises(ValueError):
+        tools.invoke('get_project_context',project_id='P',actor='alice',params={'hack':1})
+    rows=AgentStore().tool_calls(limit=10)
+    assert len(rows)>=4
+    assert all(row['ok'] is False for row in rows)
+    assert {row['permission'] for row in rows}>={'L0','L1','L2'}
+    assert any(row['permission']=='-' for row in rows)
+
+
+def test_tool_endpoints_registry_and_guards(api):
+    client,_=api
+    reg=client.get('/api/agents/tools',headers=headers()).json()
+    assert reg['schemaVersion']=='pitguard.agent-tools/1'
+    assert 'approve_formal_issue' not in {t['name'] for t in reg['tools']}
+    denied=client.post('/api/agents/tools/adopt_design_candidate/invoke',headers=headers(),
+                       json={'projectId':'P','params':{'runId':'r','candidateId':'c'}})
+    assert denied.status_code==403
+    unknown=client.post('/api/agents/tools/approve_formal_issue/invoke',headers=headers(),
+                        json={'params':{}})
+    assert unknown.status_code==404
+    bad=client.post('/api/agents/tools/generate_scheme_candidates/invoke',headers=headers(),
+                    json={'params':{'runId':123}})
+    assert bad.status_code==400
+    rows=client.get('/api/agents/tool-calls?limit=5',headers=headers()).json()['calls']
+    assert rows and rows[0]['ok'] is False
+
+
+# --- 总控 Agent（V3.88.0 第三块）------------------------------------------
+
+def _six_stage(done: set[str], *, fail_count: int = 0) -> tuple[dict, dict]:
+    """Synthetic workspace projection shaped like build_core_workspace_status."""
+    rows = []
+    for key, title in (('basis', '设计基准'), ('input', '工程输入'), ('scheme', '围护方案'),
+                       ('calculation', '计算验算'), ('reinforcement', '配筋深化'),
+                       ('deliverables', '成果交付')):
+        rows.append({'key': key, 'title': title, 'message': '',
+                     'status': 'done' if key in done else 'pending'})
+    status = {
+        'stages': rows,
+        'blockers': [] if 'basis' in done else ['设计基准尚未确认'],
+        'summary': {'failCount': fail_count, 'warningCount': 0,
+                    'wallCount': 1 if 'scheme' in done else 0,
+                    'supportCount': 1 if 'scheme' in done else 0},
+    }
+    counts = {'boreholeCount': 4 if 'input' in done else 0,
+              'stratumCount': 3 if 'input' in done else 0,
+              'outlinePointCount': 6 if 'input' in done else 0}
+    return status, counts
+
+
+def test_orchestrator_plan_namespaces_and_human_gate(tmp_path, monkeypatch):
+    from app.agents import orchestrator
+
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH', str(tmp_path / 'orch.sqlite3'))
+    status, counts = _six_stage(set())
+    monkeypatch.setattr(orchestrator, '_workspace_status', lambda pid: (status, counts))
+    monkeypatch.setattr(orchestrator, '_frozen_results', lambda pid: [])
+    orchestrator._plan_cache.clear()
+
+    plan = orchestrator.build_plan('P-orch')
+    assert plan['schemaVersion'] == 'pitguard.orchestration/1'
+    assert [s['stageId'] for s in plan['stages']] == [
+        'DESIGN.BASIS', 'DESIGN.INPUT', 'DESIGN.SCHEME',
+        'DESIGN.CALCULATION', 'DESIGN.REINFORCEMENT', 'DESIGN.DELIVERABLES']
+    assert plan['next']['key'] == 'basis'
+    assert plan['next']['gate']['type'] == 'human_confirm'
+    assert plan['next']['gate']['requiresHuman'] is True
+    assert plan['next']['dispatchable'] is False
+    assert plan['formalConstructionIssue'] is False
+    # 总控不代做设计基准确认：只给入口，不给自动动作。
+    assert plan['next']['gate']['humanAction']['endpoint'].startswith('PATCH /api/projects/')
+
+
+def test_orchestrator_dispatch_refuses_closed_gate_and_records_verdict(tmp_path, monkeypatch):
+    from app.agents import orchestrator
+
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH', str(tmp_path / 'orch-refuse.sqlite3'))
+    status, counts = _six_stage(set())
+    monkeypatch.setattr(orchestrator, '_workspace_status', lambda pid: (status, counts))
+    monkeypatch.setattr(orchestrator, '_frozen_results', lambda pid: [])
+    orchestrator._plan_cache.clear()
+
+    result = orchestrator.dispatch('P-orch', actor='alice')
+    assert result['dispatched'] is False
+    assert result['gateType'] == 'human_confirm'
+    assert '不能自动派单' in result['reason']
+    assert AgentStore().list(project_id='P-orch', limit=5) == []
+    rows = AgentStore().orchestrations(project_id='P-orch', limit=5)
+    assert len(rows) == 1 and rows[0]['dispatched'] is False
+    assert rows[0]['stageKey'] == 'basis'
+
+
+def test_orchestrator_dispatches_real_run_when_calculation_ready(tmp_path, monkeypatch, baseline):
+    from app.agents import orchestrator
+
+    repo, source, _ = baseline
+    isolated = tmp_path / 'orch-repo'
+    monkeypatch.setenv('PITGUARD_AGENT_DB_PATH', str(tmp_path / 'orch-dispatch.sqlite3'))
+    monkeypatch.setenv('PITGUARD_ONE_STRUT_STORE', str(isolated))
+    # Replay the baseline result into the isolated repository AgentRuntime reads.
+    result = Repository(root=isolated).compute(json.loads(
+        (Path(__file__).resolve().parents[2]
+         / 'services/api/app/engineering/single_braced_pile/assets/verification_example.json'
+         ).read_text(encoding='utf8')))
+    assert result['resultHash'] == source['resultHash']
+
+    status, counts = _six_stage({'basis', 'input', 'scheme'})
+    monkeypatch.setattr(orchestrator, '_workspace_status', lambda pid: (status, counts))
+    monkeypatch.setattr(orchestrator, '_frozen_results', lambda pid: [{
+        'resultHash': source['resultHash'], 'sectionId': source['sectionId'],
+        'analysisStatus': 'complete', 'createdAt': '2026-11-10T00:00:00+00:00',
+        'launchable': True}])
+    orchestrator._plan_cache.clear()
+
+    pid = source['projectId']
+    plan = orchestrator.build_plan(pid)
+    assert plan['next']['key'] == 'calculation'
+    assert plan['next']['dispatchable'] is True
+
+    result = orchestrator.dispatch(pid, actor='alice', max_candidates=2)
+    assert result['dispatched'] is True
+    assert result['runId'] and result['run']['status'] == 'queued'
+    runs = AgentStore().list(project_id=pid, limit=5)
+    assert [r['id'] for r in runs] == [result['runId']]
+    rows = AgentStore().orchestrations(project_id=pid, limit=5)
+    assert rows[0]['dispatched'] is True and rows[0]['runId'] == result['runId']
+
+
+def test_orchestrator_recovery_classifies_failures_and_never_auto_adopts():
+    from app.agents import orchestrator
+
+    rows = orchestrator._recovery([
+        {'id': 'a' * 32, 'status': 'awaiting_review', 'step': 'review', 'progress': 100,
+         'updatedAt': '2026-11-10T00:00:00+00:00'},
+        {'id': 'b' * 32, 'status': 'failed', 'step': 'evaluate', 'progress': 60,
+         'updatedAt': '2026-11-10T00:00:00+00:00',
+         'error': 'OperationalError: attempt to write a readonly database'},
+        {'id': 'c' * 32, 'status': 'paused', 'step': 'plan', 'progress': 30,
+         'updatedAt': '2026-11-10T00:00:00+00:00'},
+        {'id': 'd' * 32, 'status': 'done', 'step': 'done', 'progress': 100,
+         'updatedAt': '2026-11-10T00:00:00+00:00'},
+    ])
+    assert [r['action'] for r in rows] == [
+        'human_decision', 'retry_after_environment_fix', 'resume']
+    # 复核只能人工决策，恢复建议里不存在自动采用动作。
+    assert all(r['action'] != 'adopt' for r in rows)
+    assert rows[0]['requiresHuman'] is True
+
+
+def test_orchestrator_endpoints_are_role_gated_and_reject_unknown_project(api):
+    client, _ = api
+    denied = client.get('/api/agents/orchestrator/plan?project_id=project-x',
+                        headers=headers('key-viewer'))
+    assert denied.status_code == 403
+    missing = client.get('/api/agents/orchestrator/plan?project_id=project-does-not-exist',
+                         headers=headers())
+    assert missing.status_code == 404
+    history = client.get('/api/agents/orchestrator/history', headers=headers())
+    assert history.status_code == 200
+    assert history.json()['schemaVersion'] == 'pitguard.orchestration-history/1'

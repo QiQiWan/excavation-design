@@ -354,12 +354,220 @@ export type SectionReferenceComparison = {
   contractHash: string; curveBundleHash: string; comparisonHash: string; report: Record<string, unknown>;
 };
 
+export type AgentRole = {
+  id: string; name: string; capability: string;
+  implementation: 'pilot' | 'planned'; stateLabel: string; executable: boolean;
+};
+export type AgentConversation = {
+  id: string; projectId: string; actor: string; title: string;
+  status: string; messageCount: number; createdAt: string; updatedAt: string;
+};
+export type AgentMessage = {
+  id: number; conversationId: string; role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string; metadata: Record<string, unknown>; createdAt: string;
+};
+export type AgentProjectStage = { key: string; title: string; status: string; message: string };
+export type AgentProjectStatus = {
+  stages: AgentProjectStage[]; doneStages: string[]; activeStage: AgentProjectStage | null;
+  failCount: number | null; warningCount: number | null; blockers: string[];
+  wallCount: number; supportCount: number; boreholeCount: number; stratumCount: number;
+  statusUnavailable?: boolean; cachedSecondsAgo?: number;
+};
+export type AgentRunBrief = {
+  id: string; status: string; step: string; progress: number;
+  projectId: string; sectionId: string; createdAt: string; updatedAt: string;
+};
+export type AgentFrozenResult = {
+  resultHash: string; projectId: string | null; sectionId: string | null;
+  analysisStatus: string | null; createdAt: string; launchable: boolean;
+};
+export type AgentPlanGate = {
+  type: string; requiresHuman: boolean; reason: string;
+  humanAction?: Record<string, unknown>; runId?: string;
+};
+export type AgentPlanStage = {
+  stageId: string; key: string; title: string; status: string; state: string;
+  owner: string; ownerName?: string; message?: string;
+  gate: AgentPlanGate; missing?: string[];
+};
+export type AgentPlan = {
+  schemaVersion: string; projectId: string; mode: string;
+  stages: AgentPlanStage[];
+  next: {
+    stageId: string; key: string; title: string; owner: string; state: string;
+    gate: AgentPlanGate; dispatchable: boolean; missing: string[];
+  };
+  blockers: string[];
+  formalConstructionIssue: boolean;
+};
+export type AgentDocumentField = {
+  key: string; label: string; value: string | number; unit: string;
+  page: number; raw: string; targetField: string;
+  confidence: 'high' | 'medium';
+};
+export type AgentDocumentExtraction = {
+  agent: { id: string; name: string; capability: string };
+  document: { name: string; pages: number; textChars: number; sha256: string };
+  fields: AgentDocumentField[];
+  warnings: string[];
+  notAttempted: string[];
+  requiresHumanConfirmation: boolean;
+  formalConstructionIssue: boolean;
+};
+export type DesignBasisGap = {
+  count: number;
+  items: Array<{ key: string; label: string; reason: string }>;
+  text: string;
+  confirmed: boolean;
+  provider: string;
+  providerUsed: string;
+  modelStatus: string;
+  projectId?: string;
+  formalConstructionIssue?: boolean;
+};
+export type SuperAgentTriggerResult = {
+  schemaVersion: string;
+  decision: 'ignored' | 'direct' | 'observed' | 'accepted';
+  reason: string;
+  ticketId: string | null;
+  ticket?: {
+    id: string; status: string; roleId: string; stageId: string;
+    mandate: Record<string, unknown>;
+  };
+  policy: { provider: string; used: boolean; note?: string };
+  acceptMode: string;
+  subscriptionDirect?: boolean;
+  execution?: {
+    dispatched: boolean; ticketId: string; roleId: string;
+    executor?: string; status?: string; reason?: string;
+    runId?: string | null;
+    outcome?: DesignBasisIngestResult | AgentRunCreatedOutcome | GeologyAssessmentOutcome | ChainFlowOutcome;
+  };
+  formalConstructionIssue: boolean;
+};
+export type AgentRunCreatedOutcome = {
+  mode: 'run_created';
+  run: { id: string; status: string; step: string };
+};
+export type ChainFlowOutcome = {
+  mode: 'chain';
+  flowId: string;
+  flowStatus: 'running' | 'waiting_human' | 'waiting_run' | 'waiting_task' | 'blocked' | 'done' | 'aborted';
+  summary: string;
+  currentStage?: { stageKey: string; stageId: string; title: string; owner: string } | null;
+  progress?: { done: number; total: number };
+  nextAction?: { type?: string; note?: string; impact?: string } | null;
+};
+export type GeologyAssessmentOutcome = {
+  mode: 'assessment';
+  label?: string;
+  status: 'ready' | 'incomplete' | 'blocked' | 'submitted';
+  summary: string;
+  taskId?: string;
+  generated?: number;
+  gaps: Array<{ key: string; label: string; reason: string; suggestion: string }>;
+  suggestedNext: string[];
+};
+export type DesignBasisIngestResult = {
+  mode: 'filled' | 'receipt';
+  applied: Array<{
+    key: string; label: string; value: string | number; unit: string;
+    raw: string; page: number | null; target: string; confidence: string;
+  }>;
+  remaining: DesignBasisGap;
+  conflicts?: Array<{
+    key: string; label: string; previous: string | number;
+    value: string | number; source: string;
+  }>;
+  warnings: string[];
+  modelTried: boolean;
+  provider: string;
+  providerUsed: string;
+  modelStatus: string;
+  requiresRecalculation?: boolean;
+  formalConstructionIssue: boolean;
+};
+
 const sectionRequestOptions: RequestOptions = {
   timeoutMs: 90000, responseIdleTimeoutMs: 90000, retryCount: 0,
   activity: { blocking: false, cacheTtlMs: 0, deduplicate: false },
 };
 
 export const api = {
+  agentRoles: () => request<{ roles: AgentRole[]; formalConstructionIssue: boolean }>('/api/agents/roles', { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentProjectStatus: (projectId: string) => request<{ digest: AgentProjectStatus; formalConstructionIssue: boolean }>(
+    `/api/agents/assistant/status?project_id=${encodeURIComponent(projectId)}`, {
+      timeoutMs: 60000, responseIdleTimeoutMs: 60000,
+      activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentPlan: (projectId: string) => request<AgentPlan>(
+    `/api/agents/orchestrator/plan?project_id=${encodeURIComponent(projectId)}`, {
+      timeoutMs: 45000, responseIdleTimeoutMs: 45000, retryCount: 0,
+      activity: { quiet: true, cacheTtlMs: 15000 } }),
+  agentConversations: (projectId: string) => request<{ conversations: AgentConversation[] }>(
+    `/api/agents/conversations?project_id=${encodeURIComponent(projectId)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  createAgentConversation: (projectId: string, title: string) => request<AgentConversation>('/api/agents/conversations', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, title }), activity: { label: '正在开启会话' } }),
+  agentConversation: (id: string) => request<{ conversation: AgentConversation; messages: AgentMessage[]; runs: AgentRunBrief[] }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentConversationRuns: (id: string) => request<{ runs: AgentRunBrief[]; formalConstructionIssue: boolean }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}/runs`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentRuns: (projectId: string) => request<{ runs: Record<string, unknown>[]; formalConstructionIssue: boolean }>(
+    `/api/agents/runs?project_id=${encodeURIComponent(projectId)}`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentRunOverview: (runId: string) => request<Record<string, unknown>>(
+    `/api/agents/runs/${encodeURIComponent(runId)}/overview`, { activity: { quiet: true, cacheTtlMs: 0 } }),
+  agentFrozenResults: () => request<{ results: AgentFrozenResult[]; formalConstructionIssue: boolean }>(
+    '/api/agents/frozen-results', { activity: { quiet: true, cacheTtlMs: 0 } }),
+  extractAgentDocument: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<AgentDocumentExtraction>('/api/agents/documents/extract', {
+      method: 'POST', body: form, timeoutMs: 120000, responseIdleTimeoutMs: 120000,
+      activity: { label: 'A1 正在读取文档' } });
+  },
+  superTrigger: (input: {
+    projectId: string; kind: 'user_message' | 'document_uploaded' | 'design_input_changed'
+      | 'calculation_failed' | 'run_completed' | 'review_requested';
+    payload?: Record<string, unknown>;
+    conversationId?: string;
+    threadId?: string;
+    acceptMode?: 'observe' | 'auto';
+  }) => request<SuperAgentTriggerResult>('/api/agents/super/triggers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input), timeoutMs: 90000, responseIdleTimeoutMs: 90000,
+    activity: { label: '总控正在分派任务' } }),
+  designBasisMissing: (projectId: string) => request<DesignBasisGap>(
+    `/api/agents/design-basis/missing?project_id=${encodeURIComponent(projectId)}`, {
+      timeoutMs: 30000, activity: { quiet: true, cacheTtlMs: 0 } }),
+  ingestDesignBasis: (
+    projectId: string,
+    input: { text?: string; file?: File; conversationId?: string; provider?: string },
+  ) => {
+    const form = new FormData();
+    form.append('project_id', projectId);
+    if (input.text) form.append('text', input.text);
+    if (input.file) form.append('file', input.file);
+    if (input.conversationId) form.append('conversation_id', input.conversationId);
+    if (input.provider) form.append('provider', input.provider);
+    return request<DesignBasisIngestResult>('/api/agents/design-basis/ingest', {
+      method: 'POST', body: form, timeoutMs: 90000, responseIdleTimeoutMs: 90000,
+      activity: { label: '正在录入设计基准' } });
+  },
+  advanceAgentRun: (runId: string) => request<Record<string, unknown>>(
+    `/api/agents/runs/${encodeURIComponent(runId)}/advance`, {
+      method: 'POST', activity: { label: '正在推进任务' } }),
+  postAgentMessage: (id: string, content: string) => request<{ message: AgentMessage; reply: AgentMessage }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }), timeoutMs: 60000, responseIdleTimeoutMs: 60000,
+      activity: { label: '正在发送消息' } }),
+  postAgentMessageWithRun: (id: string, content: string, resultHash: string) => request<{ message: AgentMessage; reply: AgentMessage }>(
+    `/api/agents/conversations/${encodeURIComponent(id)}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, metadata: { resultHash } }),
+      timeoutMs: 60000, responseIdleTimeoutMs: 60000,
+      activity: { label: '正在发起试点任务' } }),
+
   getNormativeMethods: () => request<Record<string, unknown>>('/api/sections/norms/catalog', sectionRequestOptions),
   getNormativeCandidates: () => request<Record<string, unknown>>('/api/sections/norms/candidates', sectionRequestOptions),
   executeNormativeMethod: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/sections/norms/calculate', { ...sectionRequestOptions, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
@@ -388,6 +596,11 @@ export const api = {
     };
     // Rolling-upgrade compatibility with pre-V3.32 API nodes.
     const status = await request<{ loginRequired: boolean; mode: string; sessionTtlSeconds: number }>('/api/auth/status', { ...options, activity: { ...options.activity, quiet: true, cacheTtlMs: 0 } });
+    // 失败即拒绝：响应被代理改成非 JSON 时 loginRequired 会读成空，
+    // 绝不能据此当成本地模式放行。
+    if (typeof status?.loginRequired !== 'boolean') {
+      throw new Error('登录服务返回格式异常（缺少 loginRequired），已按需要登录处理。');
+    }
     if (!status.loginRequired) return { ...status, authenticated: false, identity: undefined };
     try {
       const current = await request<{ authenticated: boolean; identity: AuthIdentity }>('/api/auth/me', { ...options, activity: { ...options.activity, quiet: true, cacheTtlMs: 0 } });
