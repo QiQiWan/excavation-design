@@ -6,6 +6,7 @@ import math
 import shutil
 import zipfile
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -2100,16 +2101,8 @@ def export_construction_cad_package(project: Project, output_dir: str | Path, sc
     if issue_mode not in {"review", "construction"}:
         raise ValueError(f"Unsupported CAD issue mode: {issue_mode}")
     out = Path(output_dir)
-    package_dir = out / f"{project.id}_cad_package_{scope}_{issue_mode}"
-    # Write a fresh package each run instead of deleting the previous one.
-    if package_dir.exists():
-        index = 2
-        while True:
-            candidate = out / f"{package_dir.name}_run{index}"
-            if not candidate.exists():
-                package_dir = candidate
-                break
-            index += 1
+    # 固定工作目录原地覆盖：托管机会挂起批量删除，导出路径不做任何目录删除。
+    package_dir = out / f"{project.id}_cad_package_{scope}_{issue_mode}_build"
     package_dir.mkdir(parents=True, exist_ok=True)
     for folder in ("00_general", "10_plans", "20_sections", "30_rebar", "40_details", "50_quality", "60_monitoring", "90_schedules"):
         (package_dir / folder).mkdir(parents=True, exist_ok=True)

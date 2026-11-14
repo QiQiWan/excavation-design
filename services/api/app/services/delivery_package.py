@@ -269,18 +269,13 @@ def export_coordinated_delivery_package(
         raise ValueError("Construction delivery is blocked by release baseline: " + "; ".join(str(row.get("title")) for row in failed))
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    root = out / f"{project.id}_coordinated_delivery_{issue_mode}_v{SOFTWARE_VERSION.replace('.', '_')}"
-    # Never delete a previously exported package: keep it and write this run to
-    # the next free suffix.  Deleting a directory of drawings also trips bulk
-    # delete guards on managed machines and loses the review evidence.
-    if root.exists():
-        index = 2
-        while True:
-            candidate = out / f"{root.name}_run{index}"
-            if not candidate.exists():
-                root = candidate
-                break
-            index += 1
+    # 固定构建目录、原地覆盖：托管机会挂起批量删除，所以导出路径里绝不删目录。
+    # 重复导出不会累积磁盘（同一组文件被覆盖），最终 zip 按时间戳单独留档。
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    root = out / (
+        f"{project.id}_coordinated_delivery_{issue_mode}_"
+        f"v{SOFTWARE_VERSION.replace('.', '_')}_build"
+    )
     for folder in ("00_release", "10_drawings", "20_bim", "30_reports", "40_rebar", "50_data", "90_audit"):
         (root / folder).mkdir(parents=True, exist_ok=True)
 
@@ -479,7 +474,6 @@ def export_coordinated_delivery_package(
     checksums.write_text("\n".join(hashes) + "\n", encoding="utf-8")
 
     # 每版包独立留档：同一项目反复导出时，旧包必须还能被复核，不能被同名覆盖。
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     zip_path = out / (
         f"{project.id}_coordinated_delivery_{issue_mode}_"
         f"v{SOFTWARE_VERSION.replace('.', '_')}_{stamp}.zip"

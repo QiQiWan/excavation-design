@@ -4,6 +4,7 @@ import csv
 import json
 import shutil
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -155,18 +156,9 @@ def export_batch_pdf(project: Project, output_path: Path, mode: str = "balanced"
 
 def export_formal_drawing_package(project: Project, output_dir: str | Path, issue_mode: str = "review", rebar_mode: str = "balanced") -> Path:
     out = Path(output_dir); out.mkdir(parents=True, exist_ok=True)
-    work = out / f"{project.id}_formal_issue_v{SOFTWARE_VERSION.replace('.', '_')}"
-    # Keep earlier issues instead of deleting them; a managed machine blocks
-    # bulk deletes and the previous package is review evidence.
-    if work.exists():
-        index = 2
-        while True:
-            candidate = out / f"{work.name}_run{index}"
-            if not candidate.exists():
-                work = candidate
-                break
-            index += 1
-    work.mkdir(parents=True)
+    # 固定工作目录原地覆盖：托管机会挂起批量删除，导出路径不做任何目录删除。
+    work = out / f"{project.id}_formal_issue_v{SOFTWARE_VERSION.replace('.', '_')}_build"
+    work.mkdir(parents=True, exist_ok=True)
     cad_zip = export_construction_cad_package(project, out, scope="full", rebar_mode=rebar_mode, issue_mode=issue_mode)
     with zipfile.ZipFile(cad_zip) as zf: zf.extractall(work / "CAD")
     pdf = export_batch_pdf(project, work / "PitGuard_drawing_issue_preview.pdf", rebar_mode, issue_mode)
