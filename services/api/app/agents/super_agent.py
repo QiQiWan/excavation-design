@@ -186,17 +186,87 @@ def _route_role(kind: str, payload: dict) -> str | None:
     return None
 
 
-def _semantic_policy(kind: str, payload: dict, plan_next: dict) -> dict:
-    """Slow Path 预留：模型未配置或尚未接线时如实回退确定性规则。"""
+# 模型 Router 的提示词：只分派、不干活，输出紧凑 JSON。
+_ROUTER_INSTRUCTION = (
+    '你是岩土基坑设计系统的任务路由器（Router）。'
+    '根据用户一句话，判断交给哪个 Worker，只输出一个 JSON 对象：{"role":"<ROLE>"}。\n'
+    '可选角色：A1 资料与参数、A2 地质与场景、A3 支护方案、A4 施工阶段、'
+    'A5 计算与验算、A6 优化闭环、A7 构件深化、A8 成果与校审、none 无法判断。\n'
+    '只输出 JSON，不要解释、不要 Markdown、不要思考过程。'
+)
+_VALID_ROLES = {'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8'}
+
+
+def _model_route_role(text: str) -> str | None:
+    """Slow Path：规则判不出时，用模型做语义分派。
+
+    只补规则盲区，不替代规则；模型失败/超时/限流一律返回 None，由调用方
+    回退到总控的下一阶段，绝不伪造一个角色。模型输出不被信任，只接受
+    白名单里的角色名。
+    """
     config = configuration()
-    if config.get('enabled') and config.get('configured'):
+    if not config.get('enabled') or not config.get('configured'):
+        return None
+    try:
+        key, model, timeout, max_tokens = intake._model_settings()
+    except Exception:
+        return None
+    try:
+        endpoint = intake._endpoint()
+    except Exception:
+        return None
+    payload = intake.json.dumps({
+        'model': model,
+        'temperature': 0,
+        'max_tokens': min(max_tokens, 64),
+        'messages': [
+            {'role': 'system', 'content': _ROUTER_INSTRUCTION},
+            {'role': 'user', 'content': text[:2000]},
+        ],
+    }, ensure_ascii=False).encode('utf-8')
+    try:
+        raw = intake._post_model(endpoint, payload, key, timeout)
+        response = intake.json.loads(raw)
+        message = response['choices'][0]['message']
+        # flash/思考型模型可能把正文留空、答案塞进 reasoning_content。
+        content = message.get('content') or message.get('reasoning_content') or ''
+    except Exception:
+        return None
+    if not isinstance(content, str) or not content.strip():
+        return None
+    try:
+        obj = intake._parse_model_json(content)
+    except Exception:
+        return None
+    role = str(obj.get('role') or '').strip()
+    return role if role in _VALID_ROLES else None
+
+
+def _semantic_policy(kind: str, payload: dict, plan_next: dict) -> dict:
+    """Fast Path 规则先判；判不出才走模型 Slow Path，失败如实回退。"""
+    intent_role = _route_role(kind, payload)
+    if intent_role:
         return {
-            'provider': 'reserved', 'used': False,
-            'note': '模型策略尚未接线，本次仍由确定性规则决策（未伪造模型调用）',
+            'provider': 'deterministic', 'used': True,
+            'role': intent_role,
+            'note': 'Fast Path 关键词规则命中，未调用模型',
+        }
+    if kind == 'user_message':
+        text = str(payload.get('text') or '').strip()
+        model_role = _model_route_role(text) if text else None
+        if model_role:
+            return {
+                'provider': 'llm-router', 'used': True,
+                'role': model_role,
+                'note': f'规则未命中，模型 Slow Path 分派给 {model_role}',
+            }
+        return {
+            'provider': 'fallback', 'used': False, 'role': None,
+            'note': '规则与模型均无法判断，交由总控下一阶段（未伪造分派）',
         }
     return {
-        'provider': 'deterministic', 'used': False,
-        'note': 'PITGUARD_LLM_* 未配置，Fast Path 规则直接决策',
+        'provider': 'deterministic', 'used': False, 'role': None,
+        'note': '非用户消息，无需意图分派',
     }
 
 
@@ -399,7 +469,11 @@ def ingest_trigger(*, project_id: str, kind: str, payload: dict | None = None,
     policy = _semantic_policy(kind, payload, plan_next)
 
     requested_role = str(payload.get('roleId') or '')
+    # 意图分派：规则 Fast Path 优先，其次模型 Slow Path（policy['role']），
+    # 都没有才落到总控的下一阶段。
     intent_role = _route_role(kind, payload)
+    if not intent_role and policy.get('provider') == 'llm-router':
+        intent_role = policy.get('role')
     if requested_role and requested_role not in ('A1', 'auto'):
         # 调用方显式指定了 A1 以外的角色，尊重它。
         role_id = requested_role if requested_role in WORKER_BY_ID else plan_next['owner']
