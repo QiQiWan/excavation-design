@@ -8,6 +8,23 @@ from app.services.support_topology_contract import support_topology_hash
 from app.version import ALGORITHM_VERSION, RULE_SET_VERSION
 
 
+def projection_contract_allows_current(
+    contract: dict[str, Any], *,
+    state_current: bool, case_exists: bool, contract_id_present: bool,
+    topology_matches: bool, versions_match: bool,
+) -> bool:
+    """精简工作区里允许沿用“当前”的条件。
+
+    投影省略了部分输入，哈希对不上本身不能证明设计变了；但合同如果**明确列出**
+    具体输入差异（如 ``reinforcementInputs`` / ``retainingSystem``），说明设计确实
+    变了，必须判为不当前——否则 core-status 与交付就绪会出现两个相反结论。
+    """
+    if not (state_current and case_exists and contract_id_present
+            and topology_matches and versions_match):
+        return False
+    return not contract.get("inputComponentMismatches")
+
+
 _CATEGORY_GUIDANCE: dict[str, tuple[str, str, str]] = {
     "wall_reinforcement": ("墙体配筋或截面承载力", "增大墙厚、提高材料/配筋等级或调整分区配筋后重新计算。", "配筋深化"),
     "wall_plan_reinforcement": ("墙体平面局部配筋", "调整转角/支撑节点区附加筋和局部构造。", "配筋深化"),
@@ -146,13 +163,14 @@ def calculation_readiness(project: Project) -> dict[str, Any]:
             and str(state.get("resultId") or "") == str(latest.id)
             and not explicit_stale
         )
-        projection_compatible = bool(
-            state_current
-            and case_exists
-            and latest.calculation_contract_id
-            and latest.support_topology_hash == current_topology
-            and stored_algorithm == ALGORITHM_VERSION
-            and stored_rules == RULE_SET_VERSION
+        projection_compatible = projection_contract_allows_current(
+            contract,
+            state_current=state_current,
+            case_exists=case_exists,
+            contract_id_present=bool(latest.calculation_contract_id),
+            topology_matches=latest.support_topology_hash == current_topology,
+            versions_match=(stored_algorithm == ALGORITHM_VERSION
+                            and stored_rules == RULE_SET_VERSION),
         )
         if projection_compatible:
             contract = {
