@@ -23,6 +23,8 @@ exports/*
 !exports/.gitkeep
 runtime-api.log
 runtime-api.err.log
+runtime-web.log
+runtime-web.err.log
 
 # IDE / OS
 .DS_Store
