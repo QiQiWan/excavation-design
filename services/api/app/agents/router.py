@@ -20,6 +20,7 @@ from . import findings
 from . import context as engineering_context
 from . import stages as stage_registry
 from . import chain
+from . import calculation_book
 from app.services.access_control import ROLE_RANK
 
 router=APIRouter(prefix='/api/agents',tags=['engineering-agent-v388'])
@@ -164,6 +165,48 @@ async def ingest_design_basis(request:Request,project_id:str=Form(...),
                              conversation_id=conversation_id,provider_requested=provider)
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404,detail='项目不存在') from exc
+
+
+@router.post('/calculation-book/run')
+async def run_calculation_book(request:Request,
+                               project_id:str|None=Form(None),
+                               provider:str=Form('auto'),
+                               start_chain:bool=Form(True),
+                               file:UploadFile=File(...)):
+    """一份计算书 → 解读并填入设计基准 → 立刻推进六步链到第一个停点。
+
+    没有 project_id 时按文件名新建项目；返回「读了什么 / 填了什么 / 还缺什么 /
+    链停在哪」，缺钻孔或几何时如实停下，不猜、不补。
+    """
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='计算书导入要求设计人员权限')
+    if provider not in ('auto','rules','model'):
+        raise HTTPException(400,detail='provider 只能是 auto / rules / model')
+    filename=file.filename or 'calculation-book.pdf'
+    data=await file.read()
+    if not data:
+        raise HTTPException(400,detail='文件为空')
+    try:
+        return calculation_book.run(actor=identity.actor,filename=filename,data=data,
+                                    project_id=project_id,provider=provider,
+                                    start_chain=start_chain)
+    except KeyError as exc:
+        raise HTTPException(404,detail='项目不存在') from exc
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc)) from exc
+
+
+@router.get('/calculation-book/status')
+def calculation_book_status(request:Request,project_id:str=Query(min_length=1,max_length=100)):
+    """计算书流水线走到哪、卡在什么上、当前计算结论是什么。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='查看计算书流水线要求设计人员权限')
+    try:
+        return calculation_book.status(actor=identity.actor,project_id=project_id)
     except KeyError as exc:
         raise HTTPException(404,detail='项目不存在') from exc
 

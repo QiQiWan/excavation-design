@@ -11,6 +11,7 @@ from app.services.calculation_trace import build_calculation_trace
 from app.services.wall_length_optimizer import mark_wall_length_recalculated
 from app.services.calculation_state import mark_calculation_state_current
 from app.services.calculation_assurance import audit_calculation_inputs, build_calculation_contract, assess_calculation_result, verify_current_calculation_contract
+from app.services.workflow_v381 import ensure_design_control_stages
 from app.quality.formal_gate import build_formal_report_gate
 from app.quality.ifc_compatibility import evaluate_ifc_model_compatibility
 
@@ -172,6 +173,10 @@ def run(project_id: str, case_id: str | None = None, repo: ProjectRepository = D
         repo.save(project, expected_revision=expected_revision,
                   action="calculation.verify", summary="Verified saved design without adoption or repair")
         return result
+    initialized = ensure_design_control_stages(project)
+    if initialized.get("migrated"):
+        repo.save(project, action="calculation.initialize_control_stages",
+                  summary="计算前生成设计控制阶段")
     case = None
     stage_selection: dict = {}
     if case_id:

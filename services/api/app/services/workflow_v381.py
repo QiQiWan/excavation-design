@@ -1425,3 +1425,15 @@ def workflow_overview(project: Project) -> dict[str, Any]:
     }
     project.advanced_engineering["businessWorkflowV381"] = result
     return result
+
+
+def ensure_design_control_stages(project: Project) -> dict[str, Any]:
+    """计算前保证控制阶段存在；缺失时按当前开挖与支撑条件生成一版。
+
+    幂等：已有阶段直接返回。生成只补阶段表，不改计算参数、不作废已有结果，
+    因此可以安全地放在计算入口，避免出现“计算用了隐式阶段、项目里却查不到阶段”。
+    """
+    if project.design_control_stages:
+        return {"migrated": False, "reason": "already_present",
+                "stageCount": len(project.design_control_stages)}
+    return migrate_legacy_stages(project)

@@ -33,6 +33,7 @@ from . import chain as chain_flow
 from .stages import primary_stage_of_role
 from . import orchestrator
 from . import scheme_stage_agent
+from . import tools
 from .catalog import AGENTS
 from .contracts import StartRun
 from .engine import AgentRuntime
@@ -586,8 +587,17 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
     if not worker['implemented']:
         return _blocked(f"{ticket['roleId']} 执行链尚未建立，不伪造执行结果")
 
+    # 真正走一次工具层：既给 Worker 一份显式上下文，也留下工具调用审计记录。
+    context_hash = None
+    try:
+        context_out = tools.invoke('get_project_context', project_id=ticket['projectId'],
+                                   actor=actor, params={})
+        context_hash = (context_out.get('result') or {}).get('contextHash')
+    except Exception:
+        context_hash = None
     store.append_ticket_event(ticket_id, 'worker_started', {
         'executor': worker['executor'], 'requestedTools': requested,
+        'contextHash': context_hash,
     })
 
     try:
@@ -676,8 +686,8 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
                               if row['launchable']]
                     chosen = frozen[0]['resultHash'] if frozen else None
                 if not chosen:
-                    return _blocked('没有可启动的冻结单剖面结果；'
-                                    '请先在单剖面工作台完成一次计算并冻结结果')
+                    return _blocked('没有可启动的冻结单剖面结果；单剖面求解器只支持单道支撑，'
+                                    '多道撑整坑项目需先在单剖面工作台建立等效剖面并冻结结果')
                 run = AgentRuntime().create(
                     StartRun(result_hash=chosen,
                              conversation_id=ticket.get('conversationId')),
@@ -707,6 +717,7 @@ def dispatch_ticket(ticket_id: str, *, actor: str,
         'dispatched': True, 'ticketId': ticket_id, 'roleId': ticket['roleId'],
         'executor': worker['executor'], 'status': next_status,
         'runId': run_id, 'outcome': outcome,
+        'contextHash': context_hash,
         'formalConstructionIssue': False,
     }
 

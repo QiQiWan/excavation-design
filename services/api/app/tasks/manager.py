@@ -2320,7 +2320,11 @@ class TaskManager:
                 "candidateComparisonCount":0, "closureSummary":None, "mode":"verify", "refreshProject":True}
         self._assert_calculation_qualified(repo, project, task)
         project = repo.require(task.project_id)
-        from app.services.workflow_v381 import repair_design_control_support_references
+        from app.services.workflow_v381 import ensure_design_control_stages, repair_design_control_support_references
+        if ensure_design_control_stages(project).get("migrated"):
+            repo.save(project, action="task.calculation_full.initialize_control_stages",
+                      summary="计算前生成设计控制阶段")
+            project = repo.require(task.project_id)
         stage_reference_repair = repair_design_control_support_references(project)
         if stage_reference_repair.get("changed"):
             repo.save(
