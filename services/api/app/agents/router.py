@@ -199,6 +199,43 @@ async def run_calculation_book(request:Request,
         raise HTTPException(400,detail=str(exc)) from exc
 
 
+@router.post('/calculation-book/autopilot')
+async def calculation_book_autopilot(request:Request,
+                                    file:UploadFile=File(...)):
+    """把计算书丢给 Agent：解析 → 建项目 → 建模 → 计算 → 配筋 → 成果包。"""
+    identity=_actor(request)
+    if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
+        raise HTTPException(403,detail='计算书自动生成要求设计人员权限')
+    data=await file.read()
+    if not data:
+        raise HTTPException(400,detail='文件为空')
+    from pathlib import Path
+    from uuid import uuid4
+    from app.tasks.manager import task_manager
+    from app.schemas.domain import Project
+    from app.storage.repository import ProjectRepository, shared_project_store
+
+    filename=file.filename or 'calculation-book.pdf'
+    inbox=Path(__file__).resolve().parents[2]/'runtime'/'inbox'
+    inbox.mkdir(parents=True,exist_ok=True)
+    target=inbox/f"book-{uuid4().hex[:12]}.pdf"
+    target.write_bytes(data)
+
+    repo=ProjectRepository(store=shared_project_store())
+    stem=Path(filename).stem[:60] or '计算书'
+    project=repo.create(Project(name=f'{stem}（计算书自动生成）'),actor=identity.actor)
+    task=task_manager.submit(project.id,'calculation_book_autopilot',{
+        'projectId':project.id,
+        'sourcePath':str(target),'filename':filename,'actor':identity.actor,
+    })
+    return {
+        'taskId':task.id,'projectId':project.id,'filename':filename,
+        'operation':'calculation_book_autopilot',
+        'poll':'GET /api/tasks/{taskId}',
+        'formalConstructionIssue':False,
+    }
+
+
 @router.get('/calculation-book/status')
 def calculation_book_status(request:Request,project_id:str=Query(min_length=1,max_length=100)):
     """计算书流水线走到哪、卡在什么上、当前计算结论是什么。"""

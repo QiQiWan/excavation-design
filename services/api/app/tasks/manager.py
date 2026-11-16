@@ -938,6 +938,8 @@ class TaskManager:
             result = self._run_svg_export(task)
         elif task.operation == "export_formal_drawings":
             result = self._run_formal_drawing_export(task, payload)
+        elif task.operation == "calculation_book_autopilot":
+            result = self._run_calculation_book_autopilot(task, payload)
         elif task.operation == "export_coordinated_delivery":
             result = self._run_coordinated_delivery_export(task, payload)
         elif task.operation == "export_json":
@@ -2844,6 +2846,79 @@ class TaskManager:
         path = export_formal_drawing_package(project, EXPORT_DIR, issue_mode=issue_mode, rebar_mode=rebar_mode)
         return self._file_result(path, "application/zip", {"issueMode": issue_mode, "refreshProject": True, "drawingIssueGate": issue_gate})
 
+    def _run_calculation_book_autopilot(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
+        """计算书自动驾驶：解析 → 建项目 → 建模 → 计算 → 配筋 → 成果包。"""
+        from pathlib import Path as _Path
+
+        from app.agents import calculation_book_autopilot as autopilot
+        from app.agents import design_basis_intake as intake
+        from app.schemas.domain import Project
+
+        source = _Path(str(payload.get("sourcePath") or ""))
+        if not source.is_file():
+            raise ValueError("计算书文件不存在或未上传")
+        filename = str(payload.get("filename") or source.name)
+        actor = str(payload.get("actor") or "local-development")
+        repo = self._repo()
+
+        self._stage(task, 4, "读取计算书并抽取工程参数")
+        data = source.read_bytes()
+        parsed = autopilot.parse_book(autopilot.extract_text(data))
+        self._append_log(task, f"解析：挖深 {parsed['depthM']} m，安全等级 {parsed['safetyGrade']}，"
+                               f"土层 {len(parsed['layers'])} 层，桩参数 {parsed['pile'] or '未给出'}")
+
+        project_id = payload.get("projectId")
+        if project_id:
+            project = repo.require(str(project_id))
+        else:
+            stem = source.stem[:60] or "计算书"
+            project = repo.create(Project(name=f"{stem}（计算书自动生成）"), actor=actor)
+
+        self._stage(task, 12, "写入设计基准")
+        ingested = intake.ingest(project_id=project.id, actor=actor, filename=filename,
+                                 data=data, provider_requested="auto",
+                                 source_label=f"计算书 {filename}")
+        project = repo.require(project.id)
+        project.design_settings.design_basis_confirmed = True
+        repo.save(project, actor=actor, action="autopilot.confirm_basis",
+                  summary="计算书自动驾驶：按计算书确认设计基准")
+
+        self._stage(task, 22, "建立基坑、钻孔与地质模型")
+        project = repo.require(project.id)
+        prepared = autopilot.prepare_project(project, parsed, repo, actor=actor)
+        project = repo.require(project.id)
+        project.advanced_engineering["calculationBookAutopilot"] = {
+            "filename": filename,
+            "parsed": {key: parsed[key] for key in ("depthM", "safetyGrade", "pile")},
+            "appliedKeys": [row.get("key") for row in ingested.get("applied", [])],
+            **prepared,
+        }
+        repo.save(project, actor=actor, action="autopilot.record",
+                  summary="计算书自动驾驶：记录解析结果与假设")
+
+        self._stage(task, 35, "生成方案并计算")
+        calculation = self._run_calculation_full(task, {"mode": "design", "topN": 0})
+        self._stage(task, 72, "配筋设计")
+        rebar = self._run_rebar_design(task, {"mode": "balanced"})
+        # 配筋方案写回围护体系会变更计算输入合同，必须复算一次，成果包才不是旧算结果。
+        self._stage(task, 80, "按配筋后的输入复算")
+        self._run_calculation_full(task, {"mode": "verify", "topN": 0})
+        self._stage(task, 88, "导出评审版成果包")
+        package = self._run_coordinated_delivery_export(task, {
+            "issueMode": "review", "rebarMode": "balanced", "includeIfcProfiles": True,
+        })
+        return {
+            "projectId": project.id,
+            "filename": filename,
+            "interpretation": {"mode": ingested.get("mode"),
+                               "applied": len(ingested.get("applied") or [])},
+            "parsed": parsed,
+            "prepared": prepared,
+            "calculationResultId": calculation.get("calculationResultId"),
+            "package": package,
+            "refreshProject": True,
+        }
+
     def _run_coordinated_delivery_export(self, task: TaskRecord, payload: dict[str, Any]) -> dict[str, Any]:
         from app.services.delivery_package import export_coordinated_delivery_package
         repo = self._repo()
@@ -2999,6 +3074,7 @@ class TaskManager:
             "export_drawings_svg": "导出 SVG 图纸包",
             "export_formal_drawings": "导出正式图纸发行包",
             "export_coordinated_delivery": "导出协同成果交付包",
+            "calculation_book_autopilot": "计算书自动生成（解析→建模→计算→配筋→成果包）",
             "export_json": "导出 JSON 数据",
             "export_trace": "导出计算追溯链",
             "export_issue_report": "导出问题清单与完成度评估",
