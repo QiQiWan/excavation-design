@@ -209,6 +209,11 @@ async def calculation_book_autopilot(request:Request,
     data=await file.read()
     if not data:
         raise HTTPException(400,detail='文件为空')
+    if not data.lstrip()[:5].startswith(b'%PDF'):
+        # 进门就拦：不要把非 PDF 排进任务，否则用户要等一轮才看到失败。
+        raise HTTPException(400,detail='这不是有效的 PDF 文件（缺少 %PDF 文件头）')
+    if len(data) > 80 * 1024 * 1024:
+        raise HTTPException(413,detail='文件超过 80 MB，请拆分后再上传')
     from pathlib import Path
     from uuid import uuid4
     from app.tasks.manager import task_manager
