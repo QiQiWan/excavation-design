@@ -36,7 +36,10 @@ class AgentStore:
                     actor TEXT NOT NULL, source_result_hash TEXT NOT NULL,
                     source_snapshot_hash TEXT NOT NULL, status TEXT NOT NULL,
                     step TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0,
-                    candidate_limit INTEGER NOT NULL, model_mode TEXT NOT NULL,
+                    candidate_limit INTEGER NOT NULL, max_rounds INTEGER NOT NULL DEFAULT 1,
+                    focus TEXT NOT NULL DEFAULT 'auto', model_mode TEXT NOT NULL,
+                    max_evaluations INTEGER NOT NULL DEFAULT 15,
+                    max_runtime_seconds INTEGER NOT NULL DEFAULT 900,
                     diagnostics_json TEXT, plan_json TEXT, summary_json TEXT,
                     error TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0,
                     pause_requested INTEGER NOT NULL DEFAULT 0,
@@ -53,7 +56,12 @@ class AgentStore:
                     id TEXT PRIMARY KEY, run_id TEXT NOT NULL, proposal_index INTEGER NOT NULL,
                     patch_json TEXT NOT NULL, snapshot_hash TEXT, result_hash TEXT,
                     metrics_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT,
+                    round_index INTEGER NOT NULL DEFAULT 1, parent_result_hash TEXT,
                     created_at TEXT NOT NULL, UNIQUE(run_id,proposal_index));
+                CREATE TABLE IF NOT EXISTS candidate_evidence (
+                    candidate_id TEXT NOT NULL, field_path TEXT NOT NULL,
+                    receipt_sha256 TEXT NOT NULL, receipt_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL, PRIMARY KEY(candidate_id,field_path));
                 CREATE TABLE IF NOT EXISTS selection (
                     project_id TEXT NOT NULL, section_id TEXT NOT NULL,
                     snapshot_hash TEXT NOT NULL, result_hash TEXT NOT NULL,
@@ -69,6 +77,19 @@ class AgentStore:
             columns={x[1] for x in c.execute('PRAGMA table_info(runs)')}
             if 'pause_requested' not in columns:
                 c.execute('ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0')
+            if 'max_rounds' not in columns:
+                c.execute('ALTER TABLE runs ADD COLUMN max_rounds INTEGER NOT NULL DEFAULT 1')
+            if 'focus' not in columns:
+                c.execute("ALTER TABLE runs ADD COLUMN focus TEXT NOT NULL DEFAULT 'auto'")
+            if 'max_evaluations' not in columns:
+                c.execute('ALTER TABLE runs ADD COLUMN max_evaluations INTEGER NOT NULL DEFAULT 15')
+            if 'max_runtime_seconds' not in columns:
+                c.execute('ALTER TABLE runs ADD COLUMN max_runtime_seconds INTEGER NOT NULL DEFAULT 900')
+            candidate_columns={x[1] for x in c.execute('PRAGMA table_info(candidates)')}
+            if 'round_index' not in candidate_columns:
+                c.execute('ALTER TABLE candidates ADD COLUMN round_index INTEGER NOT NULL DEFAULT 1')
+            if 'parent_result_hash' not in candidate_columns:
+                c.execute('ALTER TABLE candidates ADD COLUMN parent_result_hash TEXT')
 
     @contextmanager
     def connect(self):
@@ -91,6 +112,9 @@ class AgentStore:
                  'sourceResultHash' if k=='source_result_hash' else
                  'sourceSnapshotHash' if k=='source_snapshot_hash' else
                  'maxCandidates' if k=='candidate_limit' else
+                 'maxRounds' if k=='max_rounds' else
+                 'maxEvaluations' if k=='max_evaluations' else
+                 'maxRuntimeSeconds' if k=='max_runtime_seconds' else
                  'modelMode' if k=='model_mode' else
                  'cancelRequested' if k=='cancel_requested' else
                  'pauseRequested' if k=='pause_requested' else
@@ -101,16 +125,24 @@ class AgentStore:
                  'clientRequestId' if k=='client_request_id' else k):
                 bool(v) if k in ('cancel_requested','pause_requested') else v for k,v in r.items()}
 
-    def create(self,*,result,actor:str,max_candidates:int=3,model_mode:str='off',client_request_id=None):
+    def create(self,*,result,actor:str,max_candidates:int=3,max_rounds:int=1,focus:str='auto',model_mode:str='off',
+               max_evaluations:int|None=None,max_runtime_seconds:int=900,client_request_id=None):
         rh=result['resultHash'];sh=result['snapshotHash'];pr=result['projectId'];sec=result['sectionId']
         rid=uuid4().hex;ts=now()
+        max_evaluations = max_evaluations if max_evaluations is not None else max_candidates*max_rounds
+        if (not isinstance(max_evaluations,int) or isinstance(max_evaluations,bool) or
+             not 1<=max_evaluations<=15 or not isinstance(max_runtime_seconds,int) or
+             isinstance(max_runtime_seconds,bool) or not 10<=max_runtime_seconds<=7200):
+            raise ValueError('Invalid bounded evaluation or runtime budget')
         with self.connect() as c:
             c.execute('BEGIN IMMEDIATE')
             if client_request_id:
                 prior=c.execute('SELECT * FROM runs WHERE actor=? AND client_request_id=?',(actor,client_request_id)).fetchone()
                 if prior:
                     if (prior['source_result_hash']!=rh or prior['candidate_limit']!=max_candidates
-                            or prior['model_mode']!=model_mode):
+                            or prior['max_rounds']!=max_rounds or prior['focus']!=focus or prior['model_mode']!=model_mode
+                            or prior['max_evaluations']!=max_evaluations
+                            or prior['max_runtime_seconds']!=max_runtime_seconds):
                         c.execute('ROLLBACK')
                         raise ConflictError('幂等请求号对应不同冻结结果、模型模式或候选预算')
                     c.execute('COMMIT')
@@ -122,9 +154,11 @@ class AgentStore:
             if not selection:
                 c.execute('INSERT INTO selection VALUES(?,?,?,?,?,?,?)',(pr,sec,sh,rh,0,actor,ts))
             c.execute('''INSERT INTO runs(id,project_id,section_id,actor,source_result_hash,
-                source_snapshot_hash,status,step,progress,candidate_limit,model_mode,client_request_id,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                (rid,pr,sec,actor,rh,sh,'queued','diagnose',0,max_candidates,model_mode,client_request_id,ts,ts))
+                source_snapshot_hash,status,step,progress,candidate_limit,max_rounds,focus,model_mode,
+                max_evaluations,max_runtime_seconds,client_request_id,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (rid,pr,sec,actor,rh,sh,'queued','diagnose',0,max_candidates,max_rounds,focus,model_mode,
+                 max_evaluations,max_runtime_seconds,client_request_id,ts,ts))
             self._event(c,rid,'created','run_created',{'sourceResultHash':rh})
             c.execute('COMMIT')
         return self.get(rid)
@@ -158,7 +192,8 @@ class AgentStore:
         return {'id':x['id'],'runId':x['run_id'],'proposalIndex':x['proposal_index'],
             'patch':json.loads(x['patch_json']),'snapshotHash':x['snapshot_hash'],
             'resultHash':x['result_hash'],'metrics':json.loads(x['metrics_json']),
-            'status':x['status'],'error':x['error'],'createdAt':x['created_at']}
+            'status':x['status'],'error':x['error'],'createdAt':x['created_at'],
+            'roundIndex':x['round_index'],'parentResultHash':x['parent_result_hash']}
 
     def selection(self,pr,sec):
         with self.connect() as c:
@@ -197,10 +232,11 @@ class AgentStore:
                 c.execute('ROLLBACK');raise ConflictError('Agent run lease or stage was lost')
             if candidate:
                 c.execute('''INSERT OR IGNORE INTO candidates(id,run_id,proposal_index,patch_json,snapshot_hash,
-                    result_hash,metrics_json,status,error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                    result_hash,metrics_json,status,error,round_index,parent_result_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
                     (candidate['id'],rid,candidate['proposalIndex'],encode(candidate['patch']),
                      candidate.get('snapshotHash'),candidate.get('resultHash'),encode(candidate['metrics']),
-                     candidate['status'],candidate.get('error'),now()))
+                     candidate['status'],candidate.get('error'),candidate.get('roundIndex',1),
+                     candidate.get('parentResultHash'),now()))
             if row['cancel_requested']:
                 status='cancelled';step='done';event_key+=':cancelled';event_type='run_cancelled'
             elif row['pause_requested']:
@@ -268,6 +304,108 @@ class AgentStore:
             c.execute('COMMIT')
         return self.get(rid)
 
+    def candidate_evidence(self,run_id:str,candidate_id:str)->dict:
+        """Sidecar receipts are claims plus verified bytes, never an approval of code applicability."""
+        with self.connect() as c:
+            candidate=c.execute('SELECT * FROM candidates WHERE id=? AND run_id=?',
+                                (candidate_id,run_id)).fetchone()
+            run=c.execute('SELECT * FROM runs WHERE id=?',(run_id,)).fetchone()
+            if candidate is None or run is None:raise KeyError('Candidate not found in this run')
+            receipts=c.execute('SELECT * FROM candidate_evidence WHERE candidate_id=?',
+                               (candidate_id,)).fetchall()
+        from app.engineering.single_braced_pile.repository import Repository
+        from .search_rules import changed_fields
+        repo=Repository()
+        source=repo.load(run['source_result_hash']);result=repo.load(candidate['result_hash'])
+        fields=changed_fields(source['snapshot'],result['snapshot'])
+        by_field={r['field_path']:json.loads(r['receipt_json']) for r in receipts}
+        return {'schemaVersion':'pitguard.agent-evidence-gate/1','candidateId':candidate_id,
+                'resultHash':candidate['result_hash'],'requiredFields':fields,
+                'receipts':by_field,'missingFields':sorted(set(fields)-set(by_field)),
+                'sourceBytesMatchedAtRegistration':all(r.get('fileBytesVerified') is True for r in by_field.values()),
+                'adoptionEvidenceComplete':bool(fields) and set(fields)==set(by_field),
+                'sourceByteRecheckAtAdoptionRequired':True,
+                'engineeringComplianceVerified':False,'formalConstructionIssue':False}
+
+    def register_evidence(self,run_id:str,candidate_id:str,*,field_path:str,
+                          relative_path:str,expected_sha256:str,declared_value,
+                          source_reference:str,method_basis:str,reviewer:str)->dict:
+        from app.engineering.single_braced_pile.repository import Repository
+        from app.engineering.single_braced_pile.assurance.source_bytes import verify_raw_source_file
+        from .search_rules import changed_fields
+        root=os.getenv('PITGUARD_AGENT_EVIDENCE_ROOT','').strip()
+        if not root:raise ConflictError('尚未配置独立来源文件根目录 PITGUARD_AGENT_EVIDENCE_ROOT')
+        with self.connect() as c:
+            run=c.execute('SELECT * FROM runs WHERE id=?',(run_id,)).fetchone()
+            candidate=c.execute('SELECT * FROM candidates WHERE id=? AND run_id=?',
+                                (candidate_id,run_id)).fetchone()
+            if run is None or candidate is None:raise KeyError('Candidate not found')
+            if run['status']!='awaiting_review' or candidate['status']!='calculated':
+                raise ConflictError('仅允许对已完成计算且等待校审的候选重新确认参数依据')
+        repo=Repository()
+        source=repo.load(run['source_result_hash'])
+        revised=repo.load(candidate['result_hash'])
+        expected=changed_fields(source['snapshot'],revised['snapshot'])
+        if field_path not in expected:raise ConflictError('提交字段不属于该候选的实际修改项')
+        after=expected[field_path]['after']
+        if (isinstance(after,int) and not isinstance(after,bool) and type(declared_value) not in (int,float)
+                or isinstance(after,float) and not isinstance(declared_value,(int,float))
+                or isinstance(declared_value,bool) or after!=declared_value):
+            raise ConflictError('提交的依据数值与封存候选快照不一致')
+        receipt=verify_raw_source_file(source_root=Path(root),relative_path=relative_path,
+                    expected_sha256=expected_sha256,maximum_size_bytes=25_000_000)
+        if receipt['status']!='byte_hash_confirmed':
+            raise ConflictError('来源文件原始字节不存在或 SHA256 不一致')
+        data={'schemaVersion':'pitguard.agent-parameter-evidence/1',
+              'runId':run_id,'candidateId':candidate_id,'candidateSnapshotHash':candidate['snapshot_hash'],
+              'candidateResultHash':candidate['result_hash'],'fieldPath':field_path,
+              'candidateValue':after,'sourceRelativePath':relative_path,'sourceSha256':expected_sha256,
+              'sourceBytes':receipt['bytes'],'sourceReference':source_reference,
+              'methodBasis':method_basis,'reviewedBy':reviewer,'reviewedAt':now(),
+              'fileBytesVerified':True,'sourceContentInterpretationEngineerDeclared':True,
+              'normativeMethodApproved':False,'formalConstructionIssue':False}
+        digest=sha256(encode(data).encode('utf8')).hexdigest();data['receiptHash']=digest
+        with self.connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            fresh=c.execute('SELECT status FROM runs WHERE id=?',(run_id,)).fetchone()
+            if not fresh or fresh['status']!='awaiting_review':
+                c.execute('ROLLBACK');raise ConflictError('来源复核期间运行状态已经变化')
+            previous=c.execute('SELECT receipt_sha256 FROM candidate_evidence WHERE candidate_id=? AND field_path=?',
+                               (candidate_id,field_path)).fetchone()
+            if previous:
+                c.execute('ROLLBACK');raise ConflictError('该候选参数已有不可变复核记录，请新建候选进行更正')
+            c.execute('INSERT INTO candidate_evidence VALUES(?,?,?,?,?)',
+                      (candidate_id,field_path,digest,encode(data),now()))
+            self._event(c,run_id,'evidence:'+candidate_id+':'+field_path,'parameter_evidence_recorded',
+                        {'candidateId':candidate_id,'field':field_path,'receiptHash':digest})
+            c.execute('COMMIT')
+        return data
+
+    def _verify_adoption_evidence(self,c,*,run,candidate,source_result,candidate_result):
+        from app.engineering.single_braced_pile.assurance.source_bytes import verify_raw_source_file
+        from .search_rules import changed_fields
+        fields=changed_fields(source_result['snapshot'],candidate_result['snapshot'])
+        if not fields:raise ConflictError('候选未实际修改任何工程参数')
+        rows=c.execute('SELECT * FROM candidate_evidence WHERE candidate_id=?',
+                       (candidate['id'],)).fetchall()
+        records={r['field_path']:json.loads(r['receipt_json']) for r in rows}
+        if set(records)!=set(fields):
+            raise ConflictError('候选变更参数的原始来源及校审记录尚未全部重新确认')
+        root=os.getenv('PITGUARD_AGENT_EVIDENCE_ROOT','').strip()
+        if not root:raise ConflictError('未配置工程证据文件根目录')
+        for path,change in fields.items():
+            record=records[path]
+            raw=dict(record);digest=raw.pop('receiptHash',None)
+            if (digest!=sha256(encode(raw).encode('utf8')).hexdigest()
+                    or record['candidateResultHash']!=candidate['result_hash']
+                    or record['candidateSnapshotHash']!=candidate_result['snapshotHash']
+                    or record['candidateValue']!=change['after'] or record['fieldPath']!=path):
+                raise ConflictError('候选依据记录身份或参数内容不一致')
+            checked=verify_raw_source_file(source_root=Path(root),
+                 relative_path=record['sourceRelativePath'],expected_sha256=record['sourceSha256'],maximum_size_bytes=25_000_000)
+            if checked['status']!='byte_hash_confirmed':
+                raise ConflictError('采用前来源原始文件字节核验失败')
+
     def decide(self,rid,*,candidate_id,decision,expected_snapshot_hash,acknowledgement,comment,reviewer):
         with self.connect() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -290,19 +428,19 @@ class AgentStore:
                 # metric or a forged review token cannot authorize selection.
                 from app.engineering.single_braced_pile.repository import Repository
                 from app.engineering.single_braced_pile.analysis import canonical_hash
-                from .engine import measure,changed_snapshot
+                from .engine import measure,verify_candidate_lineage
                 try:
                     repo=Repository()
                     source_result=repo.load(run['source_result_hash'])
                     candidate_result=repo.load(candidate['result_hash'])
-                    action=json.loads(candidate['patch_json'])
-                    expected=changed_snapshot(source_result['snapshot'],action)
+                    verify_candidate_lineage(c,run,candidate,repo)
                     fresh=measure(candidate_result,source_result)
                     if (source_result['snapshotHash']!=run['source_snapshot_hash']
                             or candidate_result['snapshotHash']!=candidate['snapshot_hash']
-                            or canonical_hash(expected)!=candidate_result['snapshotHash']
                             or not fresh['workingSelectionEligible']):
                         raise ValueError('候选源版本、边界条件或工程验收条件校验未通过')
+                    self._verify_adoption_evidence(c,run=run,candidate=candidate,
+                         source_result=source_result,candidate_result=candidate_result)
                 except (FileNotFoundError,ValueError,KeyError,TypeError) as exc:
                     c.execute('ROLLBACK')
                     raise ConflictError('候选复核失败：'+str(exc)) from exc

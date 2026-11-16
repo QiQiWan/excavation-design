@@ -50,7 +50,7 @@ app = FastAPI(
     lifespan=pitguard_lifespan,
     title="PitGuard BIM Designer API",
     version=SOFTWARE_VERSION,
-    description="PitGuard V3.88.0 one-strut working design, reviewed outputs and normative method toolbox, unit-safe parameter suggestions and controlled calculation agent.",
+    description="PitGuard engineering workflow with audited field-case intake and geometry-only topology previews.",
 )
 
 app.add_middleware(
@@ -159,8 +159,12 @@ for _router in (
     app.include_router(_router)
 
 app.include_router(one_strut_router)
+from app.routers.engineering_specialties import router as specialties_router
+app.include_router(specialties_router)
 from app.agents.router import router as agent_router
 app.include_router(agent_router)
+from app.agents.m3_router import router as m3_agent_router
+app.include_router(m3_agent_router)
 
 if PRODUCT_MODE == "full":
     from app.routers import (

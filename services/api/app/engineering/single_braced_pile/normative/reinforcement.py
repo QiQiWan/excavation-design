@@ -7,6 +7,7 @@ from __future__ import annotations
 from app.section.engineering_rebar import check_engineering_rebar
 from app.section.engineering_models import EngineeringDesign
 from .circular_axial_shear import eccentric_compression_circular_shear
+from .circular_axial_tension_shear import eccentric_tension_circular_shear
 
 
 def circular_checks(model,stages,combination):
@@ -122,8 +123,26 @@ def synchronized_combination_sections(model, explicit):
                         row['shearStatus']='outside_method_scope'
                         missing.append('shear.effective_hoop_area_mm2_consistency')
                     elif action.axial_design_kn<0:
-                        row['shearStatus']='outside_method_scope'
-                        row['shearScopeReason']='Axial tension requires a separately justified 6.3.14 check'
+                        kind=shear_input.get('axial_shear_loading_case')
+                        checked=eccentric_tension_circular_shear(
+                            diameter_mm=model.pile.diameter_m*1000,
+                            axial_tension_kn=-action.axial_design_kn,
+                            shear_design_kn=V,concrete_fc_mpa=cage.concrete_design_mpa,
+                            concrete_ft_mpa=shear_input['concrete_tensile_design_strength_mpa'],
+                            stirrup_fyv_mpa=shear_input['stirrup_design_strength_mpa'],
+                            circular_hoop_area_mm2=A,spacing_mm=cage.stirrup_spacing_mm,
+                            beta_c=shear_input['concrete_strength_coefficient_beta_c'],
+                            loading_type=kind or '',
+                            loading_basis=shear_input.get('axial_shear_loading_basis') or '',
+                            shear_span_ratio=shear_input.get('shear_span_ratio_a_over_h0'),
+                            seismic_case=shear_input.get('seismic_case','unknown'))
+                        row['axialShearVerification']=checked
+                        row['shearStatus']=checked['status']
+                        row['shearCapacityKn']=checked.get('governingCapacityKn')
+                        row['shearUtilization']=checked.get('utilization')
+                        row['shearMethod']=checked.get('method')
+                        if checked['status']=='missing_input':missing.extend(checked['requiredInputs'])
+                        if checked['status']=='outside_method_scope':row['shearScopeReason']=checked['reason']
                     elif action.axial_design_kn>0 and shear_input.get('axial_shear_loading_case') is None:
                         row['shearStatus']='outside_method_scope'
                         row['shearScopeReason']='Axial compression needs explicitly documented loading type and lambda'

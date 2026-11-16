@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse,logging,time
 from threading import Event,Thread
 from .engine import AgentRuntime
+from .m3_runtime import SpatialAgentRuntime
 
 logger=logging.getLogger('pitguard.agent')
 
@@ -13,12 +14,13 @@ logger=logging.getLogger('pitguard.agent')
 class AgentWorker:
     def __init__(self,runtime=None,poll_seconds=1.0):
         self.runtime=runtime or AgentRuntime()
+        self.spatial_runtime=SpatialAgentRuntime()
         self.poll_seconds=poll_seconds
         self.stop_event=Event()
         self.thread=None
 
     def poll_once(self):
-        return self.runtime.process_one()
+        return self.runtime.process_one() or self.spatial_runtime.process_one()
 
     def run(self):
         while not self.stop_event.is_set():
@@ -48,7 +50,7 @@ def main():
     worker=AgentWorker()
     if args.once:
         item=worker.poll_once()
-        print('no queued Agent task' if item is None else f"{item['id']} {item['status']} {item['step']}")
+        print('no queued Agent task' if item is None else f"{item['id']} {item['status']} {item.get('step','m3_candidate_'+str(item.get('nextIndex',0)))}")
     else:
         print('PitGuard V3.88 Agent worker running; Ctrl+C to stop',flush=True)
         try:worker.run()

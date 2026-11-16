@@ -54,6 +54,16 @@ def _validate(model: dict) -> tuple[np.ndarray, float]:
         raise ValueError("eiKnM2 must be positive")
     if model["toeBoundary"] not in {"free", "fixed", "pinned"}:
         raise ValueError("toeBoundary must be free, fixed or pinned")
+    rock = model.get("toeElasticBoundary")
+    if rock is not None:
+        if model["toeBoundary"] != "free" or not isinstance(rock, dict):
+            raise ValueError("Elastic toe is exclusive with pinned/fixed toe")
+        if set(rock) != {"horizontalKnPerM", "rotationKnMPerRad"}:
+            raise ValueError("Elastic toe needs both translational and rotational stiffness")
+        for key in ("horizontalKnPerM", "rotationKnMPerRad"):
+            value = _finite(rock[key], "toe." + key)
+            if value < 0 or value > 1e12:
+                raise ValueError("Elastic toe stiffness is outside admitted research range")
     if not model["stages"]:
         raise ValueError("At least one explicit stage is required")
     stage_ids, previous_soil_ids, support_ids = set(), set(), set()
@@ -102,6 +112,9 @@ def _validate(model: dict) -> tuple[np.ndarray, float]:
                 raise ValueError("Zero soil stiffness needs a single fixed pressure bound")
         previous_soil_ids = current_ids
         installs, removes = item["installSupports"], item["removeSupports"]
+        offsets = item.get("supportAnchorOffsetsM", {})
+        if not isinstance(offsets, dict):
+            raise ValueError("supportAnchorOffsetsM must map existing elastic support IDs to offsets")
         if installs and removes:
             raise ValueError("Installation and removal must be separate events")
         if len(set(removes)) != len(removes):
@@ -133,6 +146,23 @@ def _validate(model: dict) -> tuple[np.ndarray, float]:
                 raise ValueError("Support kind must be elastic or rigid")
             active_supports[sid] = support
             support_ids.add(sid)
+        for sid, value in offsets.items():
+            if sid not in active_supports or active_supports[sid]["kind"] != "elastic":
+                raise ValueError("Support anchor offset requires an active elastic support")
+            if abs(_finite(value, "supportAnchorOffsetsM")) > .2:
+                raise ValueError("Support anchor movement exceeds bounded research range")
+        # V3.89.11: the opposite wall or braced-system tangent may change
+        # with an excavation stage. Never re-install the original support or
+        # reset its installation/reference displacement when changing K.
+        overrides = item.get("supportStiffnessOverridesKnPerM", {})
+        if not isinstance(overrides, dict):
+            raise ValueError("Support stiffness overrides must be an ID-to-K map")
+        for sid, value in overrides.items():
+            if sid not in active_supports or active_supports[sid]["kind"] != "elastic":
+                raise ValueError("Stage stiffness override requires active elastic support")
+            k = _finite(value, "support stiffness override")
+            if not 0 < k <= 1e12:
+                raise ValueError("Stage stiffness override must be positive and bounded")
     return nodes, ei
 
 
@@ -220,7 +250,7 @@ def _beam_response(displacement, nodes, ei):
     return internal, energy, forces
 
 
-def _evaluate(displacement, beam, nodes, ei, external, soil, supports):
+def _evaluate(displacement, beam, nodes, ei, external, soil, supports, toe_springs=(0., 0.)):
     """Each trial uses the previous COMMITTED state, never another iterate."""
     count = len(displacement) // 2
     local = soil["sign"] * displacement[2 * soil["node"]]
@@ -260,6 +290,14 @@ def _evaluate(displacement, beam, nodes, ei, external, soil, supports):
             tangent[dof, dof] += stiffness
         energy += .5 * stiffness * effective**2
         reactions[sid] = reaction
+    # Linear rock-socket springs are tied to the original stage-zero datum;
+    # do not reset their reference whenever supports are installed.
+    for dof, stiffness in ((len(displacement) - 2, toe_springs[0]),
+                           (len(displacement) - 1, toe_springs[1])):
+        if stiffness:
+            residual[dof] += stiffness * displacement[dof]
+            tangent[dof, dof] += stiffness
+            energy += .5 * stiffness * float(displacement[dof])**2
     return {"residual": residual, "tangent": tangent, "pressure": pressure,
             "trial": trial, "local": local, "soilTangent": soil_k, "soilInternal": internal,
             "supportReactions": reactions, "energy": energy, "elementEndForces": end_forces}
@@ -271,7 +309,7 @@ def _force_norm(vector, free, length):
     return float(np.max(abs(weighted[free]), initial=0.0))
 
 
-def _check_directional_restraint(displacement, nodes, soil, evaluation, supports, prescribed):
+def _check_directional_restraint(displacement, nodes, soil, evaluation, supports, prescribed, toe_springs=(0., 0.)):
     """Exclude zero-energy directions without deleting complementary corners.
 
     Positive-EI beam energy vanishes only for v=a+b*xi, with the dimensionless
@@ -289,6 +327,10 @@ def _check_directional_restraint(displacement, nodes, soil, evaluation, supports
     equations, inequalities = [], []
     for dof in prescribed:
         equations.append(rows[dof // 2] if dof % 2 == 0 else np.array([0.0, 1.0]))
+    if toe_springs[0] > 0:
+        equations.append(rows[-1])
+    if toe_springs[1] > 0:
+        equations.append(np.array([0., 1.]))
     for i, node in enumerate(soil["node"]):
         lower, upper, trial = soil["lower"][i], soil["upper"][i], evaluation["trial"][i]
         if soil["k"][i] <= 0 or upper == lower or trial < lower or trial > upper:
@@ -343,7 +385,7 @@ def _check_directional_restraint(displacement, nodes, soil, evaluation, supports
             "boundRoundoffMultiplier": 64, "strictlyPlasticBranchesPromoted": False}
 
 
-def _solve_event(beam, nodes, ei, external, soil, supports, toe, previous):
+def _solve_event(beam, nodes, ei, external, soil, supports, toe, previous, toe_springs=(0., 0.)):
     displacement = previous.copy()
     prescribed = {}
     if toe in {"fixed", "pinned"}:
@@ -368,14 +410,16 @@ def _solve_event(beam, nodes, ei, external, soil, supports, toe, previous):
     for support in supports.values():
         if support["kind"] == "elastic":
             predictor[2 * support["node"], 2 * support["node"]] += float(support["stiffnessKnPerM"])
+    predictor[-2, -2] += toe_springs[0]
+    predictor[-1, -1] += toe_springs[1]
     predictor_free = predictor[np.ix_(free, free)]
     _scaled_solve(predictor_free, np.zeros(len(free)))
     for iteration in range(_MAX_ITERATIONS + 1):
-        evaluation = _evaluate(displacement, beam, nodes, ei, external, soil, supports)
+        evaluation = _evaluate(displacement, beam, nodes, ei, external, soil, supports, toe_springs)
         error = _force_norm(evaluation["residual"], free, length)
         if error <= tolerance:
             evaluation["stability"] = _check_directional_restraint(
-                displacement, nodes, soil, evaluation, supports, prescribed)
+                displacement, nodes, soil, evaluation, supports, prescribed, toe_springs)
             # This condition number describes the selected Newton search
             # matrix. Physical uniqueness is established by the cone above,
             # never by assigning bilateral stiffness to a yield corner.
@@ -395,7 +439,7 @@ def _solve_event(beam, nodes, ei, external, soil, supports, toe, previous):
         for line_search in range(32):
             candidate = displacement.copy()
             candidate[free] += alpha * step
-            trial_evaluation = _evaluate(candidate, beam, nodes, ei, external, soil, supports)
+            trial_evaluation = _evaluate(candidate, beam, nodes, ei, external, soil, supports, toe_springs)
             candidate_error = _force_norm(trial_evaluation["residual"], free, length)
             energy_slack = 1e-12 * max(1.0, abs(evaluation["energy"]))
             if (candidate_error < tolerance or candidate_error < error * (1.0 - 1e-4 * alpha)
@@ -434,6 +478,8 @@ def solve_stages(model: dict) -> dict:
     committed_plastic, supports, outputs = {}, {}, []
     failed_reason = None
     toe = model["toeBoundary"]
+    rock = model.get("toeElasticBoundary") or {}
+    toe_springs = (float(rock.get("horizontalKnPerM", 0.)), float(rock.get("rotationKnMPerRad", 0.)))
     length = float(nodes[-1] - nodes[0])
     for item in model["stages"]:
         if failed_reason:
@@ -443,8 +489,15 @@ def solve_stages(model: dict) -> dict:
         for sid in item["removeSupports"]:
             del next_supports[sid]
         for source in item["installSupports"]:
+            install_ref = float(previous[2 * source["node"]])
             next_supports[source["id"]] = dict(
-                source, referenceDisplacementM=float(previous[2 * source["node"]]))
+                source, installedReferenceDisplacementM=install_ref,
+                referenceDisplacementM=install_ref)
+        for sid, offset in item.get("supportAnchorOffsetsM", {}).items():
+            next_supports[sid]["referenceDisplacementM"] = (
+                next_supports[sid]["installedReferenceDisplacementM"] + float(offset))
+        for sid, stiffness in item.get("supportStiffnessOverridesKnPerM", {}).items():
+            next_supports[sid]["stiffnessKnPerM"] = float(stiffness)
         history = item.get('soilHistoryAction', 'carry_plastic_history_v1')
         # A reset changes the soil reference only. It never erases beam
         # displacements or the independently stored support install reference.
@@ -459,14 +512,16 @@ def solve_stages(model: dict) -> dict:
         external[::2] = item["externalForcesKn"]
         try:
             displacement, evaluation, iterations, condition, free, prescribed = _solve_event(
-                beam, nodes, ei, external, soil, next_supports, toe, previous)
+                beam, nodes, ei, external, soil, next_supports, toe, previous, toe_springs)
         except _SolveFailure as exc:
             failed_reason = str(exc)
             outputs.append(_unavailable(item, "failed", failed_reason))
             continue
         raw_residual = evaluation["residual"]
-        toe_force = float(raw_residual[-2]) if toe in {"pinned", "fixed"} else 0.0
-        toe_moment = float(raw_residual[-1]) if toe == "fixed" else 0.0
+        toe_force = (float(raw_residual[-2]) if toe in {"pinned", "fixed"}
+                     else -toe_springs[0] * float(displacement[-2]))
+        toe_moment = (float(raw_residual[-1]) if toe == "fixed"
+                      else -toe_springs[1] * float(displacement[-1]))
         support_states, support_forces = [], np.zeros(len(nodes))
         for sid, support in next_supports.items():
             reaction = (-float(raw_residual[2 * support["node"]]) if support["kind"] == "rigid"
@@ -511,7 +566,9 @@ def solve_stages(model: dict) -> dict:
             "nodalDisplacementM": displacement[::2].astype(float).tolist(), "nodalRotation": displacement[1::2].astype(float).tolist(),
             "elementEndForces": evaluation["elementEndForces"].astype(float).tolist(),
             "soilStates": soil_states, "supportStates": support_states,
-            "toeReaction": {"forceKn": toe_force, "momentKnM": toe_moment},
+            "toeReaction": {"forceKn": toe_force, "momentKnM": toe_moment,
+                            "elasticStiffness": {"horizontalKnPerM": toe_springs[0],
+                                                 "rotationKnMPerRad": toe_springs[1]}},
             "residualInfKn": residual_inf, "relativeResidual": residual_inf / force_scale,
             "equilibriumResidualVector": full_residual.astype(float).tolist(), "scaledTangentCondition": condition,
             "scaledTangentConditionScope": "selected Newton search matrix; physical uniqueness uses directional cone",
@@ -524,6 +581,10 @@ def solve_stages(model: dict) -> dict:
         })
         if 'soilHistoryAction' in item:
             outputs[-1]['soilHistoryAction'] = history
+        if 'supportAnchorOffsetsM' in item:
+            outputs[-1]['supportAnchorOffsetsM'] = dict(item['supportAnchorOffsetsM'])
+        if 'supportStiffnessOverridesKnPerM' in item:
+            outputs[-1]['supportStiffnessOverridesKnPerM'] = dict(item['supportStiffnessOverridesKnPerM'])
         # No published list is reused as committed state.
         previous, supports = displacement.copy(), next_supports
         committed_plastic = {s["id"]: float(plastic[i]) for i, s in enumerate(item["soilSprings"])}

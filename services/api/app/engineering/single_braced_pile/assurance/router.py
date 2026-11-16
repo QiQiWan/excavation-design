@@ -227,3 +227,195 @@ async def verify_review_zip_upload(upload: UploadFile=File(...)):
         return verify_review_package(content)
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(422, detail=str(exc)) from exc
+
+# V3.89.6: locked Luoyu 3-3 evidence benchmark; all uploads require an
+# authenticated checker and never create formal construction approval.
+from ..real_project.luoyu_fixed_acceptance import (
+    requirement_catalog as _luoyu_fixed_catalog,
+    blank_template as _luoyu_fixed_template,
+    save_benchmark as _luoyu_fixed_save,
+    read_benchmark as _luoyu_fixed_read,
+    MAX_UPLOAD_BYTES as _LUOYU_MAX_BENCHMARK,
+    declared_frozen_result_hash as _luoyu_fixed_claimed_result,
+)
+
+
+def _luoyu_checker(request: Request):
+    actor = getattr(request.state, 'pitguard_identity', None)
+    if actor is None or getattr(actor, 'role', None) not in ('checker', 'admin'):
+        raise HTTPException(403, detail='Luoyu acceptance submissions require a signed-in engineering checker')
+    return str(actor.actor)
+
+
+def _luoyu_benchmark_store() -> Path:
+    import os
+    custom = os.environ.get('PITGUARD_LUOYU_ACCEPTANCE_STORE')
+    return Path(custom) if custom else Repository().root / 'luoyu_3_3_acceptance'
+
+
+@router.post('/luoyu-3-3/fixed-acceptance/original-report/audit')
+async def luoyu_original_report_audit(request: Request, upload: UploadFile = File(...)):
+    _luoyu_checker(request)
+    from ..real_project.original_report_pdf import read_design_report_pdf, MAX_PDF_BYTES
+    content = await _bounded_upload(upload, MAX_PDF_BYTES)
+    try:
+        return read_design_report_pdf(content)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/normative-beam')
+def luoyu_normative_beam_audit(request: Request,
+                              mesh_max_m:float=Query(default=.2,ge=.10,le=.4),
+                              toe_boundary:str=Query(default='free',pattern='^(free|pinned|fixed)$')):
+    # Read-only 1-D normative research review, never project design adoption.
+    _luoyu_checker(request)
+    from ..real_project.normative_elastic_beam import run_luoyu_normative_beam_recheck
+    try:
+        return run_luoyu_normative_beam_recheck(mesh_max_m=mesh_max_m,toe_boundary=toe_boundary)
+    except (ValueError,RuntimeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+@router.post('/luoyu-3-3/fixed-acceptance/normative-beam/original-pdf')
+async def luoyu_normative_beam_with_pdf(request: Request, upload: UploadFile=File(...),
+                                        mesh_max_m:float=Query(default=.2,ge=.10,le=.4),
+                                        toe_boundary:str=Query(default='free',pattern='^(free|pinned|fixed)$')):
+    _luoyu_checker(request)
+    from ..real_project.original_report_pdf import read_design_report_pdf, MAX_PDF_BYTES
+    from ..real_project.normative_elastic_beam import run_luoyu_normative_beam_recheck
+    content=await _bounded_upload(upload,MAX_PDF_BYTES)
+    try:
+        reference=read_design_report_pdf(content)
+        return run_luoyu_normative_beam_recheck(
+            mesh_max_m=mesh_max_m,toe_boundary=toe_boundary,original_report=reference)
+    except (ValueError,TypeError,RuntimeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/physics-review')
+def luoyu_physics_research_review(request: Request,
+                                 trial_scope: str=Query(default='quick', pattern='^(none|quick)$')):
+    """Research-only; full hypothesis sweep is intentionally CLI-only."""
+    _luoyu_checker(request)
+    from ..real_project.physics_diagnostics import run_luoyu_physics_review
+    try:
+        return run_luoyu_physics_review(trial_scope=trial_scope)
+    except (ValueError, RuntimeError, TypeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.post('/luoyu-3-3/fixed-acceptance/physics-review/original-pdf')
+async def luoyu_physics_research_with_pdf(request: Request, upload: UploadFile=File(...),
+                                         trial_scope: str=Query(default='quick',pattern='^(none|quick)$')):
+    _luoyu_checker(request)
+    from ..real_project.original_report_pdf import read_design_report_pdf, MAX_PDF_BYTES
+    from ..real_project.physics_diagnostics import run_luoyu_physics_review
+    content=await _bounded_upload(upload,MAX_PDF_BYTES)
+    try:
+        reference=read_design_report_pdf(content)
+        return run_luoyu_physics_review(original_report=reference,trial_scope=trial_scope)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/physical-methods-38910')
+def luoyu_advanced_normative_methods(request: Request,
+                                   scope: str=Query(default='quick',pattern='^(none|quick)$')):
+    """Read-only, checked JGJ pressure and 4.2/Annex C method review."""
+    _luoyu_checker(request)
+    from ..real_project.physics_review_38910 import run_luoyu_38910_review
+    try:
+        return run_luoyu_38910_review(scope=scope)
+    except (ValueError,TypeError,RuntimeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+@router.post('/luoyu-3-3/fixed-acceptance/physical-methods-38910/original-pdf')
+async def luoyu_advanced_normative_with_pdf(request: Request,upload: UploadFile=File(...),
+                                             scope: str=Query(default='quick',pattern='^(none|quick)$')):
+    _luoyu_checker(request)
+    from ..real_project.original_report_pdf import read_design_report_pdf,MAX_PDF_BYTES
+    from ..real_project.physics_review_38910 import run_luoyu_38910_review
+    content=await _bounded_upload(upload,MAX_PDF_BYTES)
+    try:
+        reference=read_design_report_pdf(content)
+        return run_luoyu_38910_review(original_report=reference,scope=scope)
+    except (ValueError,TypeError,RuntimeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/requirements')
+def luoyu_fixed_acceptance_requirements():
+    return _luoyu_fixed_catalog()
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/blank-template')
+def luoyu_fixed_acceptance_blank():
+    return StreamingResponse(BytesIO(_luoyu_fixed_template()), media_type='application/zip', headers={
+        'Content-Disposition': 'attachment; filename="luoyu_3_3_acceptance_blank.zip"',
+        'X-PitGuard-Formal-Issue': 'false'})
+
+
+@router.post('/luoyu-3-3/fixed-acceptance/records')
+async def luoyu_fixed_acceptance_record(request: Request, upload: UploadFile = File(...)):
+    checker = _luoyu_checker(request)
+    raw = await _bounded_upload(upload, _LUOYU_MAX_BENCHMARK)
+    try:
+        declared = _luoyu_fixed_claimed_result(raw)
+        frozen = Repository().load(declared) if declared is not None else None
+        return _luoyu_fixed_save(raw, _luoyu_benchmark_store(), checker, frozen_result=frozen)
+    except FileNotFoundError as exc:
+        raise HTTPException(422, detail='Claimed frozen result was not found in immutable repository') from exc
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/records/{benchmark_id}')
+def luoyu_fixed_acceptance_get(benchmark_id: str, request: Request):
+    _luoyu_checker(request)
+    try:
+        return _luoyu_fixed_read(benchmark_id, _luoyu_benchmark_store())
+    except FileNotFoundError as exc:
+        raise HTTPException(404, detail='Acceptance record not found') from exc
+    except (ValueError, TypeError, KeyError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+
+# V3.89.11: evidence-aware field physical parameters and stability review.
+# No route writes adopted design changes or construction issue approvals.
+@router.get('/luoyu-3-3/fixed-acceptance/field-physical-38911')
+def luoyu_field_physical_review(request: Request,
+                              scope: str=Query(default='none',pattern='^(none|single)$')):
+    _luoyu_checker(request)
+    from ..real_project.physical_review_38911 import run_luoyu_38911_review
+    try:
+        return run_luoyu_38911_review(scope=scope)
+    except (ValueError,RuntimeError,TypeError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+
+
+@router.get('/luoyu-3-3/fixed-acceptance/field-physical-38911/source-template')
+def luoyu_field_physical_template(request: Request):
+    _luoyu_checker(request)
+    from ..real_project.field_evidence_38911 import blank_case
+    return blank_case()
+
+
+@router.post('/luoyu-3-3/fixed-acceptance/field-physical-38911/evidence')
+async def luoyu_field_physical_evidence(request: Request,
+                  upload: UploadFile=File(...), original_pdf: UploadFile|None=File(None),
+                  scope: str=Query(default='single',pattern='^(none|single)$')):
+    _luoyu_checker(request)
+    from ..real_project.field_evidence_38911 import MAX_BYTES
+    from ..real_project.original_report_pdf import read_design_report_pdf,MAX_PDF_BYTES
+    from ..real_project.physical_review_38911 import run_luoyu_38911_review
+    content=await _bounded_upload(upload,MAX_BYTES)
+    original=None
+    if original_pdf is not None:
+        original=read_design_report_pdf(await _bounded_upload(original_pdf,MAX_PDF_BYTES))
+    try:
+        return run_luoyu_38911_review(evidence_zip=content,
+            original_report=original,scope=scope)
+    except (ValueError,RuntimeError,TypeError,KeyError) as exc:
+        raise HTTPException(422,detail=str(exc)) from exc

@@ -72,3 +72,55 @@ def terrain_refinement(*,depth_below_wall_top_m:float,bench_m:float,ramp_m:float
     ratio=diff/max(1e-9,abs(fine['verticalIncrementKpa']))
     return {'coarse':coarse['verticalIncrementKpa'],'fine':fine['verticalIncrementKpa'],
             'relativeDifference':ratio,'integrationVerified':ratio<=.001}
+
+
+def polyline_fill_increment(*, depth_below_wall_top_m:float,
+                            points_m:list[tuple[float,float]],
+                            fill_gamma_kn_m3:float,
+                            quadrature_segments:int=18)->dict:
+    """Piecewise surveyed (x, height) surface and an analytic outer plateau.
+
+    ``x`` is horizontal distance AWAY from the wall, and height is ABOVE
+    pile-top level. Both use metres. Monotone upper ground is a restricted
+    research geometry; terraces with cuts, overhangs or multiple benches need
+    a separate method qualification. This returns vertical stress only.
+    """
+    from math import isfinite
+    z=depth_below_wall_top_m
+    if not (isfinite(z) and z>0 and isfinite(fill_gamma_kn_m3) and fill_gamma_kn_m3>0):
+        raise ValueError('Positive finite depth and soil unit weight required')
+    if not isinstance(points_m,list) or not 3<=len(points_m)<=80:
+        raise ValueError('Survey polyline must have 3..80 ordered profile points')
+    if not isinstance(quadrature_segments,int) or not 2<=quadrature_segments<=100:
+        raise ValueError('Invalid geometry quadrature resolution')
+    pts=[]
+    for entry in points_m:
+        if not isinstance(entry,(list,tuple)) or len(entry)!=2 or any(
+            isinstance(v,bool) or not isinstance(v,(int,float)) or not isfinite(v) for v in entry):
+            raise ValueError('Each geometric vertex must contain two finite numbers')
+        x,y=map(float,entry)
+        if x<0 or y<0 or (pts and (x<=pts[-1][0] or y<pts[-1][1])):
+            raise ValueError('Profile x increases and top elevation cannot decrease')
+        pts.append((x,y))
+    if pts[0]!=(0.,0.) or pts[-1][1]<=0:
+        raise ValueError('Wall datum must start at (0,0) and far field must be elevated')
+    value=0.
+    component=[]
+    for (xa,ya),(xb,yb) in zip(pts,pts[1:]):
+        # Fixed Gaussian quadrature independently repeated per measured segment.
+        dx=(xb-xa)/quadrature_segments
+        partial=0.
+        for i in range(quadrature_segments):
+            lo=xa+i*dx;hi=lo+dx
+            for xi,w in _GAUSS_6:
+                x=(lo+hi)/2+xi*(hi-lo)/2
+                h=ya+(yb-ya)*(x-xa)/(xb-xa)
+                kernel=2*z**3/(pi*(x*x+z*z)**2)
+                partial+=fill_gamma_kn_m3*h*kernel*w*(hi-lo)/2
+        component.append(partial);value+=partial
+    plateau=infinite_outer_strip(fill_gamma_kn_m3*pts[-1][1],pts[-1][0],z)
+    return {'verticalIncrementKpa':value+plateau,
+        'segmentIncrementsKpa':component,'outerPlateauIncrementKpa':plateau,
+        'method':'source_traced_monotone_piecewise_terrain_elastic_vertical_stress/3.89.11',
+        'horizontalStressMapping':'requires_separate_code_method_decision',
+        'engineeringQualified':False}

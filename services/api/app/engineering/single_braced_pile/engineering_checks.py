@@ -12,6 +12,13 @@ from .normative.support import support_checks
 from .normative.reinforcement import circular_checks,synchronized_combination_sections
 from .normative.actions import combinations
 from .normative.crack_scope import crack_matrix
+from .normative.circular_qualification import independently_review_matched_sections, shear_arithmetic_crosscheck
+from .normative.circular_crack_reference import circular_width_reference_matrix
+from .normative.cage_construction_review import circular_cage_audit
+from .normative.nm_interaction_benchmark import benchmark_nm_envelope
+from .normative.circular_crack_project_review import project_circular_crack_review
+from .normative.second_order_validation import second_order_reference_cases
+from .normative.cage_fabrication import cage_fabrication_review
 
 
 def embedment_moment_screen(model,stage):
@@ -48,6 +55,17 @@ def normative_coverage(model,stage_results,demand,action_result=None):
     rebar=circular_checks(model,stage_results,action_result)
     matched=synchronized_combination_sections(model,action_result.get('explicit',{}))
     cracks=crack_matrix(model,action_result.get('explicit',{}))
+    independent_nm=independently_review_matched_sections(model,matched)
+    independent_shear=shear_arithmetic_crosscheck(model,matched)
+    circular_width_reference=circular_width_reference_matrix(model,stage_results)
+    construction_audit=circular_cage_audit(model)
+    benchmark_axial=(model.engineering_design or {}).get('nm_benchmark_axial_kn')
+    nm_benchmark=(benchmark_nm_envelope(model,tuple(benchmark_axial)) if benchmark_axial
+                  else {'status':'missing_input','requiredInputs':['engineering_design.nm_benchmark_axial_kn'],
+                        'formalDesignReady':False})
+    crack_project=project_circular_crack_review(model,stage_results,action_result.get('explicit',{}))
+    second_order=second_order_reference_cases(model)
+    fabrication=cage_fabrication_review(model)
     buckets={}
     for r in results:
         buckets.setdefault(r['code'],[]).append(r)
@@ -83,11 +101,22 @@ def normative_coverage(model,stage_results,demand,action_result=None):
         '4.9_internal_brace':{'status':member['status'],'result':member},
         'concrete_circular_pile':{'status':rebar['status'],'result':rebar},
         'concrete_circular_matched_nm_v':{'status':matched['status'],'result':matched},
-        'concrete_circular_crack_control':{'status':cracks['status'],'result':cracks}}
+        'concrete_circular_crack_control':{'status':cracks['status'],'result':cracks},
+        'concrete_circular_independent_nm':{'status':independent_nm['status'],'result':independent_nm},
+        'concrete_circular_independent_shear':{'status':independent_shear['status'],'result':independent_shear},
+        'concrete_circular_width_reference':{'status':circular_width_reference['status'],
+             'result':circular_width_reference,'reason':'Bridge-code numerical comparison cannot certify a JGJ120 building-excavation crack-width method'},
+        'concrete_circular_cage_construction':{'status':construction_audit['status'],
+             'result':construction_audit},
+        'concrete_circular_nm_benchmark':{'status':nm_benchmark['status'],'result':nm_benchmark},
+        'concrete_circular_project_crack_review':{'status':crack_project['status'],'result':crack_project},
+        'concrete_circular_second_order_reference':{'status':second_order['status'],'result':second_order},
+        'concrete_circular_cage_fabrication':{'status':fabrication['status'],'result':fabrication}}
     blocking={k:v for k,v in mapping.items() if v['status'] not in ('pass','not_applicable','not_generally_mandated_for_supported_type')}
     # A numerical success is not enough for structural approvals. Explicit design
     # file reviews remain required regardless of the result of these checks.
     return {'schemaVersion':'pitguard.one-strut-normative-coverage/2',
+        'methodRevision':'3.88.6-cage-fabrication-and-multi-variable-search',
         'formalDesignReady':False,'requiredChecks':mapping,'blockingCodes':sorted(blocking),
         'fullNormativeVerificationComplete':False,
         'scope':'Single pile / one strut / horizontal ground / homogeneous Rankine separated water; engineering peer review required'}

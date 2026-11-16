@@ -269,6 +269,8 @@ def required_role(method: str, path: str) -> str:
     # Human adoption of an isolated Agent candidate is L2, never delegated to LLM.
     if normalized.startswith('/api/agents/runs/') and normalized.endswith('/decision'):
         return 'checker'
+    if normalized == '/api/engineering/specialties/m5-m7/field-case-intake':
+        return 'checker'
     if normalized.startswith("/api/system/backup"):
         return "admin"
     if normalized in ("/api/engineering/one-strut/review", "/api/engineering/one-strut/exports"):

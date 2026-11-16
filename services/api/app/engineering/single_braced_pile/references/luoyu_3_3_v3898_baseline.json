@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "pitguard.luoyu-frozen-numerical-baseline/3.89.8",
+  "source": "V3.89.8 program output, conditional model with default assumptions",
+  "doesNotRepresentOriginalFRWS": true,
+  "geometryAndParameterSource": "2020 report excerpts",
+  "solverStageIds": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5"
+  ],
+  "referenceFactsSha256": "8bd60c4a9e8f85bbbb9c386d6faafb93d800e7f6eef9106e0cada2bf5837d7b5",
+  "baselineAssumptions": {
+    "meshMaxM": 0.2,
+    "toeBoundary": "free",
+    "EConcreteMpa": 30000.0,
+    "EI_Factor": 1.0,
+    "localPassiveCap": false
+  },
+  "stages": {
+    "S1": {
+      "maximumDisplacementMm": 0.42636035414240037,
+      "absoluteMomentPeakKnM": 4.778022064547508,
+      "absoluteShearPeakKn": 3.7521325752409123
+    },
+    "S2": {
+      "maximumDisplacementMm": 0.42636035414240037,
+      "absoluteMomentPeakKnM": 4.778022064547508,
+      "absoluteShearPeakKn": 3.7521325752409123
+    },
+    "S3": {
+      "maximumDisplacementMm": 2.646748107796386,
+      "absoluteMomentPeakKnM": 124.26968501586256,
+      "absoluteShearPeakKn": 76.24111077931352
+    },
+    "S4": {
+      "maximumDisplacementMm": 2.646748107796386,
+      "absoluteMomentPeakKnM": 124.26968501586256,
+      "absoluteShearPeakKn": 76.24111077931352
+    },
+    "S5": {
+      "maximumDisplacementMm": 2.6609117222183416,
+      "absoluteMomentPeakKnM": 95.22407714009184,
+      "absoluteShearPeakKn": 64.8098815801
+    }
+  }
+}
