@@ -238,3 +238,9 @@
   border: 1px solid #1d4ed8; background: #1d4ed8; color: #fff; cursor: pointer;
 }
 .agentDockComposeSlim > button:last-child:disabled { opacity: .5; cursor: default; }
+
+.agentPet.isDropActive .agentPetLauncher,
+.agentPet.isDropActive .agentDock {
+  outline: 2px dashed #1D9E75;
+  outline-offset: 3px;
+}
