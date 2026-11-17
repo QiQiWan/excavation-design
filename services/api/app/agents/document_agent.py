@@ -150,6 +150,31 @@ def _collect(pages: list[str]) -> tuple[list[dict], list[str]]:
     return fields, warnings
 
 
+def _pages_with_vision(data: bytes, pages: list[str]) -> tuple[list[str], bool, list[str]]:
+    """文字层缺失的页，用视觉模型转录；返回（页文本，是否用过视觉，告警）。"""
+    from . import vision_reader
+
+    empty = [index for index, text in enumerate(pages) if len(text.strip()) < 20]
+    if not empty:
+        return pages, False, []
+    if not vision_reader.available():
+        return pages, False, []
+    transcribed = vision_reader.document_pages(data)
+    merged = list(pages)
+    filled = 0
+    for index in empty:
+        candidate = transcribed[index] if index < len(transcribed) else ''
+        if len(candidate.strip()) >= 20:
+            merged[index] = candidate
+            filled += 1
+    warnings = []
+    if filled:
+        warnings.append(
+            f"扫描件：{filled} 页没有文字层，已由视觉模型转录；字段请逐项核对页码与原件。"
+        )
+    return merged, filled > 0, warnings
+
+
 def extract(filename: str, data: bytes) -> dict:
     """A1 的一次文档提取。返回候选，不写任何项目数据。"""
     if not data:
@@ -161,10 +186,16 @@ def extract(filename: str, data: bytes) -> dict:
 
     pages = _read_pages(data)
     text_chars = sum(len(page.strip()) for page in pages)
+    pages, used_vision, vision_warnings = _pages_with_vision(data, pages)
+    text_chars = sum(len(page.strip()) for page in pages)
     if text_chars < 20:
-        raise ValueError('这份 PDF 没有可提取的文字层（可能是扫描件或纯图纸）；需要 OCR，当前版本不支持')
+        from . import vision_reader
+        detail = '；'.join(vision_reader.LAST_ERRORS[:2])
+        raise ValueError('这份 PDF 没有可提取的文字层（可能是扫描件或纯图纸）；'
+                         '视觉模型未配置或未能识别' + (f'：{detail}' if detail else '，请检查 PITGUARD_LLM_* 配置'))
 
     fields, warnings = _collect(pages)
+    warnings = vision_warnings + warnings
 
     return {
         'agent': ROLE,
@@ -172,6 +203,7 @@ def extract(filename: str, data: bytes) -> dict:
             'name': filename,
             'pages': len(pages),
             'textChars': text_chars,
+            'textSource': 'vision' if used_vision else 'text_layer',
             'sha256': hashlib.sha256(data).hexdigest(),
         },
         'fields': fields,
@@ -180,3 +212,10 @@ def extract(filename: str, data: bytes) -> dict:
         'requiresHumanConfirmation': True,
         'formalConstructionIssue': False,
     }
+
+
+def document_text(data: bytes) -> str:
+    """整本文本：文字层优先，缺文字的页用视觉模型补。供自动生成解析使用。"""
+    pages = _read_pages(data)
+    pages, _used_vision, _warnings = _pages_with_vision(data, pages)
+    return "\n".join(pages)

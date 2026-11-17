@@ -32,10 +32,10 @@ PILE_PATTERNS = {
 
 
 def extract_text(data: bytes) -> str:
-    from pypdf import PdfReader
+    """整本文本：文字层优先，缺文字的页由视觉模型转录。"""
+    from app.agents.document_agent import document_text
 
-    reader = PdfReader(io.BytesIO(data))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+    return document_text(data)
 
 
 def _last_layer_block(text: str) -> list[dict[str, Any]]:
