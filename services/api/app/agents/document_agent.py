@@ -34,8 +34,8 @@ RULES = (
         'targetField': 'designSettings.excavationSafetyLevel',
         'unit': '',
         'patterns': (
-            r'基坑(?:工程)?设计?等级\s*(?:为|：|:)?\s*([一二三])级',
-            r'基坑安全等级\s*(?:为|：|:)?\s*([一二三])级',
+            r'基坑(?:工程)?设计?等级[^一二三\n]{0,10}([一二三])级',
+            r'基坑安全等级[^一二三\n]{0,10}([一二三])级',
         ),
     },
     {
@@ -44,6 +44,16 @@ RULES = (
         'targetField': 'designSettings.importanceFactor',
         'unit': '',
         'patterns': (r'重要性系数\s*[γy]?\s*0?\s*[=＝]\s*(\d+(?:\.\d+)?)',),
+    },
+    {
+        'key': 'bearingCapacityKpa',
+        'label': '地基承载力特征值',
+        'targetField': 'designSettings.bearingCapacityKpa',
+        'unit': 'kPa',
+        'patterns': (
+            r'地基承载力特征值[^0-9]{0,10}(\d+(?:\.\d+)?)\s*kPa',
+            r'承载力特征值\s*[fF]?[aA]?[kK]?\s*[=:：]?\s*(\d+(?:\.\d+)?)\s*kPa',
+        ),
     },
     {
         'key': 'concreteGrade',
@@ -64,7 +74,7 @@ NOT_ATTEMPTED = (
 
 def _coerce(key: str, raw: str):
     text = raw.strip()
-    if key in ('surchargeGeneral', 'importanceFactor'):
+    if key in ('surchargeGeneral', 'importanceFactor', 'bearingCapacityKpa'):
         try:
             return float(text)
         except ValueError:
@@ -83,6 +93,8 @@ def _valid(key: str, value) -> bool:
         return isinstance(value, float) and 0 <= value <= 500
     if key == 'importanceFactor':
         return isinstance(value, float) and 0.8 <= value <= 1.5
+    if key == 'bearingCapacityKpa':
+        return isinstance(value, float) and 10 <= value <= 5000
     if key == 'safetyLevel':
         return value in ('一级', '二级', '三级')
     if key == 'concreteGrade':
@@ -150,6 +162,63 @@ def _collect(pages: list[str]) -> tuple[list[dict], list[str]]:
     return fields, warnings
 
 
+def _read_docx(data: bytes) -> list[str]:
+    import docx
+
+    document = docx.Document(io.BytesIO(data))
+    lines = [para.text.strip() for para in document.paragraphs if para.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if any(cells):
+                lines.append(" | ".join(cells))
+    return ["\n".join(lines)] if lines else [""]
+
+
+def _read_xlsx(data: bytes) -> list[str]:
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    pages: list[str] = []
+    for sheet in workbook.worksheets:
+        lines = []
+        for row in sheet.iter_rows(values_only=True):
+            cells = ["" if value is None else str(value).strip() for value in row]
+            if any(cells):
+                lines.append(" | ".join(cells))
+        pages.append("\n".join(lines))
+    return pages or [""]
+
+
+def _read_text(data: bytes) -> list[str]:
+    for encoding in ("utf-8-sig", "utf-8", "gbk"):
+        try:
+            return [data.decode(encoding)]
+        except UnicodeDecodeError:
+            continue
+    return [data.decode("utf-8", "ignore")]
+
+
+def read_document(filename: str, data: bytes) -> tuple[list[str], str]:
+    """按扩展名/文件头分派：PDF、DOCX、XLSX、CSV/TXT/MD、图片。"""
+    name = (filename or "").lower()
+    if data.startswith(b"%PDF") or name.endswith(".pdf"):
+        return _read_pages(data), "pdf"
+    if name.endswith(".docx") or data.startswith(b"PK\x03\x04") and name.endswith(".docx"):
+        return _read_docx(data), "docx"
+    if name.endswith(".xlsx"):
+        return _read_xlsx(data), "xlsx"
+    if name.endswith((".csv", ".txt", ".md", ".tsv")):
+        return _read_text(data), "text"
+    if name.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+        from . import vision_reader
+
+        if not vision_reader.available():
+            raise ValueError("图片读取需要视觉模型；请配置 PITGUARD_LLM_* 后重试")
+        return [vision_reader.read_image(data, "image/jpeg" if name.endswith((".jpg", ".jpeg")) else "image/png")], "image"
+    raise ValueError("暂不支持该格式；可读取 PDF / DOCX / XLSX / CSV / TXT / MD / 图片")
+
+
 def _pages_with_vision(data: bytes, pages: list[str]) -> tuple[list[str], bool, list[str]]:
     """文字层缺失的页，用视觉模型转录；返回（页文本，是否用过视觉，告警）。"""
     from . import vision_reader
@@ -181,17 +250,14 @@ def extract(filename: str, data: bytes) -> dict:
         raise ValueError('文件是空的')
     if len(data) > MAX_BYTES:
         raise ValueError(f'文件超过 {MAX_BYTES // (1024 * 1024)} MB，请拆分后再上传')
-    if not data.startswith(PDF_MAGIC):
-        raise ValueError('这不是 PDF 文件；如需导入已有提取结果，请选择 .json')
-
-    pages = _read_pages(data)
+    pages, source_type = read_document(filename, data)
     text_chars = sum(len(page.strip()) for page in pages)
     pages, used_vision, vision_warnings = _pages_with_vision(data, pages)
     text_chars = sum(len(page.strip()) for page in pages)
     if text_chars < 20:
         from . import vision_reader
         detail = '；'.join(vision_reader.LAST_ERRORS[:2])
-        raise ValueError('这份 PDF 没有可提取的文字层（可能是扫描件或纯图纸）；'
+        raise ValueError('这份文件没有可提取的文字层（可能是扫描件或纯图纸）；'
                          '视觉模型未配置或未能识别' + (f'：{detail}' if detail else '，请检查 PITGUARD_LLM_* 配置'))
 
     fields, warnings = _collect(pages)
@@ -204,6 +270,7 @@ def extract(filename: str, data: bytes) -> dict:
             'pages': len(pages),
             'textChars': text_chars,
             'textSource': 'vision' if used_vision else 'text_layer',
+            'fileType': source_type,
             'sha256': hashlib.sha256(data).hexdigest(),
         },
         'fields': fields,

@@ -77,6 +77,8 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   const [notices, setNotices] = useState<Notice[]>([]);
   const [gap, setGap] = useState<Gap>({ text: '正在读取缺项…', items: [], tone: 'ok' });
   const [attachBusy, setAttachBusy] = useState(false);
+  const [attachStage, setAttachStage] = useState('');
+  const [dropActive, setDropActive] = useState(false);
   const [petOffset, setPetOffset] = useState<{ x: number; y: number }>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(PET_POS_KEY) || 'null');
@@ -397,8 +399,25 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
   }
 
   const ingestFile = useCallback(async (file: File) => {
-    setAttachBusy(true); setError('');
+    setAttachBusy(true); setError(''); setAttachStage('正在读取文件…');
     try {
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        const started = await api.startCalculationBookAutopilot(projectId, file);
+        setAttachStage('已提交，正在解析计算书…');
+        let status = await api.taskStatus(started.taskId);
+        for (let i = 0; i < 300 && !['success', 'failed', 'cancelled'].includes(status.status); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+          status = await api.taskStatus(started.taskId);
+          setAttachStage(status.currentStep || '正在生成…');
+        }
+        if (status.status !== 'success') {
+          throw new Error(status.error || `任务未完成：${status.status}`);
+        }
+        pushNotice('alert', '计算书已生成', '六阶段已跑完，成果包在“成果交付”里');
+        await refreshGap();
+        onProjectChanged?.();
+        return;
+      }
       let fields: Array<Record<string, unknown>> = [];
       if (file.name.toLowerCase().endsWith('.json')) {
         const parsed = JSON.parse(await file.text()) as {
@@ -429,8 +448,31 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
       const text = String(e);
       setError(text);
       pushNotice('error', '文件录入失败', text);
-    } finally { setAttachBusy(false); }
-  }, [projectId, activeId, reloadMessages, refreshGap, reportRouter, pushNotice]);
+    } finally { setAttachBusy(false); setAttachStage(''); }
+  }, [projectId, activeId, reloadMessages, refreshGap, reportRouter, pushNotice, onProjectChanged]);
+
+  const handleFileDragOver = useCallback((event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDropActive(true);
+  }, []);
+
+  const handleFileDragLeave = useCallback((event: React.DragEvent) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    setDropActive(false);
+  }, []);
+
+  const handleFileDrop = useCallback((event: React.DragEvent) => {
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+    event.preventDefault();
+    setDropActive(false);
+    setOpen(true);
+    pushNotice('alert', '已接收计算书', `${file.name} 正在提交自动生成…`);
+    void ingestFile(file);
+  }, [ingestFile, pushNotice]);
 
   const failCount = status?.failCount ?? 0;
   const badge = status?.statusUnavailable || notices.some((n) => n.kind === 'error')
@@ -468,8 +510,11 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
 
   return (
     <div
-      className={`agentPet ${placement} ${dragging ? 'isDragging' : ''}`}
+      className={`agentPet ${placement} ${dragging ? 'isDragging' : ''} ${dropActive ? 'isDropActive' : ''}`}
       style={{ transform: `translate(${petOffset.x}px, ${petOffset.y}px)` }}
+      onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDrop={handleFileDrop}
     >
       {open ? (
         <aside className="agentDock" style={{ height: dockHeight }} aria-label="智能设计助手">
@@ -488,7 +533,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
           <div className="agentDockMessages" ref={threadRef}>
             {messages.length === 0 ? (
               <p className="agentDockEmpty">
-                贴一段参数（如「施工荷载 30kPa，基坑安全等级三级」）或上传 PDF，会自动填入设计基准并反馈还缺什么。
+                贴一段参数（如「施工荷载 30kPa，基坑安全等级三级」），或把文件直接拖到桌宠上：PDF 走全流程自动生成；Excel / Word / CSV / 图片 用来补参数。
               </p>
             ) : messages.map((message) => (
               message.role === 'tool' ? (
@@ -524,7 +569,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
             <input
               ref={attachRef}
               type="file"
-              accept=".pdf,.json"
+              accept=".pdf,.docx,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.json"
               hidden
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -540,7 +585,7 @@ export default function AssistantPanel({ projectId, projectName, onProjectChange
               onKeyDown={(event) => {
                 if (event.key === 'Enter') { event.preventDefault(); void send(); }
               }}
-              placeholder={attachBusy ? '正在读取文件…' : '描述问题 / 贴参数，或上传 PDF'}
+              placeholder={attachBusy ? (attachStage || '正在读取文件…') : '描述问题 / 贴参数，或上传 PDF'}
               aria-label="向智能设计助手提问"
             />
             <button type="button" onClick={() => void send()} disabled={busy || attachBusy || !draft.trim()}>

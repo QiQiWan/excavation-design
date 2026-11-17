@@ -333,12 +333,17 @@ def test_a1_rejects_input_that_is_not_a_readable_pdf():
         document_agent.extract('empty.pdf', b'')
 
 
-def test_document_extract_endpoint_rejects_non_pdf(api):
+def test_document_extract_endpoint_handles_formats(api):
     client, _ = api
+    # 支持多格式后：内容过短的文本仍被拒，但理由不再是“不是 PDF”
     bad = client.post('/api/agents/documents/extract', headers=headers(),
                       files={'file': ('notes.txt', b'plain text', 'text/plain')})
     assert bad.status_code == 400
-    assert 'PDF' in bad.json()['detail']
+    assert '文字' in bad.json()['detail']
+    unknown = client.post('/api/agents/documents/extract', headers=headers(),
+                          files={'file': ('data.bin', b'\x00\x01\x02', 'application/octet-stream')})
+    assert unknown.status_code == 400
+    assert '暂不支持' in unknown.json()['detail']
     viewer = client.post('/api/agents/documents/extract', headers=headers('key-viewer'),
                          files={'file': ('a.pdf', b'%PDF-1.5', 'application/pdf')})
     assert viewer.status_code == 403

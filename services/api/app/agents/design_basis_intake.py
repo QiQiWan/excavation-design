@@ -256,6 +256,10 @@ FIELDS: dict[str, dict[str, Any]] = {
         'label': '侧壁重要性系数', 'unit': '',
         'validate': lambda v: isinstance(v, (int, float)) and 0.8 <= float(v) <= 1.5,
     },
+    'bearingCapacityKpa': {
+        'label': '地基承载力特征值', 'unit': 'kPa',
+        'validate': lambda v: isinstance(v, (int, float)) and 10 <= float(v) <= 5000,
+    },
     'defaultConcreteGrade': {
         'label': '混凝土等级', 'unit': '',
         'validate': lambda v: bool(re.fullmatch(r'C\d{2,3}', str(v))),
