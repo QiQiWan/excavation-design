@@ -201,7 +201,9 @@ async def run_calculation_book(request:Request,
 
 @router.post('/calculation-book/autopilot')
 async def calculation_book_autopilot(request:Request,
-                                    file:UploadFile=File(...)):
+                                    file:UploadFile=File(...),
+                                    project_id:str|None=Form(default=None),
+                                    section:str|None=Form(default=None)):
     """把计算书丢给 Agent：解析 → 建项目 → 建模 → 计算 → 配筋 → 成果包。"""
     identity=_actor(request)
     if ROLE_RANK.get(identity.role,0)<ROLE_RANK['designer']:
@@ -227,11 +229,15 @@ async def calculation_book_autopilot(request:Request,
     target.write_bytes(data)
 
     repo=ProjectRepository(store=shared_project_store())
-    stem=Path(filename).stem[:60] or '计算书'
-    project=repo.create(Project(name=f'{stem}（计算书自动生成）'),actor=identity.actor)
+    if project_id:
+        project=repo.require_for_calculation(project_id)
+    else:
+        stem=Path(filename).stem[:60] or '计算书'
+        project=repo.create(Project(name=f'{stem}（计算书自动生成）'),actor=identity.actor)
     task=task_manager.submit(project.id,'calculation_book_autopilot',{
         'projectId':project.id,
         'sourcePath':str(target),'filename':filename,'actor':identity.actor,
+        'section':section,
     })
     return {
         'taskId':task.id,'projectId':project.id,'filename':filename,

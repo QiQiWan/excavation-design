@@ -2863,7 +2863,7 @@ class TaskManager:
 
         self._stage(task, 4, "读取计算书并抽取工程参数")
         data = source.read_bytes()
-        parsed = autopilot.parse_book(autopilot.extract_text(data))
+        parsed = autopilot.parse_book(autopilot.extract_text(data), payload.get('section'))
         self._append_log(task, f"解析：挖深 {parsed['depthM']} m，安全等级 {parsed['safetyGrade']}，"
                                f"土层 {len(parsed['layers'])} 层，桩参数 {parsed['pile'] or '未给出'}")
 

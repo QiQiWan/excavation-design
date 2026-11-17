@@ -38,12 +38,15 @@ def extract_text(data: bytes) -> str:
     return document_text(data)
 
 
-def _last_layer_block(text: str) -> list[dict[str, Any]]:
-    """取最后一段连续土层表（计算书按剖面排列，最后一个通常是选定剖面）。"""
-    blocks: list[list[dict[str, Any]]] = []
+def _layer_blocks(text: str) -> list[dict[str, Any]]:
+    """按剖面切分土层表：每块带上它前面的「x-x剖面」标题。"""
+    blocks: list[dict[str, Any]] = []
     current: list[dict[str, Any]] = []
+    title = ""
     for raw in text.splitlines():
         line = raw.strip()
+        if "剖面" in line and len(line) < 40:
+            title = line
         match = LAYER_LINE.match(line)
         if match:
             code, name, thickness, gamma, cohesion, phi = match.groups()
@@ -53,14 +56,32 @@ def _last_layer_block(text: str) -> list[dict[str, Any]]:
                 "phiDeg": float(phi),
             })
         elif current and len(current) >= 2:
-            blocks.append(current)
+            blocks.append({"title": title, "layers": current})
             current = []
     if current:
-        blocks.append(current)
-    return blocks[-1] if blocks else []
+        blocks.append({"title": title, "layers": current})
+    return blocks
 
 
-def parse_book(text: str) -> dict[str, Any]:
+def _select_layers(text: str, section: str | None) -> tuple[list[dict[str, Any]], str]:
+    """按剖面号选表；没指定就优先 2-2，其次第一段带剖面的表。"""
+    blocks = _layer_blocks(text)
+    if not blocks:
+        return [], ""
+    if section:
+        wanted = section.replace("’", "'")
+        for block in blocks:
+            if wanted in block["title"].replace("’", "'"):
+                return block["layers"], block["title"]
+    for block in blocks:
+        if "2-2" in block["title"]:
+            return block["layers"], block["title"]
+    titled = [block for block in blocks if block["title"]]
+    chosen = titled[0] if titled else blocks[0]
+    return chosen["layers"], chosen["title"]
+
+
+def parse_book(text: str, section: str | None = None) -> dict[str, Any]:
     depth = None
     for pattern in DEPTH_PATTERNS:
         match = pattern.search(text)
@@ -73,12 +94,13 @@ def parse_book(text: str) -> dict[str, Any]:
         found = pattern.search(text)
         if found:
             pile[key] = float(found.group(1))
-    layers = _last_layer_block(text)
+    layers, section_title = _select_layers(text, section)
     return {
         "depthM": depth or 5.0,
         "depthFromBook": depth is not None,
         "safetyGrade": grade_match.group(1) if grade_match else "二级",
         "layers": layers,
+        "section": section_title,
         "pile": pile,
     }
 

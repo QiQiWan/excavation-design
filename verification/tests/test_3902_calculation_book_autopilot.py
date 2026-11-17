@@ -48,3 +48,38 @@ def test_defaults_when_book_lacks_depth() -> None:
     assert parsed["depthM"] == 5.0
     assert parsed["depthFromBook"] is False
     assert parsed["layers"] == []
+
+
+MULTI = """
+4.1 1-1剖面
+①-0 填土 0.85 18 10 15
+⑩-2 岩石(强风化) 2 21 30 30
+
+4.3 2-2剖面
+①-0 填土 1.67 18 10 15
+② 淤泥 2.6 16.22 5.55 6.36
+⑩-2 岩石(强风化) 0.5 21 30 30
+⑩-3 岩石(中风化) 50 22 50 30
+
+4.15 出土口剖面
+①-0 填土 0.79 18 10 15
+⑨ 粉质粘土 4.8 19.64 24.6 16.95
+"""
+
+
+def test_select_section_by_number() -> None:
+    parsed = parse_book(MULTI, "2-2")
+    assert "2-2" in parsed["section"]
+    assert len(parsed["layers"]) == 4
+    assert parsed["layers"][1]["code"] == "②"
+
+
+def test_default_prefers_2_2_over_last_table() -> None:
+    parsed = parse_book(MULTI)
+    assert "2-2" in parsed["section"]
+    assert len(parsed["layers"]) == 4
+
+
+def test_unknown_section_falls_back_to_2_2() -> None:
+    parsed = parse_book(MULTI, "9-9")
+    assert "2-2" in parsed["section"]
