@@ -60,7 +60,16 @@ def _layer_blocks(text: str) -> list[dict[str, Any]]:
             current = []
     if current:
         blocks.append({"title": title, "layers": current})
-    return blocks
+    # 跨页续表：标题相同且下一块不是从 ①-0 重新开始，就接到上一块后面。
+    merged: list[dict[str, Any]] = []
+    for block in blocks:
+        if (merged and block["title"] == merged[-1]["title"] and block["layers"]
+                and not str(block["layers"][0]["code"]).startswith("①-0")):
+            merged[-1]["layers"].extend(block["layers"])
+            merged[-1]["continued"] = True
+        else:
+            merged.append(block)
+    return merged
 
 
 def _select_layers(text: str, section: str | None) -> tuple[list[dict[str, Any]], str]:
