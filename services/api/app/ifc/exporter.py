@@ -146,6 +146,48 @@ class IfcWriter:
         rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{solid}))")
         return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
 
+    def circle_swept_shape(
+        self,
+        context_id: int,
+        radius: float,
+        length: float,
+        style_id: int | None = None,
+    ) -> int:
+        """Round bar: circular profile extruded along local +Z.
+
+        Reinforcement shown as rectangular prisms reads as square sticks in every
+        viewer, which is the main reason exported cages looked wrong.  A circular
+        profile extruded by the bar length keeps the same placement convention as
+        the previous box geometry (extrusion along local Z) but renders as a bar.
+        """
+        radius = max(float(radius), 0.003)
+        length = max(float(length), 0.001)
+        pos2d = self.axis2_2d(0, 0)
+        profile = self.entity(f"IFCCIRCLEPROFILEDEF(.AREA.,$,#{pos2d},{_real(radius)})")
+        swept_pos = self.axis2_3d(0, 0, 0)
+        extrusion_dir = self.direction(0, 0, 1)
+        solid = self.entity(f"IFCEXTRUDEDAREASOLID(#{profile},#{swept_pos},#{extrusion_dir},{_real(length)})")
+        item = solid
+        if style_id:
+            item = self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
+        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{item}))")
+        return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
+
+    def surface_style(
+        self,
+        name: str,
+        red: float,
+        green: float,
+        blue: float,
+        transparency: float = 0.0,
+    ) -> int:
+        """Simple coloured surface style so rebar is distinguishable in viewers."""
+        colour = self.entity(f"IFCCOLOURRGB($,{_real(red)},{_real(green)},{_real(blue)})")
+        rendering = self.entity(
+            f"IFCSURFACESTYLERENDERING(#{colour},{_real(transparency)},$,$,$,$,$,$,.NOTDEFINED.)"
+        )
+        return self.entity(f"IFCSURFACESTYLE({_step_string(name)},.BOTH.,(#{rendering}))")
+
     def single_value(self, name: str, value) -> int:
         if value is None:
             nominal = "$"
@@ -220,14 +262,24 @@ def _add_reinforcing_bar(
     as_proxy: bool = False,
 ) -> int:
     diameter_m = max(diameter_mm / 1000.0, 0.006)
-    # IFC viewers are much more reliable when vertical bars are exported as
-    # true vertical swept solids and horizontal bars as long local-X solids.
+    radius_m = diameter_m / 2.0
+    style_id = getattr(w, "rebar_style_id", None)
+    # Round bars: circular profile extruded along the bar axis.  Square prisms
+    # made every cage read as a stack of sticks in the viewer.
     if vertical:
         placement = w.local_placement(storey_place, x, y, z, refdir=(1, 0, 0), axis=(0, 0, 1))
-        shape = w.rect_swept_shape(context, diameter_m, diameter_m, max(length, diameter_m))
+        shape = w.circle_swept_shape(context, radius_m, max(length, diameter_m), style_id)
     else:
-        placement = w.local_placement(storey_place, x, y, z, refdir=refdir, axis=(0, 0, 1))
-        shape = w.rect_swept_shape(context, max(length, diameter_m), diameter_m, diameter_m)
+        # Local Z must follow the bar, so the reference direction is a
+        # perpendicular inside the horizontal plane.
+        rx, ry, rz = (float(refdir[0]), float(refdir[1]), float(refdir[2]))
+        px, py = -ry, rx
+        norm = math.sqrt(px * px + py * py)
+        if norm <= 1e-9:
+            px, py, norm = 1.0, 0.0, 1.0
+        perp = (px / norm, py / norm, 0.0)
+        placement = w.local_placement(storey_place, x, y, z, refdir=perp, axis=(rx, ry, rz))
+        shape = w.circle_swept_shape(context, radius_m, max(length, diameter_m), style_id)
     area = _bar_area_m2(diameter_mm)
     if as_proxy:
         # Several lightweight web/coordination viewers either skip
@@ -386,6 +438,8 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
     material_concrete = w.entity("IFCMATERIAL('Concrete',$,$)")
     material_rebar = w.entity("IFCMATERIAL('Reinforcement steel',$,$)")
     material_steel = w.entity("IFCMATERIAL('Structural steel',$,$)")
+    # Warm red-brown steel so bars separate visually from concrete in viewers.
+    w.rebar_style_id = w.surface_style("Rebar steel", 0.72, 0.26, 0.20)
 
     product_ids: list[int] = []
     concrete_product_ids: list[int] = []
