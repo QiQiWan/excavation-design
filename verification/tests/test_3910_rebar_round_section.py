@@ -73,3 +73,42 @@ def test_horizontal_bar_extrudes_along_its_own_axis() -> None:
     # 钢筋方向作为局部 Z 轴，参考方向取水平面内的垂线
     assert any("(0.,1.,0.)" in line for line in directions), directions
     assert any("(-1.,0.,0.)" in line for line in directions), directions
+
+
+def test_wall_cage_emits_the_whole_grid() -> None:
+    from types import SimpleNamespace
+
+    from app.ifc.exporter import _emit_wall_cage_bars
+
+    cage = {
+        "start": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "end": {"x": 6.0, "y": 0.0, "z": 0.0},
+        "bottomElevation": -10.0,
+        "heightM": 10.0,
+        "thicknessM": 0.7,
+        "coverM": 0.07,
+        "faces": [
+            {"face": "outer", "diameterMm": 25, "spacingMm": 140, "estimatedVerticalBarCount": 43},
+            {"face": "inner", "diameterMm": 25, "spacingMm": 140, "estimatedVerticalBarCount": 43},
+        ],
+        "horizontal": {"diameterMm": 16, "spacingMm": 150, "estimatedBarCountPerFace": 67},
+        "ties": {"diameterMm": 12, "spacingMm": 350},
+    }
+    writer = _writer_with_style()
+    bars = _emit_wall_cage_bars(
+        writer,
+        owner=1,
+        context=1,
+        storey_place=0,
+        wall=SimpleNamespace(rebar_grade="HRB400", thickness=0.7,
+                             bottom_elevation=-10.0, top_elevation=0.0, panel_code="DW-1"),
+        panel={"panelCode": "S1-P01"},
+        cage=cage,
+    )
+
+    # 两面竖向 86 + 两面水平 134 + 拉结筋 29
+    assert len(bars) == 249
+    text = "\n".join(writer.lines)
+    assert text.count("IFCREINFORCINGBAR") == 249
+    assert text.count("IFCCIRCLEPROFILEDEF") == 249
+    assert "IFCRECTANGLEPROFILEDEF" not in text
