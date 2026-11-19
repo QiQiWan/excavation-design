@@ -146,6 +146,48 @@ class IfcWriter:
         rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{solid}))")
         return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
 
+    def circle_swept_shape(
+        self,
+        context_id: int,
+        radius: float,
+        length: float,
+        style_id: int | None = None,
+    ) -> int:
+        """Round bar: circular profile extruded along local +Z.
+
+        Reinforcement shown as rectangular prisms reads as square sticks in every
+        viewer, which is the main reason exported cages looked wrong.  A circular
+        profile extruded by the bar length keeps the same placement convention as
+        the previous box geometry (extrusion along local Z) but renders as a bar.
+        """
+        radius = max(float(radius), 0.003)
+        length = max(float(length), 0.001)
+        pos2d = self.axis2_2d(0, 0)
+        profile = self.entity(f"IFCCIRCLEPROFILEDEF(.AREA.,$,#{pos2d},{_real(radius)})")
+        swept_pos = self.axis2_3d(0, 0, 0)
+        extrusion_dir = self.direction(0, 0, 1)
+        solid = self.entity(f"IFCEXTRUDEDAREASOLID(#{profile},#{swept_pos},#{extrusion_dir},{_real(length)})")
+        item = solid
+        if style_id:
+            item = self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
+        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{item}))")
+        return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
+
+    def surface_style(
+        self,
+        name: str,
+        red: float,
+        green: float,
+        blue: float,
+        transparency: float = 0.0,
+    ) -> int:
+        """Simple coloured surface style so rebar is distinguishable in viewers."""
+        colour = self.entity(f"IFCCOLOURRGB($,{_real(red)},{_real(green)},{_real(blue)})")
+        rendering = self.entity(
+            f"IFCSURFACESTYLERENDERING(#{colour},{_real(transparency)},$,$,$,$,$,$,.NOTDEFINED.)"
+        )
+        return self.entity(f"IFCSURFACESTYLE({_step_string(name)},.BOTH.,(#{rendering}))")
+
     def single_value(self, name: str, value) -> int:
         if value is None:
             nominal = "$"
@@ -220,14 +262,24 @@ def _add_reinforcing_bar(
     as_proxy: bool = False,
 ) -> int:
     diameter_m = max(diameter_mm / 1000.0, 0.006)
-    # IFC viewers are much more reliable when vertical bars are exported as
-    # true vertical swept solids and horizontal bars as long local-X solids.
+    radius_m = diameter_m / 2.0
+    style_id = getattr(w, "rebar_style_id", None)
+    # Round bars: circular profile extruded along the bar axis.  Square prisms
+    # made every cage read as a stack of sticks in the viewer.
     if vertical:
         placement = w.local_placement(storey_place, x, y, z, refdir=(1, 0, 0), axis=(0, 0, 1))
-        shape = w.rect_swept_shape(context, diameter_m, diameter_m, max(length, diameter_m))
+        shape = w.circle_swept_shape(context, radius_m, max(length, diameter_m), style_id)
     else:
-        placement = w.local_placement(storey_place, x, y, z, refdir=refdir, axis=(0, 0, 1))
-        shape = w.rect_swept_shape(context, max(length, diameter_m), diameter_m, diameter_m)
+        # Local Z must follow the bar, so the reference direction is a
+        # perpendicular inside the horizontal plane.
+        rx, ry, rz = (float(refdir[0]), float(refdir[1]), float(refdir[2]))
+        px, py = -ry, rx
+        norm = math.sqrt(px * px + py * py)
+        if norm <= 1e-9:
+            px, py, norm = 1.0, 0.0, 1.0
+        perp = (px / norm, py / norm, 0.0)
+        placement = w.local_placement(storey_place, x, y, z, refdir=perp, axis=(rx, ry, rz))
+        shape = w.circle_swept_shape(context, radius_m, max(length, diameter_m), style_id)
     area = _bar_area_m2(diameter_mm)
     if as_proxy:
         # Several lightweight web/coordination viewers either skip
@@ -256,6 +308,230 @@ def _add_reinforcing_bar(
     w.property_set(owner, element, "Pset_ReinforcementGroup", properties)
     return element
 
+
+
+def _emit_wall_cage_bars(
+    w: IfcWriter,
+    *,
+    owner: int,
+    context: int,
+    storey_place: int,
+    wall: DiaphragmWallPanel,
+    panel: dict,
+    cage: dict,
+    max_per_panel: int = 320,
+    as_proxy: bool = False,
+) -> list[int]:
+    """Emit one construction panel's rebar cage as individual round bars.
+
+    The previous export wrote a single representative bar per reinforcement group,
+    so a 6 m panel showed one or two rods and read as an empty cage.  The cage
+    descriptor already carries face diameters/spacings, horizontal spacing and
+    tie spacing; this turns those parameters into real bar geometry.
+    """
+    start = cage.get("start") or {}
+    end = cage.get("end") or {}
+    sx, sy = float(start.get("x", 0.0)), float(start.get("y", 0.0))
+    ex, ey = float(end.get("x", 0.0)), float(end.get("y", 0.0))
+    dx, dy = ex - sx, ey - sy
+    length = math.hypot(dx, dy)
+    if length <= 1e-6:
+        return []
+    ux, uy = dx / length, dy / length
+    nx, ny = -uy, ux
+    bottom = float(cage.get("bottomElevation", wall.bottom_elevation))
+    height = max(float(cage.get("heightM") or (wall.top_elevation - wall.bottom_elevation)), 0.3)
+    thickness = max(float(cage.get("thicknessM") or wall.thickness), 0.2)
+    cover = min(max(float(cage.get("coverM") or 0.05), 0.02), thickness / 2 - 0.02)
+    usable = max(length - 2 * cover, 0.3)
+    face_offset = max(thickness / 2 - cover, 0.02)
+    panel_code = str(panel.get("panelCode") or cage.get("panelCode") or "PANEL")
+    grade = wall.rebar_grade or "HRB400"
+    bars: list[int] = []
+
+    def emit(name: str, x: float, y: float, z: float, refdir: tuple[float, float, float],
+             bar_length: float, diameter_mm: float, vertical: bool, bar_type: str) -> None:
+        if len(bars) >= max_per_panel:
+            return
+        bars.append(_add_reinforcing_bar(
+            w, owner=owner, context=context, storey_place=storey_place,
+            name=name,
+            description=f"{bar_type} bar of construction panel {panel_code} cage",
+            x=x, y=y, z=z, refdir=refdir, length=max(bar_length, 0.05),
+            diameter_mm=diameter_mm, grade=grade,
+            properties={
+                "HostElement": panel_code,
+                "CalculationWallCode": wall.panel_code,
+                "ConstructionPanelCode": panel_code,
+                "BarType": bar_type,
+                "Diameter_mm": diameter_mm,
+                "RepresentationLevel": "full_cage_grid",
+            },
+            vertical=vertical, as_proxy=as_proxy,
+        ))
+
+    # Vertical cage bars, both faces, at the design spacing.
+    for face in cage.get("faces") or []:
+        diameter = float(face.get("diameterMm") or 20.0)
+        spacing = max(float(face.get("spacingMm") or 200.0) / 1000.0, 0.05)
+        count = int(face.get("estimatedVerticalBarCount") or 0)
+        if count <= 0:
+            count = int(usable / spacing) + 1
+        count = max(2, min(count, 70))
+        side = 1.0 if str(face.get("face")) == "outer" else -1.0
+        for index in range(count):
+            ratio = index / (count - 1) if count > 1 else 0.0
+            along = cover + ratio * usable
+            emit(
+                f"RB-{panel_code}-V{index + 1}",
+                sx + ux * along + nx * side * face_offset,
+                sy + uy * along + ny * side * face_offset,
+                bottom, (0, 0, 1), height, diameter, True,
+                f"vertical_{face.get('face') or 'face'}",
+            )
+
+    # Horizontal cage bars, both faces.
+    horizontal = cage.get("horizontal") or {}
+    h_diameter = float(horizontal.get("diameterMm") or 16.0)
+    h_count = int(horizontal.get("estimatedBarCountPerFace") or 0)
+    if h_count <= 0:
+        h_spacing = max(float(horizontal.get("spacingMm") or 200.0) / 1000.0, 0.05)
+        h_count = int(height / h_spacing) + 1
+    h_count = max(2, min(h_count, 80))
+    for side in (1.0, -1.0):
+        for index in range(h_count):
+            z = bottom + (index + 0.5) * height / h_count
+            emit(
+                f"RB-{panel_code}-H{index + 1}{'O' if side > 0 else 'I'}",
+                sx + ux * cover + nx * side * face_offset,
+                sy + uy * cover + ny * side * face_offset,
+                z, (ux, uy, 0.0), usable, h_diameter, False,
+                "horizontal" if side > 0 else "horizontal_inner",
+            )
+
+    # Ties bridging the two faces.
+    ties = cage.get("ties") or {}
+    t_diameter = float(ties.get("diameterMm") or 12.0)
+    tie_spacing = max(float(ties.get("spacingMm") or 400.0) / 1000.0, 0.1)
+    tie_count = max(2, min(int(height / tie_spacing) + 1, 60))
+    tie_length = max(thickness - 2 * cover, 0.05)
+    for index in range(tie_count):
+        z = bottom + (index + 0.5) * height / tie_count
+        emit(
+            f"RB-{panel_code}-T{index + 1}",
+            sx + ux * (length / 2) - nx * (tie_length / 2),
+            sy + uy * (length / 2) - ny * (tie_length / 2),
+            z, (nx, ny, 0.0), tie_length, t_diameter, False, "tie",
+        )
+    return bars
+
+
+def _emit_support_cage_bars(
+    w: IfcWriter,
+    *,
+    owner: int,
+    context: int,
+    storey_place: int,
+    support: SupportElement,
+    max_per_support: int = 320,
+    as_proxy: bool = False,
+) -> list[int]:
+    """Emit a support strut cage: longitudinal bars, side bars and closed hoops.
+
+    Previously only the first two reinforcement groups were written, one bar each,
+    so a strut showed two rods and no stirrups at all.
+    """
+    from app.ifc.rebar_visualization import _support_longitudinal_offsets
+
+    dx = support.end.x - support.start.x
+    dy = support.end.y - support.start.y
+    span = math.hypot(dx, dy)
+    if span <= 1e-6:
+        return []
+    ux, uy = dx / span, dy / span
+    nx, ny = -uy, ux
+    width = max(float(support.section.width or 0.8), 0.3)
+    height = max(float(support.section.height or 0.8), 0.3)
+    z_center = float(support.elevation)
+    cover = 0.05
+    half_w = max(width / 2.0 - cover, 0.05)
+    half_h = max(height / 2.0 - cover, 0.05)
+    usable = max(span - 2 * cover, 0.2)
+    code = support.code
+    groups = list(support.reinforcement or [])
+    bars: list[int] = []
+
+    def emit(name: str, x: float, y: float, z: float, refdir: tuple[float, float, float],
+             bar_length: float, diameter: float, vertical: bool, bar_type: str, grade: str) -> None:
+        if len(bars) >= max_per_support:
+            return
+        bars.append(_add_reinforcing_bar(
+            w, owner=owner, context=context, storey_place=storey_place,
+            name=name,
+            description=f"{bar_type} bar of support {code}",
+            x=x, y=y, z=z, refdir=refdir, length=max(bar_length, 0.05),
+            diameter_mm=diameter, grade=grade,
+            properties={
+                "HostElement": code,
+                "BarType": bar_type,
+                "Diameter_mm": diameter,
+                "RepresentationLevel": "full_cage_grid",
+            },
+            vertical=vertical, as_proxy=as_proxy,
+        ))
+
+    longitudinal = next((g for g in groups if g.bar_type == "longitudinal"), None)
+    if longitudinal:
+        offsets = _support_longitudinal_offsets(int(longitudinal.count or 8), width, height)
+        for index, (lateral, vertical) in enumerate(offsets, start=1):
+            emit(
+                f"RB-{code}-L{index}",
+                support.start.x + ux * cover + nx * lateral,
+                support.start.y + uy * cover + ny * lateral,
+                z_center + vertical, (ux, uy, 0.0), usable,
+                longitudinal.diameter, False, "longitudinal", longitudinal.grade,
+            )
+
+    for group in groups:
+        if group.bar_type != "distribution":
+            continue
+        spacing = max(float(group.spacing or 200.0) / 1000.0, 0.05)
+        rows = max(2, min(int(height / spacing) + 1, 10))
+        for side in (1.0, -1.0):
+            for index in range(rows):
+                z = z_center - half_h + (index / (rows - 1)) * 2 * half_h
+                emit(
+                    f"RB-{code}-D{index + 1}{'A' if side > 0 else 'B'}",
+                    support.start.x + ux * cover + nx * side * half_w,
+                    support.start.y + uy * cover + ny * side * half_w,
+                    z, (ux, uy, 0.0), usable,
+                    group.diameter, False, "distribution", group.grade,
+                )
+
+    stirrups = [g for g in groups if g.bar_type == "stirrup"]
+    if stirrups:
+        group = stirrups[-1]  # 跨中较疏的一档，端部加密由设计文件表达
+        spacing = max(float(group.spacing or 200.0) / 1000.0, 0.05)
+        stations = max(2, min(int(usable / spacing) + 1, 40))
+        top_z = z_center + half_h
+        bottom_z = z_center - half_h
+        hoop_width = 2 * half_w
+        hoop_height = 2 * half_h
+        for index in range(stations):
+            ratio = index / (stations - 1) if stations > 1 else 0.5
+            chainage = cover + ratio * usable
+            cx = support.start.x + ux * chainage
+            cy = support.start.y + uy * chainage
+            # 闭合箍筋拆成四段，查看器里就是一个矩形箍
+            emit(f"RB-{code}-S{index + 1}T", cx - nx * half_w, cy - ny * half_w, top_z,
+                 (nx, ny, 0.0), hoop_width, group.diameter, False, "stirrup_top", group.grade)
+            emit(f"RB-{code}-S{index + 1}B", cx - nx * half_w, cy - ny * half_w, bottom_z,
+                 (nx, ny, 0.0), hoop_width, group.diameter, False, "stirrup_bottom", group.grade)
+            emit(f"RB-{code}-S{index + 1}L", cx - nx * half_w, cy - ny * half_w, bottom_z,
+                 (0.0, 0.0, 1.0), hoop_height, group.diameter, True, "stirrup_left", group.grade)
+            emit(f"RB-{code}-S{index + 1}R", cx + nx * half_w, cy + ny * half_w, bottom_z,
+                 (0.0, 0.0, 1.0), hoop_height, group.diameter, True, "stirrup_right", group.grade)
+    return bars
 
 
 def _wall_construction_spans(project: Project, wall: DiaphragmWallPanel) -> list[dict]:
@@ -386,6 +662,8 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
     material_concrete = w.entity("IFCMATERIAL('Concrete',$,$)")
     material_rebar = w.entity("IFCMATERIAL('Reinforcement steel',$,$)")
     material_steel = w.entity("IFCMATERIAL('Structural steel',$,$)")
+    # Warm red-brown steel so bars separate visually from concrete in viewers.
+    w.rebar_style_id = w.surface_style("Rebar steel", 0.72, 0.26, 0.20)
 
     product_ids: list[int] = []
     concrete_product_ids: list[int] = []
@@ -394,6 +672,20 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
 
     support_quality = evaluate_support_layout_quality(project) if project.retaining_system else None
     support_metrics = dict(support_quality.metrics or {}) if support_quality else {}
+    # Cage descriptors (face diameters, spacings, ties) come from the same
+    # visualization builder used by the dedicated rebar export.
+    cage_by_panel: dict[str, dict] = {}
+    if detailed_mode and project.retaining_system:
+        try:
+            from app.ifc.rebar_visualization import build_rebar_ifc_visualization
+
+            visualization = build_rebar_ifc_visualization(project, max_bars=400)
+            for cage in visualization.get("cages") or []:
+                code = str(cage.get("panelCode") or "")
+                if code:
+                    cage_by_panel[code] = cage
+        except Exception:
+            cage_by_panel = {}
     latest_calculation = project.calculation_results[-1] if project.calculation_results else None
     calculation_assurance = dict(getattr(latest_calculation, "calculation_assurance", {}) or {}) if latest_calculation else {}
     w.property_set(owner, project_entity, "Pset_PitGuardExportControl", {
@@ -514,34 +806,52 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
                 })
                 if detailed_mode:
                     panel_rebar_ids: list[int] = []
-                    for idx, group in enumerate(wall.reinforcement, start=1):
-                        offset = (idx - (len(wall.reinforcement) + 1) / 2.0) * max(wall.thickness / max(len(wall.reinforcement), 2), 0.05)
-                        bar = _add_reinforcing_bar(
+                    cage = cage_by_panel.get(str(panel.get("panelCode")))
+                    if cage:
+                        # Full cage: vertical bars on both faces, horizontal bars
+                        # and ties at the design spacing.
+                        panel_rebar_ids = _emit_wall_cage_bars(
                             w, owner=owner, context=context, storey_place=storey_place,
-                            name=f"RB-{panel['panelCode']}-{idx}",
-                            description=f"Representative reinforcement group for construction panel: {group.name}",
-                            x=mx - uy * offset, y=my + ux * offset, z=wall.bottom_elevation,
-                            refdir=(0, 0, 1), length=height, diameter_mm=group.diameter, grade=group.grade,
-                            properties={
-                                "HostElement": panel["panelCode"], "CalculationWallCode": wall.panel_code,
-                                "ConstructionPanelCode": panel["panelCode"], "GroupName": group.name,
-                                "BarType": group.bar_type, "Diameter_mm": group.diameter,
-                                "Spacing_mm": group.spacing, "Count": group.count,
-                                "AreaPerMeter_mm2_per_m": group.area_per_meter,
-                                "RequiredAreaPerMeter_mm2_per_m": group.required_area_per_meter,
-                                "LocationDescription": group.location_description,
-                                "RepresentationLevel": "representative_group_bar_per_construction_panel",
-                            }, vertical=True, as_proxy=construction_visual_mode,
+                            wall=wall, panel=panel, cage=cage,
+                            as_proxy=construction_visual_mode,
                         )
-                        product_ids.append(bar)
-                        rebar_product_ids.append(bar)
-                        panel_rebar_ids.append(bar)
+                        product_ids.extend(panel_rebar_ids)
+                        rebar_product_ids.extend(panel_rebar_ids)
                         object_manifest["reinforcementGroups"].append({
                             "hostPanelCode": panel["panelCode"], "calculationWallCode": wall.panel_code,
-                            "groupId": group.id, "groupName": group.name, "barType": group.bar_type,
-                            "diameterMm": group.diameter, "spacingMm": group.spacing,
-                            "ifcEntityId": bar,
+                            "representation": "full_cage_grid",
+                            "barCount": len(panel_rebar_ids),
+                            "ifcEntityIds": panel_rebar_ids,
                         })
+                    else:
+                        for idx, group in enumerate(wall.reinforcement, start=1):
+                            offset = (idx - (len(wall.reinforcement) + 1) / 2.0) * max(wall.thickness / max(len(wall.reinforcement), 2), 0.05)
+                            bar = _add_reinforcing_bar(
+                                w, owner=owner, context=context, storey_place=storey_place,
+                                name=f"RB-{panel['panelCode']}-{idx}",
+                                description=f"Representative reinforcement group for construction panel: {group.name}",
+                                x=mx - uy * offset, y=my + ux * offset, z=wall.bottom_elevation,
+                                refdir=(0, 0, 1), length=height, diameter_mm=group.diameter, grade=group.grade,
+                                properties={
+                                    "HostElement": panel["panelCode"], "CalculationWallCode": wall.panel_code,
+                                    "ConstructionPanelCode": panel["panelCode"], "GroupName": group.name,
+                                    "BarType": group.bar_type, "Diameter_mm": group.diameter,
+                                    "Spacing_mm": group.spacing, "Count": group.count,
+                                    "AreaPerMeter_mm2_per_m": group.area_per_meter,
+                                    "RequiredAreaPerMeter_mm2_per_m": group.required_area_per_meter,
+                                    "LocationDescription": group.location_description,
+                                    "RepresentationLevel": "representative_group_bar_per_construction_panel",
+                                }, vertical=True, as_proxy=construction_visual_mode,
+                            )
+                            product_ids.append(bar)
+                            rebar_product_ids.append(bar)
+                            panel_rebar_ids.append(bar)
+                            object_manifest["reinforcementGroups"].append({
+                                "hostPanelCode": panel["panelCode"], "calculationWallCode": wall.panel_code,
+                                "groupId": group.id, "groupName": group.name, "barType": group.bar_type,
+                                "diameterMm": group.diameter, "spacingMm": group.spacing,
+                                "ifcEntityId": bar,
+                            })
                     if panel_rebar_ids:
                         cage_group = w.entity(
                             f"IFCGROUP({_step_string(_guid())},#{owner},{_step_string('CAGE-' + str(panel['panelCode']))},"
@@ -670,36 +980,17 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
                 "ifcEntityId": element,
             })
             if detailed_mode:
-                for idx, group in enumerate(support.reinforcement[:2], start=1):
-                    offset = (idx - 1.5) * max(width / 3.0, 0.10)
-                    bar = _add_reinforcing_bar(
-                        w,
-                        owner=owner,
-                        context=context,
-                        storey_place=storey_place,
-                        name=f"RB-{support.code}-{idx}",
-                        description=f"Representative support reinforcement group: {group.name}",
-                        x=mx - uy * offset,
-                        y=my + ux * offset,
-                        z=support.elevation - height / 2.0,
-                        refdir=(ux, uy, 0),
-                        length=length,
-                        diameter_mm=group.diameter,
-                        grade=group.grade,
-                        properties={
-                            "HostElement": support.code,
-                            "GroupName": group.name,
-                            "BarType": group.bar_type,
-                            "Diameter_mm": group.diameter,
-                            "Spacing_mm": group.spacing,
-                            "Count": group.count,
-                            "LocationDescription": group.location_description,
-                            "RepresentationLevel": "representative_group_bar",
-                        },
-                        as_proxy=construction_visual_mode,
-                    )
-                    product_ids.append(bar)
-                    rebar_product_ids.append(bar)
+                support_bars = _emit_support_cage_bars(
+                    w, owner=owner, context=context, storey_place=storey_place,
+                    support=support, as_proxy=construction_visual_mode,
+                )
+                product_ids.extend(support_bars)
+                rebar_product_ids.extend(support_bars)
+                object_manifest.setdefault("supportCages", []).append({
+                    "supportCode": support.code,
+                    "barCount": len(support_bars),
+                    "representation": "full_cage_grid",
+                })
         for column in project.retaining_system.columns:
             width = column.section.width or 0.6
             depth = column.section.height or width
