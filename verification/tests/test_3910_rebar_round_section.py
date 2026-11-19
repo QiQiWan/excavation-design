@@ -112,3 +112,33 @@ def test_wall_cage_emits_the_whole_grid() -> None:
     assert text.count("IFCREINFORCINGBAR") == 249
     assert text.count("IFCCIRCLEPROFILEDEF") == 249
     assert "IFCRECTANGLEPROFILEDEF" not in text
+
+
+def test_support_cage_emits_longitudinal_bars_and_closed_hoops() -> None:
+    from types import SimpleNamespace
+
+    from app.ifc.exporter import _emit_support_cage_bars
+
+    groups = [
+        SimpleNamespace(bar_type="longitudinal", diameter=28.0, spacing=None, count=16, grade="HRB400"),
+        SimpleNamespace(bar_type="distribution", diameter=16.0, spacing=200.0, count=None, grade="HRB400"),
+        SimpleNamespace(bar_type="stirrup", diameter=12.0, spacing=160.0, count=None, grade="HRB400"),
+    ]
+    support = SimpleNamespace(
+        code="DB-L1-1",
+        start=SimpleNamespace(x=0.0, y=0.0),
+        end=SimpleNamespace(x=3.0, y=0.0),
+        section=SimpleNamespace(width=1.2, height=1.2),
+        elevation=-1.0,
+        reinforcement=groups,
+    )
+    writer = _writer_with_style()
+    bars = _emit_support_cage_bars(
+        writer, owner=1, context=1, storey_place=0, support=support, max_per_support=400,
+    )
+
+    # 纵筋 16 + 两侧分布筋 6 行 × 2 = 12 + 箍筋 19 站 × 4 段
+    assert len(bars) == 16 + 12 + 76
+    text = "\n".join(writer.lines)
+    assert text.count("IFCCIRCLEPROFILEDEF") == len(bars)
+    assert "IFCRECTANGLEPROFILEDEF" not in text
