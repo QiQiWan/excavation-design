@@ -142,3 +142,30 @@ def test_support_cage_emits_longitudinal_bars_and_closed_hoops() -> None:
     text = "\n".join(writer.lines)
     assert text.count("IFCCIRCLEPROFILEDEF") == len(bars)
     assert "IFCRECTANGLEPROFILEDEF" not in text
+
+
+def test_beam_cage_emits_longitudinal_and_stirrups() -> None:
+    from types import SimpleNamespace
+
+    from app.ifc.exporter import _emit_beam_cage_bars
+
+    groups = [
+        SimpleNamespace(bar_type="longitudinal", diameter=25.0, spacing=125.0, count=12, grade="HRB400"),
+        SimpleNamespace(bar_type="distribution", diameter=14.0, spacing=200.0, count=None, grade="HRB400"),
+        SimpleNamespace(bar_type="stirrup", diameter=10.0, spacing=160.0, count=None, grade="HRB400"),
+    ]
+    beam = SimpleNamespace(
+        code="WB-L1-S1",
+        axis=SimpleNamespace(points=[SimpleNamespace(x=0.0, y=0.0), SimpleNamespace(x=60.0, y=0.0)]),
+        section=SimpleNamespace(width=0.9, height=0.7),
+        elevation=-1.5,
+        reinforcement=groups,
+    )
+    writer = _writer_with_style()
+    bars = _emit_beam_cage_bars(writer, owner=1, context=1, storey_place=0, beam=beam)
+
+    # 纵筋 12 + 两侧分布 2×4 + 箍筋 120 站 × 4 段
+    assert len(bars) == 12 + 8 + 480
+    text = "\n".join(writer.lines)
+    assert text.count("IFCCIRCLEPROFILEDEF") == len(bars)
+    assert "IFCRECTANGLEPROFILEDEF" not in text

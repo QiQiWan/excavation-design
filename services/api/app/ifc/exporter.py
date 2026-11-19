@@ -435,6 +435,7 @@ def _emit_support_cage_bars(
     support: SupportElement,
     max_per_support: int = 320,
     as_proxy: bool = False,
+    stirrup_station_cap: int = 40,
 ) -> list[int]:
     """Emit a support strut cage: longitudinal bars, side bars and closed hoops.
 
@@ -512,7 +513,7 @@ def _emit_support_cage_bars(
     if stirrups:
         group = stirrups[-1]  # 跨中较疏的一档，端部加密由设计文件表达
         spacing = max(float(group.spacing or 200.0) / 1000.0, 0.05)
-        stations = max(2, min(int(usable / spacing) + 1, 40))
+        stations = max(2, min(int(usable / spacing) + 1, stirrup_station_cap))
         top_z = z_center + half_h
         bottom_z = z_center - half_h
         hoop_width = 2 * half_w
@@ -532,6 +533,53 @@ def _emit_support_cage_bars(
             emit(f"RB-{code}-S{index + 1}R", cx + nx * half_w, cy + ny * half_w, bottom_z,
                  (0.0, 0.0, 1.0), hoop_height, group.diameter, True, "stirrup_right", group.grade)
     return bars
+
+
+def _emit_beam_cage_bars(
+    w: IfcWriter,
+    *,
+    owner: int,
+    context: int,
+    storey_place: int,
+    beam,
+    max_per_beam: int = 560,
+    as_proxy: bool = False,
+) -> list[int]:
+    """Crown/wale beam cage: longitudinal bars plus closed stirrups.
+
+    Beams previously carried no reinforcement geometry at all, so the top beams
+    looked like plain concrete in the rebar model.
+    """
+    from types import SimpleNamespace
+
+    points = list(getattr(getattr(beam, "axis", None), "points", []) or [])
+    if len(points) < 2:
+        return []
+    start, end = points[0], points[-1]
+    width = max(float(beam.section.width or 0.8), 0.3)
+    height = max(float(beam.section.height or 0.8), 0.3)
+    groups = []
+    for group in beam.reinforcement or []:
+        if group.bar_type == "longitudinal" and not group.count:
+            spacing = max(float(group.spacing or 200.0) / 1000.0, 0.05)
+            perimeter = 2 * (width + height)
+            count = max(4, min(int(perimeter / spacing) + 1, 16))
+            groups.append(group.model_copy(update={"count": count}))
+        else:
+            groups.append(group)
+    adapter = SimpleNamespace(
+        code=beam.code,
+        start=SimpleNamespace(x=start.x, y=start.y),
+        end=SimpleNamespace(x=end.x, y=end.y),
+        section=SimpleNamespace(width=width, height=height),
+        elevation=float(beam.elevation),
+        reinforcement=groups,
+    )
+    return _emit_support_cage_bars(
+        w, owner=owner, context=context, storey_place=storey_place,
+        support=adapter, max_per_support=max_per_beam, as_proxy=as_proxy,
+        stirrup_station_cap=120,
+    )
 
 
 def _wall_construction_spans(project: Project, wall: DiaphragmWallPanel) -> list[dict]:
@@ -928,6 +976,18 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
                 "NodeRebarCoordination": getattr(getattr(beam, "design_result", None), "node_additional_reinforcement_note", None),
                 "CheckStatus": getattr(getattr(beam, "design_result", None), "check_status", None),
             })
+            if detailed_mode:
+                beam_bars = _emit_beam_cage_bars(
+                    w, owner=owner, context=context, storey_place=storey_place,
+                    beam=beam, as_proxy=construction_visual_mode,
+                )
+                product_ids.extend(beam_bars)
+                rebar_product_ids.extend(beam_bars)
+                object_manifest.setdefault("beamCages", []).append({
+                    "beamCode": beam.code,
+                    "barCount": len(beam_bars),
+                    "representation": "full_cage_grid",
+                })
         for support in project.retaining_system.supports:
             ux, uy, length, _ = _line_direction(support.start, support.end)
             width = support.section.width or 0.8
