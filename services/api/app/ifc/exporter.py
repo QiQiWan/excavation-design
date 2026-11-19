@@ -320,6 +320,7 @@ def _emit_wall_cage_bars(
     panel: dict,
     cage: dict,
     max_per_panel: int = 320,
+    as_proxy: bool = False,
 ) -> list[int]:
     """Emit one construction panel's rebar cage as individual round bars.
 
@@ -366,7 +367,7 @@ def _emit_wall_cage_bars(
                 "Diameter_mm": diameter_mm,
                 "RepresentationLevel": "full_cage_grid",
             },
-            vertical=vertical,
+            vertical=vertical, as_proxy=as_proxy,
         ))
 
     # Vertical cage bars, both faces, at the design spacing.
@@ -704,6 +705,7 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
                         panel_rebar_ids = _emit_wall_cage_bars(
                             w, owner=owner, context=context, storey_place=storey_place,
                             wall=wall, panel=panel, cage=cage,
+                            as_proxy=construction_visual_mode,
                         )
                         product_ids.extend(panel_rebar_ids)
                         rebar_product_ids.extend(panel_rebar_ids)
