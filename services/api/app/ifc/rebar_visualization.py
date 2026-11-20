@@ -114,12 +114,25 @@ def _make_bar(
     return row
 
 
+def _wall_cover_m(wall: Any, design_cover_m: float | None = None) -> float:
+    """Clear cover to the outer bar mat.
+
+    The previous formula used 38% of the wall thickness (266 mm on a 700 mm wall),
+    which collapsed both mats into the middle of the wall.  Design cover for a
+    diaphragm wall is 50-75 mm unless the design basis says otherwise.
+    """
+    thickness = max(float(getattr(wall, "thickness", 0.6) or 0.6), 0.2)
+    if design_cover_m and design_cover_m > 0:
+        return min(max(float(design_cover_m), 0.03), min(0.1, thickness / 4.0))
+    return min(max(thickness * 0.08, 0.05), 0.075)
+
+
 def _add_wall_zone_rebars(bars: list[dict[str, Any]], wall, zones: list[dict[str, Any]], max_per_wall: int = 120) -> tuple[int, int]:
     path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
     length = polyline_length(path)
     if len(path) < 2 or length <= 1.0e-9 or not zones:
         return 0, 0
-    cover = min(max(wall.thickness * 0.38, 0.08), max(wall.thickness / 2.2, 0.08))
+    cover = _wall_cover_m(wall)
     sampled_total = 0
     estimated_total = 0
     ordered = sorted(zones, key=lambda item: float(item.get("topElevation") or wall.top_elevation), reverse=True)
@@ -223,7 +236,7 @@ def _add_wall_rebars(bars: list[dict[str, Any]], wall, max_per_wall: int = 110) 
     if len(path) < 2 or length <= 1.0e-9:
         return 0, 0
     height = max(wall.top_elevation - wall.bottom_elevation, 0.5)
-    cover = min(max(wall.thickness * 0.38, 0.08), max(wall.thickness / 2.2, 0.08))
+    cover = _wall_cover_m(wall)
     sampled_total = 0
     estimated_total = 0
     for group in wall.reinforcement:
@@ -908,6 +921,7 @@ def _wall_cage_descriptors(
     target_panel_length_m: float = 6.0,
     minimum_panel_length_m: float = 3.0,
     maximum_panel_length_m: float = 7.0,
+    design_cover_m: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
     total_length = polyline_length(path)
@@ -923,7 +937,7 @@ def _wall_cage_descriptors(
     )
     cage_rows: list[dict[str, Any]] = []
     height = max(float(wall.top_elevation) - float(wall.bottom_elevation), 0.1)
-    cover = min(max(float(wall.thickness) * 0.38, 0.08), max(float(wall.thickness) / 2.2, 0.08))
+    cover = _wall_cover_m(wall, design_cover_m)
     for idx, panel in enumerate(panels, start=1):
         panel_path_raw = list(panel.get("planPath") or [])
         panel_path = [Point2D(x=float(item["x"]), y=float(item["y"])) for item in panel_path_raw]
@@ -1076,6 +1090,7 @@ def build_rebar_ifc_visualization(project: Project, max_bars: int = 950, focus_h
                 target_panel_length_m=float(getattr(project.design_settings, "wall_panel_target_length_m", 6.0) or 6.0),
                 minimum_panel_length_m=float(getattr(project.design_settings, "wall_panel_min_length_m", 3.0) or 3.0),
                 maximum_panel_length_m=float(getattr(project.design_settings, "wall_panel_max_length_m", 7.0) or 7.0),
+                design_cover_m=(float(getattr(project.design_settings, "default_cover_mm", 0) or 0) / 1000.0) or None,
             )
             cages.extend(wall_cages)
             repaired_panel_geometry_count += int(panel_audit.get("repairedPanelCount") or 0)

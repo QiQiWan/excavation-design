@@ -169,3 +169,15 @@ def test_beam_cage_emits_longitudinal_and_stirrups() -> None:
     text = "\n".join(writer.lines)
     assert text.count("IFCCIRCLEPROFILEDEF") == len(bars)
     assert "IFCRECTANGLEPROFILEDEF" not in text
+
+
+def test_wall_cover_follows_design_not_thickness_fraction() -> None:
+    from types import SimpleNamespace
+
+    from app.ifc.rebar_visualization import _wall_cover_m
+
+    wall = SimpleNamespace(thickness=0.7)
+    # 旧公式 0.7 × 0.38 = 266 mm，两片网会被挤到墙心
+    assert 0.05 <= _wall_cover_m(wall) <= 0.075
+    assert abs(_wall_cover_m(wall, 0.05) - 0.05) < 1e-9
+    assert _wall_cover_m(wall, 0.5) <= 0.1
