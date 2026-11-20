@@ -134,7 +134,8 @@ class IfcWriter:
         rel = f"#{relative_to}" if relative_to else "$"
         return self.entity(f"IFCLOCALPLACEMENT({rel},#{placement_axis})")
 
-    def rect_swept_shape(self, context_id: int, length: float, width: float, height: float) -> int:
+    def rect_swept_shape(self, context_id: int, length: float, width: float, height: float,
+                         style_id: int | None = None) -> int:
         length = max(float(length), 0.001)
         width = max(float(width), 0.001)
         height = max(float(height), 0.001)
@@ -143,7 +144,10 @@ class IfcWriter:
         swept_pos = self.axis2_3d(0, 0, 0)
         extrusion_dir = self.direction(0, 0, 1)
         solid = self.entity(f"IFCEXTRUDEDAREASOLID(#{profile},#{swept_pos},#{extrusion_dir},{_real(height)})")
-        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{solid}))")
+        item = solid
+        if style_id:
+            item = self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
+        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{item}))")
         return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
 
     def circle_swept_shape(
@@ -582,6 +586,152 @@ def _emit_beam_cage_bars(
     )
 
 
+def _pile_row_spec(project: Project) -> dict | None:
+    """计算书给的是排桩（桩径/桩距/桩长）时，BIM 按排桩表达而不是等代墙。"""
+    advanced = project.advanced_engineering or {}
+    parsed = (advanced.get("calculationBookAutopilot") or {}).get("parsed") or {}
+    pile = parsed.get("pile") or {}
+    diameter = float(pile.get("diameter") or 0)
+    spacing = float(pile.get("spacing") or 0)
+    if diameter <= 0 or spacing <= 0:
+        return None
+    cage = parsed.get("pileCage") or {}
+    return {
+        "diameterM": diameter,
+        "spacingM": spacing,
+        "lengthM": float(pile.get("length") or 0) or None,
+        "mainDiameterMm": float(cage.get("mainDiameterMm") or 25.0),
+        "mainBarCount": int(cage.get("barCount") or 0) or None,
+        "barSpacingMm": float(cage.get("barSpacingMm") or 120.0),
+        "hoopDiameterMm": float(cage.get("hoopDiameterMm") or 8.0),
+        "hoopSpacingMm": float(cage.get("hoopSpacingMm") or 150.0),
+        "coverM": float(cage.get("clearCoverMm") or 50.0) / 1000.0,
+    }
+
+
+def _emit_pile_row(
+    w: IfcWriter,
+    *,
+    owner: int,
+    context: int,
+    storey_place: int,
+    wall: DiaphragmWallPanel,
+    spec: dict,
+    as_proxy: bool = False,
+    hoop_segments: int = 8,
+    hoop_ring_cap: int = 8,
+) -> tuple[list[int], list[int]]:
+    """沿墙轴线布置排桩，并为每根桩生成圆形钢筋笼。"""
+    path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
+    if len(path) < 2:
+        return [], []
+    segments: list[tuple[float, float, float, float, float]] = []
+    total = 0.0
+    for left, right in zip(path[:-1], path[1:]):
+        dx, dy = right.x - left.x, right.y - left.y
+        seg = math.hypot(dx, dy)
+        if seg <= 1e-9:
+            continue
+        segments.append((left.x, left.y, dx / seg, dy / seg, seg))
+        total += seg
+    if total <= 1e-9:
+        return [], []
+
+    diameter = float(spec["diameterM"])
+    spacing = max(float(spec["spacingM"]), 0.3)
+    count = max(2, int(round(total / spacing)) + 1)
+    step = total / (count - 1)
+
+    def point_at(chainage: float) -> tuple[float, float, float, float]:
+        remaining = chainage
+        for sx, sy, ux, uy, seg in segments:
+            if remaining <= seg or seg is segments[-1][4]:
+                return sx + ux * remaining, sy + uy * remaining, ux, uy
+            remaining -= seg
+        sx, sy, ux, uy, seg = segments[-1]
+        return sx + ux * seg, sy + uy * seg, ux, uy
+
+    top = float(wall.top_elevation)
+    length = float(spec.get("lengthM") or (top - float(wall.bottom_elevation)))
+    length = max(length, 1.0)
+    bottom = top - length
+    cover = min(max(float(spec["coverM"]), 0.03), diameter / 4)
+    main_d = float(spec["mainDiameterMm"]) / 1000.0
+    hoop_d = float(spec["hoopDiameterMm"]) / 1000.0
+    main_count = int(spec.get("mainBarCount") or 0)
+    if main_count <= 0:
+        main_count = max(6, int(math.pi * max(diameter - 2 * cover, 0.1) / max(spec["barSpacingMm"] / 1000.0, 0.05)))
+    main_count = max(6, min(main_count, 32))
+    main_radius = max(diameter / 2 - cover - hoop_d - main_d / 2, 0.05)
+    hoop_radius = max(diameter / 2 - cover - hoop_d / 2, 0.05)
+    hoop_spacing = max(float(spec["hoopSpacingMm"]) / 1000.0, 0.1)
+    rings = max(2, min(int(length / hoop_spacing) + 1, hoop_ring_cap))
+    chord = 2 * hoop_radius * math.sin(math.pi / hoop_segments)
+    grade = "HRB400"
+
+    pile_ids: list[int] = []
+    bar_ids: list[int] = []
+    for index in range(count):
+        cx, cy, ux, uy = point_at(min(index * step, total))
+        placement = w.local_placement(storey_place, cx, cy, bottom, refdir=(1, 0, 0), axis=(0, 0, 1))
+        shape = w.circle_swept_shape(context, diameter / 2.0, length)
+        pile = w.entity(
+            f"IFCPILE({_step_string(_guid())},#{owner},{_step_string(f'{wall.panel_code}-P{index + 1:03d}')},"
+            f"'Bored pile row generated from calculation book',$,#{placement},#{shape},$,.BORED.,.CAST_IN_SITU.)"
+        )
+        w.property_set(owner, pile, "Pset_PileRowDesign", {
+            "HostWallCode": wall.panel_code,
+            "PileDiameter_m": diameter,
+            "PileSpacing_m": round(step, 3),
+            "PileLength_m": round(length, 3),
+            "PileTopElevation": top,
+            "PileBottomElevation": round(bottom, 3),
+            "MainBar": f"{main_count}D{int(main_d * 1000)}",
+            "Hoop": f"D{int(hoop_d * 1000)}@{int(hoop_spacing * 1000)}",
+            "ClearCover_mm": round(cover * 1000),
+            "RepresentationNote": "计算按等代墙，BIM 按排桩；两者在 Pset 中分别标注",
+            "Source": "calculation_book.pile",
+        })
+        pile_ids.append(pile)
+
+        # 主筋：沿圆周均布
+        for k in range(main_count):
+            angle = 2 * math.pi * k / main_count
+            bx = cx + main_radius * math.cos(angle)
+            by = cy + main_radius * math.sin(angle)
+            bar_ids.append(_add_reinforcing_bar(
+                w, owner=owner, context=context, storey_place=storey_place,
+                name=f"RB-{wall.panel_code}-P{index + 1:03d}-M{k + 1}",
+                description="Pile main bar (circular cage)",
+                x=bx, y=by, z=bottom + cover, refdir=(0, 0, 1),
+                length=max(length - 2 * cover, 0.2),
+                diameter_mm=main_d * 1000, grade=grade,
+                properties={"HostElement": f"{wall.panel_code}-P{index + 1:03d}", "BarType": "pile_main",
+                            "Diameter_mm": main_d * 1000, "RepresentationLevel": "circular_cage"},
+                vertical=True, as_proxy=as_proxy,
+            ))
+
+        # 箍筋：每环拆成 hoop_segments 段，水平平面内闭合
+        for r in range(rings):
+            z = bottom + cover + (r + 0.5) * (length - 2 * cover) / rings
+            for k in range(hoop_segments):
+                angle = 2 * math.pi * k / hoop_segments
+                bx = cx + hoop_radius * math.cos(angle)
+                by = cy + hoop_radius * math.sin(angle)
+                tangent = (-math.sin(angle), math.cos(angle), 0.0)
+                bar_ids.append(_add_reinforcing_bar(
+                    w, owner=owner, context=context, storey_place=storey_place,
+                    name=f"RB-{wall.panel_code}-P{index + 1:03d}-H{r + 1}-{k + 1}",
+                    description="Pile hoop bar (circular cage)",
+                    x=bx, y=by, z=z, refdir=tangent,
+                    length=chord, diameter_mm=hoop_d * 1000, grade="HPB300",
+                    properties={"HostElement": f"{wall.panel_code}-P{index + 1:03d}", "BarType": "pile_hoop",
+                                "Diameter_mm": hoop_d * 1000, "RepresentationLevel": "circular_cage"},
+                    vertical=False, as_proxy=as_proxy,
+                ))
+    return pile_ids, bar_ids
+
+
 def _wall_construction_spans(project: Project, wall: DiaphragmWallPanel) -> list[dict]:
     """Return construction panels rebased to the current canonical wall path."""
     resolution = resolve_wall_plan_path(project, wall)
@@ -789,6 +939,7 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
     }
 
     if project.retaining_system:
+        pile_row_spec = _pile_row_spec(project)
         for wall in project.retaining_system.diaphragm_walls:
             if len(wall.axis.points) < 2:
                 continue
@@ -813,6 +964,38 @@ def export_simplified_ifc(project: Project, output_dir: str | Path, export_mode:
                     "ConstructionPanelCount": len(spans),
                     "AssemblySemantics": "calculation_wall_parent_with_constructible_panel_children",
                 })
+            if detailed_mode and pile_row_spec:
+                pile_ids, pile_bar_ids = _emit_pile_row(
+                    w, owner=owner, context=context, storey_place=storey_place,
+                    wall=wall, spec=pile_row_spec, as_proxy=construction_visual_mode,
+                )
+                product_ids.extend(pile_ids)
+                product_ids.extend(pile_bar_ids)
+                rebar_product_ids.extend(pile_bar_ids)
+                child_elements.extend(pile_ids)
+                if assembly:
+                    w.property_set(owner, assembly, "Pset_PileRowSummary", {
+                        "PileCount": len(pile_ids),
+                        "PileDiameter_m": pile_row_spec["diameterM"],
+                        "PileSpacing_m": round(pile_row_spec["spacingM"], 3),
+                        "PileLength_m": pile_row_spec.get("lengthM"),
+                        "BarsPerPile": len(pile_bar_ids) // max(len(pile_ids), 1),
+                        "CalculationModel": "equivalent diaphragm wall (internal calculation only)",
+                        "BimModel": "bored pile row with circular cage",
+                    })
+                    if child_elements:
+                        w.entity(
+                            f"IFCRELAGGREGATES({_step_string(_guid())},#{owner},'Piles of calculation wall',$,#{assembly},("
+                            + ",".join(f"#{eid}" for eid in child_elements) + "))"
+                        )
+                object_manifest.setdefault("pileRows", []).append({
+                    "calculationWallCode": wall.panel_code,
+                    "pileCount": len(pile_ids),
+                    "barCount": len(pile_bar_ids),
+                    "diameterM": pile_row_spec["diameterM"],
+                    "spacingM": round(pile_row_spec["spacingM"], 3),
+                })
+                continue
             export_spans = spans if detailed_mode else [{
                 "panelIndex": 1, "panelCode": wall.panel_code, "startChainageM": 0.0,
                 "endChainageM": _line_direction(wall.axis.points[0], wall.axis.points[-1])[2],

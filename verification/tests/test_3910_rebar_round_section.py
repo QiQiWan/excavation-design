@@ -181,3 +181,47 @@ def test_wall_cover_follows_design_not_thickness_fraction() -> None:
     assert 0.05 <= _wall_cover_m(wall) <= 0.075
     assert abs(_wall_cover_m(wall, 0.05) - 0.05) < 1e-9
     assert _wall_cover_m(wall, 0.5) <= 0.1
+
+
+def test_pile_row_spec_reads_the_book_parameters() -> None:
+    from types import SimpleNamespace
+
+    from app.ifc.exporter import _pile_row_spec
+
+    project = SimpleNamespace(advanced_engineering={
+        "calculationBookAutopilot": {"parsed": {
+            "pile": {"diameter": 0.7, "spacing": 0.9, "length": 7.6},
+            "pileCage": {"mainDiameterMm": 25, "barCount": 18, "hoopDiameterMm": 8,
+                         "hoopSpacingMm": 128, "clearCoverMm": 50},
+        }}})
+    spec = _pile_row_spec(project)
+    assert spec["diameterM"] == 0.7 and spec["spacingM"] == 0.9
+    assert spec["mainBarCount"] == 18 and spec["coverM"] == 0.05
+
+
+def test_pile_row_exports_circular_piles_and_cages() -> None:
+    from types import SimpleNamespace
+
+    from app.ifc.exporter import _emit_pile_row
+
+    wall = SimpleNamespace(
+        panel_code="DW-S1-001",
+        top_elevation=0.0,
+        bottom_elevation=-10.9,
+        axis=SimpleNamespace(points=[SimpleNamespace(x=0.0, y=0.0), SimpleNamespace(x=9.0, y=0.0)]),
+    )
+    spec = {"diameterM": 0.7, "spacingM": 0.9, "lengthM": 7.6,
+            "mainDiameterMm": 25.0, "mainBarCount": 18, "barSpacingMm": 120.0,
+            "hoopDiameterMm": 8.0, "hoopSpacingMm": 128.0, "coverM": 0.05}
+    writer = _writer_with_style()
+    piles, bars = _emit_pile_row(
+        writer, owner=1, context=1, storey_place=0, wall=wall, spec=spec,
+    )
+
+    # 9 m / 0.9 m 间距 → 11 根桩；每根 18 主筋 + 8 环 × 8 段
+    assert len(piles) == 11
+    assert len(bars) == 11 * (18 + 64)
+    text = "\n".join(writer.lines)
+    assert text.count("IFCPILE") == 11
+    assert text.count("IFCCIRCLEPROFILEDEF") == 11 + len(bars)
+    assert "IFCRECTANGLEPROFILEDEF" not in text
