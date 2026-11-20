@@ -605,6 +605,8 @@ def _pile_row_spec(project: Project) -> dict | None:
         "barSpacingMm": float(cage.get("barSpacingMm") or 120.0),
         "hoopDiameterMm": float(cage.get("hoopDiameterMm") or 8.0),
         "hoopSpacingMm": float(cage.get("hoopSpacingMm") or 150.0),
+        "strongHoopDiameterMm": float(cage.get("strongHoopDiameterMm") or 14.0),
+        "strongHoopSpacingMm": float(cage.get("strongHoopSpacingMm") or 2000.0),
         "coverM": float(cage.get("clearCoverMm") or 50.0) / 1000.0,
     }
 
@@ -619,7 +621,8 @@ def _emit_pile_row(
     spec: dict,
     as_proxy: bool = False,
     hoop_segments: int = 8,
-    hoop_ring_cap: int = 8,
+    hoop_ring_cap: int = 6,
+    strong_ring_cap: int = 5,
 ) -> tuple[list[int], list[int]]:
     """沿墙轴线布置排桩，并为每根桩生成圆形钢筋笼。"""
     path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
@@ -666,7 +669,11 @@ def _emit_pile_row(
     hoop_radius = max(diameter / 2 - cover - hoop_d / 2, 0.05)
     hoop_spacing = max(float(spec["hoopSpacingMm"]) / 1000.0, 0.1)
     rings = max(2, min(int(length / hoop_spacing) + 1, hoop_ring_cap))
+    strong_spacing = max(float(spec.get("strongHoopSpacingMm") or 2000.0) / 1000.0, 0.5)
+    strong_d = float(spec.get("strongHoopDiameterMm") or 14.0) / 1000.0
+    strong_rings = max(1, min(int(length / strong_spacing) + 1, strong_ring_cap))
     chord = 2 * hoop_radius * math.sin(math.pi / hoop_segments)
+    strong_chord = 2 * hoop_radius * math.sin(math.pi / hoop_segments)
     grade = "HRB400"
 
     pile_ids: list[int] = []
@@ -727,6 +734,25 @@ def _emit_pile_row(
                     length=chord, diameter_mm=hoop_d * 1000, grade="HPB300",
                     properties={"HostElement": f"{wall.panel_code}-P{index + 1:03d}", "BarType": "pile_hoop",
                                 "Diameter_mm": hoop_d * 1000, "RepresentationLevel": "circular_cage"},
+                    vertical=False, as_proxy=as_proxy,
+                ))
+
+        # 加强箍（吊装用），图中 φ14@2000
+        for r in range(strong_rings):
+            z = bottom + cover + (r + 0.5) * (length - 2 * cover) / strong_rings
+            for k in range(hoop_segments):
+                angle = 2 * math.pi * k / hoop_segments
+                bx = cx + hoop_radius * math.cos(angle)
+                by = cy + hoop_radius * math.sin(angle)
+                tangent = (-math.sin(angle), math.cos(angle), 0.0)
+                bar_ids.append(_add_reinforcing_bar(
+                    w, owner=owner, context=context, storey_place=storey_place,
+                    name=f"RB-{wall.panel_code}-P{index + 1:03d}-G{r + 1}-{k + 1}",
+                    description="Pile strong hoop (lifting cage)",
+                    x=bx, y=by, z=z, refdir=tangent,
+                    length=strong_chord, diameter_mm=strong_d * 1000, grade="HRB400",
+                    properties={"HostElement": f"{wall.panel_code}-P{index + 1:03d}", "BarType": "pile_strong_hoop",
+                                "Diameter_mm": strong_d * 1000, "RepresentationLevel": "circular_cage"},
                     vertical=False, as_proxy=as_proxy,
                 ))
     return pile_ids, bar_ids
