@@ -144,10 +144,9 @@ class IfcWriter:
         swept_pos = self.axis2_3d(0, 0, 0)
         extrusion_dir = self.direction(0, 0, 1)
         solid = self.entity(f"IFCEXTRUDEDAREASOLID(#{profile},#{swept_pos},#{extrusion_dir},{_real(height)})")
-        item = solid
         if style_id:
-            item = self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
-        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{item}))")
+            self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
+        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{solid}))")
         return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
 
     def circle_swept_shape(
@@ -171,10 +170,10 @@ class IfcWriter:
         swept_pos = self.axis2_3d(0, 0, 0)
         extrusion_dir = self.direction(0, 0, 1)
         solid = self.entity(f"IFCEXTRUDEDAREASOLID(#{profile},#{swept_pos},#{extrusion_dir},{_real(length)})")
-        item = solid
         if style_id:
-            item = self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
-        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{item}))")
+            # IfcStyledItem 必须独立指向几何项；放进 Items 会让 strict 查看器跳过整个表达
+            self.entity(f"IFCSTYLEDITEM(#{solid},(#{style_id}),$)")
+        rep = self.entity(f"IFCSHAPEREPRESENTATION(#{context_id},'Body','SweptSolid',(#{solid}))")
         return self.entity(f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))")
 
     def surface_style(
@@ -620,9 +619,9 @@ def _emit_pile_row(
     wall: DiaphragmWallPanel,
     spec: dict,
     as_proxy: bool = False,
-    hoop_segments: int = 8,
-    hoop_ring_cap: int = 6,
-    strong_ring_cap: int = 5,
+    hoop_segments: int = 6,
+    hoop_ring_cap: int = 5,
+    strong_ring_cap: int = 4,
 ) -> tuple[list[int], list[int]]:
     """沿墙轴线布置排桩，并为每根桩生成圆形钢筋笼。"""
     path = list(getattr(getattr(wall, "axis", None), "points", []) or [])
